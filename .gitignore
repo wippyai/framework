@@ -1,0 +1,31 @@
+/.idea
+/.vscode
+/runtime
+/dist
+/build
+
+# Dependency directories
+/node_modules
+/vendor
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.tmp
+.DS_Store
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Workspace files
+go.work
+go.work.sum
+
+# env file
+.env
