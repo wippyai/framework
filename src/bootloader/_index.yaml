@@ -1,0 +1,45 @@
+version: "1.0"
+namespace: wippy.bootloader
+
+entries:
+  # wippy.bootloader:bootloader
+  - name: bootloader
+    kind: process.lua
+    meta:
+      comment: Migration bootloader process
+      depends_on:
+        - app:db
+        - ns:wippy.migration
+    source: file://bootloader.lua
+    modules:
+      - time
+      - json
+      - sql
+      - env
+      - logger
+      - funcs
+    imports:
+      migration_registry: wippy.migration:registry
+      runner: wippy.migration:runner
+    method: run
+    
+  # wippy.bootloader:bootloader.service
+  - name: bootloader.service
+    kind: process.service
+    meta:
+      comment: Migration bootloader service with terminal UI
+      depends_on:
+        - app:db
+        - ns:wippy.migration
+    host: app:processes
+    lifecycle:
+      depends_on:
+        - app:db
+      auto_start: true
+      restart:
+        initial_delay: 1s
+      security:
+        groups:
+          - wippy.security:process
+    process: bootloader
+    
