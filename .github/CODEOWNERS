@@ -3,7 +3,7 @@
 
 # Global, default code owners for the entire repository.
 # Responsible for reviewing any code changes that do not have a more specific owner.
-*               @wippyai/framework @wippyai/runtime
+*               @wippyai/framework
 
 # Specific code owners for certain files or directories.
 .github/*       @wippyai/github
