@@ -1,0 +1,36 @@
+version: "1.0"
+namespace: wippy.actor
+
+entries:
+  # wippy.actor:actor
+  - name: actor
+    kind: library.lua
+    meta:
+      comment: Actor pattern library for btea processes
+    source: file://actor.lua
+    modules:
+      - json
+    
+  # wippy.actor:actor_test
+  - name: actor_test
+    kind: function.lua
+    meta:
+      name: Actor Library Test
+      type: test
+      comment: Tests the actor library's messaging and event handling capabilities
+      group: General
+      tags:
+        - actor
+        - library
+        - message-passing
+        - concurrency
+        - tests
+      depends_on:
+        - wippy.actor:actor
+        - wippy.test:test
+    source: file://actor_test.lua
+    imports:
+      actor: wippy.actor:actor
+      test: wippy.test:test
+    method: run_tests
+    
