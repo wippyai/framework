@@ -1,0 +1,91 @@
+version: "1.0"
+namespace: wippy.agent.gen1
+
+entries:
+  # wippy.agent.gen1:agent
+  - name: agent
+    kind: library.lua
+    meta:
+      type: library
+      comment: Agent runner library for executing LLM agents with conversation and tool support
+      depends_on:
+        - ns:wippy.agent
+        - ns:wippy.test
+        - ns:wippy.llm
+    source: file://agent.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      llm: wippy.llm:llm
+    
+  # wippy.agent.gen1:agent_test
+  - name: agent_test
+    kind: function.lua
+    meta:
+      name: Agent Runner Test
+      type: test
+      comment: Tests the agent runner library functionality for executing LLM agents with conversation and tool support
+      group: Agent Framework
+      tags:
+        - agents
+        - llm
+        - conversation
+        - tools
+        - tests
+      depends_on:
+        - registry
+    source: file://agent_test.lua
+    modules:
+      - time
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      agent: wippy.agent.gen1:agent
+      agent_registry: wippy.agent.gen1:registry
+      llm: wippy.llm:llm
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.agent.gen1:registry
+  - name: registry
+    kind: library.lua
+    meta:
+      type: library
+      comment: Agent registry library for discovering and loading gen1 agents
+      depends_on:
+        - ns:wippy.agent
+        - ns:wippy.test
+        - ns:wippy.llm
+    source: file://registry.lua
+    modules:
+      - registry
+      - json
+    imports:
+      traits: wippy.agent:traits
+    
+  # wippy.agent.gen1:registry_test
+  - name: registry_test
+    kind: function.lua
+    meta:
+      name: Agent Registry Test
+      type: test
+      comment: Tests the agent registry library functionality for discovering and loading gen1 agents
+      group: Agent Framework
+      tags:
+        - agents
+        - registry
+        - discovery
+        - tests
+      depends_on:
+        - ns:wippy.agent
+        - ns:wippy.test
+        - ns:wippy.llm
+    source: file://registry_test.lua
+    imports:
+      agent_registry: wippy.agent.gen1:registry
+      test: wippy.test:test
+      traits: wippy.agent:traits
+    method: run_tests
+    
