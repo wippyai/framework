@@ -1,0 +1,41 @@
+version: "1.0"
+namespace: wippy.views
+
+entries:
+  # wippy.views:page_registry
+  - name: page_registry
+    kind: library.lua
+    meta:
+      comment: Registry for managing virtual pages
+      description: Provides functions to find and access virtual pages
+    source: file://page_registry.lua
+    modules:
+      - registry
+      - security
+    
+  # wippy.views:renderer
+  - name: renderer
+    kind: library.lua
+    meta:
+      comment: Page renderer for virtual pages
+      description: Renders virtual pages with data and resources
+    source: file://renderer.lua
+    modules:
+      - templates
+      - funcs
+      - json
+      - env
+    imports:
+      page_registry: wippy.views:page_registry
+      resource_registry: wippy.views:resource_registry
+    
+  # wippy.views:resource_registry
+  - name: resource_registry
+    kind: library.lua
+    meta:
+      comment: Registry for managing page resources
+      description: Provides functions to find and access page resources
+    source: file://resource_registry.lua
+    modules:
+      - registry
+    

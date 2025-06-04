@@ -1,0 +1,64 @@
+version: "1.0"
+namespace: wippy.migration
+
+entries:
+  # wippy.migration:core
+  - name: core
+    kind: library.lua
+    meta:
+      comment: Core DSL for migration definitions
+    source: file://core.lua
+    
+  # wippy.migration:migration
+  - name: migration
+    kind: library.lua
+    meta:
+      comment: Main migration library API
+      depends_on:
+        - wippy.migration:core
+        - wippy.migration:repository
+    source: file://migration.lua
+    modules:
+      - time
+      - json
+    imports:
+      core: wippy.migration:core
+      repository: wippy.migration:repository
+    
+  # wippy.migration:registry
+  - name: registry
+    kind: library.lua
+    meta:
+      comment: Registry queries for migrations
+    source: file://registry.lua
+    modules:
+      - time
+    imports:
+      base_registry: :registry
+    
+  # wippy.migration:repository
+  - name: repository
+    kind: library.lua
+    meta:
+      comment: Migration repository (in-db) for tracking applied migrations
+    source: file://repository.lua
+    modules:
+      - sql
+      - json
+    
+  # wippy.migration:runner
+  - name: runner
+    kind: library.lua
+    meta:
+      comment: Main migration library API
+      depends_on:
+        - wippy.migration:repository
+        - wippy.migration:registry
+    source: file://runner.lua
+    modules:
+      - time
+      - funcs
+    imports:
+      registry: wippy.migration:registry
+      repository: wippy.migration:repository
+    

@@ -1,0 +1,11 @@
+version: "1.0"
+namespace: wippy.terminal
+
+entries:
+  # wippy.terminal:bapp
+  - name: bapp
+    kind: library.lua
+    meta:
+      comment: Unified terminal application library
+    source: file://bapp.lua
+    

@@ -13,7 +13,14 @@ jobs:
     strategy:
       matrix:
         package:
+          - { folder: actor, repo: module-actor }
+          - { folder: agent, repo: module-agent }
           - { folder: bootloader, repo: module-bootloader }
+          - { folder: migration, repo: module-migration }
+          - { folder: relay, repo: module-relay }
+          - { folder: security, repo: module-security }
+          - { folder: terminal, repo: module-terminal }
+          - { folder: views, repo: module-views }
     steps:
       - uses: actions/checkout@v4
         with:

@@ -1,0 +1,25 @@
+version: "1.0"
+namespace: wippy.test
+
+entries:
+  # wippy.test:registry
+  - name: registry
+    kind: library.lua
+    meta:
+      comment: Registry queries for test discovery and organization
+    source: file://registry.lua
+    modules:
+      - time
+    imports:
+      base_registry: :registry
+    
+  # wippy.test:test
+  - name: test
+    kind: library.lua
+    meta:
+      comment: BDD-style testing framework with operation progress reporting
+    source: file://test.lua
+    modules:
+      - time
+      - json
+    

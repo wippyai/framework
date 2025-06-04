@@ -1,0 +1,61 @@
+version: "1.0"
+namespace: wippy.relay
+
+entries:
+  # wippy.relay:central
+  - name: central
+    kind: process.lua
+    meta:
+      comment: Process that manages central users relay
+      depends_on:
+        - ns:app
+        - ns:app.user.auth
+    source: file://central.lua
+    modules:
+      - time
+      - json
+      - security
+    imports:
+      actor: wippy.actor:actor
+    method: run
+    
+  # wippy.relay:central.service
+  - name: central.service
+    kind: process.service
+    meta:
+      comment: Central Hub Service
+      depends_on:
+        - ns:app
+        - ns:app.user.auth
+    host: app:processes
+    lifecycle:
+      depends_on:
+        - app:processes
+      auto_start: true
+      security:
+        actor:
+          id: central
+        groups:
+          - app.security:root
+    process: central
+    
+  # wippy.relay:user
+  - name: user
+    kind: process.lua
+    meta:
+      comment: Process for individual user WebSocket connections pool
+      depends_on:
+        - ns:app
+        - ns:app.user.auth
+      default_host: app:processes
+    source: file://user.lua
+    modules:
+      - time
+      - json
+      - funcs
+      - uuid
+      - security
+    imports:
+      actor: wippy.actor:actor
+    method: run
+    
