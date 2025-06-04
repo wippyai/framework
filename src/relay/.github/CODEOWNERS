@@ -1,0 +1,9 @@
+# For more information, see the following link:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global, default code owners for the entire repository.
+# Responsible for reviewing any code changes that do not have a more specific owner.
+*               @wippyai/framework
+
+# Specific code owners for certain files or directories.
+.github/*       @wippyai/github

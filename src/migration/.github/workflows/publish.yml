@@ -1,0 +1,26 @@
+name: Release Module
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release module
+        uses: wippyai/action-module-release@main
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ github.ref_name }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          module_id: ${{ secrets.MODULE_ID }}
+          username: ${{ secrets.WIPPY_USERNAME }}
+          password: ${{ secrets.WIPPY_PASSWORD }}

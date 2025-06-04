@@ -1,0 +1,6 @@
+* text=auto
+
+/.*                    export-ignore
+/tests/                export-ignore
+/*.xml                 export-ignore
+/*.xml.dist            export-ignore
