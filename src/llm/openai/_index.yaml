@@ -1,0 +1,244 @@
+version: "1.0"
+namespace: wippy.llm.openai
+
+entries:
+  # wippy.llm.openai:client
+  - name: client
+    kind: library.lua
+    meta:
+      comment: OpenAI API client library with error handling and response formatting
+      depends_on:
+        - ns:wippy.llm
+      provider: openai
+    source: file://client.lua
+    modules:
+      - http_client
+      - json
+      - env
+      - ctx
+    imports:
+      output: wippy.llm:output
+    
+  # wippy.llm.openai:embeddings
+  - name: embeddings
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: OpenAI embeddings implementation
+      depends_on:
+        - ns:wippy.llm
+      priority: 10
+      provider: openai
+      supports:
+        - embeddings
+    source: file://embeddings.lua
+    modules:
+      - json
+    imports:
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 50
+    
+  # wippy.llm.openai:embeddings_test
+  - name: embeddings_test
+    kind: function.lua
+    meta:
+      name: OpenAI Embeddings Test
+      type: test
+      comment: Tests the OpenAI embeddings handler functionality
+      group: OpenAI Library
+      tags:
+        - llm
+        - openai
+        - embeddings
+      depends_on:
+        - ns:wippy.llm
+      provider: openai
+    source: file://embeddings_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      embeddings: wippy.llm.openai:embeddings
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.openai:prompt_mapper
+  - name: prompt_mapper
+    kind: library.lua
+    meta:
+      comment: Maps internal prompt format to OpenAI-compatible message format
+      depends_on:
+        - ns:wippy.llm
+      provider: openai
+    source: file://prompt_mapper.lua
+    modules:
+      - json
+    imports: {}
+    
+  # wippy.llm.openai:structured_output
+  - name: structured_output
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: OpenAI structured output implementation with schema enforcement
+      depends_on:
+        - ns:wippy.llm
+      priority: 40
+      provider: openai
+      supports:
+        - schema
+    source: file://structured_output.lua
+    modules:
+      - json
+      - hash
+    imports:
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 25
+      size: 2
+    
+  # wippy.llm.openai:structured_output_test
+  - name: structured_output_test
+    kind: function.lua
+    meta:
+      name: OpenAI Structured Output Test
+      type: test
+      comment: Tests the OpenAI structured output handler functionality
+      group: OpenAI Library
+      tags:
+        - llm
+        - openai
+        - schema
+        - structured_output
+      depends_on:
+        - ns:wippy.llm
+      provider: openai
+    source: file://structured_output_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+      structured_output: wippy.llm.openai:structured_output
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.openai:text_generation
+  - name: text_generation
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: OpenAI text generation implementation
+      depends_on:
+        - ns:wippy.llm
+      priority: 100
+      provider: openai
+      supports:
+        - generate
+        - stream
+    source: file://text_generation.lua
+    modules:
+      - json
+      - env
+      - security
+    imports:
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+      prompt_mapper: wippy.llm.openai:prompt_mapper
+    method: handler
+    pool:
+      max_size: 25
+      size: 2
+    
+  # wippy.llm.openai:text_generation_test
+  - name: text_generation_test
+    kind: function.lua
+    meta:
+      name: OpenAI Text Generation Test
+      type: test
+      comment: Tests the OpenAI text generation handler functionality
+      group: OpenAI Library
+      tags:
+        - llm
+        - openai
+        - generation
+      depends_on:
+        - ns:wippy.llm
+      provider: openai
+    source: file://text_generation_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+      test: wippy.test:test
+      text_generation: wippy.llm.openai:text_generation
+    method: run_tests
+    
+  # wippy.llm.openai:tool_calling
+  - name: tool_calling
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: OpenAI function/tool calling implementation
+      depends_on:
+        - ns:wippy.llm
+      priority: 50
+      provider: openai
+      supports:
+        - generate
+        - tools
+        - stream
+    source: file://tool_calling.lua
+    modules:
+      - json
+    imports:
+      tools: wippy.llm:tools
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+      prompt_mapper: wippy.llm.openai:prompt_mapper
+    method: handler
+    pool:
+      max_size: 25
+      size: 2
+    
+  # wippy.llm.openai:tool_calling_test
+  - name: tool_calling_test
+    kind: function.lua
+    meta:
+      name: OpenAI Tool Calling Test
+      type: test
+      comment: Tests the OpenAI tool/function calling handler functionality
+      group: OpenAI Library
+      tags:
+        - llm
+        - openai
+        - tools
+        - function_calling
+      depends_on:
+        - ns:wippy.llm
+      provider: openai
+    source: file://tool_calling_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      tools: wippy.llm:tools
+      openai_client: wippy.llm.openai:client
+      output: wippy.llm:output
+      test: wippy.test:test
+      tool_calling: wippy.llm.openai:tool_calling
+    method: run_tests
+    

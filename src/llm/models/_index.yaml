@@ -1,0 +1,459 @@
+version: "1.0"
+namespace: wippy.llm.models
+
+entries:
+  # wippy.llm.models:claude-3-5-sonnet
+  - name: claude-3-5-sonnet
+    kind: registry.entry
+    meta:
+      name: claude-3-5-sonnet
+      type: llm.model
+      title: Claude 3.5 Sonnet
+      comment: High-performance Claude model with strong reasoning and multimodal capabilities
+      capabilities:
+        - tool_use
+        - vision
+        - caching
+        - generate
+    max_tokens: 200000
+    handlers:
+      call_tools: wippy.llm.claude:tool_calling
+      generate: wippy.llm.claude:text_generation
+      structured_output: wippy.llm.claude:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 3
+      output: 15
+    provider_model: claude-3-5-sonnet-20241022
+    
+  # wippy.llm.models:claude-3-7-sonnet
+  - name: claude-3-7-sonnet
+    kind: registry.entry
+    meta:
+      name: claude-3-7-sonnet
+      type: llm.model
+      title: Claude 3.7 Sonnet
+      comment: Anthropic's most intelligent model with extended thinking capabilities for complex reasoning
+      capabilities:
+        - tool_use
+        - vision
+        - thinking
+        - caching
+        - generate
+    max_tokens: 200000
+    handlers:
+      call_tools: wippy.llm.claude:tool_calling
+      generate: wippy.llm.claude:text_generation
+      structured_output: wippy.llm.claude:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 3
+      output: 15
+    provider_model: claude-3-7-sonnet-20250219
+    
+  # wippy.llm.models:claude3-haiku
+  - name: claude3-haiku
+    kind: registry.entry
+    meta:
+      name: claude-3-5-haiku
+      type: llm.model
+      title: Claude 3.5 Haiku
+      comment: Fastest Claude model optimized for speed while maintaining high intelligence
+      capabilities:
+        - tool_use
+        - vision
+        - caching
+        - generate
+    max_tokens: 200000
+    handlers:
+      call_tools: wippy.llm.claude:tool_calling
+      generate: wippy.llm.claude:text_generation
+      structured_output: wippy.llm.claude:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 0.8
+      output: 4
+    provider_model: claude-3-5-haiku-20241022
+    
+  # wippy.llm.models:gemini-1.5-flash
+  - name: gemini-1.5-flash
+    kind: registry.entry
+    meta:
+      name: gemini-1.5-flash
+      type: llm.model
+      title: Gemini 1.5 Flash
+      comment: Fast and versatile performance across a diverse variety of tasks
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+    max_tokens: 1.048576e+06
+    handlers:
+      call_tools: wippy.llm.google.vertex:tool_calling
+      generate: wippy.llm.google.vertex:text_generation
+      structured_output: wippy.llm.google.vertex:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 0.075
+      output: 0.3
+    provider_model: gemini-1.5-flash
+    
+  # wippy.llm.models:gemini-1.5-pro
+  - name: gemini-1.5-pro
+    kind: registry.entry
+    meta:
+      name: gemini-1.5-pro
+      type: llm.model
+      title: Gemini 1.5 Pro
+      comment: Supports text or chat prompts for a text or code response. Supports long-context understanding up to the maximum input token limit
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+    max_tokens: 1.048576e+06
+    handlers:
+      call_tools: wippy.llm.google.vertex:tool_calling
+      generate: wippy.llm.google.vertex:text_generation
+      structured_output: wippy.llm.google.vertex:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 1.25
+      output: 5
+    provider_model: gemini-1.5-pro
+    
+  # wippy.llm.models:gemini-2.0-flash
+  - name: gemini-2.0-flash
+    kind: registry.entry
+    meta:
+      name: gemini-2.0-flash
+      type: llm.model
+      title: Gemini 2.0 Flash
+      comment: Workhorse model for all daily tasks. Strong overall performance and supports real-time streaming Live API
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+    max_tokens: 1.048576e+06
+    handlers:
+      call_tools: wippy.llm.google.vertex:tool_calling
+      generate: wippy.llm.google.vertex:text_generation
+      structured_output: wippy.llm.google.vertex:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 0.15
+      output: 0.6
+    provider_model: gemini-2.0-flash
+    
+  # wippy.llm.models:gemini-2.0-flash-lite
+  - name: gemini-2.0-flash-lite
+    kind: registry.entry
+    meta:
+      name: gemini-2.0-flash-lite
+      type: llm.model
+      title: Gemini 2.0 Flash-Lite
+      comment: Cost efficiency and low latency
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+    max_tokens: 1.048576e+06
+    handlers:
+      call_tools: wippy.llm.google.vertex:tool_calling
+      generate: wippy.llm.google.vertex:text_generation
+      structured_output: wippy.llm.google.vertex:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 0.075
+      output: 0.3
+    provider_model: gemini-2.0-flash-lite
+    
+  # wippy.llm.models:gemini-2.5-flash
+  - name: gemini-2.5-flash
+    kind: registry.entry
+    meta:
+      name: gemini-2.5-flash
+      type: llm.model
+      title: Gemini 2.5 Flash
+      comment: Fast, cost-efficient AI model with native multimodality and thinking capabilities
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+        - audio
+        - video
+    max_tokens: 1e+06
+    handlers:
+      call_tools: wippy.llm.google.vertex:tool_calling
+      generate: wippy.llm.google.vertex:text_generation
+      structured_output: wippy.llm.google.vertex:structured_output
+    output_tokens: 64000
+    pricing:
+      cached_input: 0.075
+      input: 0.15
+      output: 0.6
+      output_reasoning: 3.5
+    provider_model: gemini-2.5-flash-preview-04-17
+    
+  # wippy.llm.models:gemini-2.5-pro-preview
+  - name: gemini-2.5-pro-preview
+    kind: registry.entry
+    meta:
+      name: gemini-2.5-pro-preview
+      type: llm.model
+      title: Gemini 2.5 Pro Preview
+      comment: Google's state-of-the-art thinking model for complex reasoning, coding, multimodal understanding, and large context analysis. Preview version.
+      capabilities:
+        - tool_use
+        - vision
+        - thinking
+        - generate
+        - structured_output
+    max_tokens: 1.048576e+06
+    handlers:
+      call_tools: wippy.llm.google.vertex:tool_calling
+      generate: wippy.llm.google.vertex:text_generation
+      structured_output: wippy.llm.google.vertex:structured_output
+    output_tokens: 65536
+    pricing:
+      grounding: 35
+      input: 1.25
+      input_long: 2.5
+      output: 10
+      output_long: 15
+    provider_model: gemini-2.5-pro-exp-03-25
+    
+  # wippy.llm.models:gpt-4.1
+  - name: gpt-4.1
+    kind: registry.entry
+    meta:
+      name: gpt-4.1
+      type: llm.model
+      title: GPT-4.1
+      comment: Flagship GPT model for complex tasks
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+        - structured_output
+    max_tokens: 1.047576e+06
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 32768
+    pricing:
+      cached_input: 0.5
+      input: 2
+      output: 8
+    provider_model: gpt-4.1
+    
+  # wippy.llm.models:gpt-4.1-mini
+  - name: gpt-4.1-mini
+    kind: registry.entry
+    meta:
+      name: gpt-4.1-mini
+      type: llm.model
+      title: GPT-4.1 Mini
+      comment: Balanced for intelligence, speed, and cost
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+        - structured_output
+    max_tokens: 1.047576e+06
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 32768
+    pricing:
+      cached_input: 0.1
+      input: 0.4
+      output: 1.6
+    provider_model: gpt-4.1-mini
+    
+  # wippy.llm.models:gpt-4.1-nano
+  - name: gpt-4.1-nano
+    kind: registry.entry
+    meta:
+      name: gpt-4.1-nano
+      type: llm.model
+      title: GPT-4.1 Nano
+      comment: Fastest, most cost-effective GPT 4.1 model
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+        - structured_output
+    max_tokens: 1.047576e+06
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 32768
+    pricing:
+      cached_input: 0.03
+      input: 0.1
+      output: 0.4
+    provider_model: gpt-4.1-nano
+    
+  # wippy.llm.models:gpt-4o
+  - name: gpt-4o
+    kind: registry.entry
+    meta:
+      name: gpt-4o
+      type: llm.model
+      title: GPT-4o
+      comment: Fast, intelligent, flexible GPT model with text and image input capabilities
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+    max_tokens: 128000
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 16384
+    pricing:
+      cached_input: 1.25
+      input: 2.5
+      output: 10
+    provider_model: gpt-4o-2024-11-20
+    
+  # wippy.llm.models:gpt-4o-mini
+  - name: gpt-4o-mini
+    kind: registry.entry
+    meta:
+      name: gpt-4o-mini
+      type: llm.model
+      title: GPT-4o Mini
+      comment: Fast, affordable small model for focused tasks with text and image input
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+    max_tokens: 128000
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 16384
+    pricing:
+      cached_input: 0.075
+      input: 0.15
+      output: 0.6
+    provider_model: gpt-4o-mini-2024-07-18
+    
+  # wippy.llm.models:o3-mini
+  - name: o3-mini
+    kind: registry.entry
+    meta:
+      name: o3-mini
+      type: llm.model
+      title: O3 Mini
+      comment: Fast, flexible intelligent reasoning model for complex, multi-step tasks
+      capabilities:
+        - tool_use
+        - thinking
+        - generate
+    max_tokens: 200000
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 100000
+    pricing:
+      cached_input: 0.55
+      input: 1.1
+      output: 4.4
+    provider_model: o3-mini-2025-01-31
+    
+  # wippy.llm.models:o4-mini
+  - name: o4-mini
+    kind: registry.entry
+    meta:
+      name: o4-mini
+      type: llm.model
+      title: O4 Mini
+      comment: Fast, affordable small model for focused tasks with text and image input capabilities
+      capabilities:
+        - tool_use
+        - vision
+        - generate
+        - structured_output
+    max_tokens: 128000
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    knowledge_cutoff: "2023-09-30"
+    output_tokens: 16384
+    pricing:
+      cached_input: 0.075
+      input: 0.15
+      output: 0.6
+    provider_model: o4-mini
+    
+  # wippy.llm.models:text-embedding-3-large
+  - name: text-embedding-3-large
+    kind: registry.entry
+    meta:
+      name: text-embedding-3-large
+      type: llm.embedding
+      comment: Most powerful embedding model for highest accuracy (64.6% on MTEB benchmark)
+      capabilities:
+        - multilingual
+    max_tokens: 8191
+    dimensions: 3072
+    handlers:
+      embeddings: wippy.llm.openai:embeddings
+    knowledge_cutoff: September 2021
+    model_family: third-generation
+    mteb_performance: 64.6
+    pricing:
+      input: 0.13
+      pages_per_dollar: 9615
+    provider_model: text-embedding-3-large
+    
+  # wippy.llm.models:text-embedding-3-small
+  - name: text-embedding-3-small
+    kind: registry.entry
+    meta:
+      name: text-embedding-3-small
+      type: llm.embedding
+      comment: Cost-effective embedding model with high performance (62.3% on MTEB benchmark)
+      capabilities:
+        - multilingual
+    max_tokens: 8191
+    dimensions: 1536
+    handlers:
+      embeddings: wippy.llm.openai:embeddings
+    knowledge_cutoff: September 2021
+    model_family: third-generation
+    mteb_performance: 62.3
+    pricing:
+      input: 0.02
+      pages_per_dollar: 62500
+    provider_model: text-embedding-3-small
+    
+  # wippy.llm.models:text-embedding-ada-002
+  - name: text-embedding-ada-002
+    kind: registry.entry
+    meta:
+      name: text-embedding-ada-002
+      type: llm.model
+      comment: Legacy embedding model with 61.0% performance on MTEB benchmark
+      capabilities:
+        - multilingual
+    max_tokens: 8191
+    dimensions: 1536
+    handlers:
+      embeddings: wippy.llm.openai:embeddings
+    model_family: second-generation
+    mteb_performance: 61
+    pricing:
+      input: 0.05
+      pages_per_dollar: 12500
+    provider_model: text-embedding-ada-002
+    

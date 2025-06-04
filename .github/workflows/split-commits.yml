@@ -21,6 +21,8 @@ jobs:
           - { folder: security, repo: module-security }
           - { folder: terminal, repo: module-terminal }
           - { folder: views, repo: module-views }
+          - { folder: llm, repo: module-llm }
+          - { folder: usage, repo: module-usage }
     steps:
       - uses: actions/checkout@v4
         with:

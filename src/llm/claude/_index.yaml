@@ -1,0 +1,199 @@
+version: "1.0"
+namespace: wippy.llm.claude
+
+entries:
+  # wippy.llm.claude:client
+  - name: client
+    kind: library.lua
+    meta:
+      comment: Claude API client library with error handling and response formatting
+      depends_on:
+        - ns:wippy.llm
+      provider: anthropic
+    source: file://client.lua
+    modules:
+      - http_client
+      - json
+      - env
+      - time
+      - ctx
+    imports:
+      output: wippy.llm:output
+    
+  # wippy.llm.claude:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Claude API mapper library for standardized request/response mapping
+      depends_on:
+        - ns:wippy.llm
+      provider: anthropic
+    source: file://mapper.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      output: wippy.llm:output
+    
+  # wippy.llm.claude:structured_output
+  - name: structured_output
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Claude structured output implementation using tool calling
+      depends_on:
+        - ns:wippy.llm
+      priority: 40
+      provider: anthropic
+      supports:
+        - schema
+    source: file://structured_output.lua
+    modules:
+      - json
+      - hash
+    imports:
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 25
+      size: 2
+    
+  # wippy.llm.claude:structured_output_test
+  - name: structured_output_test
+    kind: function.lua
+    meta:
+      name: Claude Structured Output Test
+      type: test
+      comment: Tests the Claude structured output handler functionality
+      group: Claude Library
+      tags:
+        - llm
+        - claude
+        - schema
+        - structured_output
+      depends_on:
+        - ns:wippy.llm
+      provider: anthropic
+    source: file://structured_output_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      claude_client: wippy.llm.claude:client
+      output: wippy.llm:output
+      structured_output: wippy.llm.claude:structured_output
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:text_generation
+  - name: text_generation
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Claude text generation implementation
+      depends_on:
+        - ns:wippy.llm
+      priority: 100
+      provider: anthropic
+      supports:
+        - generate
+        - stream
+    source: file://text_generation.lua
+    modules:
+      - json
+      - env
+    imports:
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 25
+      size: 2
+    
+  # wippy.llm.claude:text_generation_test
+  - name: text_generation_test
+    kind: function.lua
+    meta:
+      name: Claude Text Generation Test
+      type: test
+      comment: Tests the Claude text generation handler functionality
+      group: Claude Library
+      tags:
+        - llm
+        - claude
+        - generation
+      depends_on:
+        - ns:wippy.llm
+      provider: anthropic
+    source: file://text_generation_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      claude_client: wippy.llm.claude:client
+      output: wippy.llm:output
+      test: wippy.test:test
+      text_generation: wippy.llm.claude:text_generation
+    method: run_tests
+    
+  # wippy.llm.claude:tool_calling
+  - name: tool_calling
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Claude function/tool calling implementation
+      depends_on:
+        - ns:wippy.llm
+      priority: 50
+      provider: anthropic
+      supports:
+        - generate
+        - tools
+        - stream
+    source: file://tool_calling.lua
+    modules:
+      - json
+    imports:
+      tools: wippy.llm:tools
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 25
+      size: 2
+    
+  # wippy.llm.claude:tool_calling_test
+  - name: tool_calling_test
+    kind: function.lua
+    meta:
+      name: Claude Tool Calling Test
+      type: test
+      comment: Tests the Claude tool/function calling handler functionality
+      group: Claude Library
+      tags:
+        - llm
+        - claude
+        - tools
+        - function_calling
+      depends_on:
+        - ns:wippy.llm
+      provider: anthropic
+    source: file://tool_calling_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      prompt: wippy.llm:prompt
+      tools: wippy.llm:tools
+      claude_client: wippy.llm.claude:client
+      output: wippy.llm:output
+      test: wippy.test:test
+      tool_calling: wippy.llm.claude:tool_calling
+    method: run_tests
+    

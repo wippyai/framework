@@ -1,0 +1,45 @@
+version: "1.0"
+namespace: wippy.usage
+
+entries:
+  # wippy.usage:token_usage_repo
+  - name: token_usage_repo
+    kind: library.lua
+    meta:
+      comment: Repository for managing token usage data
+      tags:
+        - tokens
+        - usage
+      description: Track and analyze LLM token consumption
+    source: file://token_usage_repo.lua
+    modules:
+      - sql
+      - json
+      - uuid
+      - time
+    
+  # wippy.usage:token_usage_repo_test
+  - name: token_usage_repo_test
+    kind: function.lua
+    meta:
+      name: Token Usage Repository Test
+      type: test
+      comment: Tests for the token usage repository functionality
+      group: Usage Tests
+      tags:
+        - usage
+        - tokens
+        - database
+        - tests
+      description: Tests for token usage tracking
+    source: file://token_usage_repo_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+    imports:
+      test: wippy.test:test
+      token_usage_repo: wippy.usage:token_usage_repo
+    method: run_tests
+    
