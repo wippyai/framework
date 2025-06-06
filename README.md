@@ -34,6 +34,7 @@ and configuration management — enabling developers to build sophisticated mult
 | [relay][module-relay]           | Message relay and routing system for distributed communication                                                               |
 | [security][module-security]     | Authentication, authorization, and access control framework with support for actors, scopes, and policies                    |
 | [terminal][module-terminal]     | Terminal interface and command processing capabilities                                                                       |
+| [test][module-test]             | BDD-style testing framework for Lua applications with assertions, lifecycle hooks, and mocking capabilities                  |
 | [views][module-views]           | UI view management and rendering system                                                                                      |
 | [usage][module-usage]           | Usage tracking and analytics for system monitoring                                                                           |
 
@@ -70,7 +71,6 @@ and configuration management — enabling developers to build sophisticated mult
 | **templates**    | Template rendering system with variable substitution                                                               |
 | **jet**          | Jet templating system with inheritance patterns                                                                    |
 | **websocket**    | WebSocket client implementation for real-time communication                                                        |
-| **test**         | BDD-style testing framework with assertions and mocking capabilities                                               |
 | **system**       | Go runtime information access including memory statistics and garbage collection                                   |
 | **exec**         | External process execution with input/output streams and process control                                           |
 | **env**          | Environment variable access interface                                                                              |
@@ -86,6 +86,7 @@ and configuration management — enabling developers to build sophisticated mult
 [module-relay]: https://github.com/wippyai/module-relay
 [module-security]: https://github.com/wippyai/module-security
 [module-terminal]: https://github.com/wippyai/module-terminal
+[module-test]: https://github.com/wippyai/module-test
 [module-views]: https://github.com/wippyai/module-views
 [module-usage]: https://github.com/wippyai/module-usage
 [module-llm]: https://github.com/wippyai/module-llm
