@@ -15,9 +15,29 @@
 
 </div>
 
+
 > [!NOTE]
 > This repository is read-only.
 > The code is generated from the [wippyai/framework][wippy-framework] repository.
+
+
+The bootloader module handles database migrations during application startup.
+It connects to the configured database, finds pending migrations, and applies them in the correct order.
+The module ensures database schema changes are applied safely before the main application starts.
+
+The bootloader performs these tasks:
+- Connects to the database using the APP_DB environment variable
+- Discovers migration files from the migration registry
+- Sorts migrations by timestamp and name to ensure correct execution order
+- Checks which migrations have already been applied
+- Executes pending migrations one by one
+- Tracks migration status and provides detailed logging
+- Stops execution when errors occur to prevent data corruption
+- Reports statistics about applied, failed, and skipped migrations
+
+The module runs automatically during application startup and must complete successfully before other services start.
+It handles connection cleanup and provides clear error messages when migrations fail.
+
 
 [wippy-documentation]: https://docs.wippy.ai
 [releases-page]: https://github.com/wippyai/module-bootloader/releases
