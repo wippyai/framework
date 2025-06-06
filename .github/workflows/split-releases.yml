@@ -26,6 +26,7 @@ jobs:
           - { folder: relay, repo: module-relay }
           - { folder: security, repo: module-security }
           - { folder: terminal, repo: module-terminal }
+          - { folder: test, repo: module-test }
           - { folder: views, repo: module-views }
           - { folder: llm, repo: module-llm }
           - { folder: usage, repo: module-usage }
@@ -35,11 +36,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: |
-          split_sha=`git subtree split --prefix=src/${{ matrix.package.folder }}`
           repo_url="https://${{ secrets.SUBSPLIT_WRITE_ACCESS }}@github.com/wippyai/${{ matrix.package.repo }}.git"
-          if [ -z $(git ls-remote --tags "$repo_url" | grep "$split_sha") ]; then \
-             git tag -a ${{ github.ref_name }} -m "Release ${{ github.ref_name }}" "$split_sha"; \
-          fi
+          git subtree push --prefix src/${{ matrix.package.folder }} "$repo_url" ${{ github.ref_name }}
+#          split_sha=`git subtree split --prefix=src/${{ matrix.package.folder }}`
+#          repo_url="https://${{ secrets.SUBSPLIT_WRITE_ACCESS }}@github.com/wippyai/${{ matrix.package.repo }}.git"
 #          if [ -z $(git ls-remote --tags "$repo_url" | grep "$split_sha") ]; then \
 #            gh release create ${{ github.ref_name }} \
 #              --repo wippyai/${{ matrix.package.repo }} \
