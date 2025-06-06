@@ -40,5 +40,5 @@ jobs:
               --repo wippyai/${{ matrix.package.repo }} \
               --target "$split_sha" \
               --generate-notes \
-              --notes '[Full release information in Typhoon monorepo](https://github.com/wippyai/typhoon/releases/tag/${{ github.ref_name }}).'; \
+              --notes '[Full release information in Wipopy Framework monorepo](https://github.com/wippyai/typhoon/releases/tag/${{ github.ref_name }}).'; \
           fi
