@@ -23,6 +23,7 @@ test.event = {
 -- Internal state now contained in a singleton context
 local _default_context = {
     tests = {},
+    suites_hierarchy = {}, -- New: to track top-level suites with their children
     current_describe = nil,
     current_test = nil,
     results = {
@@ -313,23 +314,38 @@ function test.suite(name)
         before_all = nil,
         after_all = nil,
         before_each = nil,
-        after_each = nil
+        after_each = nil,
+        parent = nil,      -- Reference to parent suite
+        children = {},     -- Child suites
+        full_path = name   -- Full path including parent names
     }
 end
 
 -- Define a test suite (maintains backward compatibility)
 function test.describe(name, fn)
     local old_describe = _default_context.current_describe
-    _default_context.current_describe = test.suite(name)
+    local new_suite = test.suite(name)
+
+    -- Set up parent-child relationship
+    if old_describe then
+        new_suite.parent = old_describe
+        table.insert(old_describe.children, new_suite)
+        new_suite.full_path = old_describe.full_path .. " > " .. name
+    else
+        -- This is a top-level suite
+        table.insert(_default_context.suites_hierarchy, new_suite)
+    end
+
+    _default_context.current_describe = new_suite
 
     -- Run the suite definition function
     fn()
 
-    -- Add the suite to our test list
-    table.insert(_default_context.tests, _default_context.current_describe)
+    -- Add the suite to our flat test list for backward compatibility
+    table.insert(_default_context.tests, new_suite)
     _default_context.current_describe = old_describe
 
-    return _default_context.current_describe
+    return new_suite
 end
 
 -- Add a before all hook
@@ -579,6 +595,14 @@ function test.expect(actual)
                     info.source, info.line, format_value(key), message), 2)
             end
             return true
+        end,
+        to_be_greater_than = function(expected, message)
+            if not (actual > expected) then
+                local info = get_debug_info()
+                error(string.format("%s:%d: Expected %s to be greater than %s: %s",
+                    info.source, info.line, format_value(actual), format_value(expected), message), 2)
+            end
+            return true
         end
     }
 end
@@ -630,10 +654,23 @@ local function format_error_message(err)
     return error_message
 end
 
--- Run a single test
+-- Get all parent suites in order from root to the target suite
+local function get_suite_ancestry(suite)
+    local ancestry = {}
+    local current = suite
+
+    while current do
+        table.insert(ancestry, 1, current) -- Insert at beginning to get root->child order
+        current = current.parent
+    end
+
+    return ancestry
+end
+
+-- Run a single test with proper parent inheritance
 local function run_test(suite, test_case)
     local result = {
-        suite = suite.name,
+        suite = suite.full_path or suite.name, -- Use full path for nested suites
         name = test_case.name,
         status = "pending"
     }
@@ -648,7 +685,7 @@ local function run_test(suite, test_case)
 
         -- Send skip notification according to spec
         _default_context.send_message(test.event.CASE_SKIP, {
-            suite = suite.name,
+            suite = result.suite,
             test = test_case.name,
             timestamp = timestamp
         })
@@ -666,24 +703,32 @@ local function run_test(suite, test_case)
 
     -- Send test case start event according to protocol
     _default_context.send_message(test.event.CASE_START, {
-        suite = suite.name,
+        suite = result.suite,
         test = test_case.name,
         timestamp = start_timestamp
     })
 
-    if suite.before_each then
-        suite.before_each()
+    -- Execute before_each hooks from ancestors to current suite
+    local ancestry = get_suite_ancestry(suite)
+    for _, ancestor in ipairs(ancestry) do
+        if ancestor.before_each then
+            ancestor.before_each()
+        end
     end
 
     -- we are using cpcall since it allows coroutine yields inside it
     local success, err = cpcall(test_case.fn)
 
-    if suite.after_each then
-        suite.after_each()
-    else
-        -- If no after_each was defined, still restore all mocks
-        test.restore_all_mocks()
+    -- Execute after_each hooks from current suite to ancestors (reverse order)
+    for i = #ancestry, 1, -1 do
+        local ancestor = ancestry[i]
+        if ancestor.after_each then
+            ancestor.after_each()
+        end
     end
+
+    -- Ensure mocks are restored
+    test.restore_all_mocks()
 
     -- Calculate duration using time module with millisecond precision
     local end_time = time.now()
@@ -700,7 +745,7 @@ local function run_test(suite, test_case)
 
         -- Send pass event according to protocol
         _default_context.send_message(test.event.CASE_PASS, {
-            suite = suite.name,
+            suite = result.suite,
             test = test_case.name,
             duration = duration,
             timestamp = completion_timestamp
@@ -715,7 +760,7 @@ local function run_test(suite, test_case)
 
         -- Send fail event according to protocol
         _default_context.send_message(test.event.CASE_FAIL, {
-            suite = suite.name,
+            suite = result.suite,
             test = test_case.name,
             duration = duration,
             error = error_text,
@@ -725,6 +770,71 @@ local function run_test(suite, test_case)
 
     _default_context.current_test = nil
     return result
+end
+
+-- Run all tests in a suite and its child suites
+local function run_suite_with_children(suite)
+    local results = {}
+
+    -- Get all ancestors to run their before_all hooks in order
+    local ancestry = get_suite_ancestry(suite)
+
+    -- Execute before_all hooks from ancestors to the current suite
+    for _, ancestor in ipairs(ancestry) do
+        if ancestor.before_all then
+            ancestor.before_all()
+        end
+    end
+
+    -- Run the tests in this suite
+    for _, test_case in ipairs(suite.tests) do
+        local result = run_test(suite, test_case)
+        table.insert(results, result)
+        table.insert(_default_context.results.tests, result)
+    end
+
+    -- Run tests in child suites if we're running the parent suite directly
+    -- (When the parent is processed, its children will be visited as well)
+    if not suite.parent then
+        for _, child in ipairs(suite.children) do
+            local child_results = run_suite_with_children(child)
+            for _, result in ipairs(child_results) do
+                table.insert(results, result)
+            end
+        end
+    end
+
+    -- Execute after_all hooks from current suite to ancestors (reverse order)
+    for i = #ancestry, 1, -1 do
+        local ancestor = ancestry[i]
+        if ancestor.after_all then
+            ancestor.after_all()
+        end
+    end
+
+    -- Make sure all mocks are restored after the suite
+    test.restore_all_mocks()
+
+    return results
+end
+
+-- Collect all test cases from a suite and its children
+local function collect_all_tests_from_suite(suite, collection)
+    collection = collection or {}
+
+    for _, test_case in ipairs(suite.tests) do
+        table.insert(collection, {
+            suite = suite.full_path or suite.name,
+            name = test_case.name,
+            skipped = test_case.skipped
+        })
+    end
+
+    for _, child_suite in ipairs(suite.children) do
+        collect_all_tests_from_suite(child_suite, collection)
+    end
+
+    return collection
 end
 
 -- Run all tests
@@ -745,17 +855,21 @@ function test.run()
         suites = {}
     }
 
-    for _, suite in ipairs(_default_context.tests) do
+    -- Collect all test cases from all suites, using hierarchy
+    local all_test_cases = {}
+    for _, top_suite in ipairs(_default_context.suites_hierarchy) do
         local suite_info = {
-            name = suite.name,
+            name = top_suite.name,
             tests = {}
         }
 
-        for _, test_case in ipairs(suite.tests) do
+        -- Collect tests from this suite and all its children
+        local suite_tests = collect_all_tests_from_suite(top_suite)
+        for _, test_info in ipairs(suite_tests) do
             _default_context.results.total = _default_context.results.total + 1
             table.insert(suite_info.tests, {
-                name = test_case.name,
-                skipped = test_case.skipped
+                name = test_info.name,
+                skipped = test_info.skipped
             })
         end
 
@@ -765,26 +879,9 @@ function test.run()
     -- Report the test plan according to protocol
     _default_context.send_message(test.event.PLAN, test_plan)
 
-    -- Now run the tests
-    for _, suite in ipairs(_default_context.tests) do
-        -- Execute before_all hook
-        if suite.before_all then
-            suite.before_all()
-        end
-
-        -- Run each test in the suite
-        for _, test_case in ipairs(suite.tests) do
-            local result = run_test(suite, test_case)
-            table.insert(_default_context.results.tests, result)
-        end
-
-        -- Execute after_all hook
-        if suite.after_all then
-            suite.after_all()
-        end
-
-        -- Make sure all mocks are restored after the suite
-        test.restore_all_mocks()
+    -- Run tests in hierarchy, starting with top-level suites
+    for _, suite in ipairs(_default_context.suites_hierarchy) do
+        run_suite_with_children(suite)
     end
 
     -- Calculate total duration using time module with millisecond precision
@@ -818,7 +915,7 @@ local function cleanup_test_resources()
     test.restore_all_mocks()
 
     -- Clear any potential circular references
-    for _, suite in ipairs(_default_context.tests) do
+    local function clear_suite_references(suite)
         if suite.tests then
             for i, test_case in ipairs(suite.tests) do
                 -- Clear function references
@@ -831,6 +928,20 @@ local function cleanup_test_resources()
         suite.after_all = nil
         suite.before_each = nil
         suite.after_each = nil
+
+        -- Break circular references
+        -- Don't clear parent references - needed for cleanup
+        suite.children = {}
+
+        -- Process child suites recursively
+        for _, child in ipairs(suite.children or {}) do
+            clear_suite_references(child)
+        end
+    end
+
+    -- Clear hierarchy and references
+    for _, suite in ipairs(_default_context.suites_hierarchy) do
+        clear_suite_references(suite)
     end
 
     -- Clear test results to avoid memory leaks
@@ -845,6 +956,7 @@ local function cleanup_test_resources()
 
     -- Clear test list
     _default_context.tests = {}
+    _default_context.suites_hierarchy = {}
     _default_context.current_describe = nil
     _default_context.current_test = nil
 
@@ -866,6 +978,7 @@ function test.run_cases(define_cases_fn)
 
         -- Reset state for a fresh test run
         _default_context.tests = {}
+        _default_context.suites_hierarchy = {}
 
         -- Keep any existing options.ref_id
         if options and options.ref_id then

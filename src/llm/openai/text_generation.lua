@@ -181,12 +181,16 @@ local function handler(args)
         -- Extract tokens from stream_result if available
         local tokens = nil
         if stream_result and stream_result.usage then
-            tokens = output.usage(
-                stream_result.usage.prompt_tokens,
-                stream_result.usage.completion_tokens,
-                (stream_result.usage.completion_tokens_details and
-                    stream_result.usage.completion_tokens_details.reasoning_tokens) or 0
-            )
+            local extracted_usage = openai.extract_usage(stream_result)
+            if extracted_usage then
+                tokens = output.usage(
+                    extracted_usage.prompt_tokens,
+                    extracted_usage.completion_tokens,
+                    extracted_usage.thinking_tokens,
+                    extracted_usage.cache_write_tokens,
+                    extracted_usage.cache_read_tokens
+                )
+            end
         end
 
         -- Return the final content and metadata for the caller
@@ -233,12 +237,16 @@ local function handler(args)
         -- Extract token usage information
         local tokens = nil
         if response.usage then
-            tokens = output.usage(
-                response.usage.prompt_tokens,
-                response.usage.completion_tokens,
-                (response.usage.completion_tokens_details and
-                    response.usage.completion_tokens_details.reasoning_tokens) or 0
-            )
+            local extracted_usage = openai.extract_usage(response)
+            if extracted_usage then
+                tokens = output.usage(
+                    extracted_usage.prompt_tokens,
+                    extracted_usage.completion_tokens,
+                    extracted_usage.thinking_tokens,
+                    extracted_usage.cache_write_tokens,
+                    extracted_usage.cache_read_tokens
+                )
+            end
         end
 
         -- Use the finish reason map from the client

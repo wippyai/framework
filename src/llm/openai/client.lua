@@ -509,6 +509,24 @@ function openai.extract_usage(openai_response)
         usage.thinking_tokens = openai_response.usage.completion_tokens_details.reasoning_tokens
     end
 
+    -- Extract cache read tokens from prompt_tokens_details.cached_tokens
+    if openai_response.usage.prompt_tokens_details and
+        openai_response.usage.prompt_tokens_details.cached_tokens then
+        usage.cache_read_tokens = openai_response.usage.prompt_tokens_details.cached_tokens
+    else
+        usage.cache_read_tokens = 0
+    end
+
+    -- Calculate cache write tokens
+    -- Cache write tokens would be prompt tokens that weren't served from cache
+    if usage.cache_read_tokens > 0 then
+        usage.cache_write_tokens = math.max(0, usage.prompt_tokens - usage.cache_read_tokens)
+    else
+        -- If no cache read tokens, all prompt tokens are potentially cache write tokens
+        -- But OpenAI doesn't explicitly provide this, so we set to 0 for accuracy
+        usage.cache_write_tokens = 0
+    end
+
     return usage
 end
 

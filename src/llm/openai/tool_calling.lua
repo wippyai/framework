@@ -95,7 +95,7 @@ local function handler(args)
 
     -- If tool IDs are provided, resolve them
     if args.tool_ids and #args.tool_ids > 0 then
-        local tool_schemas, errors = tools.get_tool_schemas(args.tool_ids)
+        local tool_schemas, errors = tools.get_tool_schemas_ordered(args.tool_ids)
         if errors and next(errors) then
             local err_msg = "Failed to resolve tool schemas: "
             for id, err in pairs(errors) do
@@ -107,8 +107,8 @@ local function handler(args)
             }
         end
 
-        -- Convert tool schemas to OpenAI format
-        for id, tool in pairs(tool_schemas) do
+        -- Convert tool schemas to OpenAI format (order preserved from args.tool_ids)
+        for _, tool in ipairs(tool_schemas) do
             local tool_entry = {
                 type = "function"
             }
@@ -121,13 +121,22 @@ local function handler(args)
             table.insert(request_tools, tool_entry)
 
             -- Remember the mapping from tool name to ID for later
-            tool_name_to_id_map[tool.name] = id
+            tool_name_to_id_map[tool.name] = tool.registry_id or tool.id
         end
     end
 
-    -- If tool schemas are provided directly, use them
+    -- If tool schemas are provided directly, use them (sorted by ID for deterministic order)
     if args.tool_schemas and next(args.tool_schemas) then
+        -- Sort tool IDs for deterministic ordering
+        local tool_ids_sorted = {}
         for id, tool in pairs(args.tool_schemas) do
+            table.insert(tool_ids_sorted, id)
+        end
+        table.sort(tool_ids_sorted)
+
+        -- Process tools in sorted order
+        for _, id in ipairs(tool_ids_sorted) do
+            local tool = args.tool_schemas[id]
             local tool_entry = {
                 type = "function"
             }
@@ -140,7 +149,7 @@ local function handler(args)
             table.insert(request_tools, tool_entry)
 
             -- Remember the mapping from tool name to ID
-            tool_name_to_id_map[tool.name] = id
+            tool_name_to_id_map[tool.name] = tool.registry_id or id
         end
     end
 
@@ -319,12 +328,16 @@ local function handler(args)
         -- Extract tokens from stream_result if available
         local tokens = nil
         if stream_result and stream_result.usage then
-            tokens = output.usage(
-                stream_result.usage.prompt_tokens,
-                stream_result.usage.completion_tokens,
-                (stream_result.usage.completion_tokens_details and
-                    stream_result.usage.completion_tokens_details.reasoning_tokens) or 0
-            )
+            local extracted_usage = openai_client.extract_usage(stream_result)
+            if extracted_usage then
+                tokens = output.usage(
+                    extracted_usage.prompt_tokens,
+                    extracted_usage.completion_tokens,
+                    extracted_usage.thinking_tokens,
+                    extracted_usage.cache_write_tokens,
+                    extracted_usage.cache_read_tokens
+                )
+            end
         end
 
         -- Return the final content and metadata for the caller
@@ -393,12 +406,16 @@ local function handler(args)
     -- Extract token usage information
     local tokens = nil
     if response.usage then
-        tokens = output.usage(
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            (response.usage.completion_tokens_details and
-                response.usage.completion_tokens_details.reasoning_tokens) or 0
-        )
+        local extracted_usage = openai_client.extract_usage(response)
+        if extracted_usage then
+            tokens = output.usage(
+                extracted_usage.prompt_tokens,
+                extracted_usage.completion_tokens,
+                extracted_usage.thinking_tokens,
+                extracted_usage.cache_write_tokens,
+                extracted_usage.cache_read_tokens
+            )
+        end
     end
 
     -- Check if the response contains tool calls

@@ -29,6 +29,40 @@ local function define_tests()
                     prompt = "When tackling complex problems, use <thinking> tags to show your reasoning process."
                 }
             },
+            ["wippy.agents:search_trait"] = {
+                id = "wippy.agents:search_trait",
+                kind = "registry.entry",
+                meta = {
+                    type = "agent.trait",
+                    name = "Search Capability",
+                    comment = "Trait that adds search capabilities to agents."
+                },
+                data = {
+                    prompt = "You can search for information on the web using the search_web tool.",
+                    tools = {
+                        "wippy.tools:search_web",
+                        "wippy.tools:browse_url"
+                    }
+                }
+            },
+            ["wippy.agents:multi_tool_trait"] = {
+                id = "wippy.agents:multi_tool_trait",
+                kind = "registry.entry",
+                meta = {
+                    type = "agent.trait",
+                    name = "Multi-Tool Trait",
+                    comment = "Trait that adds multiple tools to an agent."
+                },
+                data = {
+                    prompt = "You have access to several tools including calculator, weather, and code analysis.",
+                    tools = {
+                        "wippy.tools:calculator",
+                        "wippy.tools:weather",
+                        "wippy.tools:code_analysis",
+                        "wippy.tools:*" -- Wildcard tool entry
+                    }
+                }
+            },
             ["wippy.agents:non_trait_entry"] = {
                 id = "wippy.agents:non_trait_entry",
                 kind = "registry.entry",
@@ -99,6 +133,8 @@ local function define_tests()
             expect(trait.name).to_equal("Conversational")
             expect(trait.description).to_equal("Trait that makes agents conversational and friendly.")
             expect(trait.prompt).to_contain("You are a friendly, conversational assistant")
+            expect(trait.tools).not_to_be_nil()
+            expect(#trait.tools).to_equal(0) -- Empty tools array for traits without tools
         end)
 
         it("should handle trait not found by ID", function()
@@ -138,24 +174,41 @@ local function define_tests()
             local all_traits = traits.get_all()
 
             -- Only entries with type "agent.trait" should be returned
-            expect(#all_traits).to_equal(2)
+            expect(#all_traits).to_equal(4) -- Now includes search_trait and multi_tool_trait
 
             -- Verify traits are present in the results
             local found_conversational = false
             local found_thinking = false
+            local found_search = false
+            local found_multi_tool = false
 
             for _, trait in ipairs(all_traits) do
                 if trait.id == "wippy.agents:conversational" then
                     found_conversational = true
                     expect(trait.name).to_equal("Conversational")
+                    expect(#trait.tools).to_equal(0) -- No tools in conversational trait
                 elseif trait.id == "wippy.agents:thinking_tag_user" then
                     found_thinking = true
                     expect(trait.name).to_equal("Thinking Tag (User)")
+                    expect(#trait.tools).to_equal(0) -- No tools in thinking trait
+                elseif trait.id == "wippy.agents:search_trait" then
+                    found_search = true
+                    expect(trait.name).to_equal("Search Capability")
+                    expect(#trait.tools).to_equal(2) -- Should have 2 tools
+                    expect(trait.tools[1]).to_equal("wippy.tools:search_web")
+                    expect(trait.tools[2]).to_equal("wippy.tools:browse_url")
+                elseif trait.id == "wippy.agents:multi_tool_trait" then
+                    found_multi_tool = true
+                    expect(trait.name).to_equal("Multi-Tool Trait")
+                    expect(#trait.tools).to_equal(4) -- Should have 4 tools
+                    expect(trait.tools[4]).to_equal("wippy.tools:*") -- Wildcard tool
                 end
             end
 
             expect(found_conversational).to_be_true()
             expect(found_thinking).to_be_true()
+            expect(found_search).to_be_true()
+            expect(found_multi_tool).to_be_true()
         end)
 
         it("should handle empty result when getting all traits", function()
@@ -182,6 +235,30 @@ local function define_tests()
 
             expect(trait).to_be_nil()
             expect(err).to_equal("Trait name is required")
+        end)
+
+        it("should get trait with tools by ID", function()
+            local trait, err = traits.get_by_id("wippy.agents:search_trait")
+
+            expect(err).to_be_nil()
+            expect(trait).not_to_be_nil()
+            expect(trait.id).to_equal("wippy.agents:search_trait")
+            expect(trait.tools).not_to_be_nil()
+            expect(#trait.tools).to_equal(2)
+            expect(trait.tools[1]).to_equal("wippy.tools:search_web")
+            expect(trait.tools[2]).to_equal("wippy.tools:browse_url")
+        end)
+
+        it("should get trait with wildcard tools by name", function()
+            local trait, err = traits.get_by_name("Multi-Tool Trait")
+
+            expect(err).to_be_nil()
+            expect(trait).not_to_be_nil()
+            expect(trait.id).to_equal("wippy.agents:multi_tool_trait")
+            expect(trait.tools).not_to_be_nil()
+            expect(#trait.tools).to_equal(4)
+            expect(trait.tools[1]).to_equal("wippy.tools:calculator")
+            expect(trait.tools[4]).to_equal("wippy.tools:*") -- Wildcard tool entry
         end)
     end)
 end

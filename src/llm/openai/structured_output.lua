@@ -230,12 +230,16 @@ function structured_output.handler(args)
     -- Extract token usage information
     local tokens = nil
     if response.usage then
-        tokens = output.usage(
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            (response.usage.completion_tokens_details and
-                response.usage.completion_tokens_details.reasoning_tokens) or 0
-        )
+        local extracted_usage = openai_client.extract_usage(response)
+        if extracted_usage then
+            tokens = output.usage(
+                extracted_usage.prompt_tokens,
+                extracted_usage.completion_tokens,
+                extracted_usage.thinking_tokens,
+                extracted_usage.cache_write_tokens,
+                extracted_usage.cache_read_tokens
+            )
+        end
     end
 
     -- Handle response

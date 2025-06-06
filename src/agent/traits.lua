@@ -41,12 +41,13 @@ function traits.get_by_id(trait_id)
         return nil, "Entry is not a trait: " .. tostring(trait_id)
     end
 
-    -- Return trait spec
+    -- Return trait spec with tools support
     return {
         id = entry.id,
         name = (entry.meta and entry.meta.name) or "",
         description = (entry.meta and entry.meta.comment) or "",
-        prompt = (entry.data and entry.data.prompt) or ""
+        prompt = (entry.data and entry.data.prompt) or "",
+        tools = (entry.data and entry.data.tools) or {} -- Include tools from trait data
     }
 end
 
@@ -68,13 +69,14 @@ function traits.get_by_name(name)
         return nil, "No trait found with name: " .. name
     end
 
-    -- Return the first match
+    -- Return the first match with tools support
     local entry = entries[1]
     return {
         id = entry.id,
         name = (entry.meta and entry.meta.name) or "",
         description = (entry.meta and entry.meta.comment) or "",
-        prompt = (entry.data and entry.data.prompt) or ""
+        prompt = (entry.data and entry.data.prompt) or "",
+        tools = (entry.data and entry.data.tools) or {} -- Include tools from trait data
     }
 end
 
@@ -91,14 +93,15 @@ function traits.get_all()
         return {}
     end
 
-    -- Build trait specs
+    -- Build trait specs with tools support
     local trait_specs = {}
     for _, entry in ipairs(entries) do
         table.insert(trait_specs, {
             id = entry.id,
             name = (entry.meta and entry.meta.name) or "",
             description = (entry.meta and entry.meta.comment) or "",
-            prompt = (entry.data and entry.data.prompt) or ""
+            prompt = (entry.data and entry.data.prompt) or "",
+            tools = (entry.data and entry.data.tools) or {} -- Include tools from trait data
         })
     end
 

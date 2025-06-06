@@ -51,6 +51,31 @@ entries:
       output: 15
     provider_model: claude-3-7-sonnet-20250219
     
+  # wippy.llm.models:claude-4-sonnet
+  - name: claude-4-sonnet
+    kind: registry.entry
+    meta:
+      name: claude-4-sonnet
+      type: llm.model
+      title: Claude 4 Sonnet
+      comment: High-performance model with exceptional reasoning capabilities and extended thinking
+      capabilities:
+        - tool_use
+        - vision
+        - thinking
+        - caching
+        - generate
+    max_tokens: 200000
+    handlers:
+      call_tools: wippy.llm.claude:tool_calling
+      generate: wippy.llm.claude:text_generation
+      structured_output: wippy.llm.claude:structured_output
+    output_tokens: 8192
+    pricing:
+      input: 3
+      output: 15
+    provider_model: claude-sonnet-4-20250514
+    
   # wippy.llm.models:claude3-haiku
   - name: claude3-haiku
     kind: registry.entry
@@ -344,6 +369,32 @@ entries:
       input: 0.15
       output: 0.6
     provider_model: gpt-4o-mini-2024-07-18
+    
+  # wippy.llm.models:o3
+  - name: o3
+    kind: registry.entry
+    meta:
+      name: o3
+      type: llm.model
+      title: O3
+      comment: Most powerful reasoning model with exceptional performance across math, science, coding, and visual reasoning tasks
+      capabilities:
+        - tool_use
+        - vision
+        - thinking
+        - generate
+        - structured_output
+    max_tokens: 200000
+    handlers:
+      call_tools: wippy.llm.openai:tool_calling
+      generate: wippy.llm.openai:text_generation
+      structured_output: wippy.llm.openai:structured_output
+    output_tokens: 100000
+    pricing:
+      cached_input: 2.5
+      input: 10
+      output: 40
+    provider_model: o3
     
   # wippy.llm.models:o3-mini
   - name: o3-mini

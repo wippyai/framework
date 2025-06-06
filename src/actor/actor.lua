@@ -21,7 +21,7 @@ end
 function actor.next(topic, payload)
     return {
         _actor_next = true,
-        next_topic = topic,
+        topic = topic,
         payload = payload
     }
 end
@@ -127,7 +127,7 @@ function actor.new(initial_state, handlers)
                 if is_next(result) then
                     internal_channel:send({
                         type = "__next",
-                        topic = result.next_topic,
+                        topic = result.topic,
                         payload = result.payload,
                         from = "async"
                     })
@@ -154,7 +154,7 @@ function actor.new(initial_state, handlers)
                 local reply = handler(state, current_payload, current_topic, from)
 
                 if is_next(reply) then
-                    local next_topic = reply.next_topic
+                    local next_topic = reply.topic
 
                     if reply.payload ~= nil then
                         current_payload = reply.payload
@@ -189,10 +189,10 @@ function actor.new(initial_state, handlers)
                 return init_result.result
             end
 
-            if is_next(init_result) then 
+            if is_next(init_result) then
                 internal_channel:send({
                     type = "__next",
-                    topic = init_result.next_topic,
+                    topic = init_result.topic,
                     payload = init_result.payload,
                     from = "init"
                 })
@@ -214,6 +214,15 @@ function actor.new(initial_state, handlers)
                     local exit_result = handlers.__on_event(state, event, event_kind, from)
                     if is_exit(exit_result) then
                         return exit_result.result
+                    end
+
+                    if is_next(exit_result) then
+                        internal_channel:send({
+                            type = "__next",
+                            topic = exit_result.topic,
+                            payload = exit_result.payload,
+                            from = "event_handler"
+                        })
                     end
                 end
 

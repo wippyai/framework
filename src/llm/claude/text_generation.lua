@@ -167,7 +167,7 @@ local function handler(args)
             {
                 api_key = args.api_key,
                 api_version = args.api_version,
-                timeout = args.timeout or 120,
+                timeout = args.timeout or 300,
                 beta_features = options.beta_features
             }
         )

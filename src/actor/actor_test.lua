@@ -58,7 +58,7 @@ local function define_tests()
 
                 expect(next_obj).not_to_be_nil("Next object should be created")
                 expect(next_obj._actor_next).to_be_true("Next object should have _actor_next flag")
-                expect(next_obj.next_topic).to_equal(next_topic, "Next object should contain the topic")
+                expect(next_obj.topic).to_equal(next_topic, "Next object should contain the topic")
                 expect(next_obj.payload).to_be_nil("Payload should be nil for using original payload")
             end)
 
@@ -69,7 +69,7 @@ local function define_tests()
 
                 expect(next_obj).not_to_be_nil("Next object should be created")
                 expect(next_obj._actor_next).to_be_true("Next object should have _actor_next flag")
-                expect(next_obj.next_topic).to_equal(next_topic, "Next object should contain the topic")
+                expect(next_obj.topic).to_equal(next_topic, "Next object should contain the topic")
                 expect(next_obj.payload).to_equal(next_payload, "Next object should contain the payload")
             end)
         end)

@@ -57,7 +57,7 @@ local function handler()
                     secure = entry.meta.secure or false,
                     announced = entry.meta.announced or false,
                     internal = entry.meta.internal or "",
-                    hidden = entry.meta.inline and 1 or 0
+                    hidden = entry.meta.inline and 1 or 0,
                 }
                 table.insert(internal_pages, page)
             end
@@ -83,8 +83,7 @@ local function handler()
         -- 1. User has access to (not secure OR user has permission)
         -- 2. Are announced (unless include_all is specified)
         if (not page.secure or page_registry.can_access(page)) and
-           (not announced_only or page.announced) then
-
+            (not announced_only or page.announced) then
             local hidden = 0
             if page.inline then
                 hidden = 1

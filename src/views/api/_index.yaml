@@ -68,3 +68,17 @@ entries:
     func: render
     path: /pages/content/{id}
     
+  # wippy.views.api:render.endpoint4
+  - name: render.endpoint4
+    kind: http.endpoint
+    meta:
+      comment: Endpoint that renders a virtual page by ID
+      description: CMS page renderer endpoint
+      depends_on:
+        - ns:wippy.views
+        - app:api.public
+      router: app:api.public
+    method: GET
+    func: render
+    path: /pages/content4/{id}
+    

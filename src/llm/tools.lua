@@ -5,10 +5,17 @@ local store = require("store")
 -- Tool Resolver Library - For discovering tools and their schemas
 local tool_resolver = {}
 
+-- Store IDs and Cache Keys Constants
+local cache_store_id = "app:cache"
+local input_schema_cache_key_prefix = "input_schema:"
+
+-- Cache TTL Constants
+local input_schema_ttl = 14400
+
 -- Allow for registry injection for testing
 tool_resolver._registry = nil
 
-tool_resolver.INPUT_SCHEMA_TTL = 14400
+tool_resolver.INPUT_SCHEMA_TTL = input_schema_ttl
 
 -- Get registry - use injected registry or require it
 local function get_registry()
@@ -57,17 +64,22 @@ local function run_input_schema_processors(input_schema, tool_id)
         return input_schema
     end
 
-    local storeObj, err = store.get("app:cache")
-    local processed_schema_cache, err = storeObj:get("input_schema")
-    if not processed_schema_cache then
-        processed_schema_cache = {}
+    -- Use specific cache key for this tool
+    local cache_key = input_schema_cache_key_prefix .. tool_id
+    local storeObj = nil
+
+    -- Try to get from cache
+    local cache_store, err = store.get(cache_store_id)
+    if not err then
+        storeObj = cache_store
+        local cached_schema, err = storeObj:get(cache_key)
+        if cached_schema and type(cached_schema) == "table" then
+            storeObj:release()
+            return cached_schema
+        end
     end
 
-    if processed_schema_cache[tool_id] and type(processed_schema_cache[tool_id]) == "table" then
-        storeObj:release()
-        return processed_schema_cache[tool_id]
-    end
-
+    -- Process schema with processors
     local original_schema = input_schema
     local executor = funcs.new()
     local processing_success = true
@@ -85,8 +97,7 @@ local function run_input_schema_processors(input_schema, tool_id)
         end
     end
 
-    local schema_changed = false
-
+    -- Check if schema changed and cache if needed
     local function is_schema_changed(t1, t2)
         if type(t1) ~= "table" or type(t2) ~= "table" then
             return t1 ~= t2
@@ -106,14 +117,16 @@ local function run_input_schema_processors(input_schema, tool_id)
         return false
     end
 
-    schema_changed = is_schema_changed(input_schema, original_schema)
+    local schema_changed = is_schema_changed(input_schema, original_schema)
 
-    if processing_success and schema_changed then
-        processed_schema_cache[tool_id] = input_schema
-        storeObj:set("input_schema", processed_schema_cache, tool_resolver.INPUT_SCHEMA_TTL)
+    -- Cache the processed schema if processing succeeded and schema changed
+    if processing_success and schema_changed and storeObj then
+        storeObj:set(cache_key, input_schema, input_schema_ttl)
     end
 
-    storeObj:release()
+    if storeObj then
+        storeObj:release()
+    end
 
     return input_schema
 end
@@ -130,15 +143,15 @@ function tool_resolver.get_tool_name(entry)
     return sanitize_name(name)
 end
 
--- Fetch a tool's schema from the registry
+-- Fetch a tool's schema from the registry (no tool caching due to self-modification)
 function tool_resolver.get_tool_schema(tool_id)
     local registry = get_registry()
 
     if not tool_id or tool_id == "" then
-        return nil, "Tool ID is required"
+        return nil, "Tool ID is required or tool is not allowed"
     end
 
-    -- Get tool from registry
+    -- Get tool from registry (always fresh due to self-modification capabilities)
     local entry, err = registry.get(tool_id)
     if err or not entry then
         return nil, "Tool not found: " .. (err or "unknown error")
@@ -204,10 +217,11 @@ function tool_resolver.get_tool_schema(tool_id)
 
     local tool = {
         id = tool_id,
+        registry_id = tool_id,
         name = display_name,
         title = entry.meta.title or display_name,
         description = description,
-        schema = run_input_schema_processors(schema, tool_id),
+        schema = run_input_schema_processors(schema, tool_id), -- Process input schema (cached separately)
         meta = entry.meta
     }
 
@@ -228,6 +242,28 @@ function tool_resolver.get_tool_schemas(tool_ids)
         local tool, err = tool_resolver.get_tool_schema(id)
         if tool then
             results[id] = tool
+        else
+            errors[id] = err
+        end
+    end
+
+    return results, errors
+end
+
+-- Get schemas for multiple tools by ID, preserving order
+function tool_resolver.get_tool_schemas_ordered(tool_ids)
+    if not tool_ids or #tool_ids == 0 then
+        return {}, {}
+    end
+
+    local results = {}
+    local errors = {}
+
+    -- Process tools in the exact order provided
+    for _, id in ipairs(tool_ids) do
+        local tool, err = tool_resolver.get_tool_schema(id)
+        if tool then
+            table.insert(results, tool)  -- Insert into array, preserving order
         else
             errors[id] = err
         end

@@ -3,16 +3,6 @@ local output = require("output")
 local tools = require("tools")
 local json = require("json")
 
--- Helper function to check if a model supports thinking
-local function model_supports_thinking(model)
-    -- Currently, only Claude 3.7 models support extended thinking
-    if not model then
-        return false
-    end
-
-    return model:match("claude%-3%-7") or model:match("claude%-3%.7")
-end
-
 -- Simplified function to extract only valid thinking blocks
 local function extract_thinking_blocks(msg)
     local blocks = {}
@@ -24,6 +14,7 @@ local function extract_thinking_blocks(msg)
             return { msg.meta.thinking }
         end
     end
+
 
     return {}
 end
@@ -535,7 +526,7 @@ local function handler(args)
 
     -- If tool IDs are provided, resolve them
     if args.tool_ids and #args.tool_ids > 0 then
-        local tool_schemas, errors = tools.get_tool_schemas(args.tool_ids)
+        local tool_schemas, errors = tools.get_tool_schemas_ordered(args.tool_ids)
 
         if errors and next(errors) then
             local err_msg = "Failed to resolve tool schemas: "
@@ -548,8 +539,8 @@ local function handler(args)
             }
         end
 
-        -- Convert tool schemas to Claude format
-        for id, tool in pairs(tool_schemas) do
+        -- Convert tool schemas to Claude format (order preserved from args.tool_ids)
+        for _, tool in ipairs(tool_schemas) do
             table.insert(claude_tools, {
                 name = tool.name,
                 description = tool.description,
@@ -557,13 +548,22 @@ local function handler(args)
             })
 
             -- Remember the mapping from tool name to ID
-            tool_name_to_id_map[tool.name] = id
+            tool_name_to_id_map[tool.name] = tool.registry_id or tool.id
         end
     end
 
-    -- If tool schemas are provided directly, use them
+    -- If tool schemas are provided directly, use them (sorted by ID for deterministic order)
     if args.tool_schemas and next(args.tool_schemas) then
+        -- Sort tool IDs for deterministic ordering
+        local tool_ids_sorted = {}
         for id, tool in pairs(args.tool_schemas) do
+            table.insert(tool_ids_sorted, id)
+        end
+        table.sort(tool_ids_sorted)
+
+        -- Process tools in sorted order
+        for _, id in ipairs(tool_ids_sorted) do
+            local tool = args.tool_schemas[id]
             table.insert(claude_tools, {
                 name = tool.name,
                 description = tool.description,
@@ -571,13 +571,13 @@ local function handler(args)
             })
 
             -- Remember the mapping from tool name to ID
-            tool_name_to_id_map[tool.name] = id
+            tool_name_to_id_map[tool.name] = tool.registry_id or id
         end
     end
 
     -- Configure tool_choice based on args.tool_call
     local tool_choice = nil
-    if #claude_tools > 0 then
+    if #claude_tools > 0 and not options.thinking_effort then
         if args.tool_call == "none" then
             tool_choice = { type = "none" }
         elseif args.tool_call == "any" then
@@ -631,23 +631,21 @@ local function handler(args)
 
     -- Add thinking if enabled and model supports it
     if options.thinking_effort and options.thinking_effort > 0 then
-        if model_supports_thinking(args.model) then
-            -- Calculate thinking budget based on thinking effort
-            local thinking_budget = claude_client.calculate_thinking_budget(options.thinking_effort)
+        -- Calculate thinking budget based on thinking effort
+        local thinking_budget = claude_client.calculate_thinking_budget(options.thinking_effort)
 
-            if thinking_budget > 0 then
-                -- Ensure max_tokens is greater than thinking budget
-                if not payload.max_tokens or payload.max_tokens <= thinking_budget then
-                    -- Set max_tokens to thinking budget + 1000 tokens as a reasonable buffer
-                    payload.max_tokens = thinking_budget + 1024
-                end
-
-                -- Add thinking configuration
-                payload.thinking = {
-                    type = "enabled",
-                    budget_tokens = thinking_budget
-                }
+        if thinking_budget > 0 then
+            -- Ensure max_tokens is greater than thinking budget
+            if not payload.max_tokens or payload.max_tokens <= thinking_budget then
+                -- Set max_tokens to thinking budget + 1000 tokens as a reasonable buffer
+                payload.max_tokens = thinking_budget + 1024
             end
+
+            -- Add thinking configuration
+            payload.thinking = {
+                type = "enabled",
+                budget_tokens = thinking_budget
+            }
         end
 
         -- Set temperature to 1 when thinking is enabled (REQUIRED by Claude API)
@@ -675,7 +673,7 @@ local function handler(args)
             {
                 api_version = args.api_version,
                 stream = true,
-                timeout = args.timeout or 120,
+                timeout = args.timeout or 500,
                 beta_features = options.beta_features
             }
         )

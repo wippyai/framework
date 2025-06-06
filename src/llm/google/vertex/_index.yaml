@@ -6,7 +6,7 @@ entries:
   - name: client
     kind: library.lua
     meta:
-      comment: Vertex AI API client library with error handling and response formatting
+      comment: Vertex AI API client library with error handling and response formatting. For internal use only, use LLM instead.
       depends_on:
         - ns:wippy.llm
       provider: vertex

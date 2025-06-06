@@ -106,7 +106,7 @@ function tool_handler.handler(args)
                 parameters = filter_schema(tool_schema.schema)
             })
             -- Remember the mapping from tool name to internal ID for response processing
-            tool_name_to_id_map[tool_schema.name] = id
+            tool_name_to_id_map[tool_schema.name] = tool.registry_id or id
         else
             -- Log or handle error for invalid tool schema?
             print("Warning: Invalid or incomplete tool schema provided for ID: " .. tostring(id))

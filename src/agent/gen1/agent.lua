@@ -5,7 +5,7 @@ local llm = require("llm")
 local agent = {}
 
 -- Constants
-agent.DEFAULT_MODEL = "claude-3-7-sonnet"
+agent.DEFAULT_MODEL = ""
 agent.DEFAULT_MAX_TOKENS = 4096
 agent.DEFAULT_TEMPERATURE = 0.7
 agent.DEFAULT_THINKING_EFFORT = 0

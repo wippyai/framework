@@ -160,7 +160,7 @@ entries:
   - name: tools
     kind: library.lua
     meta:
-      type: tool
+      type: library
       comment: Tool resolver library for discovering tools and their schemas
       depends_on:
         - ns:wippy.test

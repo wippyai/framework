@@ -19,6 +19,29 @@ entries:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
     
+  # wippy.agent.gen1:agent_selector
+  - name: agent_selector
+    kind: function.lua
+    meta:
+      name: Agent Selector
+      type: tool
+      title: Agent Selector
+      comment: Selects the most appropriate agent from a given class based on user prompt analysis
+      group: Agent Framework
+      tags:
+        - agents
+        - selection
+        - analysis
+        - ai-powered
+      input_schema: "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"user_prompt\": {\n      \"type\": \"string\",\n      \"description\": \"The user prompt to analyze for agent selection\"\n    },\n    \"class_name\": {\n      \"type\": \"string\", \n      \"description\": \"The agent class to search within\"\n    }\n  },\n  \"required\": [\"user_prompt\", \"class_name\"],\n  \"additionalProperties\": false\n}\n"
+    source: file://agent_selector.lua
+    modules:
+      - json
+    imports:
+      agent_registry: wippy.agent.gen1:registry
+      llm: wippy.llm:llm
+    method: execute
+    
   # wippy.agent.gen1:agent_test
   - name: agent_test
     kind: function.lua

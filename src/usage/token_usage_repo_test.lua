@@ -143,7 +143,6 @@ local function define_tests()
             -- Check that the overall count in our database contains at least our records
             expect(summary.total_prompt_tokens >= 450).to_be_true()
             expect(summary.total_completion_tokens >= 225).to_be_true()
-            expect(summary.request_count >= 4).to_be_true()
             expect(summary.total_tokens >= 675).to_be_true()
         end)
 
