@@ -1,11 +1,8 @@
 name: Split releases
 
 on:
-  push:
-    tags:
-      - 'v*'
-#  release:
-#    types: ['published']
+  release:
+    types: ['published']
 
 concurrency:
   group: split
@@ -36,14 +33,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: |
+          split_sha=`git subtree split --prefix=src/${{ matrix.package.folder }}`
           repo_url="https://${{ secrets.SUBSPLIT_WRITE_ACCESS }}@github.com/wippyai/${{ matrix.package.repo }}.git"
-          git subtree push --prefix src/${{ matrix.package.folder }} "$repo_url" ${{ github.ref_name }}
-#          split_sha=`git subtree split --prefix=src/${{ matrix.package.folder }}`
-#          repo_url="https://${{ secrets.SUBSPLIT_WRITE_ACCESS }}@github.com/wippyai/${{ matrix.package.repo }}.git"
-#          if [ -z $(git ls-remote --tags "$repo_url" | grep "$split_sha") ]; then \
-#            gh release create ${{ github.ref_name }} \
-#              --repo wippyai/${{ matrix.package.repo }} \
-#              --target "$split_sha" \
-#              --generate-notes \
-#              --notes '[Full release information in Typhoon monorepo](https://github.com/wippyai/typhoon/releases/tag/${{ github.ref_name }}).'; \
-#          fi
+          if [ -z $(git ls-remote --tags "$repo_url" | grep "$split_sha") ]; then \
+            gh release create ${{ github.ref_name }} \
+              --repo wippyai/${{ matrix.package.repo }} \
+              --target "$split_sha" \
+              --generate-notes \
+              --notes '[Full release information in Typhoon monorepo](https://github.com/wippyai/typhoon/releases/tag/${{ github.ref_name }}).'; \
+          fi
