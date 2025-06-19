@@ -245,7 +245,9 @@ entries:
       input_long: 2.5
       output: 10
       output_long: 15
-    provider_model: gemini-2.5-pro-exp-03-25
+    provider_model: gemini-2.5-pro-preview-06-05
+    provider_options:
+      location: global
     
   # wippy.llm.models:gpt-4.1
   - name: gpt-4.1
