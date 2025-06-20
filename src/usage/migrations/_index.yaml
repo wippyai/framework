@@ -1,6 +1,13 @@
 version: "1.0"
 namespace: wippy.usage.migrations
 
+requirements:
+  - parameter: app_db
+    description: "Application database ID"
+    targets:
+      - entry: wippy.usage.migrations:01_create_token_usage_table
+        path: meta.target_db
+
 entries:
   # wippy.usage.migrations:01_create_token_usage_table
   - name: 01_create_token_usage_table
@@ -12,10 +19,8 @@ entries:
         - tokens
         - database
       description: Create token_usage table for tracking LLM token consumption
-      target_db: app:db
       timestamp: "2025-04-08T10:00:00Z"
     source: file://01_create_token_usage_table.lua
     imports:
       migration: wippy.migration:migration
     method: migrate
-    
