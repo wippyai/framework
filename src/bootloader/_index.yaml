@@ -1,15 +1,27 @@
 version: "1.0"
 namespace: wippy.bootloader
 
+requirements:
+  - parameter: app_db
+    description: "Application database ID"
+    targets:
+      - entry: bootloader.service
+        path: lifecycle.depends_on[]
+
 entries:
+  # Dependencies
+  - name: __dependency.wippy.migration
+    kind: "dependency.component"
+    meta:
+      description: "Migration component"
+    component: "wippy/migration"
+    version: ">=v0.0.1"
+
   # wippy.bootloader:bootloader
   - name: bootloader
     kind: process.lua
     meta:
       comment: Migration bootloader process
-      depends_on:
-        - app:db
-        - ns:wippy.migration
     source: file://bootloader.lua
     modules:
       - time
@@ -22,19 +34,16 @@ entries:
       migration_registry: wippy.migration:registry
       runner: wippy.migration:runner
     method: run
-    
+
   # wippy.bootloader:bootloader.service
   - name: bootloader.service
     kind: process.service
     meta:
       comment: Migration bootloader service with terminal UI
-      depends_on:
-        - app:db
-        - ns:wippy.migration
     host: app:processes
     lifecycle:
-      depends_on:
-        - app:db
+      # Remove database dependency from lifecycle - will be validated at runtime
+      depends_on: []
       auto_start: true
       restart:
         initial_delay: 1s
@@ -42,4 +51,3 @@ entries:
         groups:
           - wippy.security:process
     process: bootloader
-    

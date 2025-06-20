@@ -13,7 +13,7 @@ entries:
       resources: '*'
       actions: '*'
       effect: allow
-    
+
   # wippy.security:registry.no_write
   - name: registry.no_write
     kind: security.policy
@@ -29,4 +29,3 @@ entries:
           operator: matches
           value: ^registry\.apply.*$
       effect: deny
-    

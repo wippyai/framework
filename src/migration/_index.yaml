@@ -8,15 +8,12 @@ entries:
     meta:
       comment: Core DSL for migration definitions
     source: file://core.lua
-    
+
   # wippy.migration:migration
   - name: migration
     kind: library.lua
     meta:
       comment: Main migration library API
-      depends_on:
-        - wippy.migration:core
-        - wippy.migration:repository
     source: file://migration.lua
     modules:
       - time
@@ -24,7 +21,7 @@ entries:
     imports:
       core: wippy.migration:core
       repository: wippy.migration:repository
-    
+
   # wippy.migration:registry
   - name: registry
     kind: library.lua
@@ -35,7 +32,7 @@ entries:
       - time
     imports:
       base_registry: :registry
-    
+
   # wippy.migration:repository
   - name: repository
     kind: library.lua
@@ -45,15 +42,12 @@ entries:
     modules:
       - sql
       - json
-    
+
   # wippy.migration:runner
   - name: runner
     kind: library.lua
     meta:
       comment: Main migration library API
-      depends_on:
-        - wippy.migration:repository
-        - wippy.migration:registry
     source: file://runner.lua
     modules:
       - time
@@ -61,4 +55,3 @@ entries:
     imports:
       registry: wippy.migration:registry
       repository: wippy.migration:repository
-    

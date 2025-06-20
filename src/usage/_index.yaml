@@ -2,6 +2,14 @@ version: "1.0"
 namespace: wippy.usage
 
 entries:
+  # Dependencies
+  - name: __dependency.wippy.test
+    kind: "dependency.component"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.0.1"
+
   # wippy.usage:token_usage_repo
   - name: token_usage_repo
     kind: library.lua
@@ -17,7 +25,7 @@ entries:
       - json
       - uuid
       - time
-    
+
   # wippy.usage:token_usage_repo_test
   - name: token_usage_repo_test
     kind: function.lua
@@ -42,4 +50,3 @@ entries:
       test: wippy.test:test
       token_usage_repo: wippy.usage:token_usage_repo
     method: run_tests
-    

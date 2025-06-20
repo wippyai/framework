@@ -12,7 +12,7 @@ entries:
     modules:
       - registry
       - security
-    
+
   # wippy.views:renderer
   - name: renderer
     kind: library.lua
@@ -28,7 +28,7 @@ entries:
     imports:
       page_registry: wippy.views:page_registry
       resource_registry: wippy.views:resource_registry
-    
+
   # wippy.views:resource_registry
   - name: resource_registry
     kind: library.lua
@@ -38,4 +38,3 @@ entries:
     source: file://resource_registry.lua
     modules:
       - registry
-    

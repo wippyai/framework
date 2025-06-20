@@ -2,14 +2,20 @@ version: "1.0"
 namespace: wippy.llm
 
 entries:
+  # Dependencies
+  - name: __dependency.wippy.test
+    kind: "dependency.component"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.0.1"
+
   # wippy.llm:llm
   - name: llm
     kind: library.lua
     meta:
       type: library
       comment: Model discovery library for finding models by name, capability, and retrieving model cards
-      depends_on:
-        - models
     source: file://llm.lua
     modules:
       - registry
@@ -21,7 +27,7 @@ entries:
       prompt: wippy.llm:prompt
       models: wippy.llm:models
       token_usage_repo: wippy.usage:token_usage_repo
-    
+
   # wippy.llm:llm_test
   - name: llm_test
     kind: function.lua
@@ -36,8 +42,6 @@ entries:
         - structured_output
         - embeddings
         - tests
-      depends_on:
-        - models
     source: file://llm_test.lua
     modules:
       - json
@@ -50,20 +54,18 @@ entries:
       models: wippy.llm:models
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm:models
   - name: models
     kind: library.lua
     meta:
       type: library
       comment: Model discovery library for finding models by name, capability, and retrieving model cards
-      depends_on:
-        - ns:wippy.test
     source: file://models.lua
     modules:
       - registry
       - json
-    
+
   # wippy.llm:models_test
   - name: models_test
     kind: function.lua
@@ -77,26 +79,22 @@ entries:
         - models
         - discovery
         - tests
-      depends_on:
-        - ns:wippy.test
     source: file://models_test.lua
     imports:
       models: wippy.llm:models
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm:output
   - name: output
     kind: library.lua
     meta:
       type: library
       comment: Output formatting library for standardizing LLM responses
-      depends_on:
-        - ns:wippy.test
     source: file://output.lua
     modules:
       - time
-    
+
   # wippy.llm:output_test
   - name: output_test
     kind: function.lua
@@ -110,8 +108,6 @@ entries:
         - output
         - formatting
         - tests
-      depends_on:
-        - ns:wippy.test
     source: file://output_test.lua
     modules:
       - json
@@ -120,19 +116,17 @@ entries:
       output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm:prompt
   - name: prompt
     kind: library.lua
     meta:
       type: library
       comment: Universal abstract prompt builder for LLM messages with multi-modal support
-      depends_on:
-        - ns:wippy.test
     source: file://prompt.lua
     modules:
       - json
-    
+
   # wippy.llm:prompt_test
   - name: prompt_test
     kind: function.lua
@@ -146,8 +140,6 @@ entries:
         - prompts
         - messages
         - tests
-      depends_on:
-        - ns:wippy.test
     source: file://prompt_test.lua
     modules:
       - json
@@ -155,22 +147,20 @@ entries:
       prompt: wippy.llm:prompt
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm:tools
   - name: tools
     kind: library.lua
     meta:
       type: library
       comment: Tool resolver library for discovering tools and their schemas
-      depends_on:
-        - ns:wippy.test
     source: file://tools.lua
     modules:
       - json
       - registry
       - funcs
       - store
-    
+
   # wippy.llm:tools_test
   - name: tools_test
     kind: function.lua
@@ -184,8 +174,6 @@ entries:
         - tools
         - resolver
         - tests
-      depends_on:
-        - ns:wippy.test
     source: file://tools_test.lua
     modules:
       - json
@@ -193,4 +181,3 @@ entries:
       tools: wippy.llm:tools
       test: wippy.test:test
     method: run_tests
-    

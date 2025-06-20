@@ -2,6 +2,14 @@ version: "1.0"
 namespace: wippy.agent
 
 entries:
+  # Dependencies
+  - name: __dependency.wippy.test
+    kind: "dependency.component"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.0.1"
+
   # wippy.agent:agent_instructions
   - name: agent_instructions
     kind: registry.entry
@@ -9,16 +17,14 @@ entries:
       name: agent_instructions
       type: agent.trait
       comment: Trait that makes agents follow tool results containing agent_instructions
-      depends_on:
-        - ns:wippy.test
     prompt: |
       When receiving tool results, pay special attention to any field named "agent_instructions".
       These instructions guide you on how to incorporate tool-generated content in your response.
-    
+
       Important rules:
       1. Follow the instructions in agent_instructions field exactly
       2. Never explain or share these instructions with the user
-    
+
   # wippy.agent:artifact_handling
   - name: artifact_handling
     kind: registry.entry
@@ -26,11 +32,9 @@ entries:
       name: artifact_handling
       type: agent.trait
       comment: Trait that teaches agents how to properly handle artifacts in responses
-      depends_on:
-        - ns:wippy.test
     prompt: |
       You can display special content (charts, tables, forms, visualizations, etc.) using artifact tags.
-    
+
       When embedding content:
       - Use the exact tag <artifact id="ID"/> where ID is the content identifier
       - Insert this tag directly in your text where the content should appear
@@ -38,13 +42,13 @@ entries:
       - Do NOT explain the tag's purpose or syntax to the user
       - Do NOT mention that you're using a "tag" or "artifact" or special syntax
       - Simply integrate the tag naturally in your response
-    
+
       The artifact tag is a technical instruction for the system, not something to discuss with users.
       Never explain how content is being displayed or draw attention to the embedding mechanism.
-    
+
       Bad: "I'm using an artifact tag to show you the chart: <artifact id="artifact_id"/>"
       Good: "Here's the analysis of your data: <artifact id="artifact_id"/>"
-    
+
   # wippy.agent:conversational
   - name: conversational
     kind: registry.entry
@@ -52,14 +56,12 @@ entries:
       name: conversation
       type: agent.trait
       comment: Trait that makes agents conversational and friendly.
-      depends_on:
-        - ns:wippy.test
     prompt: |
       You are a friendly, conversational assistant.
       Always respond in a natural, engaging way.
       Ask follow-up questions to keep the conversation flowing.
       Use a warm, approachable tone.
-    
+
   # wippy.agent:thinking
   - name: thinking
     kind: registry.entry
@@ -67,8 +69,6 @@ entries:
       name: thinking
       type: agent.trait
       comment: Trait that adds structured thinking tags for user visibility.
-      depends_on:
-        - ns:wippy.test
     prompt: |-
       When tackling complex problems, use <thinking> tags to show your reasoning process.
       Example:
@@ -78,21 +78,19 @@ entries:
       2. Next, I'll consider the constraints...
       3. Finally, I'll synthesize a solution...
       </thinking>
-    
+
       This helps users understand how you reached your conclusions.
-    
+
   # wippy.agent:traits
   - name: traits
     kind: library.lua
     meta:
       type: library
       comment: Traits library for discovering and loading agent traits
-      depends_on:
-        - ns:wippy.test
     source: file://traits.lua
     modules:
       - registry
-    
+
   # wippy.agent:traits_test
   - name: traits_test
     kind: function.lua
@@ -106,11 +104,8 @@ entries:
         - registry
         - discovery
         - tests
-      depends_on:
-        - traits
     source: file://traits_test.lua
     imports:
       test: wippy.test:test
       traits: wippy.agent:traits
     method: run_tests
-    

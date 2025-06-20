@@ -2,6 +2,14 @@ version: "1.0"
 namespace: wippy.actor
 
 entries:
+  # Dependencies
+  - name: __dependency.wippy.test
+    kind: "dependency.component"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.0.1"
+
   # wippy.actor:actor
   - name: actor
     kind: library.lua
@@ -10,7 +18,7 @@ entries:
     source: file://actor.lua
     modules:
       - json
-    
+
   # wippy.actor:actor_test
   - name: actor_test
     kind: function.lua
@@ -25,12 +33,8 @@ entries:
         - message-passing
         - concurrency
         - tests
-      depends_on:
-        - wippy.actor:actor
-        - wippy.test:test
     source: file://actor_test.lua
     imports:
       actor: wippy.actor:actor
       test: wippy.test:test
     method: run_tests
-    
