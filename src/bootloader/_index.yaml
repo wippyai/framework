@@ -7,6 +7,11 @@ requirements:
     targets:
       - entry: bootloader.service
         path: lifecycle.depends_on[]
+  - parameter: application_host
+    description: "Host ID for the application processes"
+    targets:
+      - entry: bootloader.service
+        path: host
 
 entries:
   # Dependencies
@@ -40,7 +45,6 @@ entries:
     kind: process.service
     meta:
       comment: Migration bootloader service with terminal UI
-    host: app:processes
     lifecycle:
       # Remove database dependency from lifecycle - will be validated at runtime
       depends_on: []

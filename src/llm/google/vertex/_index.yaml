@@ -1,14 +1,23 @@
 version: "1.0"
 namespace: wippy.llm.google.vertex
 
+requirements:
+  - parameter: application_host
+    description: "Host ID for the application processes"
+    targets:
+      - entry: wippy.llm.google.vertex:token_refresh
+        path: meta.default_host
+      - entry: wippy.llm.google.vertex:token_refresh.service
+        path: host
+      - entry: wippy.llm.google.vertex:token_refresh.service
+        path: lifecycle.depends_on[]
+
 entries:
   # wippy.llm.google.vertex:client
   - name: client
     kind: library.lua
     meta:
       comment: Vertex AI API client library with error handling and response formatting. For internal use only, use LLM instead.
-      depends_on:
-        - ns:wippy.llm
       provider: vertex
     source: file://client.lua
     modules:
@@ -19,29 +28,25 @@ entries:
       - ctx
     imports:
       output: wippy.llm:output
-    
+
   # wippy.llm.google.vertex:prompt_mapper
   - name: prompt_mapper
     kind: library.lua
     meta:
       comment: Maps internal prompt format to Vertex-compatible message format
-      depends_on:
-        - ns:wippy.llm
       provider: vertex
     source: file://prompt_mapper.lua
     modules:
       - json
     imports:
       prompt: wippy.llm:prompt
-    
+
   # wippy.llm.google.vertex:structured_output
   - name: structured_output
     kind: function.lua
     meta:
       type: llm_function
       comment: Vertex AI structured output implementation with schema enforcement
-      depends_on:
-        - ns:wippy.llm
       priority: 40
       provider: vertex
       supports:
@@ -57,7 +62,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-    
+
   # wippy.llm.google.vertex:structured_output_test
   - name: structured_output_test
     kind: function.lua
@@ -71,8 +76,6 @@ entries:
         - vertex
         - schema
         - structured_output
-      depends_on:
-        - ns:wippy.llm
       provider: vertex
     source: file://structured_output_test.lua
     modules:
@@ -85,7 +88,7 @@ entries:
       test: wippy.test:test
       vertex_client: wippy.llm.google.vertex:client
     method: run_tests
-    
+
   # wippy.llm.google.vertex:text_generation
   - name: text_generation
     kind: function.lua
@@ -110,7 +113,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-    
+
   # wippy.llm.google.vertex:text_generation_test
   - name: text_generation_test
     kind: function.lua
@@ -123,8 +126,6 @@ entries:
         - llm
         - vertex
         - generation
-      depends_on:
-        - ns:wippy.llm
       provider: vertex
     source: file://text_generation_test.lua
     modules:
@@ -137,15 +138,12 @@ entries:
       text_generation: wippy.llm.google.vertex:text_generation
       vertex_client: wippy.llm.google.vertex:client
     method: run_tests
-    
+
   # wippy.llm.google.vertex:token_refresh
   - name: token_refresh
     kind: process.lua
     meta:
       comment: Process that periodically refreshes tokens
-      depends_on:
-        - ns:wippy.llm
-      default_host: app:processes
       provider: vertex
     source: file://token_refresh.lua
     modules:
@@ -157,33 +155,27 @@ entries:
       - env
       - store
     method: run
-    
+
   # wippy.llm.google.vertex:token_refresh.service
   - name: token_refresh.service
     kind: process.service
     meta:
       comment: Token Refresh Service
-      depends_on:
-        - ns:wippy.llm
       provider: vertex
-    host: app:processes
     lifecycle:
-      depends_on:
-        - app:processes
+      depends_on: []
       auto_start: true
       security:
         groups:
           - wippy.security:process
     process: token_refresh
-    
+
   # wippy.llm.google.vertex:tool_calling
   - name: tool_calling
     kind: function.lua
     meta:
       type: llm_function
       comment: Vertex AI function/tool calling implementation
-      depends_on:
-        - ns:wippy.llm
       priority: 50
       provider: vertex
       supports:
@@ -198,7 +190,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-    
+
   # wippy.llm.google.vertex:tool_calling_test
   - name: tool_calling_test
     kind: function.lua
@@ -212,8 +204,6 @@ entries:
         - vertex
         - tools
         - function_calling
-      depends_on:
-        - ns:wippy.llm
       provider: vertex
     source: file://tool_calling_test.lua
     modules:
@@ -227,4 +217,3 @@ entries:
       tool_calling: wippy.llm.google.vertex:tool_calling
       vertex_client: wippy.llm.google.vertex:client
     method: run_tests
-    
