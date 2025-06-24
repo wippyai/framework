@@ -1,0 +1,17 @@
+version: "1.0"
+namespace: wippy.migration.docs
+
+entries:
+  # wippy.migration.docs:migration.spec
+  - name: migration.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Guide for creating and managing database migrations with structured patterns for reliable, reversible schema changes across different database engines
+      tags:
+        - database
+        - migration
+        - schema
+        - versioning
+        - SQL
+    source: file://migration.spec.md

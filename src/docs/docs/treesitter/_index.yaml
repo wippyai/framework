@@ -1,0 +1,96 @@
+version: "1.0"
+namespace: wippy.docs.treesitter
+
+entries:
+  # wippy.docs.treesitter:cursor.spec
+  - name: cursor.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Cursor system for efficiently traversing and navigating syntax trees with stateful position tracking
+      tags:
+        - treesitter
+        - cursor
+        - navigation
+        - traversal
+    source: file://cursor.spec.md
+    
+  # wippy.docs.treesitter:index.spec
+  - name: index.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Core module for Tree-sitter integration, providing language parsing, AST generation, and syntax tree manipulation capabilities
+      tags:
+        - treesitter
+        - parsing
+        - syntax
+        - code-analysis
+    source: file://index.spec.md
+    
+  # wippy.docs.treesitter:language.spec
+  - name: language.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Language definition interface providing node and field information for supported programming languages
+      tags:
+        - treesitter
+        - language
+        - grammar
+        - syntax
+    source: file://language.spec.md
+    
+  # wippy.docs.treesitter:node.spec
+  - name: node.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Node interface for accessing and navigating individual syntax tree elements, their properties, and relationships
+      tags:
+        - treesitter
+        - node
+        - navigation
+        - properties
+    source: file://node.spec.md
+    
+  # wippy.docs.treesitter:parser.spec
+  - name: parser.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Component for parsing source code into syntax trees with support for incremental parsing, language selection, and error handling
+      tags:
+        - treesitter
+        - parser
+        - incremental
+        - language
+    source: file://parser.spec.md
+    
+  # wippy.docs.treesitter:query.spec
+  - name: query.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Query language for pattern matching and extracting information from syntax trees with predicates and capture groups
+      tags:
+        - treesitter
+        - query
+        - pattern-matching
+        - predicates
+        - captures
+    source: file://query.spec.md
+    
+  # wippy.docs.treesitter:tree.spec
+  - name: tree.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Syntax tree representation with methods for traversal, modification, comparison, and incremental updates
+      tags:
+        - treesitter
+        - tree
+        - edit
+        - incremental
+    source: file://tree.spec.md
+    

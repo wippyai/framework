@@ -1,0 +1,17 @@
+version: "1.0"
+namespace: wippy.actor.docs
+
+entries:
+  # wippy.actor.docs:actor.spec
+  - name: actor.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Implementation of the actor model pattern for Wippy Runtime with state management, message handling, and channel operations
+      tags:
+        - actor
+        - concurrency
+        - messaging
+        - channels
+        - process
+    source: file://actor.spec.md

@@ -1,0 +1,17 @@
+version: "1.0"
+namespace: wippy.test.docs
+
+entries:
+  # wippy.test.docs:test.spec
+  - name: test.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: BDD-style testing framework for Lua applications with support for test suites, assertions, lifecycle hooks, and powerful mocking capabilities
+      tags:
+        - testing
+        - BDD
+        - assertions
+        - mocks
+        - lua
+    source: file://test.spec.md

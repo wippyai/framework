@@ -1,0 +1,17 @@
+version: "1.0"
+namespace: wippy.llm.docs
+
+entries:
+  # wippy.llm.docs:llm.spec
+  - name: llm.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Unified interface for working with large language models, providing text generation, tool calling, structured output, embeddings, and model discovery across multiple providers
+      tags:
+        - llm
+        - ai
+        - generation
+        - embeddings
+        - tool-calling
+    source: file://llm.spec.md

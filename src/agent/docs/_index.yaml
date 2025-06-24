@@ -1,0 +1,32 @@
+version: "1.0"
+namespace: wippy.agent.docs
+
+entries:
+  # wippy.agent.docs:agents.spec
+  - name: agents.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Configuration-driven framework for defining AI agents with traits, tools, delegation capabilities, inheritance, and memory management
+      tags:
+        - agent
+        - traits
+        - tools
+        - delegation
+        - inheritance
+        - configuration
+    source: file://agents.spec.md
+
+  # wippy.agent.docs:agent_gen1.spec
+  - name: agent_gen1.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Library for running LLM agents with conversation management, tool calling, delegation capabilities, and token usage tracking
+      tags:
+        - agent
+        - LLM
+        - conversation
+        - tools
+        - delegation
+    source: file://agent_gen1.spec.md

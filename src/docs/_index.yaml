@@ -1,0 +1,652 @@
+version: "1.0"
+namespace: wippy.docs
+
+entries:
+  # wippy.docs:base64.spec
+  - name: base64.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for encoding and decoding data using Base64 standard, providing simple string conversion functions
+      tags:
+        - encoding
+        - base64
+        - string
+        - transformation
+    source: file://docs/base64.spec.md
+
+  # wippy.docs:basics.spec
+  - name: basics.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Introduction to Wippy Runtime development patterns, best practices and code organization for AI developers
+      tags:
+        - basics
+        - tutorial
+        - patterns
+        - best-practices
+    source: file://docs/basics.spec.md
+
+  # wippy.docs.docs:channel.spec
+  - name: channel.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Go-like channel system for coroutine communication within Wippy processes, supporting buffered/unbuffered channels, select operations, and synchronization primitives
+      tags:
+        - channel
+        - coroutine
+        - concurrency
+        - synchronization
+        - select
+    source: file://docs/channel.spec.md
+
+  # wippy.docs:cloudstorage.spec
+  - name: cloudstorage.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for interacting with cloud storage providers, enabling operations like listing, uploading, downloading, and generating presigned URLs for temporary access
+      tags:
+        - storage
+        - cloud
+        - s3
+        - bucket
+        - object
+    source: file://docs/cloudstorage.spec.md
+
+  # wippy.docs:config.spec
+  - name: config.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Comprehensive documentation of the Wippy Runtime System configuration structure and variables, covering component types, lifecycle management, and best practices
+      tags:
+        - configuration
+        - registry
+        - system
+        - reference
+        - architecture
+    source: file://docs/config.spec.md
+
+  # wippy.docs:crypto.spec
+  - name: crypto.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Comprehensive cryptographic functions including random generation, HMAC, encryption/decryption, JWT handling, and security utilities
+      tags:
+        - security
+        - encryption
+        - hmac
+        - jwt
+        - random
+        - oauth
+    source: file://docs/crypto.spec.md
+
+  # wippy.docs:ctx.spec
+  - name: ctx.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for interacting with shared context system, enabling communication and data sharing between components
+      tags:
+        - context
+        - state
+        - data-sharing
+        - communication
+    source: file://docs/ctx.spec.md
+
+  # wippy.docs:env.spec
+  - name: env.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for safely accessing environment variables shared from the Go runtime, with support for individual and batch variable retrieval
+      tags:
+        - environment
+        - variables
+        - config
+        - system
+    source: file://docs/env.spec.md
+
+  # wippy.docs:events.spec
+  - name: events.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Channel-based API for subscribing to Wippy event bus system, enabling pattern-based event filtering and concurrent event processing with coroutines
+      tags:
+        - events
+        - channel
+        - subscription
+        - coroutine
+        - concurrency
+    source: file://docs/events.spec.md
+
+  # wippy.docs:excel.spec
+  - name: excel.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for reading, writing, and manipulating Excel files (XLSX format) with workbook operations, sheet management, and cell manipulation in Lua environment
+      tags:
+        - excel
+        - spreadsheet
+        - workbook
+        - lua
+        - xlsx
+    source: file://docs/excel.spec.md
+
+  # wippy.docs:exec.spec
+  - name: exec.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Functions for executing external processes with support for input/output streams, process control, and asynchronous operation
+      tags:
+        - process
+        - execution
+        - streams
+        - command
+        - external
+    source: file://docs/exec.spec.md
+
+  # wippy.docs:fs.spec
+  - name: fs.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Universal filesystem abstraction layer supporting file operations, directory management, and multi-backend storage systems
+      tags:
+        - filesystem
+        - files
+        - io
+        - storage
+        - directory
+    source: file://docs/fs.spec.md
+
+  # wippy.docs:funcs.spec
+  - name: funcs.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for executing tasks synchronously and asynchronously with context management, function chaining, and cancellation support
+      tags:
+        - functions
+        - async
+        - tasks
+        - execution
+        - parallel
+    source: file://docs/funcs.spec.md
+
+  # wippy.docs:hash.spec
+  - name: hash.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Functions for calculating various cryptographic and non-cryptographic hash values (MD5, SHA-1, SHA-256, SHA-512, FNV-1)
+      tags:
+        - hash
+        - cryptography
+        - md5
+        - sha
+        - fnv
+    source: file://docs/hash.spec.md
+
+  # wippy.docs:http.spec
+  - name: http.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for handling HTTP requests and responses within a web server context, with support for headers, query params, streaming, and more
+      tags:
+        - http
+        - web
+        - server
+        - request
+        - response
+    source: file://docs/http.spec.md
+
+  # wippy.docs:http_client.spec
+  - name: http_client.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Client for making HTTP requests with support for various methods, options, batch operations, and streaming responses
+      tags:
+        - http
+        - client
+        - request
+        - api
+        - web
+    source: file://docs/http_client.spec.md
+
+  # wippy.docs:iframe.spec
+  - name: iframe.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Protocol specification for dynamic pages to be embeddable within Wippy application, covering parent window communication, API integration, form handling, and event subscription
+      tags:
+        - iframe
+        - protocol
+        - integration
+        - api
+        - communication
+        - forms
+        - events
+    source: file://docs/iframe.spec.md
+
+  # wippy.docs:jet.spec
+  - name: jet.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Specification for Jet templating system used in AI applications, covering syntax, inheritance patterns, and common template organization strategies
+      tags:
+        - templates
+        - jet
+        - inheritance
+        - rendering
+        - syntax
+    source: file://docs/jet.spec.md
+
+  # wippy.docs:json.spec
+  - name: json.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Functions for encoding and decoding between Lua values and JSON strings, handling nested structures and various data types
+      tags:
+        - json
+        - encoding
+        - decoding
+        - serialization
+        - data
+    source: file://docs/json.spec.md
+
+  # wippy.docs:loader.spec
+  - name: loader.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for loading registry entries from configuration files and directories with support for variable interpolation, custom filesystems, and multi-format (JSON/YAML) configuration
+      tags:
+        - registry
+        - loader
+        - configuration
+        - filesystem
+        - interpolation
+    source: file://docs/loader.spec.md
+
+  # wippy.docs:logger.spec
+  - name: logger.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Structured logging interface with support for different log levels, contextual fields, and hierarchical logger creation
+      tags:
+        - logging
+        - debug
+        - monitoring
+        - structured
+        - diagnostics
+    source: file://docs/logger.spec.md
+
+  # wippy.docs:process.spec
+  - name: process.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Wippy Runtime actor-model API for concurrent processing with message passing, process lifecycle management, supervision, and channel-based communication
+      tags:
+        - concurrency
+        - process
+        - actor-model
+        - channels
+        - supervision
+    source: file://docs/process.spec.md
+
+  # wippy.docs:react_arena.spec
+  - name: react_arena.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Specification for React Arena configurations in dataflow systems, covering execution environments, tool integration, output formats, and control directives for AI agents
+      tags:
+        - react
+        - arena
+        - agent
+        - dataflow
+        - configuration
+        - tools
+        - ai
+    source: file://docs/react_arena.spec.md
+
+  # wippy.docs:registry.spec
+  - name: registry.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Distributed registry system for querying, creating, updating, and deleting registry entries with support for versioning and history management
+      tags:
+        - registry
+        - metadata
+        - versioning
+        - history
+        - snapshot
+    source: file://docs/registry.spec.md
+
+  # wippy.docs.docs:security.spec
+  - name: security.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Authentication, authorization, and access control framework with support for actors, scopes, policies, and token management
+      tags:
+        - security
+        - auth
+        - authorization
+        - tokens
+        - permissions
+    source: file://docs/security.spec.md
+
+  # wippy.docs.docs:security_supervisor.spec
+  - name: security_supervisor.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Supervisor-level integration for security permissions, governing loops and restrictions, allowing declarative configuration of actor identities, policy assignments, and policy groups for managed services
+      tags:
+        - security
+        - supervisor
+        - permissions
+        - configuration
+        - service
+    source: file://docs/security_supervisor.spec.md
+
+  # wippy.docs:sql.semantic.spec
+  - name: sql.semantic.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Appendix to SQL module covering vector similarity search, full-text search, and hybrid approaches for AI-powered document and semantic search
+      tags:
+        - database
+        - vector
+        - search
+        - semantic
+        - ai
+    source: file://docs/sql.semantic.spec.md
+
+  # wippy.docs:sql.spec
+  - name: sql.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Database interface for SQL operations across different engines with support for queries, transactions, prepared statements, and explicit type conversion
+      tags:
+        - database
+        - sql
+        - query
+        - transaction
+        - prepared
+    source: file://docs/sql.spec.md
+
+  # wippy.docs:store.spec
+  - name: store.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Key-value store interface supporting various backends with operations for storing, retrieving, and managing structured data with TTL support
+      tags:
+        - storage
+        - key-value
+        - cache
+        - ttl
+        - persistence
+    source: file://docs/store.spec.md
+
+  # wippy.docs:stream.spec
+  - name: stream.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for reading data in chunks from a stream with support for configurable chunk sizes, error handling, and iteration
+      tags:
+        - stream
+        - io
+        - data
+        - chunks
+        - iteration
+    source: file://docs/stream.spec.md
+
+  # wippy.docs:system.spec
+  - name: system.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for accessing Go runtime information and control, providing memory statistics, garbage collection management, goroutine monitoring, and system information
+      tags:
+        - runtime
+        - memory
+        - gc
+        - goroutines
+        - system
+    source: file://docs/system.spec.md
+
+  # wippy.docs:templates.spec
+  - name: templates.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for accessing and rendering templates from resource registry, with support for variable substitution and resource management
+      tags:
+        - templates
+        - rendering
+        - resources
+        - variables
+        - lua
+    source: file://docs/templates.spec.md
+
+  # wippy.docs:text.spec
+  - name: text.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Advanced text processing module providing intelligent text chunking for AI applications and sophisticated diff functionality for text comparison, patching, and version control operations
+      tags:
+        - text
+        - chunking
+        - diff
+        - ai
+        - processing
+        - comparison
+        - patch
+        - nlp
+    source: file://docs/text.spec.md
+
+  # wippy.docs:time.spec
+  - name: time.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Comprehensive time utilities for working with dates, timers, durations, tickers, formatting, and timezone handling with Go-like API
+      tags:
+        - time
+        - date
+        - duration
+        - timer
+        - ticker
+    source: file://docs/time.spec.md
+
+  # wippy.docs:treesitter.cursor.spec
+  - name: treesitter.cursor.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter cursor for navigating parse trees, allowing efficient tree traversal and navigation
+      tags:
+        - treesitter
+        - parsing
+        - cursor
+        - navigation
+        - ast
+    source: file://docs/treesitter/cursor.spec.md
+
+  # wippy.docs:treesitter.index.spec
+  - name: treesitter.index.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter index utilities for working with source code positions and ranges in parsed trees
+      tags:
+        - treesitter
+        - parsing
+        - index
+        - position
+        - range
+    source: file://docs/treesitter/index.spec.md
+
+  # wippy.docs:treesitter.language.spec
+  - name: treesitter.language.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter language definition and grammar handling for different programming languages
+      tags:
+        - treesitter
+        - parsing
+        - language
+        - grammar
+        - definition
+    source: file://docs/treesitter/language.spec.md
+
+  # wippy.docs:treesitter.node.spec
+  - name: treesitter.node.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter node interface for working with individual nodes in parsed syntax trees
+      tags:
+        - treesitter
+        - parsing
+        - node
+        - ast
+        - tree
+    source: file://docs/treesitter/node.spec.md
+
+  # wippy.docs:treesitter.parser.spec
+  - name: treesitter.parser.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter parser for creating syntax trees from source code text
+      tags:
+        - treesitter
+        - parsing
+        - parser
+        - syntax
+        - analysis
+    source: file://docs/treesitter/parser.spec.md
+
+  # wippy.docs:treesitter.query.spec
+  - name: treesitter.query.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter query system for pattern matching and searching within parsed syntax trees
+      tags:
+        - treesitter
+        - parsing
+        - query
+        - pattern
+        - search
+    source: file://docs/treesitter/query.spec.md
+
+  # wippy.docs:treesitter.tree.spec
+  - name: treesitter.tree.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: TreeSitter tree interface for working with complete parsed syntax trees
+      tags:
+        - treesitter
+        - parsing
+        - tree
+        - ast
+        - syntax
+    source: file://docs/treesitter/tree.spec.md
+
+  # wippy.docs:uuid.spec
+  - name: uuid.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Functions for generating, validating, and manipulating UUIDs across different versions (v1, v3, v4, v5, v7) with format conversion support
+      tags:
+        - uuid
+        - identifier
+        - random
+        - generation
+        - validation
+    source: file://docs/uuid.spec.md
+
+  # wippy.docs.docs:websocket.integration
+  - name: websocket.integration
+    kind: registry.entry
+    meta:
+      type: guide
+      comment: Implementation guide for WebSocket system in Wippy Runtime with authentication, relay middleware, and hub process architecture
+      tags:
+        - websocket
+        - integration
+        - relay
+        - hub
+        - authentication
+    source: file://docs/websocket.integration.md
+
+  # wippy.docs.docs:websocket.spec
+  - name: websocket.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Client-side WebSocket implementation for establishing connections, sending/receiving messages, and managing connection lifecycles with coroutine integration
+      tags:
+        - websocket
+        - client
+        - realtime
+        - connection
+        - messaging
+    source: file://docs/websocket.spec.md
+
+  # wippy.docs.docs:websocket_topics.spec
+  - name: websocket_topics.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Reference for WebSocket event-based protocol used by Wippy backend, covering topic patterns, payload structures, and real-time communication patterns
+      tags:
+        - websocket
+        - protocol
+        - events
+        - topics
+        - realtime
+        - communication
+        - messaging
+    source: file://docs/websocket_topics.spec.md
+
+  # wippy.docs:yaml.spec
+  - name: yaml.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Functions for encoding and decoding between Lua tables and YAML strings, with special handling for multiline strings using literal style (|) formatting
+      tags:
+        - yaml
+        - encoding
+        - decoding
+        - serialization
+    source: file://docs/yaml.spec.md
