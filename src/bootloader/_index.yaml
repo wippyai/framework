@@ -1,19 +1,23 @@
 version: "1.0"
 namespace: wippy.bootloader
 
-requirements:
-  - parameter: app_db
-    description: "Application database ID"
-    targets:
-      - entry: bootloader.service
-        path: lifecycle.depends_on[]
-  - parameter: application_host
-    description: "Host ID for the application processes"
-    targets:
-      - entry: bootloader.service
-        path: host
-
 entries:
+  # Requirements
+  - name: application_host
+    kind: ns.requirement
+    meta:
+      description: "Host ID for the application processes"
+    targets:
+      - entry: bootloader.service
+        path: ".host"
+  - name: app_db
+    kind: ns.requirement
+    meta:
+      description: "Application database ID"
+    targets:
+      - entry: bootloader.service
+        path: ".lifecycle.depends_on +="
+
   # Dependencies
   - name: __dependency.wippy.migration
     kind: "dependency.component"

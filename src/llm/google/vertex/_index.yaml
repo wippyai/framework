@@ -1,18 +1,20 @@
 version: "1.0"
 namespace: wippy.llm.google.vertex
 
-requirements:
-  - parameter: application_host
-    description: "Host ID for the application processes"
-    targets:
-      - entry: wippy.llm.google.vertex:token_refresh
-        path: meta.default_host
-      - entry: wippy.llm.google.vertex:token_refresh.service
-        path: host
-      - entry: wippy.llm.google.vertex:token_refresh.service
-        path: lifecycle.depends_on[]
-
 entries:
+  # Requirements
+  - name: application_host
+    kind: ns.requirement
+    meta:
+      description: "Host ID for the application processes"
+    targets:
+      - entry: token_refresh
+        path: .meta.default_host
+      - entry: token_refresh.service
+        path: .host
+      - entry: token_refresh.service
+        path: ".lifecycle.depends_on +="
+
   # wippy.llm.google.vertex:client
   - name: client
     kind: library.lua
