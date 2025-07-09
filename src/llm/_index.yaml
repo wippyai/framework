@@ -4,7 +4,7 @@ namespace: wippy.llm
 entries:
   # Dependencies
   - name: __dependency.wippy.test
-    kind: "dependency.component"
+    kind: "ns.dependency"
     meta:
       description: "Testing component"
     component: "wippy/test"

@@ -17,7 +17,7 @@ entries:
 
   # Dependencies
   - name: __dependency.wippy.actor
-    kind: "dependency.component"
+    kind: "ns.dependency"
     meta:
       description: "Actor component"
     component: "wippy/actor"

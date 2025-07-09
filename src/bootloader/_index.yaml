@@ -20,7 +20,7 @@ entries:
 
   # Dependencies
   - name: __dependency.wippy.migration
-    kind: "dependency.component"
+    kind: "ns.dependency"
     meta:
       description: "Migration component"
     component: "wippy/migration"
