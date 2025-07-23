@@ -34,9 +34,106 @@ entries:
 
 ## Component Types and Configuration
 
-### 1. Filesystem Components
+### 1. Contract Components
 
-#### 1.1 Directory (`fs.directory`)
+#### 1.1 Contract Definition (`contract.definition`)
+
+Defines an abstract service contract with methods and schemas.
+
+```yaml
+- name: user_service
+  kind: contract.definition
+  meta:
+    comment: "User management service contract"
+    tags: ["user", "service"]
+  methods:
+    - name: get_user
+      description: "Retrieve a user by ID"
+      input_schemas:
+        - format: "application/schema+json"
+          definition: |
+            {
+              "type": "object",
+              "properties": {
+                "user_id": {"type": "string"}
+              },
+              "required": ["user_id"]
+            }
+      output_schemas:
+        - format: "application/schema+json"
+          definition: |
+            {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "email": {"type": "string"}
+              }
+            }
+    - name: create_user
+      description: "Create a new user"
+      input_schemas:
+        - format: "application/schema+json"
+          definition: |
+            {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string"},
+                "email": {"type": "string"}
+              },
+              "required": ["name", "email"]
+            }
+      output_schemas:
+        - format: "application/schema+json"
+          definition: |
+            {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string"},
+                "created_at": {"type": "string", "format": "date-time"}
+              }
+            }
+```
+
+**Configuration Fields:**
+- `methods`: Array of method definitions
+    - `name`: Method name (required)
+    - `description`: Human-readable description (optional)
+    - `input_schemas`: Array of input schema definitions (optional)
+    - `output_schemas`: Array of output schema definitions (optional)
+        - `format`: MIME type for the schema format (e.g., "application/schema+json")
+        - `definition`: The actual schema definition (JSON Schema, etc.)
+
+#### 1.2 Contract Binding (`contract.binding`)
+
+Binds contract definitions to concrete implementations.
+
+```yaml
+- name: user_database_impl
+  kind: contract.binding
+  meta:
+    comment: "Database implementation of user service"
+    tags: ["database", "implementation"]
+  contracts:
+    - contract: "user:user_service"
+      methods:
+        get_user: "user:db_get_user_func"
+        create_user: "user:db_create_user_func"
+      context_required: ["database_id"]
+    - contract: "audit:logging"
+      methods:
+        log_action: "audit:db_log_func"      
+```
+
+**Configuration Fields:**
+- `contracts`: Array of contract implementations
+    - `contract`: Reference to contract definition ID (namespace:name format)
+    - `methods`: Map of method names to implementing function IDs
+    - `context_required`: Array of required context keys (optional)
+
+### 2. Filesystem Components
+
+#### 2.1 Directory (`fs.directory`)
 
 Defines a filesystem directory for the application.
 
@@ -50,7 +147,7 @@ Defines a filesystem directory for the application.
   default: true              # Whether this is the default filesystem
 ```
 
-#### 1.2 S3 Storage (`cloudstorage.s3`)
+#### 2.2 S3 Storage (`cloudstorage.s3`)
 
 Configures access to an S3-compatible object storage service.
 
@@ -64,9 +161,9 @@ Configures access to an S3-compatible object storage service.
   secret_access_key_env: "AWS_SECRET_ACCESS_KEY" # Environment variable name for secret key
 ```
 
-### 2. HTTP Components
+### 3. HTTP Components
 
-#### 2.1 HTTP Service (`http.service`)
+#### 3.1 HTTP Service (`http.service`)
 
 Defines an HTTP server instance.
 
@@ -85,7 +182,7 @@ Defines an HTTP server instance.
     worker_count: 8      # Number of worker goroutines
 ```
 
-#### 2.2 HTTP Router (`http.router`)
+#### 3.2 HTTP Router (`http.router`)
 
 Defines a group of endpoints with a common URL prefix.
 
@@ -103,7 +200,7 @@ Defines a group of endpoints with a common URL prefix.
     allow_origins: "*"
 ```
 
-#### 2.3 HTTP Endpoint (`http.endpoint`)
+#### 3.3 HTTP Endpoint (`http.endpoint`)
 
 Defines a single API endpoint.
 
@@ -117,7 +214,7 @@ Defines a single API endpoint.
   func: create_page_func # Function to handle requests
 ```
 
-#### 2.4 Static Server (`http.static`)
+#### 3.4 Static Server (`http.static`)
 
 Serves static files from a filesystem.
 
@@ -134,9 +231,9 @@ Serves static files from a filesystem.
     spa: true            # Enable SPA mode (serve index for all paths)
 ```
 
-### 3. Security Components
+### 4. Security Components
 
-#### 3.1 Token Store (`security.token_store`)
+#### 4.1 Token Store (`security.token_store`)
 
 Manages authentication tokens.
 
@@ -149,7 +246,7 @@ Manages authentication tokens.
   default_expiration: 24h # Default token lifetime
 ```
 
-#### 3.2 Security Policy (`security.policy`)
+#### 4.2 Security Policy (`security.policy`)
 
 Defines authorization rules.
 
@@ -167,9 +264,9 @@ Defines authorization rules.
         value: "admin"
 ```
 
-### 4. Data Storage Components
+### 5. Data Storage Components
 
-#### 4.1 Memory Store (`store.memory`)
+#### 5.1 Memory Store (`store.memory`)
 
 In-memory key-value store.
 
@@ -182,7 +279,7 @@ In-memory key-value store.
     auto_start: true
 ```
 
-#### 4.2 SQL Database (`db.sql.sqlite`, `db.sql.postgres`, etc.)
+#### 5.2 SQL Database (`db.sql.sqlite`, `db.sql.postgres`, etc.)
 
 SQL database connection.
 
@@ -212,9 +309,9 @@ SQL database connection.
     max_lifetime: 1h
 ```
 
-### 5. Process Components
+### 6. Process Components
 
-#### 5.1 Process Host (`process.host`)
+#### 6.1 Process Host (`process.host`)
 
 Executes and manages processes.
 
@@ -228,7 +325,7 @@ Executes and manages processes.
     auto_start: true
 ```
 
-#### 5.2 Process Service (`process.service`)
+#### 6.2 Process Service (`process.service`)
 
 Defines a supervised process.
 
@@ -242,9 +339,9 @@ Defines a supervised process.
     auto_start: true
 ```
 
-### 6. Lua Components
+### 7. Lua Components
 
-#### 6.1 Lua Function (`function.lua`)
+#### 7.1 Lua Function (`function.lua`)
 
 Defines a Lua function.
 
@@ -258,7 +355,7 @@ Defines a Lua function.
     utils: app.common:utils
 ```
 
-#### 6.2 Lua Library (`library.lua`)
+#### 7.2 Lua Library (`library.lua`)
 
 Reusable Lua code library.
 
@@ -269,7 +366,7 @@ Reusable Lua code library.
   modules: ["crypto", "base64"]
 ```
 
-#### 6.3 Lua Process (`process.lua`)
+#### 7.3 Lua Process (`process.lua`)
 
 Long-running Lua process.
 
@@ -281,9 +378,9 @@ Long-running Lua process.
   modules: ["json", "store"]
 ```
 
-### 7. Template Components
+### 8. Template Components
 
-#### 7.1 Template Set (`template.set`)
+#### 8.1 Template Set (`template.set`)
 
 Defines a template set with shared configuration.
 
@@ -304,7 +401,7 @@ Defines a template set with shared configuration.
       copyrightYear: 2025
 ```
 
-#### 7.2 Template (`template.jet`)
+#### 8.2 Template (`template.jet`)
 
 Defines an individual template within a set.
 

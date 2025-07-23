@@ -5,8 +5,7 @@
 The `http_client` module provides functions for performing HTTP requests in Lua. It supports various HTTP methods,
 request options (headers, cookies, body, query parameters, timeout, authentication, file uploads), and batch requests.
 It also handles response data, including headers, cookies, status code, URL, and body. Additionally, it supports
-streaming
-responses for handling large data efficiently.
+streaming responses for handling large data efficiently and Unix socket connections for local services.
 
 ## Module Interface
 
@@ -124,9 +123,9 @@ Sends multiple HTTP requests concurrently.
 Parameters:
 
 - `requests`: A table of request tables. Each request table contains:
-    1. `method`: The HTTP method.
-    2. `url`: The URL.
-    3. `options`: (Optional) A table of request options.
+  1. `method`: The HTTP method.
+  2. `url`: The URL.
+  3. `options`: (Optional) A table of request options.
 
 Returns:
 
@@ -171,6 +170,17 @@ The `options` table can contain the following fields:
 - `auth`: A table with `user` and `pass` fields for basic authentication.
 - `stream`: A table for stream configuration for streaming requests.
 - `files`: A table of file specifications for file uploads (will set `Content-Type` to `multipart/form-data`).
+- `unix_socket`: A string path to a Unix socket for local service communication (e.g., "/var/run/docker.sock").
+
+### Unix Socket Support
+
+When the `unix_socket` option is specified:
+
+- The request will be sent over the Unix socket instead of a TCP connection
+- The URL host and port are ignored; only the path is used
+- All other request options (headers, body, timeout, etc.) work normally
+- Requires `http_client.unix_socket` security permission for the socket path
+- Commonly used for Docker API, systemd services, and other local daemons
 
 ### File Upload Options
 
@@ -208,12 +218,38 @@ The `http_client.Response` object has the following fields:
 - The `read()` method of the `Stream` object will return chunks of data.
 - The `close()` method of the `Stream` object should be called when finished to release resources.
 
+## Security Permissions
+
+The HTTP client module requires specific security permissions to function:
+
+### `http_client.request`
+
+Required for all HTTP/HTTPS requests. The security system can:
+- Whitelist specific URLs or URL patterns
+- Block requests to internal networks
+- Restrict access to specific domains
+- Apply rate limiting per endpoint
+
+### `http_client.unix_socket`
+
+Required for Unix socket connections. The security system can:
+- Whitelist specific socket paths (e.g., `/var/run/docker.sock`)
+- Deny access to sensitive system sockets
+- Apply path-based restrictions (e.g., only `/tmp/` or `/var/run/` paths)
+- Prevent access to privileged socket files
+
+Example security configuration might allow:
+- `http_client.request` for `https://api.trusted-service.com/*`
+- `http_client.unix_socket` for `/var/run/docker.sock`
+- `http_client.unix_socket` for `/tmp/app-*.sock`
+
 ## Error Handling
 
 - Functions return an error message as the second return value if an error occurs.
 - The `request_batch` function returns a table of error messages as the second return value.
 - For streamed responses, errors during reading will be returned by the `read()` method of the `Stream` object.
 - For file uploads, invalid file specifications are skipped rather than causing the entire request to fail.
+- Security permission violations result in immediate errors before network requests are made.
 
 ## Behavior
 
@@ -226,6 +262,7 @@ The `http_client.Response` object has the following fields:
 - For `request_batch`, it validates each request entry and builds requests with provided options.
 - `request_batch` processes requests concurrently and returns results in order.
 - Streaming file uploads are supported by providing an `io.Reader` implementation to the `reader` field.
+- Unix socket connections bypass DNS resolution and connect directly to local services.
 
 ## Thread Safety
 
@@ -244,6 +281,9 @@ The `http_client.Response` object has the following fields:
 - For file uploads with potentially large files, use the `reader` approach rather than loading the entire file into
   memory.
 - When uploading multiple files, ensure each file specification has a unique `name` field.
+- For Unix socket access, ensure proper security permissions are configured.
+- Validate Unix socket paths and restrict access to known safe sockets.
+- Use Unix sockets for local services to avoid network overhead and improve security.
 
 ## Example Usage
 
@@ -306,6 +346,85 @@ else
 end
 ```
 
+### Unix Socket Usage
+
+```lua
+local http_client = require("http_client")
+
+-- Docker API via Unix socket
+local function docker_api(endpoint, method, body)
+  method = method or "GET"
+  local opts = {
+    unix_socket = "/var/run/docker.sock",
+    headers = { ["Content-Type"] = "application/json" },
+    timeout = 30
+  }
+  
+  if body then
+    opts.body = body
+  end
+  
+  return http_client.request(method, "http://docker" .. endpoint, opts)
+end
+
+-- List Docker containers
+local containers, err = docker_api("/containers/json")
+if err then
+  print("Failed to list containers:", err)
+else
+  print("Containers:", containers.body)
+end
+
+-- Get Docker system info
+local info, err = docker_api("/info")
+if err then
+  print("Failed to get Docker info:", err)
+else
+  print("Docker info:", info.body)
+end
+
+-- Create a new container
+local create_req = '{"Image":"nginx","Cmd":["nginx","-g","daemon off;"]}'
+local created, err = docker_api("/containers/create", "POST", create_req)
+if err then
+  print("Failed to create container:", err)
+else
+  print("Container created:", created.body)
+end
+
+-- Batch requests over Unix socket
+local requests = {
+  { "GET", "http://docker/containers/json", { unix_socket = "/var/run/docker.sock" } },
+  { "GET", "http://docker/images/json", { unix_socket = "/var/run/docker.sock" } },
+  { "GET", "http://docker/info", { unix_socket = "/var/run/docker.sock" } }
+}
+
+local responses, errors = http_client.request_batch(requests)
+for i, res in ipairs(responses) do
+  if res then
+    print("Docker request", i, "Status:", res.status_code)
+  else
+    print("Docker request", i, "Error:", errors[i])
+  end
+end
+
+-- Streaming container logs over Unix socket
+local log_response, err = http_client.get("http://docker/containers/myapp/logs?follow=true&stdout=true", {
+  unix_socket = "/var/run/docker.sock",
+  stream = true
+})
+
+if not err then
+  local stream = log_response.stream
+  local chunk, err = stream:read(1024)
+  while chunk and not err do
+    io.write(chunk)  -- Stream container logs to stdout
+    chunk, err = stream:read(1024)
+  end
+  stream:close()
+end
+```
+
 ### File Upload Examples
 
 ```lua
@@ -344,6 +463,31 @@ local response, err = http_client.post("https://api.example.com/upload", {
 
 -- Close the file when done
 file:close()
+
+-- Upload files to Docker container via Unix socket
+local tar_file, err = fs.open("/tmp/app.tar", "r")
+if not err then
+  local upload_response, err = http_client.put("http://docker/containers/myapp/archive?path=/app", {
+    unix_socket = "/var/run/docker.sock",
+    headers = { ["Content-Type"] = "application/x-tar" },
+    files = {
+      {
+        name = "archive",
+        filename = "app.tar",
+        content_type = "application/x-tar",
+        reader = tar_file
+      }
+    }
+  })
+  
+  tar_file:close()
+  
+  if err then
+    print("Failed to upload to container:", err)
+  else
+    print("Upload successful:", upload_response.status_code)
+  end
+end
 
 -- Upload multiple files with form data
 local file1, err1 = fs.open("/path/to/image1.jpg", "r")

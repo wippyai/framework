@@ -45,7 +45,7 @@ entries:
     lifecycle:
       depends_on: []
       auto_start: true
-      security: # todo
+      security:
         actor:
           id: central
         groups:

@@ -70,6 +70,24 @@ entries:
         - architecture
     source: file://docs/config.spec.md
 
+  # wippy.docs:contract.spec
+  - name: contract.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Interface for working with contracts - abstract service definitions that enable type-safe service discovery, instantiation, method calling with security context management, and both synchronous and asynchronous execution
+      tags:
+        - contract
+        - service
+        - discovery
+        - instantiation
+        - security
+        - context
+        - async
+        - binding
+        - implementation
+    source: file://contract.spec.md
+
   # wippy.docs:crypto.spec
   - name: crypto.spec
     kind: registry.entry
@@ -650,3 +668,18 @@ entries:
         - decoding
         - serialization
     source: file://docs/yaml.spec.md
+
+  # wippy.docs:html.spec
+  - name: html.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for HTML sanitization via bluemonday with policy-based content filtering, element/attribute control, and URL security for user-generated content
+      tags:
+        - html
+        - sanitization
+        - security
+        - bluemonday
+        - policy
+        - ugc
+    source: file://html.spec.md

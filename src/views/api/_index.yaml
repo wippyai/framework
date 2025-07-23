@@ -19,6 +19,7 @@ entries:
     method: handler
     pool:
       size: 4
+      workers: 4
     
   # wippy.views.api:list_pages.endpoint
   - name: list_pages.endpoint
