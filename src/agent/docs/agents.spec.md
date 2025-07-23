@@ -28,6 +28,8 @@ entries:
         - helper
         - conversation
       icon: tabler:message
+      class:
+        - public
     prompt: |
       You are a helpful assistant that provides accurate and concise information.
       

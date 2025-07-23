@@ -10,6 +10,7 @@ local function define_tests()
     describe("Agent Library", function()
         local mock_llm
         local mock_prompt
+        local mock_contract
         local mock_time
 
         -- Sample agent specification for testing - updated with new delegate format
@@ -27,6 +28,26 @@ local function define_tests()
                     id = "data-analyst-id",
                     name = "to_data_analyst",
                     rule = "Forward to this agent when you detect data analysis questions"
+                }
+            }
+        }
+
+        -- Sample agent specification with memory contract
+        local test_agent_with_memory_spec = {
+            id = "test-agent-memory",
+            name = "Test Agent with Memory",
+            description = "A test agent with memory contract",
+            model = "gpt-4o-mini",
+            prompt = "You are a test agent with memory capabilities.",
+            tools = { "test:calculator" },
+            traits = {},
+            memory = { "You have persistent memory" },
+            memory_contract = {
+                implementation_id = "test.memory:vector_impl",
+                context_values = {
+                    memory_scope = "test_session",
+                    max_recall_items = 5,
+                    retention_policy = "short_term"
                 }
             }
         }
@@ -205,15 +226,61 @@ local function define_tests()
                 end
             }
 
+            -- Create mock contract module for testing
+            mock_contract = {
+                get = function(contract_id)
+                    if contract_id == agent.MEMORY_CONTRACT_ID then
+                        -- Return mock memory contract definition
+                        return {
+                            open = function(self, implementation_id, context)
+                                if implementation_id == "test.memory:vector_impl" then
+                                    -- Return mock memory contract instance
+                                    return {
+                                        recall = function(options)
+                                            return {
+                                                recall_id = "test_recall_123",
+                                                memories = {
+                                                    {
+                                                        id = "mem_1",
+                                                        content = "Previous conversation about testing",
+                                                        metadata = {
+                                                            type = "conversation",
+                                                            source = "agent",
+                                                            created_at = "2025-01-01T00:00:00Z"
+                                                        }
+                                                    }
+                                                },
+                                                stats = {
+                                                    total_searched = 10,
+                                                    retrieval_ms = 15
+                                                }
+                                            }
+                                        end
+                                    }
+                                elseif implementation_id == "test.memory:failing_impl" then
+                                    return nil, "Failed to initialize memory implementation"
+                                else
+                                    return nil, "Unknown memory implementation: " .. tostring(implementation_id)
+                                end
+                            end
+                        }
+                    else
+                        return nil, "Unknown contract: " .. tostring(contract_id)
+                    end
+                end
+            }
+
             -- Inject mocks
             agent._llm = mock_llm
             agent._prompt = mock_prompt
+            agent._contract = mock_contract
         end)
 
         after_each(function()
             -- Cleanup mocks
             agent._llm = nil
             agent._prompt = nil
+            agent._contract = nil
         end)
 
         it("should create an agent from specification", function()
@@ -351,6 +418,144 @@ local function define_tests()
             "Error should mention the missing name")
         end)
 
+        -- Memory Contract Tests
+        it("should create an agent with memory contract configuration", function()
+            local test_agent = agent.new(test_agent_with_memory_spec)
+
+            expect(test_agent).not_to_be_nil()
+            expect(test_agent.id).to_equal("test-agent-memory")
+            expect(test_agent.memory_contract).not_to_be_nil()
+            expect(test_agent.memory_contract.implementation_id).to_equal("test.memory:vector_impl")
+            expect(test_agent.memory_contract.context_values).not_to_be_nil()
+            expect(test_agent.memory_contract.context_values.memory_scope).to_equal("test_session")
+        end)
+
+        it("should correctly identify agents with memory contracts", function()
+            local agent_without_memory = agent.new(test_agent_spec)
+            local agent_with_memory = agent.new(test_agent_with_memory_spec)
+
+            expect(agent_without_memory:has_memory_contract()).to_be_false()
+            expect(agent_with_memory:has_memory_contract()).to_be_true()
+        end)
+
+        it("should return error when getting memory contract from agent without one", function()
+            local test_agent = agent.new(test_agent_spec)
+
+            local memory_instance, err = test_agent:get_memory_contract()
+
+            expect(memory_instance).to_be_nil()
+            expect(err).to_equal("No memory contract configured for this agent")
+        end)
+
+        it("should successfully get memory contract instance with proper context merging", function()
+            local test_agent = agent.new(test_agent_with_memory_spec)
+
+            local memory_instance, err = test_agent:get_memory_contract({
+                request_id = "req_123",
+                user_id = "user_456"
+            })
+
+            expect(err).to_be_nil()
+            expect(memory_instance).not_to_be_nil()
+            expect(memory_instance.recall).not_to_be_nil()
+
+            -- Test that the memory instance works
+            local recall_result = memory_instance:recall({
+                working_on = "testing memory",
+                recent_actions = { "user: test message" }
+            })
+
+            expect(recall_result).not_to_be_nil()
+            expect(recall_result.recall_id).to_equal("test_recall_123")
+            expect(#recall_result.memories).to_equal(1)
+            expect(recall_result.memories[1].content).to_equal("Previous conversation about testing")
+        end)
+
+        it("should handle memory contract opening failure", function()
+            local failing_memory_spec = {
+                id = "test-agent-failing-memory",
+                name = "Test Agent with Failing Memory",
+                description = "A test agent with failing memory contract",
+                model = "gpt-4o-mini",
+                prompt = "You are a test agent with failing memory.",
+                memory_contract = {
+                    implementation_id = "test.memory:failing_impl",
+                    context_values = {
+                        memory_scope = "test_session"
+                    }
+                }
+            }
+
+            local test_agent = agent.new(failing_memory_spec)
+
+            local memory_instance, err = test_agent:get_memory_contract()
+
+            expect(memory_instance).to_be_nil()
+            expect(err).to_equal("Failed to open memory implementation: Failed to initialize memory implementation")
+        end)
+
+        it("should handle unknown memory contract", function()
+            local original_mock = mock_contract
+            mock_contract = {
+                get = function(contract_id)
+                    return nil, "Contract not found: " .. contract_id
+                end
+            }
+            agent._contract = mock_contract
+
+            local test_agent = agent.new(test_agent_with_memory_spec)
+
+            local memory_instance, err = test_agent:get_memory_contract()
+
+            expect(memory_instance).to_be_nil()
+            expect(err).to_equal("Failed to get memory contract: Contract not found: " .. agent.MEMORY_CONTRACT_ID)
+
+            -- Restore original mock
+            mock_contract = original_mock
+            agent._contract = mock_contract
+        end)
+
+        it("should merge contexts correctly with priority order", function()
+            -- Test that runtime context overrides configured context
+            local test_agent = agent.new(test_agent_with_memory_spec)
+
+            -- Capture the context passed to contract.open by modifying the mock
+            local captured_context = nil
+            local original_mock = mock_contract
+            mock_contract = {
+                get = function(contract_id)
+                    return {
+                        open = function(self, implementation_id, context)
+                            captured_context = context
+                            return original_mock.get(contract_id).open(original_mock.get(contract_id), implementation_id, context)
+                        end
+                    }
+                end
+            }
+            agent._contract = mock_contract
+
+            local memory_instance, err = test_agent:get_memory_contract({
+                memory_scope = "runtime_session", -- Should override configured value
+                user_id = "user_789",             -- Should be added
+                request_id = "req_999"            -- Should be added
+            })
+
+            expect(err).to_be_nil()
+            expect(memory_instance).not_to_be_nil()
+
+            -- Verify context merging
+            expect(captured_context.agent_id).to_equal("test-agent-memory") -- Always added
+            expect(captured_context.memory_scope).to_equal("runtime_session") -- Runtime override
+            expect(captured_context.max_recall_items).to_equal(5) -- From config
+            expect(captured_context.retention_policy).to_equal("short_term") -- From config
+            expect(captured_context.user_id).to_equal("user_789") -- From runtime
+            expect(captured_context.request_id).to_equal("req_999") -- From runtime
+
+            -- Restore original mock
+            mock_contract = original_mock
+            agent._contract = mock_contract
+        end)
+
         -- Integration test with real LLM
         it("should integrate with real LLM when not mocked", function()
             -- Skip if agent still has mocked llm
@@ -388,6 +593,7 @@ local function define_tests()
         before_all(function()
             agent._llm = nil
             agent._prompt = nil
+            agent._contract = nil
             agent._time = nil
         end)
 
