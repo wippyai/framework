@@ -40,10 +40,6 @@ local function handler(args)
     -- Only add system content if we have any
     if processed.system then
         payload.system = processed.system
-        -- Debug system message token count issue
-        print("Adding system content to payload, count:", #processed.system)
-    elseif processed.has_system then
-        print("WARNING: System content was detected but not added to payload")
     end
 
     -- Configure thinking if enabled

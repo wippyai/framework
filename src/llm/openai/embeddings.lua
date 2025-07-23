@@ -18,6 +18,9 @@ local function handler(args)
         }
     end
 
+    -- Check input format to determine expected output format
+    local input_is_string = (type(args.input) == "string")
+
     -- Configure request payload
     local payload = {
         model = args.model,
@@ -63,11 +66,10 @@ local function handler(args)
     -- Format successful response according to spec
     local result = {}
 
-    -- For single input: result is a flat array of floats
-    -- For multiple inputs: result is an array of arrays
-    if #response.data == 1 then
-        -- Single input case - flat array
-        result = response.data[1].embedding
+    -- Always return array of arrays format for consistency
+    if input_is_string then
+        -- Single input case - wrap in array for consistency
+        result = { response.data[1].embedding }
     else
         -- Multiple inputs case - array of arrays
         for _, item in ipairs(response.data) do

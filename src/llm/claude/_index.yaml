@@ -58,7 +58,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-      size: 2
+      size: 20
     
   # wippy.llm.claude:structured_output_test
   - name: structured_output_test
@@ -112,7 +112,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-      size: 2
+      size: 20
     
   # wippy.llm.claude:text_generation_test
   - name: text_generation_test
@@ -166,7 +166,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-      size: 2
+      size: 20
     
   # wippy.llm.claude:tool_calling_test
   - name: tool_calling_test
