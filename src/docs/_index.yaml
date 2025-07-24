@@ -650,3 +650,20 @@ entries:
         - decoding
         - serialization
     source: file://docs/yaml.spec.md
+
+  # wippy.docs:module-namespace.spec
+  - name: module-namespace.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module namespace naming conventions and directory structure requirements for Wippy Framework packages
+      tags:
+        - namespace
+        - modules
+        - naming
+        - directory-structure
+        - kebab-case
+        - registry
+        - vendor
+        - package
+    source: file://docs/module_namespace.spec.md
