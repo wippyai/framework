@@ -2,8 +2,7 @@
 
 ## Overview
 
-The Functions module provides a Lua interface for executing tasks both synchronously and asynchronously. It enables
-namespace-aware function calls with proper context management, method chaining, and cancellation support.
+The Functions module provides a Lua interface for executing tasks both synchronously and asynchronously. It enables namespace-aware function calls with proper context management, method chaining, and cancellation support.
 
 ## Module Interface
 
@@ -42,12 +41,49 @@ local executor3 = funcs.new()
 ```
 
 Parameters:
-
 - `context_table`: Table with string keys and any values
 
 Returns:
-
 - New executor instance with updated context (immutable operation)
+
+Security:
+- Requires `funcs.context` permission
+
+#### with_actor(actor)
+
+Creates a new executor instance with a specific security actor.
+
+```lua
+local executor_with_actor = executor:with_actor(actor_object)
+```
+
+Parameters:
+- `actor`: Actor userdata object (cannot be nil)
+
+Returns:
+- New executor instance with the specified actor
+
+Security:
+- Requires `funcs.security` permission
+- Actor cannot be nil (security context cannot be removed)
+
+#### with_scope(scope)
+
+Creates a new executor instance with a specific security scope.
+
+```lua
+local executor_with_scope = executor:with_scope(scope_object)
+```
+
+Parameters:
+- `scope`: Scope userdata object (cannot be nil)
+
+Returns:
+- New executor instance with the specified scope
+
+Security:
+- Requires `funcs.security` permission
+- Scope cannot be nil (security context cannot be removed)
 
 #### call(target, ...)
 
@@ -65,66 +101,108 @@ local result, err = executor:call("myapp:process", {
 ```
 
 Parameters:
-
 - `target`: String in "namespace:name" format (namespace required)
 - `...`: Arguments to pass (auto-wrapped in payloads)
 
 Returns:
-
 - `result`: Function result or nil on error
 - `err`: Error message or nil on success
 
+Security:
+- Requires `funcs.call` permission for the specific target function
+
 #### async(target, ...)
 
-Executes function asynchronously and returns a task object.
+Executes function asynchronously and returns a command object.
 
 ```lua
 -- Start async execution with single values
-local task = executor:async("myapp:worker", 1, 2, 3)
+local command = executor:async("myapp:worker", 1, 2, 3)
 
 -- Start async execution with table argument
-local task = executor:async("myapp:worker", {
-    job_id = "job123",
+local command = executor:async("myapp:worker", {
+    job_id = "job123", 
     data = "async data"
 })
 ```
 
 Parameters:
-
 - `target`: String in "namespace:name" format (namespace required)
 - `...`: Arguments to pass (auto-wrapped in payloads)
 
 Returns:
+- Command object for managing execution
 
-- Task object with methods for managing execution and a response property
+Security:
+- Requires `funcs.call` permission for the specific target function
 
-## Task Object
+## Command Object
 
-The task object returned by `async()` has the following methods:
+The command object returned by `async()` provides the following interface:
 
-```lua
--- Check if task has completed (successfully or with error)
-local completed = task:is_complete()
+### Methods
 
--- Get error message if any occurred, nil otherwise
-local err = task:error()
+#### response()
 
--- Get result and error (only if task is complete)
-local result, err = task:result()
-
--- Check if task was cancelled
-local canceled = task:is_canceled()
-
--- Cancel the task execution
-task:cancel()
-```
-
-The task object also has a response property:
+Returns the response channel for receiving the function result.
 
 ```lua
--- Get result from the response channel
-local value, ok = task.response:receive()
+local channel = command:response()
+local payload_wrapper, ok = channel:receive()
 ```
+
+Returns:
+- Channel object for receiving the execution result
+
+**Note**: The channel receives payload wrapper objects, not raw Lua values. Use `payload:data()` to extract the actual data.
+
+#### is_complete()
+
+Checks if the command execution has completed (successfully or with error).
+
+```lua
+local completed = command:is_complete()
+```
+
+Returns:
+- `boolean`: true if execution is complete, false otherwise
+
+#### result()
+
+Gets the execution result and any error that occurred.
+
+```lua
+local payload, err = command:result()
+```
+
+Returns:
+- `payload`: Payload object containing the result (nil if error or not complete)
+- `err`: Error message string (nil on success, descriptive message on failure)
+
+Note: If the command is not yet complete, returns `(nil, "command not completed")`
+
+#### is_canceled()
+
+Checks if the command was canceled.
+
+```lua
+local canceled = command:is_canceled()
+```
+
+Returns:
+- `boolean`: true if the command was canceled, false otherwise
+
+#### cancel()
+
+Cancels the command execution.
+
+```lua
+local success, err = command:cancel()
+```
+
+Returns:
+- `success`: boolean indicating if cancellation was successful
+- `err`: Error message or nil on success
 
 ## Usage Examples
 
@@ -145,30 +223,33 @@ else
 end
 
 -- Asynchronous call with result handling
-local task = executor:async("myapp:worker", { job_id = "123" })
+local command = executor:async("myapp:worker", { job_id = "123" })
 
 -- Do other work while the function executes
 do_something_else()
 
 -- Get the result when ready
-local value, ok = task.response:receive()
+local channel = command:response()
+local value, ok = channel:receive()
 if not ok then
     print("Channel closed without result")
     return
 end
 
--- Access task information
-if task:is_complete() then
-    local result, err = task:result()
+-- Access command information
+if command:is_complete() then
+    local payload, err = command:result()
     if err then
         print("Error:", err)
     else
-        print("Success:", result)
+        -- Extract data from payload
+        local data = payload:data()
+        print("Success:", data)
     end
 end
 ```
 
-### Context and Chaining
+### Context and Security Chaining
 
 ```lua
 local funcs = require("funcs")
@@ -183,34 +264,41 @@ local result, err = funcs.new()
 local base = funcs.new():with_context({ tenant = "123" })
 local exec1 = base:with_context({ user = "john" })
 local exec2 = base:with_context({ user = "jane" })
+
+-- Security context chaining
+local secure_executor = funcs.new()
+    :with_actor(actor_object)
+    :with_scope(scope_object)
+    :with_context({ operation = "sensitive" })
 ```
 
 ### Cancellation
 
 ```lua
--- Start async task
-local task = executor:async("myapp:long_process", data)
+-- Start async command
+local command = executor:async("myapp:long_process", data)
 
 -- Check if we should continue or cancel
 if should_cancel() then
-    task:cancel()
-    print("Task cancelled")
+    local success, err = command:cancel()
+    if success then
+        print("Command cancelled successfully")
+    else
+        print("Failed to cancel:", err)
+    end
 end
 
 -- Check completion and cancellation status
-if task:is_complete() then
-    if task:is_canceled() then
-        print("Task was cancelled")
+if command:is_complete() then
+    if command:is_canceled() then
+        print("Command was cancelled")
     else
-        -- Check for errors
-        local err = task:error()
+        local payload, err = command:result()
         if err then
-            print("Task failed with error:", err)
+            print("Command failed with error:", err)
         else
-            local result, err = task:result()
-            if not err then
-                print("Task succeeded with result:", result)
-            end
+            local data = payload:data()
+            print("Command succeeded with result:", data)
         end
     end
 end
@@ -222,37 +310,38 @@ end
 local funcs = require("funcs")
 local time = require("time")
 
--- Start async task
-local task = executor:async("myapp:process", data)
+-- Start async command
+local command = executor:async("myapp:process", data)
 
 -- Create a ticker for timeout
 local ticker = time.ticker(5000) -- 5 seconds
 
 -- Use select to wait for either result or timeout
 local result = channel.select{
-    task.response:case_receive(),
+    command:response():case_receive(),
     ticker:channel():case_receive()
 }
 
 if result.channel == ticker:channel() then
-    -- Timeout occurred, cancel task
-    task:cancel()
+    -- Timeout occurred, cancel command
+    command:cancel()
     ticker:stop()
     print("Operation timed out")
 else
-    -- Task completed
+    -- Command completed, extract data from payload wrapper
     ticker:stop()
-    handle_result(result.value)
+    local data = result.value:data()
+    handle_result(data)
 end
 ```
 
 ### Parallel Execution
 
 ```lua
--- Execute multiple tasks in parallel
-local tasks = {}
+-- Execute multiple commands in parallel
+local commands = {}
 for i = 1, 5 do
-    tasks[i] = executor:async("myapp:process_chunk", {
+    commands[i] = executor:async("myapp:process_chunk", {
         chunk_id = i,
         data = chunks[i]
     })
@@ -260,12 +349,49 @@ end
 
 -- Collect all results
 local results = {}
-for i, task in ipairs(tasks) do
-    local value, ok = task.response:receive()
+for i, command in ipairs(commands) do
+    local channel = command:response()
+    local payload_wrapper, ok = channel:receive()
     if ok then
-        results[i] = value
+        results[i] = payload_wrapper:data()
     else
-        print("Task", i, "failed:", task:error())
+        local payload, err = command:result()
+        if err then
+            print("Command", i, "failed:", err)
+        end
     end
 end
 ```
+
+### Working with Payloads
+
+```lua
+-- Function returns payload object
+local command = executor:async("myapp:get_data", { id = "123" })
+local channel = command:response()
+local payload_result, ok = channel:receive()
+
+if ok and command:is_complete() then
+    local payload, err = command:result()
+    if not err then
+        -- Get the raw data from payload
+        local data = payload:data()
+        
+        -- Or transcode to specific format
+        local json_payload = payload:transcode("JSON")
+        local json_data = json_payload:data()
+        
+        -- Check payload format
+        local format = payload:get_format()
+        print("Payload format:", format)
+    end
+end
+```
+
+## Security Considerations
+
+- Function calls require appropriate permissions (`funcs.call` for the target function)
+- Context modification requires `funcs.context` permission
+- Security context modification requires `funcs.security` permission
+- Security contexts (actor/scope) cannot be set to nil once established
+- All security checks are performed before function execution begins

@@ -113,7 +113,7 @@ local function process_traits(agent_spec)
 
     local trait_prompts = {}
     local traits_lib = get_traits()
-    -- agent_spec.tools already contains tools from the agent's direct definition or inheritance.
+    -- agent_spec.tools already contains tools from the agent's direct definition.
     -- We will use add_unique_items to add trait tools to it.
 
     for _, trait_identifier in ipairs(agent_spec.traits) do
@@ -160,24 +160,6 @@ local function process_traits(agent_spec)
     end
 end
 
--- Internal: Process inheritance from parent agents
-local function process_inheritance(agent_spec, inherit_list, visited_ids)
-    local reg = get_registry()
-
-    for _, parent_id in ipairs(inherit_list) do
-        if not visited_ids[parent_id] then
-            local parent_entry, err = reg.get(parent_id)
-
-            if is_valid_agent(parent_entry) then
-                local parent_spec = agent_registry._build_agent_spec(parent_entry, visited_ids)
-                add_unique_items(agent_spec.traits, parent_spec.traits)
-                add_unique_items(agent_spec.tools, parent_spec.tools)
-                add_unique_items(agent_spec.memory, parent_spec.memory)
-            end
-        end
-    end
-end
-
 -- Internal: Process delegate entries
 local function process_delegates(agent_spec, delegate_map)
     if not delegate_map or type(delegate_map) ~= "table" then
@@ -194,8 +176,8 @@ local function process_delegates(agent_spec, delegate_map)
 end
 
 -- Internal: Build a complete agent specification with resolved dependencies
-function agent_registry._build_agent_spec(entry, visited_ids)
-    visited_ids = visited_ids or {}
+function agent_registry._build_agent_spec(entry, visited_ids) -- visited_ids is no longer used for inheritance recursion
+    visited_ids = visited_ids or {} -- Retained for consistency, though its primary use (inheritance recursion) is gone
     local agent_spec = {
         id = entry.id,
         name = (entry.meta and entry.meta.name) or "",
@@ -209,26 +191,28 @@ function agent_registry._build_agent_spec(entry, visited_ids)
         traits = {},
         tools = {},
         memory = {},
-        delegates = {}
+        delegates = {},
+        memory_contract = entry.data.memory_contract -- Add memory contract support
     }
-    visited_ids[entry.id] = true
+    visited_ids[entry.id] = true -- Mark this entry as visited in the current build context
 
     add_unique_items(agent_spec.traits, entry.data.traits)
     add_unique_items(agent_spec.tools, entry.data.tools)
     add_unique_items(agent_spec.memory, entry.data.memory)
 
-    if entry.data.inherit and #entry.data.inherit > 0 then
-        process_inheritance(agent_spec, entry.data.inherit, visited_ids)
-    end
+    -- Inheritance processing removed
+    -- if entry.data.inherit and #entry.data.inherit > 0 then
+    --     process_inheritance(agent_spec, entry.data.inherit, visited_ids)
+    -- end
 
     if entry.data.delegate then
         process_delegates(agent_spec, entry.data.delegate)
     end
 
-    -- Process traits (prompts and tools) after inheritance and direct definitions
+    -- Process traits (prompts and tools) after direct definitions
     process_traits(agent_spec)
 
-    -- Resolve any tool namespace wildcards from all sources (direct, inherited, traits)
+    -- Resolve any tool namespace wildcards from all sources (direct, traits)
     agent_spec.tools = resolve_tool_wildcards(agent_spec.tools)
 
     return agent_spec
@@ -250,7 +234,7 @@ function agent_registry.get_by_id(agent_id)
     if not is_valid_agent(entry) then
         return nil, "Entry is not a gen1 agent: " .. tostring(agent_id)
     end
-    return agent_registry._build_agent_spec(entry)
+    return agent_registry._build_agent_spec(entry) -- No need to pass visited_ids from here for non-inheritance build
 end
 
 function agent_registry.get_by_name(name)
@@ -266,7 +250,7 @@ function agent_registry.get_by_name(name)
     if not entries or #entries == 0 then
         return nil, "No agent found with name: " .. name
     end
-    return agent_registry._build_agent_spec(entries[1])
+    return agent_registry._build_agent_spec(entries[1]) -- No need to pass visited_ids from here for non-inheritance build
 end
 
 -- Return full entries (id, meta, data) for every agent that belongs to

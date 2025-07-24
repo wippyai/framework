@@ -15,6 +15,7 @@ entries:
     source: file://agent.lua
     modules:
       - json
+      - contract
     imports:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm

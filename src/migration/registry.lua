@@ -1,11 +1,3 @@
---[[
-Migration Registry Finder
--------------------------
-
-This module provides functions to query the registry for migration-related entries.
-It handles searching, filtering, and retrieving migration metadata from the registry.
-]]
-
 local time = require("time")
 local registry = require("base_registry")
 

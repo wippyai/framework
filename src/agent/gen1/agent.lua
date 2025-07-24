@@ -1,5 +1,56 @@
 local prompt = require("prompt")
 local llm = require("llm")
+local contract = require("contract")
+
+---@class AgentDelegate
+---@field id string Target agent ID to delegate to
+---@field name string Tool name for delegation
+---@field rule string Rule describing when to delegate
+
+---@class MemoryContractConfig
+---@field implementation_id string Memory implementation/binding ID
+---@field context_values? table<string, any> Context values for memory contract
+
+---@class TokenUsage
+---@field prompt number Prompt tokens used
+---@field completion number Completion tokens used
+---@field thinking number Thinking tokens used
+---@field total number Total tokens used
+
+---@class AgentSpec
+---@field id string Agent unique identifier
+---@field name string Agent display name
+---@field description string Agent description
+---@field model? string LLM model identifier
+---@field max_tokens? number Maximum completion tokens
+---@field temperature? number Sampling temperature (0-1)
+---@field thinking_effort? number Thinking effort (0-100)
+---@field tools? string[] Array of tool IDs
+---@field memory? string[] Array of memory items
+---@field delegates? AgentDelegate[] Array of delegate configurations
+---@field prompt? string Base system prompt
+---@field memory_contract? MemoryContractConfig Memory contract configuration
+
+---@class AgentRunner
+---@field id string Agent ID
+---@field name string Agent name
+---@field description string Agent description
+---@field model string LLM model
+---@field max_tokens number Maximum tokens
+---@field temperature number Temperature
+---@field thinking_effort number Thinking effort
+---@field tools string[] Tool IDs
+---@field memory string[] Memory items
+---@field delegates AgentDelegate[] Delegate configurations
+---@field memory_contract? MemoryContractConfig Memory contract configuration
+---@field base_prompt string Base prompt
+---@field system_message table System message
+---@field tool_ids string[] Tool IDs for LLM
+---@field tool_schemas table<string, table> Custom tool schemas
+---@field delegate_tools table<string, table> Delegate tool schemas
+---@field delegate_map table<string, string> Maps tool IDs to agent IDs
+---@field total_tokens TokenUsage Token usage statistics
+---@field messages_handled number Messages processed
 
 -- Main module
 local agent = {}
@@ -9,27 +60,84 @@ agent.DEFAULT_MODEL = ""
 agent.DEFAULT_MAX_TOKENS = 4096
 agent.DEFAULT_TEMPERATURE = 0.7
 agent.DEFAULT_THINKING_EFFORT = 0
+agent.MEMORY_CONTRACT_ID = "wippy.agent.memory:contract"
 
 -- For dependency injection in testing
 agent._llm = nil
 agent._prompt = nil
+agent._contract = nil
 
 -- Internal: Get LLM instance - use injected llm or require it
+---@return table
 local function get_llm()
     return agent._llm or llm
 end
 
 -- Internal: Get prompt module - use injected prompt or require it
+---@return table
 local function get_prompt()
     return agent._prompt or prompt
 end
 
+-- Internal: Get contract module - use injected contract or require it
+---@return table
+local function get_contract()
+    return agent._contract or contract
+end
+
+-- Internal: Get memory contract instance with merged context
+---@param self AgentRunner
+---@param runtime_context? table<string, any> Runtime context values
+---@return table|nil contract_instance, string|nil error
+local function get_memory_contract(self, runtime_context)
+    if not self.memory_contract or not self.memory_contract.implementation_id then
+        return nil, "No memory contract configured for this agent"
+    end
+
+    local contract_module = get_contract()
+
+    -- Get the memory contract definition
+    local memory_contract_def, err = contract_module.get(agent.MEMORY_CONTRACT_ID)
+    if err then
+        return nil, "Failed to get memory contract: " .. err
+    end
+
+    -- Start with configured context values
+    local merged_context = {}
+    if self.memory_contract.context_values then
+        for key, value in pairs(self.memory_contract.context_values) do
+            merged_context[key] = value
+        end
+    end
+
+    -- Add runtime context (overrides configured values)
+    if runtime_context then
+        for key, value in pairs(runtime_context) do
+            merged_context[key] = value
+        end
+    end
+
+    -- Always add agent_id
+    merged_context.agent_id = self.id
+
+    -- Open the specific implementation with merged context
+    local memory_instance, err = memory_contract_def:open(self.memory_contract.implementation_id, merged_context)
+    if err then
+        return nil, "Failed to open memory implementation: " .. err
+    end
+
+    return memory_instance
+end
+
 -- Constructor: Create a new agent runner from an agent spec
+---@param agent_spec AgentSpec
+---@return AgentRunner|nil runner, string|nil error
 function agent.new(agent_spec)
     if not agent_spec then
         return nil, "Agent spec is required"
     end
 
+    ---@type AgentRunner
     local runner = {
         -- Agent metadata
         id = agent_spec.id,
@@ -46,6 +154,7 @@ function agent.new(agent_spec)
         tools = agent_spec.tools or {},
         memory = agent_spec.memory or {},
         delegates = agent_spec.delegates or {},
+        memory_contract = agent_spec.memory_contract,
 
         -- Internal state
         base_prompt = agent_spec.prompt or "",
@@ -85,6 +194,7 @@ function agent.new(agent_spec)
 end
 
 -- Generate delegate tools with schemas
+---@param self AgentRunner
 function agent:_generate_delegate_tools()
     if not self.delegates or #self.delegates == 0 then return end
 
@@ -123,7 +233,8 @@ function agent:_generate_delegate_tools()
 end
 
 -- Build the system message from base prompt and agent metadata
--- Returns a system message instead of using a prompt builder
+---@param self AgentRunner
+---@return table system_message
 function agent:_build_system_message()
     local system_prompt = self.base_prompt
 
@@ -166,7 +277,11 @@ function agent:_build_system_message()
 end
 
 -- Execute the agent to get the next action
--- Modified to accept runtime options including tool_call
+---@param self AgentRunner
+---@param prompt_builder_slice table Prompt builder slice with conversation
+---@param stream_target? table Optional stream target
+---@param runtime_options? table Optional runtime options
+---@return table|nil result, string|nil error
 function agent:step(prompt_builder_slice, stream_target, runtime_options)
     -- Runtime options override agent defaults
     runtime_options = runtime_options or {}
@@ -277,6 +392,10 @@ function agent:step(prompt_builder_slice, stream_target, runtime_options)
 end
 
 -- Register a custom tool schema
+---@param self AgentRunner
+---@param tool_name string Tool name
+---@param tool_schema table Tool schema definition
+---@return AgentRunner|nil self, string|nil error
 function agent:register_tool(tool_name, tool_schema)
     if not tool_name then
         return nil, "Tool name is required"
@@ -292,7 +411,27 @@ function agent:register_tool(tool_name, tool_schema)
     return self
 end
 
+-- Check if agent has memory contract configured
+---@param self AgentRunner
+---@return boolean
+function agent:has_memory_contract()
+    if not self.memory_contract then
+        return false
+    end
+    return self.memory_contract.implementation_id ~= nil
+end
+
+-- Get memory contract instance with merged context
+---@param self AgentRunner
+---@param runtime_context? table<string, any> Runtime context values
+---@return table|nil contract_instance, string|nil error
+function agent:get_memory_contract(runtime_context)
+    return get_memory_contract(self, runtime_context)
+end
+
 -- Get conversation statistics
+---@param self AgentRunner
+---@return table stats
 function agent:get_stats()
     return {
         id = self.id,

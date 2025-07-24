@@ -102,7 +102,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-      size: 2
+      size: 20
     
   # wippy.llm.openai:structured_output_test
   - name: structured_output_test
@@ -157,7 +157,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-      size: 2
+      size: 20
     
   # wippy.llm.openai:text_generation_test
   - name: text_generation_test
@@ -211,7 +211,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-      size: 2
+      size: 20
     
   # wippy.llm.openai:tool_calling_test
   - name: tool_calling_test

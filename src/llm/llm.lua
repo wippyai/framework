@@ -352,6 +352,10 @@ function llm.embed(text, options)
         return nil, err
     end
 
+    if result and result.error then
+        return nil, result.error_message or result.error or "Unknown error"
+    end
+
     return llm.track_usage(result, options.model, options)
 end
 

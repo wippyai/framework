@@ -9,7 +9,7 @@ local ctx = require("ctx")
 local vertex = {}
 
 -- Constants
-vertex.DEFAULT_API_ENDPOINT = "https://%saiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models"
+vertex.DEFAULT_API_ENDPOINT = "https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models"
 vertex.DEFAULT_GENERATE_CONTENT_ENDPOINT = "generateContent"
 
 -- Map Vertex AI finish reasons to standardized finish reasons
@@ -121,6 +121,9 @@ end
 function vertex.request(endpoint_path, model, payload, options)
     options = options or {}
 
+    local location = options.location or env.get("VERTEX_AI_LOCATION")
+    local project = options.project or env.get("VERTEX_AI_PROJECT")
+
     local storeObj, err = store.get("app:cache")
     local token, err = storeObj:get("vertex_oauth_token")
     if not token then
@@ -139,13 +142,9 @@ function vertex.request(endpoint_path, model, payload, options)
     -- the `provider_options` field from the Model card
     local provider_options = ctx.get("provider_options") or {}
 
-    local location = provider_options.location or env.get("VERTEX_AI_LOCATION")
-    local project = provider_options.project or env.get("VERTEX_AI_PROJECT")
-
     -- Prepare endpoint URL
-    local prefix_location = location == "global" and "" or location .. "-"
     local base_url = provider_options.base_url or vertex.DEFAULT_API_ENDPOINT
-    local full_url = string.format(base_url, prefix_location, project, location) .. "/" .. model .. ":" .. endpoint_path
+    local full_url = string.format(base_url, location, project, location) .. "/" .. model .. ":" .. endpoint_path
 
     -- Make the request
     local http_options = {

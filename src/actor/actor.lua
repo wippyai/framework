@@ -1,8 +1,15 @@
+local time = require("time")
+
 local actor = {}
 
 -- Allow for process injection for testing
 actor._process = nil
 
+-- Internal constants
+local INTERNAL_CHANNEL_BUFFER = 100
+local INITIAL_WAIT_CAPACITY = 10
+
+-- Actor control flow helpers
 local function is_exit(result)
     return type(result) == "table" and result._actor_exit == true
 end
@@ -49,8 +56,9 @@ function actor.new(initial_state, handlers)
         local proc = get_process()
         local inbox = proc.inbox()
         local events = proc.events()
-        local internal_channel = channel.new(100)
+        local internal_channel = channel.new(INTERNAL_CHANNEL_BUFFER)
 
+        -- Extract topic handlers from main handlers
         local topic_handlers = {}
         for name, handler in pairs(handlers) do
             if type(handler) == "function" and not name:match("^__") then
@@ -58,9 +66,14 @@ function actor.new(initial_state, handlers)
             end
         end
 
+        -- Channel management - pre-allocate for efficiency
         local registered_channels = {}
         local channel_to_id = {}
 
+        -- Wait functionality state - efficient allocation
+        local topic_listeners = {} -- topic -> process.listen() channel
+
+        -- Initial select cases
         local select_cases = {
             inbox:case_receive(),
             events:case_receive(),
@@ -68,13 +81,14 @@ function actor.new(initial_state, handlers)
         }
 
         local function rebuild_select_cases()
+            -- Rebuild select cases efficiently
             select_cases = {
                 inbox:case_receive(),
                 events:case_receive(),
                 internal_channel:case_receive()
             }
 
-            for channel_id, channel_info in pairs(registered_channels) do
+            for _, channel_info in pairs(registered_channels) do
                 table.insert(select_cases, channel_info.chan:case_receive())
             end
         end
@@ -85,7 +99,7 @@ function actor.new(initial_state, handlers)
             end
 
             local channel_id = tostring(chan)
-            registered_channels[channel_id] = { chan = chan, handler = handler }
+            registered_channels[channel_id] = {chan = chan, handler = handler}
             channel_to_id[chan] = channel_id
             rebuild_select_cases()
             return true
@@ -137,6 +151,41 @@ function actor.new(initial_state, handlers)
             return true
         end
 
+        -- Ensure shared listener exists for topic
+        local function ensure_topic_listener(topic)
+            if not topic_listeners[topic] then
+                local listener = process.listen(topic)
+                topic_listeners[topic] = listener
+            end
+        end
+
+        -- Wait for message on topic with timeout
+        local function wait(topic, timeout)
+            if not topic then
+                return nil, "Invalid topic"
+            end
+
+            -- Get or create shared listener for topic
+            ensure_topic_listener(topic)
+
+            local timer = time.timer(timeout)
+
+            -- Direct select on shared listener - first caller wins
+            local result = channel.select({
+                topic_listeners[topic]:case_receive(),
+                timer:channel():case_receive()
+            })
+
+            -- Cleanup
+            timer:stop()
+
+            if result.channel == timer:channel() then
+                return nil, "timeout"
+            else
+                return result.value, nil
+            end
+        end
+
         local function process_topic_message(topic, payload, from)
             local current_topic = topic
             local current_payload = payload
@@ -175,14 +224,16 @@ function actor.new(initial_state, handlers)
             end
         end
 
+        -- Expose state methods - efficient assignment
         state.register_channel = register_channel
         state.unregister_channel = unregister_channel
         state.add_handler = add_handler
         state.remove_handler = remove_handler
         state.next = next_topic
         state.async = async
-        state.post = post
+        state.wait = wait
 
+        -- Initialize actor if handler exists
         if handlers.__init then
             local init_result = handlers.__init(state)
             if is_exit(init_result) then
@@ -199,12 +250,14 @@ function actor.new(initial_state, handlers)
             end
         end
 
+        -- Main actor loop
         while true do
             local result = channel.select(select_cases)
             if not result.ok then
                 break
             end
 
+            -- Handle system events
             if result.channel == events and result.value then
                 local event = result.value
                 local event_kind = event.kind
@@ -234,6 +287,7 @@ function actor.new(initial_state, handlers)
                 end
             end
 
+            -- Handle inbox messages
             if result.channel == inbox and result.value then
                 local msg = result.value
                 local exit_result = process_topic_message(msg:topic(), msg:payload():data(), msg:from())
@@ -242,6 +296,7 @@ function actor.new(initial_state, handlers)
                 end
             end
 
+            -- Handle internal messages
             if result.channel == internal_channel and result.value then
                 local msg = result.value
 
@@ -258,14 +313,14 @@ function actor.new(initial_state, handlers)
                 end
             end
 
+            -- Handle registered channels
             local channel_id = channel_to_id[result.channel]
             if channel_id then
                 local channel_info = registered_channels[channel_id]
                 local value = result.value
                 local is_ok = result.ok
-                local channel_name = channel_id
 
-                local reply = channel_info.handler(state, value, is_ok, channel_name)
+                local reply = channel_info.handler(state, value, is_ok, channel_id)
 
                 if not is_ok then
                     registered_channels[channel_id] = nil
@@ -276,10 +331,19 @@ function actor.new(initial_state, handlers)
                 if is_exit(reply) then
                     return reply.result
                 end
+
+                if is_next(reply) then
+                    internal_channel:send({
+                        type = "__next",
+                        topic = reply.topic,
+                        payload = reply.payload,
+                        from = "channel_handler"
+                    })
+                end
             end
         end
 
-        return { status = "completed" }
+        return {status = "completed"}
     end
 
     return {

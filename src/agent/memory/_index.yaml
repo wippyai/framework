@@ -1,0 +1,133 @@
+version: "1.0"
+namespace: wippy.agent.memory
+
+entries:
+  # wippy.agent.memory:contract
+  - name: contract
+    kind: contract.definition
+    meta:
+      comment: Memory recall interface for retrieving relevant contextual information
+      tags:
+        - memory
+        - recall
+        - retrieval
+        - context
+      description: Retrieves relevant memories based on current work and recent activity
+    methods:
+      - name: recall
+        description: |
+          Retrieve relevant memories based on what's currently being worked on and recent actions.
+    
+          The binding context should include relevant identifiers (agent_id, session_id, etc).
+    
+          Recent actions should be string summaries describing what happened:
+          - "user: How do I optimize my database?"
+          - "assistant: Let me analyze your schema [called tools]"
+          - "tool: analyze_db_schema(db=prod) -> found 3 missing indexes"
+          - "delegated to: agent:specialist for API design"
+    
+          Returns memories ordered by relevance without scores.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "working_on": {
+                    "type": "string",
+                    "description": "Brief description of current task or topic if any"
+                  },
+                  "recent_actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Recent activity as string summaries or copies of messages"
+                  },
+                  "previous_memories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Previous memory IDs to avoid duplicates",
+                    "default": []
+                  },
+                  "constraints": {
+                    "type": "object",
+                    "properties": {
+                      "max_items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 5
+                      },
+                      "max_length": {
+                        "type": "integer",
+                        "description": "Maximum total character length of memories",
+                        "default": 5000
+                      },
+                      "memory_types": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Filter by memory types"
+                      },
+                      "recency_bias": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "How much to favor recent memories (0=relevance only, 1=recency only)",
+                        "default": 0.3
+                      }
+                    },
+                    "default": {}
+                  }
+                },
+                "required": ["recent_actions"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |-
+              {
+                "type": "object",
+                "properties": {
+                  "memories": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Memory identifier"
+                        },
+                        "content": {
+                          "type": "string",
+                          "description": "Memory content"
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "Memory type classification"
+                            },
+                            "source": {
+                              "type": "string",
+                              "description": "Origin of this memory"
+                            },
+                            "created_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      },
+                      "required": ["id", "content"]
+                    },
+                    "description": "Retrieved memories ordered by relevance"
+                  }
+                },
+                "required": ["memories"]
+              }
+            format: application/schema+json
+    
