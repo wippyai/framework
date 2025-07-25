@@ -90,7 +90,7 @@ function llm.track_usage(response, model_id, options)
 
     local user_id = "default_user_id"
     local actor = security.actor()
-    local actor_meta = actor:meta() or {}
+    local actor_meta = actor and actor:meta() or {}
 
     if options.user_id then
         user_id = options.user_id
