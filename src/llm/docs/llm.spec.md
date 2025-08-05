@@ -690,3 +690,209 @@ entries:
 ```
 
 For local models, the `provider_options` field is particularly important as it specifies how to connect to the locally running model server.
+
+## 12. Streaming with Process Communication
+
+The LLM library integrates with Wippy's process communication system for streaming responses. This follows the actor model where processes communicate through message passing.
+
+### Basic Streaming Pattern
+
+```lua
+local function streaming_example()
+    local llm = require("llm")
+    
+    -- Start streaming response
+    local response = llm.generate("Write a detailed explanation", {
+        model = "claude-3-5-haiku",
+        stream = {
+            reply_to = process.pid(),  -- Current process PID
+            topic = "llm_stream",      -- Topic name for streaming messages
+            buffer_size = 10           -- Optional: buffer size for content chunks
+        }
+    })
+    
+    -- Handle streaming messages using process channels
+    local stream_channel = process.listen("llm_stream")
+    
+    while true do
+        local chunk = stream_channel:receive()
+        
+        if chunk.type == "chunk" then
+            io.write(chunk.content)  -- Regular content chunk
+        elseif chunk.type == "thinking" then
+            print("Thinking:", chunk.content)  -- Thinking process (Claude 3.7)
+        elseif chunk.type == "error" then
+            print("Stream Error:", chunk.error.message)
+            break
+        elseif chunk.type == "done" then
+            print("Stream completed")
+            break
+        end
+    end
+end
+```
+
+### Streaming with Timeouts
+
+```lua
+local function streaming_with_timeout()
+    local time = require("time")
+    local llm = require("llm")
+    
+    -- Start streaming
+    local response = llm.generate("Write a detailed explanation", {
+        model = "gpt-4o",
+        stream = {
+            reply_to = process.pid(),
+            topic = "ml_explanation"
+        }
+    })
+    
+    -- Set up channels with timeout
+    local stream_channel = process.listen("ml_explanation")
+    local timeout = time.after("30s")  -- 30 second timeout
+    
+    local completed = false
+    
+    while not completed do
+        local result = channel.select({
+            stream_channel:case_receive(),
+            timeout:case_receive()
+        })
+        
+        if result.channel == timeout then
+            print("Stream timed out")
+            break
+        elseif result.channel == stream_channel then
+            local chunk = result.value
+            
+            if chunk.type == "chunk" then
+                io.write(chunk.content)
+            elseif chunk.type == "done" then
+                completed = true
+            end
+        end
+    end
+end
+```
+
+## 13. Best Practices
+
+### Model Selection Guidelines
+- Use **GPT-4o** for complex reasoning and tool use
+- Use **Claude 3.5 Haiku** for fast, efficient text generation  
+- Use **Claude 3.7** for tasks requiring deep thinking
+- Use **local models** for privacy-sensitive content
+
+### Prompt Engineering
+```lua
+-- Good: Clear, specific instructions
+local builder = prompt.new()
+builder:add_system("You are a professional code reviewer.")
+builder:add_user("Review this Python function for potential bugs:\n\n" .. code)
+
+-- Avoid: Vague instructions like "Look at this code and tell me what you think"
+```
+
+### Resource Management
+```lua
+-- Set reasonable token limits
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    max_tokens = 1000,  -- Prevent runaway generation
+    temperature = 0.7
+})
+
+-- Monitor token usage
+if response and response.tokens then
+    print("Total tokens used:", response.tokens.total_tokens)
+end
+```
+
+### Error Handling Best Practices
+```lua
+-- Always check for errors first
+local response = llm.generate(prompt, options)
+
+if not response then
+    print("No response received")
+    return
+elseif response.error then
+    print("Error:", response.error_message)
+    
+    -- Handle specific error types
+    if response.error == llm.ERROR_TYPE.RATE_LIMIT then
+        print("Rate limit exceeded, wait before retrying")
+    elseif response.error == llm.ERROR_TYPE.CONTEXT_LENGTH then
+        print("Prompt too long, reduce content")
+    end
+    return
+elseif not response.result or response.result == "" then
+    print("Empty response received")
+    return
+else
+    print("Valid response:", response.result)
+end
+```
+
+### Security Considerations
+- Never hardcode API keys in source code
+- Use environment variables for sensitive configuration
+- Validate user input before processing
+- Monitor usage for cost control
+- Implement rate limiting for user-facing applications
+
+## 14. Common Integration Patterns
+
+### Request-Response with Process Communication
+```lua
+-- Requester process
+local function send_llm_request(target_pid, prompt)
+    process.send(target_pid, "llm_request", {
+        prompt = prompt,
+        reply_to = process.pid(),
+        model = "claude-3-5-haiku"
+    })
+    
+    local inbox = process.inbox()
+    local response = inbox:receive()
+    return response:payload():data()
+end
+
+-- LLM worker process
+local function llm_worker()
+    local requests = process.listen("llm_request")
+    
+    while true do
+        local request = requests:receive()
+        
+        local response = llm.generate(request.prompt, {
+            model = request.model
+        })
+        
+        process.send(request.reply_to, "llm_response", response)
+    end
+end
+```
+
+### Multi-Model Fallback Strategy
+```lua
+local function generate_with_fallback(prompt, options)
+    local models = {"gpt-4o", "claude-3-5-haiku", "local-model"}
+    
+    for _, model in ipairs(models) do
+        local response = llm.generate(prompt, {
+            model = model,
+            temperature = options.temperature or 0.7
+        })
+        
+        if response and not response.error then
+            return response
+        elseif response and response.error then
+            print("Model", model, "failed:", response.error_message)
+        end
+    end
+    
+    return nil, "All models failed"
+end
+```

@@ -669,6 +669,22 @@ entries:
         - serialization
     source: file://docs/yaml.spec.md
 
+  # wippy.docs.docs:dependencies.spec
+  - name: dependencies.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Dependency Injection System providing declarative parameter injection mechanism separating configuration concerns between applications and modules
+      tags:
+        - dependencies
+        - definitions
+        - requirements
+        - injection
+        - configuration
+        - parameters
+        - modules
+    source: file://docs/dependencies.spec.md
+
   # wippy.docs:html.spec
   - name: html.spec
     kind: registry.entry
