@@ -4,6 +4,7 @@ local uuid = require("uuid")
 local json = require("json")
 local token_usage_repo = require("token_usage_repo")
 local time = require("time")
+local env = require("env")
 
 local function define_tests()
     describe("Token Usage Repository", function()
@@ -70,7 +71,8 @@ local function define_tests()
         -- Clean up test data after all tests
         after_all(function()
             -- Get a database connection for cleanup
-            local db, err = sql.get("app:db")
+            local db_resource, _ = env.get("wippy.usage:target_db")
+            local db, err = sql.get(db_resource)
             if err then
                 error("Failed to connect to database: " .. err)
             end
@@ -118,7 +120,8 @@ local function define_tests()
             local end_time = test_data.base_time + 3600   -- 1 hour from now
 
             -- Query only for our test users to isolate the data
-            local db, db_err = sql.get("app:db")
+            local db_resource, _ = env.get("wippy.usage:target_db")
+            local db, db_err = sql.get(db_resource)
             if db_err then error(db_err) end
 
             -- First check what records we actually have in our time range
