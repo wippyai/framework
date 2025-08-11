@@ -2,15 +2,28 @@ version: "1.0"
 namespace: wippy.views.api
 
 entries:
+  # API Router Requirement
+  - name: API_ROUTER
+    kind: ns.requirement
+    meta:
+      description: "Injects API router configuration into endpoints"
+    targets:
+      - entry: list_pages
+        path: .meta.router
+      - entry: list_pages.endpoint
+        path: .meta.router
+      - entry: render
+        path: .meta.router
+      - entry: render.endpoint
+        path: .meta.router
+      - entry: render.endpoint4
+        path: .meta.router
   # wippy.views.api:list_pages
   - name: list_pages
     kind: function.lua
     meta:
       comment: Lists all virtual pages with metadata
       description: Pages listing endpoint
-      depends_on:
-        - ns:wippy.views
-      router: app:api.public
     source: file://list_pages.lua
     modules:
       - http
@@ -20,30 +33,23 @@ entries:
     pool:
       size: 4
       workers: 4
-    
+
   # wippy.views.api:list_pages.endpoint
   - name: list_pages.endpoint
     kind: http.endpoint
     meta:
       comment: Endpoint that lists all accessible pages
       description: CMS pages listing endpoint
-      depends_on:
-        - ns:wippy.views
-        - app:api.public
-      router: app:api.public
     method: GET
     func: list_pages
     path: /pages/list
-    
+
   # wippy.views.api:render
   - name: render
     kind: function.lua
     meta:
       comment: Returns the rendered content of a specific virtual page by ID
       description: Page rendering endpoint
-      depends_on:
-        - ns:wippy.views
-      router: app:api.public
     source: file://render.lua
     modules:
       - http
@@ -54,32 +60,23 @@ entries:
     method: handler
     pool:
       size: 4
-    
+
   # wippy.views.api:render.endpoint
   - name: render.endpoint
     kind: http.endpoint
     meta:
       comment: Endpoint that renders a virtual page by ID
       description: CMS page renderer endpoint
-      depends_on:
-        - ns:wippy.views
-        - app:api.public
-      router: app:api.public
     method: GET
     func: render
     path: /pages/content/{id}
-    
+
   # wippy.views.api:render.endpoint4
   - name: render.endpoint4
     kind: http.endpoint
     meta:
       comment: Endpoint that renders a virtual page by ID
       description: CMS page renderer endpoint
-      depends_on:
-        - ns:wippy.views
-        - app:api.public
-      router: app:api.public
     method: GET
     func: render
     path: /pages/content4/{id}
-    
