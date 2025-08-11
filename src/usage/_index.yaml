@@ -2,6 +2,15 @@ version: "1.0"
 namespace: wippy.usage
 
 entries:
+  # Requirements
+  - name: __requirement-target_db
+    kind: ns.requirement
+    meta:
+      description: "Application database ID for usage tracking"
+    targets:
+      - entry: target_db
+        path: ".default"
+
   # Dependencies
   - name: __dependency.wippy.test
     kind: "ns.dependency"
@@ -9,6 +18,28 @@ entries:
       description: "Testing component"
     component: "wippy/test"
     version: ">=v0.0.1"
+
+  - name: __dependency.wippy.migration
+    kind: "ns.dependency"
+    meta:
+      description: "Migration component"
+    component: "wippy/migration"
+    version: ">=v0.0.7"
+
+  # wippy.usage:envs
+  - name: envs
+    kind: env.storage.os
+    meta:
+      type: envstorage
+      comment: OS storage for environment variables
+
+  # wippy.usage:target_db
+  - name: target_db
+    kind: env.variable
+    meta:
+      type: config_key
+      comment: Database resource identifier
+    storage: wippy.usage:envs
 
   # wippy.usage:token_usage_repo
   - name: token_usage_repo
@@ -25,6 +56,7 @@ entries:
       - json
       - uuid
       - time
+      - env
 
   # wippy.usage:token_usage_repo_test
   - name: token_usage_repo_test
@@ -46,6 +78,7 @@ entries:
       - uuid
       - json
       - time
+      - env
     imports:
       test: wippy.test:test
       token_usage_repo: wippy.usage:token_usage_repo
