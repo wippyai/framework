@@ -86,7 +86,7 @@ entries:
         - async
         - binding
         - implementation
-    source: file://contract.spec.md
+    source: file://docs/contract.spec.md
 
   # wippy.docs:crypto.spec
   - name: crypto.spec
@@ -698,7 +698,7 @@ entries:
         - bluemonday
         - policy
         - ugc
-    source: file://html.spec.md
+    source: file://docs/html.spec.md
 
   # wippy.docs:module-namespace.spec
   - name: module-namespace.spec
@@ -716,4 +716,3 @@ entries:
         - vendor
         - package
     source: file://docs/module_namespace.spec.md
-
