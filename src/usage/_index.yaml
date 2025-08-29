@@ -3,13 +3,15 @@ namespace: wippy.usage
 
 entries:
   # Requirements
-  - name: __requirement-target_db
+  - name: target_db
     kind: ns.requirement
     meta:
       description: "Application database ID for usage tracking"
     targets:
-      - entry: target_db
+      - entry: env-target_db
         path: ".default"
+      - entry: wippy.usage.migrations:01_create_token_usage_table
+        path: ".meta.env-target_db"
 
   # Dependencies
   - name: __dependency.wippy.test
@@ -33,8 +35,8 @@ entries:
       type: envstorage
       comment: OS storage for environment variables
 
-  # wippy.usage:target_db
-  - name: target_db
+  # wippy.usage:env-target_db
+  - name: env-target_db
     kind: env.variable
     meta:
       type: config_key

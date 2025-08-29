@@ -17,7 +17,7 @@ token_usage_repo.INTERVAL = {
 -- Get a database connection
 local function get_db()
     -- Get database resource from environment
-    local DB_RESOURCE, _ = env.get("wippy.usage:target_db")
+    local DB_RESOURCE, _ = env.get("wippy.usage:env-target_db")
 
     local db, err = sql.get(DB_RESOURCE)
     if err then

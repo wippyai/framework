@@ -2,15 +2,6 @@ version: "1.0"
 namespace: wippy.usage.migrations
 
 entries:
-  # Requirements
-  - name: app_db
-    kind: ns.requirement
-    meta:
-      description: "Application database ID"
-    targets:
-      - entry: 01_create_token_usage_table
-        path: ".meta.target_db"
-
   # wippy.usage.migrations:01_create_token_usage_table
   - name: 01_create_token_usage_table
     kind: function.lua
