@@ -26,7 +26,7 @@ entries:
       name: Actor Library Test
       type: test
       comment: Tests the actor library's messaging and event handling capabilities
-      group: General
+      group: Actor Framework
       tags:
         - actor
         - library
