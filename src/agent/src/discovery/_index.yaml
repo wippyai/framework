@@ -1,0 +1,143 @@
+version: "1.0"
+namespace: wippy.agent.discovery
+
+entries:
+  # wippy.agent.discovery:registry
+  - name: registry
+    kind: library.lua
+    meta:
+      type: library
+      comment: Agent registry library for discovering and loading gen1 agents
+    source: file://registry.lua
+    modules:
+      - registry
+      - json
+    
+  # wippy.agent.discovery:registry_test
+  - name: registry_test
+    kind: function.lua
+    meta:
+      name: Agent Registry Test
+      type: test
+      comment: Tests the agent registry library functionality for discovering and loading gen1 agents
+      group: Agent Framework
+      tags:
+        - agents
+        - registry
+        - discovery
+        - tests
+    source: file://registry_test.lua
+    imports:
+      agent_registry: wippy.agent.discovery:registry
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.agent.discovery:selector
+  - name: selector
+    kind: function.lua
+    meta:
+      name: Agent Selector
+      type: tool
+      comment: Selects the most appropriate agent from a given class based on user prompt analysis
+      group: Agent Framework
+      input_schema: "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"user_prompt\": {\n      \"type\": \"string\",\n      \"description\": \"The user prompt to analyze for agent selection\"\n    },\n    \"class_name\": {\n      \"type\": \"string\", \n      \"description\": \"The agent class to search within\"\n    }\n  },\n  \"required\": [\"user_prompt\", \"class_name\"],\n  \"additionalProperties\": false\n}\n"
+    source: file://selector.lua
+    modules:
+      - json
+    imports:
+      agent_registry: wippy.agent.discovery:registry
+      llm: wippy.llm:llm
+    method: execute
+    
+  # wippy.agent.discovery:selector_test
+  - name: selector_test
+    kind: function.lua
+    meta:
+      name: Agent Selector Test
+      type: test
+      comment: Tests the agent selector functionality for selecting agents based on user prompt analysis
+      group: Agent Framework
+      tags:
+        - selector
+        - discovery
+        - agent_selection
+        - llm_integration
+        - tests
+    source: file://selector_test.lua
+    modules:
+      - env
+    imports:
+      selector: wippy.agent.discovery:selector
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.agent.discovery:traits
+  - name: traits
+    kind: library.lua
+    meta:
+      type: library
+      comment: Traits library for discovering and loading agent traits
+      depends_on:
+        - ns:wippy.test
+    source: file://traits.lua
+    modules:
+      - registry
+    
+  # wippy.agent.discovery:traits_test
+  - name: traits_test
+    kind: function.lua
+    meta:
+      name: Agent Traits Test
+      type: test
+      comment: Tests the agent traits library
+      group: Agent Framework
+      tags:
+        - traits
+        - registry
+        - discovery
+        - tests
+      depends_on:
+        - traits
+    source: file://traits_test.lua
+    imports:
+      test: wippy.test:test
+      traits: wippy.agent.discovery:traits
+    method: run_tests
+
+  # wippy.agent.discovery:tools
+  - name: tools
+    kind: library.lua
+    meta:
+      type: library
+      comment: Tool resolver library for discovering tools and their schemas
+      depends_on:
+        - ns:wippy.test
+    source: file://tools.lua
+    modules:
+      - json
+      - registry
+      - funcs
+      - store
+
+  # wippy.agent.discovery:tools_test
+  - name: tools_test
+    kind: function.lua
+    meta:
+      name: Tools Library Test
+      type: test
+      comment: Tests the tool resolver library functionality for discovering and managing tools
+      group: Agent Framework
+      tags:
+        - llm
+        - tools
+        - resolver
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://tools_test.lua
+    modules:
+      - json
+    imports:
+      tools: wippy.agent.discovery:tools
+      test: wippy.test:test
+    method: run_tests

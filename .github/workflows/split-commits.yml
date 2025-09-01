@@ -14,7 +14,7 @@ jobs:
       matrix:
         package:
           - { folder: actor/src, repo: module-actor }
-          - { folder: agent, repo: module-agent }
+          - { folder: agent/src, repo: module-agent }
           - { folder: bootloader, repo: module-bootloader }
           - { folder: migration, repo: module-migration }
           - { folder: relay, repo: module-relay }

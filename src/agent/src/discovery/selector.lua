@@ -4,7 +4,7 @@ local json = require("json")
 local agent_selector = {}
 
 -- Constants
-local DEFAULT_LLM_MODEL = "gpt-4.1"
+local DEFAULT_LLM_MODEL = "gpt-4.1" -- todo: use class!
 local ANALYSIS_PROMPT_TEMPLATE = [[
 You are an expert agent selector. Your task is to analyze a user prompt and select the most appropriate agent from the available agents in class "%s".
 
@@ -35,14 +35,14 @@ local function get_llm()
     return agent_selector._llm or require("llm")
 end
 
--- Main selection function
+-- Main selection function - returns (result, error)
 function agent_selector.select_agent(user_prompt, class_name)
     if not user_prompt or user_prompt == "" then
-        error("User prompt is required")
+        return nil, "User prompt is required"
     end
 
     if not class_name or class_name == "" then
-        error("Class name is required")
+        return nil, "Class name is required"
     end
 
     local registry = get_agent_registry()
@@ -52,7 +52,7 @@ function agent_selector.select_agent(user_prompt, class_name)
     local agents = registry.list_by_class(class_name)
 
     if not agents or #agents == 0 then
-        error("No agents found for class: " .. class_name)
+        return nil, "No agents found for class: " .. class_name
     end
 
     -- Build agent information for LLM analysis
@@ -98,15 +98,27 @@ function agent_selector.select_agent(user_prompt, class_name)
 
     -- Use LLM to make selection
     local response, err = llm.structured_output(response_schema, analysis_prompt, {
-        model = DEFAULT_LLM_MODEL, -- Use the constant for the model
-        temperature = 0.3
+        model = DEFAULT_LLM_MODEL,
+        temperature = 0
     })
 
     if err then
-        error("Failed to analyze agents: " .. err)
+        return nil, "Failed to analyze agents: " .. err
+    end
+
+    if not response then
+        return nil, "No response from LLM"
+    end
+
+    if not response.result then
+        return nil, "Invalid response from LLM - missing result field"
     end
 
     local result = response.result
+
+    if not result.agent then
+        return nil, "LLM response missing agent field"
+    end
 
     -- Validate the selected agent exists
     local selected_agent_found = false
@@ -118,23 +130,19 @@ function agent_selector.select_agent(user_prompt, class_name)
     end
 
     if not selected_agent_found then
-        error("LLM selected invalid agent ID: " .. tostring(result.agent))
+        return nil, "LLM selected invalid agent ID: " .. tostring(result.agent)
     end
 
     -- Ensure success is true since we found a valid agent
-    -- (The LLM response should already have success, but we can enforce it if we are sure)
-    -- If the LLM could also return success=false with a valid agent and a reason for doubt,
-    -- then this override might not always be correct.
-    -- For now, assuming if an agent is selected and valid, it's a success from this function's perspective.
     result.success = true
 
-    return result
+    return result, nil
 end
 
 -- Public API function that matches expected interface
 function agent_selector.execute(input)
-    if type(input) == "string" then
-        input = json.decode(input)
+    if not input then
+        return nil, "Input is required"
     end
 
     local user_prompt = input.user_prompt or input.prompt

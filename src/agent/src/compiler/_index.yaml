@@ -1,0 +1,37 @@
+version: "1.0"
+namespace: wippy.agent.compiler
+
+entries:
+  # wippy.agent.compiler:compiler
+  - name: compiler
+    kind: library.lua
+    meta:
+      type: library
+      comment: Agent compiler for materializing raw agent specs into runnable agents with full trait processing and context resolution
+    source: file://compiler.lua
+    modules:
+      - registry
+      - funcs
+    imports:
+      tools: wippy.agent.discovery:tools
+      traits: wippy.agent.discovery:traits
+
+  # wippy.agent.compiler:compiler_test
+  - name: compiler_test
+    kind: function.lua
+    meta:
+      name: Agent Compiler Test
+      type: test
+      comment: Tests the agent compiler functionality for materializing raw agent specs into runnable agents
+      group: Agent Framework
+      tags:
+        - agents
+        - compiler
+        - traits
+        - delegates
+        - tests
+    source: file://compiler_test.lua
+    imports:
+      compiler: wippy.agent.compiler:compiler
+      test: wippy.test:test
+    method: run_tests
