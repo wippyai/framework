@@ -26,8 +26,8 @@ entries:
         - context
         - rounded
         - cache_stable
+    build_func_id: wippy.agent.traits:init_time_aware
     context:
       time_interval: 15
       timezone: UTC
-    build_func_id: wippy.agent.traits:init_time_aware
     

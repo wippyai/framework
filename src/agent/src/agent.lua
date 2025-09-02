@@ -344,17 +344,35 @@ local function perform_memory_recall(self, prompt_builder, runtime_options)
 end
 
 local function extract_tool_schemas_for_llm(tools)
-    local tool_schemas = {}
+    -- Count tools with schemas first for proper sizing
+    local schema_count = 0
+    for _, tool_info in pairs(tools) do
+        if tool_info.schema then
+            schema_count = schema_count + 1
+        end
+    end
 
+    local tool_schemas = table.create(schema_count, 0)
+
+    -- Get sorted canonical names for consistent ordering
+    local names = table.create(schema_count, 0)
     for canonical_name, tool_info in pairs(tools) do
         if tool_info.schema then
-            table.insert(tool_schemas, {  -- ← Array insertion
-                name = canonical_name,
-                description = tool_info.description,
-                schema = tool_info.schema,
-                registry_id = tool_info.registry_id
-            })
+            table.insert(names, canonical_name)
         end
+    end
+    table.sort(names)
+
+    -- Process in sorted order
+    for _, canonical_name in ipairs(names) do
+        local tool_info = tools[canonical_name]
+        table.insert(tool_schemas, {
+            name = canonical_name,
+            description = tool_info.description,
+            schema = tool_info.schema,
+            registry_id = tool_info.registry_id,
+            meta = tool_info.meta or {}
+        })
     end
 
     return tool_schemas
@@ -423,29 +441,21 @@ function agent:step(prompt_builder, runtime_options)
     runtime_options = runtime_options or {}
     local llm_instance = get_llm()
 
-    local internal_builder = prompt_builder:clone()
-
     local dynamic_prompt = execute_prompt_functions(self, runtime_options.context)
     local complete_system_prompt = self.system_prompt
     if dynamic_prompt and dynamic_prompt ~= "" then
         complete_system_prompt = complete_system_prompt .. "\n\n" .. dynamic_prompt
     end
 
-    internal_builder:add_system(complete_system_prompt)
-
     local memory_text, memory_ids = perform_memory_recall(self, prompt_builder, runtime_options)
     local memory_prompt = nil
 
     if memory_text and memory_ids then
         local formatted_memory = string.format(AGENT_CONFIG.memory.recall_prompt, memory_text)
-        internal_builder:add_developer(formatted_memory, { memory_ids = memory_ids })
-
         memory_prompt = {
             role = prompt.ROLE.DEVELOPER,
-            content = formatted_memory,
-            metadata = {
-                memory_ids = memory_ids
-            }
+            content = { prompt.text(formatted_memory) },
+            metadata = { memory_ids = memory_ids }
         }
     end
 
@@ -467,21 +477,27 @@ function agent:step(prompt_builder, runtime_options)
         options.tool_choice = runtime_options.tool_call
     end
 
-    local conversation_messages = internal_builder:get_messages()
-    local final_messages = table.create(#conversation_messages + 2, 0)
+    -- Get ongoing conversation messages (no clone needed)
+    local conversation_messages = prompt_builder:get_messages()
+    local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
+    local final_messages = table.create(final_message_count, 0)
 
-    local updated_system_message = {
+    -- Prepend system message with cache marker
+    local system_message = {
         role = prompt.ROLE.SYSTEM,
-        content = complete_system_prompt
+        content = { prompt.text(complete_system_prompt) }
     }
-    table.insert(final_messages, updated_system_message)
+    table.insert(final_messages, system_message)
+    table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = self.id })
 
-    if not has_tools_with_schemas(self.tools) then
-        table.insert(final_messages, { role = "cache_marker", marker_id = self.id })
-    end
-
+    -- Add ongoing conversation
     for _, msg in ipairs(conversation_messages) do
         table.insert(final_messages, msg)
+    end
+
+    -- Append memory recall after conversation
+    if memory_prompt then
+        table.insert(final_messages, memory_prompt)
     end
 
     if runtime_options.stream_target then
@@ -548,9 +564,8 @@ function agent:step(prompt_builder, runtime_options)
                 local agent_base_context = runtime_options.context or {}
                 local merged_context = merge_agent_and_context(agent_base_context, tool_info.context)
 
-                -- Add delegation tracking context
-                merged_context.from_agent_id = self.id          -- Current agent
-                merged_context.to_agent_id = tool_info.agent_id -- Target agent
+                merged_context.from_agent_id = self.id
+                merged_context.to_agent_id = tool_info.agent_id
 
                 delegate_call.context = merged_context
 

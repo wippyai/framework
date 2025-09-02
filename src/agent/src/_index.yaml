@@ -2,21 +2,6 @@ version: "1.0"
 namespace: wippy.agent
 
 entries:
-  # Dependencies
-  - name: __dependency.wippy.test
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/test"
-    version: ">=v0.0.1"
-
-  - name: __dependency.wippy.llm
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/llm"
-    version: ">=v0.2.0"
-
   # wippy.agent:agent
   - name: agent
     kind: library.lua
@@ -31,7 +16,7 @@ entries:
     imports:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
-
+    
   # wippy.agent:agent_integration_test
   - name: agent_integration_test
     kind: function.lua
@@ -60,7 +45,7 @@ entries:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
     method: run_tests
-
+    
   # wippy.agent:agent_memory_test
   - name: agent_memory_test
     kind: function.lua
@@ -84,7 +69,7 @@ entries:
       agent: wippy.agent:agent
       test: wippy.test:test
     method: run_tests
-
+    
   # wippy.agent:agent_test
   - name: agent_test
     kind: function.lua
@@ -112,7 +97,7 @@ entries:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
     method: run_tests
-
+    
   # wippy.agent:context
   - name: context
     kind: library.lua
@@ -131,7 +116,7 @@ entries:
       agent: wippy.agent:agent
       agent_registry: wippy.agent.discovery:registry
       compiler: wippy.agent.compiler:compiler
-
+    
   # wippy.agent:context_test
   - name: context_test
     kind: function.lua
@@ -151,7 +136,7 @@ entries:
       context: wippy.agent:context
       test: wippy.test:test
     method: run_tests
-
+    
   # wippy.agent:memory
   - name: memory
     kind: contract.definition
@@ -167,15 +152,15 @@ entries:
       - name: recall
         description: |
           Retrieve relevant memories based on what's currently being worked on and recent actions.
-
+    
           The binding context should include relevant identifiers (agent_id, session_id, etc).
-
+    
           Recent actions should be string summaries describing what happened:
           - "user: How do I optimize my database?"
           - "assistant: Let me analyze your schema [called tools]"
           - "tool: analyze_db_schema(db=prod) -> found 3 missing indexes"
           - "delegated to: agent:specialist for API design"
-
+    
           Returns memories ordered by relevance without scores.
         input_schemas:
           - definition: |
@@ -273,3 +258,4 @@ entries:
                 "required": ["memories"]
               }
             format: application/schema+json
+    

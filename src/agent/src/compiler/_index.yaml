@@ -12,10 +12,11 @@ entries:
     modules:
       - registry
       - funcs
+      - json
     imports:
       tools: wippy.agent.discovery:tools
       traits: wippy.agent.discovery:traits
-
+    
   # wippy.agent.compiler:compiler_test
   - name: compiler_test
     kind: function.lua
@@ -35,3 +36,4 @@ entries:
       compiler: wippy.agent.compiler:compiler
       test: wippy.test:test
     method: run_tests
+    

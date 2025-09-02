@@ -71,6 +71,44 @@ entries:
       test: wippy.test:test
     method: run_tests
     
+  # wippy.agent.discovery:tools
+  - name: tools
+    kind: library.lua
+    meta:
+      type: library
+      comment: Tool resolver library for discovering tools and their schemas
+      depends_on:
+        - ns:wippy.test
+    source: file://tools.lua
+    modules:
+      - json
+      - registry
+      - funcs
+      - store
+    
+  # wippy.agent.discovery:tools_test
+  - name: tools_test
+    kind: function.lua
+    meta:
+      name: Tools Library Test
+      type: test
+      comment: Tests the tool resolver library functionality for discovering and managing tools
+      group: Agent Framework
+      tags:
+        - llm
+        - tools
+        - resolver
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://tools_test.lua
+    modules:
+      - json
+    imports:
+      tools: wippy.agent.discovery:tools
+      test: wippy.test:test
+    method: run_tests
+    
   # wippy.agent.discovery:traits
   - name: traits
     kind: library.lua
@@ -103,41 +141,4 @@ entries:
       test: wippy.test:test
       traits: wippy.agent.discovery:traits
     method: run_tests
-
-  # wippy.agent.discovery:tools
-  - name: tools
-    kind: library.lua
-    meta:
-      type: library
-      comment: Tool resolver library for discovering tools and their schemas
-      depends_on:
-        - ns:wippy.test
-    source: file://tools.lua
-    modules:
-      - json
-      - registry
-      - funcs
-      - store
-
-  # wippy.agent.discovery:tools_test
-  - name: tools_test
-    kind: function.lua
-    meta:
-      name: Tools Library Test
-      type: test
-      comment: Tests the tool resolver library functionality for discovering and managing tools
-      group: Agent Framework
-      tags:
-        - llm
-        - tools
-        - resolver
-        - tests
-      depends_on:
-        - ns:wippy.test
-    source: file://tools_test.lua
-    modules:
-      - json
-    imports:
-      tools: wippy.agent.discovery:tools
-      test: wippy.test:test
-    method: run_tests
+    

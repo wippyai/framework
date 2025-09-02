@@ -1,6 +1,7 @@
 local traits = require("traits")
 local tools = require("tools")
 local funcs = require("funcs")
+local json = require("json")
 
 local compiler = {}
 

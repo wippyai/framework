@@ -383,4 +383,29 @@ function tool_resolver.sanitize_name(name)
     return sanitize_name(name)
 end
 
+
+-- Get raw tool metadata by IDs (fast, no processing)
+function tool_resolver.get_tools_meta(tool_ids)
+    if not tool_ids or #tool_ids == 0 then
+        return {}
+    end
+
+    local registry = get_registry()
+    local results = {}
+    local errors = {}
+
+    for _, id in ipairs(tool_ids) do
+        local entry, err = registry.get(id)
+        if err or not entry then
+            errors[id] = err or "Entry not found"
+        elseif not entry.meta or entry.meta.type ~= "tool" then
+            errors[id] = "Invalid tool type"
+        else
+            results[id] = entry.meta
+        end
+    end
+
+    return results, errors
+end
+
 return tool_resolver

@@ -618,6 +618,71 @@ local function define_tests()
             expect(err).to_be_nil()
             expect(id).to_equal("app.tools:read_multi")
         end)
+
+
+        it("should get raw tool metadata without processing", function()
+            -- Test with valid tool IDs
+            local metas, errors = tool_resolver.get_tools_meta({
+                "system:weather",
+                "tools:calculator",
+                "utils:formatter"
+            })
+
+            expect(errors).not_to_be_nil()
+            expect(metas).not_to_be_nil()
+
+            -- Check that we got the raw metadata
+            expect(metas["system:weather"]).not_to_be_nil()
+            expect(metas["system:weather"].type).to_equal("tool")
+            expect(metas["system:weather"].name).to_equal("Weather Service")
+            expect(metas["system:weather"].llm_alias).to_equal("get_weather")
+            expect(metas["system:weather"].description).to_equal("Get weather information by location")
+
+            expect(metas["tools:calculator"]).not_to_be_nil()
+            expect(metas["tools:calculator"].type).to_equal("tool")
+            expect(metas["tools:calculator"].name).to_equal("Math Calculator")
+
+            expect(metas["utils:formatter"]).not_to_be_nil()
+            expect(metas["utils:formatter"].type).to_equal("tool")
+            expect(metas["utils:formatter"].name).to_equal("Text Formatter")
+
+            -- No errors for valid tools
+            expect(errors["system:weather"]).to_be_nil()
+            expect(errors["tools:calculator"]).to_be_nil()
+            expect(errors["utils:formatter"]).to_be_nil()
+        end)
+
+        it("should handle errors in get_tools_meta", function()
+            -- Test with mix of valid and invalid IDs
+            local metas, errors = tool_resolver.get_tools_meta({
+                "system:weather",
+                "nonexistent:tool",
+                "notool:example"
+            })
+
+            -- Valid tool should be present
+            expect(metas["system:weather"]).not_to_be_nil()
+            expect(errors["system:weather"]).to_be_nil()
+
+            -- Missing tool should have error
+            expect(metas["nonexistent:tool"]).to_be_nil()
+            expect(errors["nonexistent:tool"]).not_to_be_nil()
+
+            -- Non-tool entry should have error
+            expect(metas["notool:example"]).to_be_nil()
+            expect(errors["notool:example"]).not_to_be_nil()
+            expect(errors["notool:example"]:match("Invalid tool type")).not_to_be_nil()
+        end)
+
+        it("should return empty table for empty input in get_tools_meta", function()
+            local metas, errors = tool_resolver.get_tools_meta({})
+            expect(metas).not_to_be_nil()
+            expect(next(metas)).to_be_nil() -- Empty table
+
+            metas, errors = tool_resolver.get_tools_meta(nil)
+            expect(metas).not_to_be_nil()
+            expect(next(metas)).to_be_nil() -- Empty table
+        end)
     end)
 end
 
