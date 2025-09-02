@@ -17,7 +17,7 @@ jobs:
           - { folder: agent/src, repo: module-agent }
           - { folder: bootloader, repo: module-bootloader }
           - { folder: migration, repo: module-migration }
-          - { folder: relay, repo: module-relay }
+          - { folder: relay/src, repo: module-relay }
           - { folder: security, repo: module-security }
           - { folder: terminal, repo: module-terminal }
           - { folder: test, repo: module-test }
