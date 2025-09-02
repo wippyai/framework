@@ -1,0 +1,88 @@
+version: "1.0"
+namespace: wippy.relay
+
+entries:
+  # Requirements
+  - name: application_host
+    kind: ns.requirement
+    meta:
+      description: "Host ID for the application processes"
+    targets:
+      - entry: central.service
+        path: ".host"
+      - entry: central.service
+        path: ".lifecycle.depends_on +="
+      - entry: user
+        path: ".meta.default_host"
+
+  # Dependencies
+  - name: __dependency.wippy.actor
+    kind: "ns.dependency"
+    meta:
+      description: "Actor component"
+    component: "wippy/actor"
+    version: ">=v0.2.0"
+
+  # wippy.relay:central
+  - name: central
+    kind: process.lua
+    meta:
+      comment: Central hub that manages user-specific relay hubs
+      depends_on:
+        - ns:wippy.relay.env
+        - ns:wippy.relay.security
+    source: file://central.lua
+    modules:
+      - time
+      - json
+      - security
+      - logger
+    imports:
+      actor: wippy.actor:actor
+      consts: wippy.relay:consts
+      plugin_discovery: wippy.relay.discovery:plugins
+    method: run
+
+  # wippy.relay:central.service
+  - name: central.service
+    kind: process.service
+    meta:
+      comment: Central relay hub service
+    lifecycle:
+      depends_on: []
+      auto_start: true
+      security:
+        actor:
+          id: relay.central
+        groups:
+          - wippy.relay.security:root
+    process: wippy.relay:central
+
+  # wippy.relay:consts
+  - name: consts
+    kind: library.lua
+    meta:
+      comment: Configuration constants and utilities
+    source: file://consts.lua
+    modules:
+      - env
+      - time
+
+  # wippy.relay:user
+  - name: user
+    kind: process.lua
+    meta:
+      comment: User-specific hub for WebSocket connections and plugins
+      depends_on:
+        - ns:wippy.relay.env
+        - ns:wippy.relay.security
+    source: file://user.lua
+    modules:
+      - time
+      - json
+      - uuid
+      - logger
+    imports:
+      actor: wippy.actor:actor
+      consts: wippy.relay:consts
+    method: run

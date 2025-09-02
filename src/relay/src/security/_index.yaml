@@ -1,0 +1,22 @@
+version: "1.0"
+namespace: wippy.relay.security
+
+entries:
+  # wippy.relay.security:root
+  - name: root
+    kind: registry.entry
+    meta:
+      comment: Full relay system access for central hub
+    
+  # wippy.relay.security:root.policy
+  - name: root.policy
+    kind: security.policy
+    meta:
+      comment: Root policy for relay central hub
+    groups:
+      - wippy.relay.security:root
+    policy:
+      resources: '*'
+      actions: '*'
+      effect: allow
+    
