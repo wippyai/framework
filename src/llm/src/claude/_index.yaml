@@ -1,0 +1,326 @@
+version: "1.0"
+namespace: wippy.llm.claude
+
+entries:
+  # wippy.llm.claude:api_key
+  - name: api_key
+    kind: env.variable
+    meta:
+      comment: Anthropic API key for Claude authentication
+      icon: tabler:key
+    storage: app.env:router
+    variable: ANTHROPIC_API_KEY
+    
+  # wippy.llm.claude:api_version
+  - name: api_version
+    kind: env.variable
+    meta:
+      comment: Claude API version
+      icon: tabler:versions
+    storage: app.env:router
+    variable: ANTHROPIC_API_VERSION
+    
+  # wippy.llm.claude:base_url
+  - name: base_url
+    kind: env.variable
+    meta:
+      comment: Claude API base URL for custom endpoints or proxies
+      icon: tabler:world
+    storage: app.env:router
+    variable: ANTHROPIC_BASE_URL
+    
+  # wippy.llm.claude:client
+  - name: client
+    kind: library.lua
+    meta:
+      comment: Claude HTTP client with context resolution and streaming support
+    source: file://client.lua
+    modules:
+      - http_client
+      - json
+      - env
+      - ctx
+    imports:
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    
+  # wippy.llm.claude:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Claude Client Unit Tests
+      type: test
+      comment: Unit tests for Claude client covering context resolution, HTTP handling, streaming, and error parsing
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - client
+        - http
+        - streaming
+        - context
+        - claude
+    source: file://client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      claude_client: wippy.llm.claude:client
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:driver
+  - name: driver
+    kind: contract.binding
+    meta:
+      name: Claude LLM Driver
+      comment: Claude implementation of LLM contracts with context-based configuration and streaming support
+      tags:
+        - claude
+        - llm
+        - driver
+        - anthropic
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: wippy.llm.claude:generate
+      - contract: wippy.llm:structured_output
+        methods:
+          structured_output: wippy.llm.claude:structured_output
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.claude:status
+    optional_context:
+      api_key:
+        type: string
+        description: Anthropic API key for Claude authentication
+        default_env: ANTHROPIC_API_KEY
+      api_version:
+        type: string
+        description: Claude API version
+        default_env: ANTHROPIC_API_VERSION
+        default_value: "2023-06-01"
+      base_url:
+        type: string
+        description: Claude API base URL
+        default_env: ANTHROPIC_BASE_URL
+        default_value: https://api.anthropic.com
+      timeout:
+        type: integer
+        description: Request timeout in seconds
+        default_env: ANTHROPIC_TIMEOUT
+        default_value: 240
+    
+  # wippy.llm.claude:generate
+  - name: generate
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Claude text generation with tool calling support
+    source: file://generate.lua
+    modules:
+      - json
+    imports:
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+    
+  # wippy.llm.claude:generate_test
+  - name: generate_test
+    kind: function.lua
+    meta:
+      name: Claude Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for Claude text generation handler covering contract validation, streaming, and tool calling
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - generation
+        - streaming
+        - tools
+        - contract
+        - claude
+    source: file://generate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      generate_handler: wippy.llm.claude:generate
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: Claude Contract Integration Tests
+      type: test
+      comment: Integration tests for all Claude contract handlers using real API calls when enabled
+      group: LLM / Drivers / Claude
+      tags:
+        - integration-test
+        - api
+        - generation
+        - structured-output
+        - status
+        - contract
+        - claude
+    source: file://integration_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      generate_handler: wippy.llm.claude:generate
+      status_handler: wippy.llm.claude:status
+      structured_output_handler: wippy.llm.claude:structured_output
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Claude API request/response mapper with comprehensive format conversion
+    source: file://mapper.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      output: wippy.llm:output
+    
+  # wippy.llm.claude:mapper_test
+  - name: mapper_test
+    kind: function.lua
+    meta:
+      name: Claude Mapper Test
+      type: test
+      comment: Tests for Claude mapper functionality
+      group: LLM / Drivers / Claude
+      tags:
+        - llm
+        - claude
+        - mapper
+        - transformation
+    source: file://mapper_test.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:provider
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: anthropic
+      type: llm.provider
+      title: Anthropic
+      comment: Anthropic Claude API provider with chat completions and structured output capabilities
+      tags:
+        - llm
+        - provider
+        - anthropic
+        - claude
+    driver:
+      id: wippy.llm.claude:driver
+      options:
+        api_key_env: wippy.llm.claude:api_key
+        api_version_env: wippy.llm.claude:api_version
+        base_url_env: wippy.llm.claude:base_url
+        timeout_env: wippy.llm.claude:timeout
+    
+  # wippy.llm.claude:status
+  - name: status
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Claude API health check and model listing
+    source: file://status.lua
+    imports:
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+    
+  # wippy.llm.claude:status_test
+  - name: status_test
+    kind: function.lua
+    meta:
+      name: Claude Status Handler Unit Tests
+      type: test
+      comment: Unit tests for Claude status handler covering health checks and connection testing
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+        - claude
+    source: file://status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.claude:status
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:structured_output
+  - name: structured_output
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Claude structured output using tool calling
+    source: file://structured_output.lua
+    modules:
+      - json
+      - hash
+    imports:
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+    
+  # wippy.llm.claude:structured_output_test
+  - name: structured_output_test
+    kind: function.lua
+    meta:
+      name: Claude Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for Claude structured output handler covering schema validation and tool-based structured generation
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - structured-output
+        - schema
+        - tools
+        - contract
+        - claude
+    source: file://structured_output_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - hash
+    imports:
+      structured_output_handler: wippy.llm.claude:structured_output
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.claude:timeout
+  - name: timeout
+    kind: env.variable
+    meta:
+      comment: Claude API request timeout in seconds
+      icon: tabler:clock
+    storage: app.env:router
+    variable: ANTHROPIC_TIMEOUT
+    

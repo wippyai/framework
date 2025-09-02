@@ -22,7 +22,7 @@ jobs:
           - { folder: terminal, repo: module-terminal }
           - { folder: test, repo: module-test }
           - { folder: views, repo: module-views }
-          - { folder: llm, repo: module-llm }
+          - { folder: llm/src, repo: module-llm }
           - { folder: usage, repo: module-usage }
           - { folder: docs, repo: module-docs }
     steps:

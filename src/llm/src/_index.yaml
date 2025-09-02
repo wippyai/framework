@@ -1,0 +1,469 @@
+version: "1.0"
+namespace: wippy.llm
+
+entries:
+  # Dependencies
+  - name: __dependency.wippy.test
+    kind: "ns.dependency"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.0.1"
+
+  # wippy.llm:embedder
+  - name: embedder
+    kind: contract.definition
+    meta:
+      comment: Embedding generation contract interface
+      description: Contract for generating embeddings from text
+    methods:
+      - name: embed
+        description: Generate embeddings for text input
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "input": {
+                    "oneOf": [
+                      {"type": "string", "description": "Single text input"},
+                      {"type": "array", "items": {"type": "string"}, "description": "Multiple text inputs"}
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Driver-specific model identifier"
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Embedding parameters - core options plus driver-specific extensions",
+                    "properties": {
+                      "dimensions": {"type": "integer", "minimum": 1, "description": "Output dimensions"}
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["input", "model"],
+                "additionalProperties": true
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful embedding response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Embedding response\",\n          \"properties\": {\n            \"embeddings\": {\n              \"type\": \"array\",\n              \"description\": \"Array of embedding vectors\",\n              \"items\": {\n                \"type\": \"array\",\n                \"items\": {\"type\": \"number\"}\n              }\n            }\n          },\n          \"required\": [\"embeddings\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
+            format: application/schema+json
+
+  # wippy.llm:generator
+  - name: generator
+    kind: contract.definition
+    meta:
+      comment: Text generation contract interface with optional tool calling
+      description: Contract for generating text completions from messages, with optional tool calling support
+    methods:
+      - name: generate
+        description: Generate text completion from messages, optionally with tool calling
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "description": "Array of message objects in universal format",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": ["system", "user", "assistant", "developer", "function_call", "function_result"]
+                        },
+                        "content": {
+                          "type": "array",
+                          "description": "Array of content parts",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {"type": "string", "const": "text"},
+                                  "text": {"type": "string"}
+                                },
+                                "required": ["type", "text"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {"type": "string", "const": "image"},
+                                  "source": {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {"type": "string", "enum": ["url", "base64"]},
+                                      "url": {"type": "string"},
+                                      "mime_type": {"type": "string"},
+                                      "data": {"type": "string"}
+                                    },
+                                    "required": ["type"]
+                                  }
+                                },
+                                "required": ["type", "source"]
+                              }
+                            ]
+                          }
+                        },
+                        "name": {"type": "string"},
+                        "function_call": {
+                          "type": "object",
+                          "properties": {
+                            "name": {"type": "string"},
+                            "arguments": {},
+                            "id": {"type": "string"}
+                          },
+                          "required": ["name"]
+                        },
+                        "function_call_id": {"type": "string"},
+                        "metadata": {"type": "object"}
+                      },
+                      "required": ["role"]
+                    }
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Driver-specific model identifier (e.g. 'gpt-4o', 'claude-3-sonnet-20240229', 'gemini-pro')"
+                  },
+                  "tools": {
+                    "type": "array",
+                    "description": "Available tools for the model to call",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "schema": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "description": "JSON Schema format",
+                              "properties": {
+                                "type": {"type": "string"},
+                                "properties": {"type": "object"},
+                                "required": {"type": "array"},
+                                "description": {"type": "string"}
+                              },
+                              "required": ["type"]
+                            },
+                            {
+                              "type": "object",
+                              "description": "Provider-specific schema format",
+                              "additionalProperties": true
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "description", "schema"]
+                    }
+                  },
+                  "tool_choice": {
+                    "oneOf": [
+                      {"type": "string", "enum": ["auto", "none", "any"]},
+                      {"type": "string", "description": "Specific tool name to force"}
+                    ],
+                    "description": "How the model should use tools"
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Generation parameters - core options plus driver-specific extensions",
+                    "properties": {
+                      "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+                      "max_tokens": {"type": "integer", "minimum": 1},
+                      "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+                      "frequency_penalty": {"type": "number", "minimum": -2, "maximum": 2},
+                      "presence_penalty": {"type": "number", "minimum": -2, "maximum": 2},
+                      "stop_sequences": {"type": "array", "items": {"type": "string"}},
+                      "seed": {"type": "integer"}
+                    },
+                    "additionalProperties": true
+                  },
+                  "stream": {
+                    "type": "object",
+                    "description": "Streaming configuration",
+                    "properties": {
+                      "reply_to": {"type": "string", "description": "Process ID to stream to"},
+                      "topic": {"type": "string", "description": "Topic for stream messages"},
+                      "buffer_size": {"type": "integer", "minimum": 1}
+                    },
+                    "required": ["reply_to"]
+                  }
+                },
+                "required": ["messages", "model"],
+                "additionalProperties": true
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful generation response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Generation response\",\n          \"properties\": {\n            \"content\": {\"type\": \"string\", \"description\": \"Generated text content\"},\n            \"tool_calls\": {\n              \"type\": \"array\",\n              \"description\": \"Tool calls made by the model (empty array if none)\",\n              \"items\": {\n                \"type\": \"object\",\n                \"properties\": {\n                  \"id\": {\"type\": \"string\"},\n                  \"name\": {\"type\": \"string\"},\n                  \"arguments\": {\"type\": \"object\"}\n                },\n                \"required\": [\"id\", \"name\", \"arguments\"]\n              }\n            }\n          },\n          \"required\": [\"content\", \"tool_calls\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"description\": \"Token usage information\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"completion_tokens\": {\"type\": \"integer\"},\n            \"thinking_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"},\n            \"cache_creation_input_tokens\": {\"type\": \"integer\"},\n            \"cache_read_input_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"finish_reason\": {\n          \"type\": \"string\",\n          \"enum\": [\"stop\", \"length\", \"filtered\", \"tool_call\", \"error\"]\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata including usage tracking\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"context_length_exceeded\", \n            \"content_filtered\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context (request_id, status_code, etc.)\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
+            format: application/schema+json
+
+  # wippy.llm:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: LLM Integrations Test
+      type: test
+      comment: Integration test for LLM provider calls without model discovery
+      group: LLM / General
+      tags:
+        - llm
+        - integration
+        - providers
+        - test
+    source: file://integration_test.lua
+    imports:
+      llm: wippy.llm:llm
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm:llm
+  - name: llm
+    kind: library.lua
+    meta:
+      type: library
+      comment: Modern LLM library with smart model resolution, multi-provider support, and contract-based architecture
+      tags:
+        - llm
+        - generation
+        - contracts
+        - providers
+    source: file://llm.lua
+    modules:
+      - uuid
+      - security
+      - json
+    imports:
+      contract: contract
+      models: wippy.llm.discovery:models
+      providers: wippy.llm.discovery:providers
+
+  # wippy.llm:llm_test
+  - name: llm_test
+    kind: function.lua
+    meta:
+      name: LLM Library Test
+      type: test
+      comment: Tests the modern LLM library with smart model resolution and contract-based providers
+      group: LLM / General
+      tags:
+        - llm
+        - generation
+        - structured_output
+        - embeddings
+        - contracts
+        - providers
+        - tests
+    source: file://llm_test.lua
+    modules:
+      - json
+      - uuid
+      - security
+    imports:
+      llm: wippy.llm:llm
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm:output
+  - name: output
+    kind: library.lua
+    meta:
+      type: library
+      comment: Output formatting library for standardizing LLM responses
+      depends_on:
+        - ns:wippy.test
+    source: file://output.lua
+    modules:
+      - time
+
+  # wippy.llm:output_test
+  - name: output_test
+    kind: function.lua
+    meta:
+      name: Output Library Test
+      type: test
+      comment: Tests the output library functionality for formatting LLM responses
+      group: LLM / General
+      tags:
+        - llm
+        - output
+        - formatting
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://output_test.lua
+    modules:
+      - json
+      - time
+    imports:
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm:prompt
+  - name: prompt
+    kind: library.lua
+    meta:
+      type: library
+      comment: Universal abstract prompt builder for LLM messages with multi-modal support
+      depends_on:
+        - ns:wippy.test
+    source: file://prompt.lua
+    modules:
+      - json
+
+  # wippy.llm:prompt_test
+  - name: prompt_test
+    kind: function.lua
+    meta:
+      name: Prompt Library Test
+      type: test
+      comment: Tests the prompt library functionality for building LLM messages
+      group: LLM / General
+      tags:
+        - llm
+        - prompts
+        - messages
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://prompt_test.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm:provider
+  - name: provider
+    kind: contract.definition
+    meta:
+      comment: Base provider interface that all LLM providers must implement
+      description: Universal provider contract for connection testing
+    methods:
+      - name: status
+        description: Test provider connection and return status
+        output_schemas:
+          - definition: "{\n  \"type\": \"object\", \n  \"properties\": {\n    \"success\": {\"type\": \"boolean\"},\n    \"status\": {\"type\": \"string\", \"enum\": [\"healthy\", \"degraded\", \"unhealthy\"]},\n    \"message\": {\"type\": \"string\"}\n  },\n  \"required\": [\"success\", \"status\"]\n}\n"
+            format: application/schema+json
+
+  # wippy.llm:structured_output
+  - name: structured_output
+    kind: contract.definition
+    meta:
+      comment: Structured output generation contract interface
+      description: Contract for generating structured output matching schemas
+    methods:
+      - name: structured_output
+        description: Generate structured output matching a schema
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "description": "Array of message objects in universal format",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": ["system", "user", "assistant", "developer", "function_call", "function_result"]
+                        },
+                        "content": {
+                          "type": "array",
+                          "description": "Array of content parts",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {"type": "string", "const": "text"},
+                                  "text": {"type": "string"}
+                                },
+                                "required": ["type", "text"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {"type": "string", "const": "image"},
+                                  "source": {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {"type": "string", "enum": ["url", "base64"]},
+                                      "url": {"type": "string"},
+                                      "mime_type": {"type": "string"},
+                                      "data": {"type": "string"}
+                                    },
+                                    "required": ["type"]
+                                  }
+                                },
+                                "required": ["type", "source"]
+                              }
+                            ]
+                          }
+                        },
+                        "name": {"type": "string"},
+                        "function_call": {
+                          "type": "object",
+                          "properties": {
+                            "name": {"type": "string"},
+                            "arguments": {},
+                            "id": {"type": "string"}
+                          },
+                          "required": ["name"]
+                        },
+                        "function_call_id": {"type": "string"},
+                        "metadata": {"type": "object"}
+                      },
+                      "required": ["role"]
+                    }
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Driver-specific model identifier"
+                  },
+                  "schema": {"type": "object"},
+                  "options": {
+                    "type": "object",
+                    "description": "Generation parameters - core options plus driver-specific extensions",
+                    "properties": {
+                      "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+                      "max_tokens": {"type": "integer", "minimum": 1},
+                      "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100}
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["messages", "model", "schema"],
+                "additionalProperties": true
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful structured output response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Structured output response\",\n          \"properties\": {\n            \"data\": {\n              \"type\": \"object\",\n              \"description\": \"Structured data matching the input schema\"\n            }\n          },\n          \"required\": [\"data\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"completion_tokens\": {\"type\": \"integer\"},\n            \"thinking_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"},\n            \"cache_creation_input_tokens\": {\"type\": \"integer\"},\n            \"cache_read_input_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"finish_reason\": {\n          \"type\": \"string\",\n          \"enum\": [\"stop\", \"length\", \"filtered\", \"error\"]\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"context_length_exceeded\", \n            \"content_filtered\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
+            format: application/schema+json
+
+  # wippy.llm:usage_tracker
+  - name: usage_tracker
+    kind: contract.definition
+    meta:
+      comment: Token usage tracking contract interface for LLM operations
+      description: Contract for tracking and recording token usage across different LLM operations
+    methods:
+      - name: track_usage
+        description: Record token usage for an LLM operation
+        input_schemas:
+          - definition: "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"model_id\": {\n      \"type\": \"string\", \n      \"description\": \"Model identifier used for the operation\"\n    },\n    \"prompt_tokens\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"description\": \"Number of tokens in the input/prompt\"\n    },\n    \"completion_tokens\": {\n      \"type\": \"integer\", \n      \"minimum\": 0,\n      \"description\": \"Number of tokens in the generated output\"\n    },\n    \"thinking_tokens\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"description\": \"Number of reasoning/thinking tokens used\"\n    },\n    \"cache_read_tokens\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"description\": \"Number of tokens read from cache\"\n    },\n    \"cache_write_tokens\": {\n      \"type\": \"integer\",\n      \"minimum\": 0, \n      \"description\": \"Number of tokens written to cache\"\n    },\n    \"options\": {\n      \"type\": \"object\",\n      \"description\": \"Additional metadata for usage tracking\",\n      \"properties\": {\n        \"context_id\": {\n          \"type\": \"string\",\n          \"description\": \"Context or conversation identifier\"\n        },\n        \"timestamp\": {\n          \"type\": \"integer\",\n          \"description\": \"Unix timestamp of the operation\"\n        },\n        \"metadata: {\n          \"type\": \"object\",\n          \"description\": \"Additional metadata for the usage record\",\n          \"additionalProperties\": true\n        }\n      },\n      \"additionalProperties\": false\n    }\n  },\n  \"required\": [\"model_id\", \"prompt_tokens\", \"completion_tokens\", \"thinking_tokens\", \"cache_read_tokens\", \"cache_write_tokens\"],\n  \"additionalProperties\": false\n}\n"
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "string",
+                "description": "Generated unique identifier for the usage record"
+              }
+            format: application/schema+json
