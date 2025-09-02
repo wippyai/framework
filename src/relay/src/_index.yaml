@@ -15,6 +15,33 @@ entries:
       - entry: user
         path: ".meta.default_host"
 
+  - name: max_connections_per_user
+    kind: ns.requirement
+    meta:
+      description: "Maximum WebSocket connections allowed per user"
+    targets:
+      - entry: wippy.relay.env:max_connections_per_user
+        path: ".default"
+    default: "2"
+    
+  - name: queue_multiplier
+    kind: ns.requirement
+    meta:
+      description: "Message queue size multiplier (queue = connections × multiplier)"
+    targets:
+      - entry: wippy.relay.env:queue_multiplier
+        path: ".default"
+    default: "100"
+    
+  - name: user_hub_inactivity_timeout
+    kind: ns.requirement
+    meta:
+      description: "How long user hubs stay alive with no clients"
+    targets:
+      - entry: wippy.relay.env:user_hub_inactivity_timeout
+        path: ".default"
+    default: 300s
+
   # Dependencies
   - name: __dependency.wippy.actor
     kind: "ns.dependency"

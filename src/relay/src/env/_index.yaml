@@ -11,7 +11,7 @@ entries:
       private: true
     storage: app.env:router
     variable: RELAY_HOST
-    
+
   # wippy.relay.env:max_connections_per_user
   - name: max_connections_per_user
     kind: env.variable
@@ -19,10 +19,9 @@ entries:
       comment: Maximum WebSocket connections allowed per user
       icon: tabler:users
       private: true
-    default: "2"
     storage: app.env:router
     variable: RELAY_MAX_CONNECTIONS_PER_USER
-    
+
   # wippy.relay.env:queue_multiplier
   - name: queue_multiplier
     kind: env.variable
@@ -30,10 +29,9 @@ entries:
       comment: Message queue size multiplier (queue = connections × multiplier)
       icon: tabler:stack
       private: true
-    default: "100"
     storage: app.env:router
     variable: RELAY_QUEUE_MULTIPLIER
-    
+
   # wippy.relay.env:user_hub_inactivity_timeout
   - name: user_hub_inactivity_timeout
     kind: env.variable
@@ -41,10 +39,9 @@ entries:
       comment: How long user hubs stay alive with no clients
       icon: tabler:clock
       private: true
-    default: 300s
     storage: app.env:router
     variable: RELAY_USER_HUB_INACTIVITY_TIMEOUT
-    
+
   # wippy.relay.env:user_security_scope
   - name: user_security_scope
     kind: env.variable
@@ -54,4 +51,3 @@ entries:
       private: true
     storage: app.env:router
     variable: RELAY_USER_SECURITY_SCOPE
-    
