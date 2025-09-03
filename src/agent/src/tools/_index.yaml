@@ -1,0 +1,80 @@
+version: "1.0"
+namespace: wippy.agent.tools
+
+entries:
+  # wippy.agent.tools:caller
+  - name: caller
+    kind: library.lua
+    meta:
+      type: library
+      comment: Unified tool caller for executing tools with sequential and parallel strategies
+      depends_on:
+        - ns:wippy.tools
+        - ns:wippy.funcs
+    source: file://caller.lua
+    modules:
+      - json
+      - funcs
+    imports:
+      tools: wippy.agent.discovery:tools
+    
+  # wippy.agent.tools:caller_test
+  - name: caller_test
+    kind: function.lua
+    meta:
+      name: Tool Caller Test
+      type: test
+      comment: Tests the unified tool caller functionality for sequential and parallel tool execution
+      group: Agent Framework
+      tags:
+        - tools
+        - execution
+        - parallel
+        - sequential
+        - tests
+    source: file://caller_test.lua
+    modules:
+      - env
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+    method: run_tests
+    
+  # wippy.agent.tools:delay_tool
+  - name: delay_tool
+    kind: function.lua
+    meta:
+      name: Delayed Echo Tool
+      type: tool
+      comment: Test tool that echoes input with configurable delay and context inspection - for testing only
+      group: Testing
+      tags:
+        - test
+        - delay
+        - echo
+        - context
+      input_schema: |
+        {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "The message to echo back",
+              "default": "Hello"
+            },
+            "delay_ms": {
+              "type": "number",
+              "description": "Delay in milliseconds before responding",
+              "default": 100,
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+    source: file://delay_tool.lua
+    modules:
+      - time
+      - ctx
+    method: delayed_echo
+    

@@ -1,0 +1,15 @@
+version: "1.0"
+namespace: wippy.relay.discovery
+
+entries:
+  # wippy.relay.discovery:plugins
+  - name: plugins
+    kind: library.lua
+    meta:
+      comment: Plugin discovery utilities
+    source: file://plugins.lua
+    modules:
+      - registry
+    imports:
+      consts: wippy.relay:consts
+    

@@ -1,0 +1,11 @@
+version: "1.0"
+namespace: wippy.usage.env
+
+entries:
+  # wippy.usage.env:target_db
+  - name: target_db
+    kind: env.variable
+    meta:
+      type: config_key
+      comment: Database resource identifier
+    storage: wippy.usage:envs

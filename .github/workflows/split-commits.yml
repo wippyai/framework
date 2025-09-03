@@ -13,16 +13,16 @@ jobs:
     strategy:
       matrix:
         package:
-          - { folder: actor, repo: module-actor }
-          - { folder: agent, repo: module-agent }
+          - { folder: actor/src, repo: module-actor }
+          - { folder: agent/src, repo: module-agent }
           - { folder: bootloader, repo: module-bootloader }
           - { folder: migration, repo: module-migration }
-          - { folder: relay, repo: module-relay }
+          - { folder: relay/src, repo: module-relay }
           - { folder: security, repo: module-security }
           - { folder: terminal, repo: module-terminal }
           - { folder: test, repo: module-test }
           - { folder: views, repo: module-views }
-          - { folder: llm, repo: module-llm }
+          - { folder: llm/src, repo: module-llm }
           - { folder: usage, repo: module-usage }
           - { folder: docs, repo: module-docs }
     steps:

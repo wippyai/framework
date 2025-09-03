@@ -1,0 +1,65 @@
+version: "1.0"
+namespace: wippy.llm.discovery
+
+entries:
+  # wippy.llm.discovery:models
+  - name: models
+    kind: library.lua
+    meta:
+      type: library
+      comment: Model discovery library for finding models by name, class, and retrieving model cards with multi-provider support
+    source: file://models.lua
+    modules:
+      - registry
+    
+  # wippy.llm.discovery:models_test
+  - name: models_test
+    kind: function.lua
+    meta:
+      name: Models Discovery Library Test
+      type: test
+      comment: Tests the model discovery library functionality for finding models and classes
+      group: LLM / Discovery
+      tags:
+        - llm
+        - models
+        - discovery
+        - classes
+        - tests
+    source: file://models_test.lua
+    imports:
+      models: wippy.llm.discovery:models
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.llm.discovery:providers
+  - name: providers
+    kind: library.lua
+    meta:
+      type: library
+      comment: Provider discovery library for listing providers and opening contract instances
+    source: file://providers.lua
+    modules:
+      - registry
+      - contract
+    
+  # wippy.llm.discovery:providers_test
+  - name: providers_test
+    kind: function.lua
+    meta:
+      name: Providers Discovery Library Test
+      type: test
+      comment: Tests the provider discovery library functionality for listing and opening providers
+      group: LLM / Discovery
+      tags:
+        - llm
+        - providers
+        - discovery
+        - contracts
+        - tests
+    source: file://providers_test.lua
+    imports:
+      providers: wippy.llm.discovery:providers
+      test: wippy.test:test
+    method: run_tests
+    

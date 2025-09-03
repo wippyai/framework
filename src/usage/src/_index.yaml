@@ -1,0 +1,105 @@
+version: "1.0"
+namespace: wippy.usage
+
+entries:
+  # Requirements
+  - name: target_db
+    kind: ns.requirement
+    meta:
+      description: "Application database ID for usage tracking"
+    targets:
+      - entry: wippy.usage.env:target_db
+        path: ".default"
+      - entry: wippy.usage.migrations:01_create_token_usage_table
+        path: ".meta.env-target_db"
+    default: "app:db"
+
+  # Dependencies
+  - name: __dependency.wippy.test
+    kind: "ns.dependency"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.2.0"
+
+  - name: __dependency.wippy.migration
+    kind: "ns.dependency"
+    meta:
+      description: "Migration component"
+    component: "wippy/migration"
+    version: ">=v0.0.7"
+
+  # wippy.usage:token_usage_repo
+  - name: token_usage_repo
+    kind: library.lua
+    meta:
+      comment: Repository for managing token usage data
+      tags:
+        - tokens
+        - usage
+      description: Track and analyze LLM token consumption
+    source: file://token_usage_repo.lua
+    modules:
+      - sql
+      - json
+      - uuid
+      - time
+
+  # wippy.usage:token_usage_repo_test
+  - name: token_usage_repo_test
+    kind: function.lua
+    meta:
+      name: Token Usage Repository Test
+      type: test
+      comment: Tests for the token usage repository functionality
+      group: LLM / Usage Tests
+      tags:
+        - usage
+        - tokens
+        - database
+        - tests
+      description: Tests for token usage tracking
+    source: file://token_usage_repo_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+      - env
+    imports:
+      test: wippy.test:test
+      token_usage_repo: wippy.usage:token_usage_repo
+    method: run_tests
+
+  # wippy.usage:usage_tracker
+  - name: usage_tracker
+    kind: function.lua
+    meta:
+      comment: Usage tracker contract handler for recording LLM token usage
+      tags:
+        - usage
+        - tokens
+        - tracking
+    source: file://usage_tracker.lua
+    modules:
+      - security
+    imports:
+      token_usage_repo: wippy.usage:token_usage_repo
+    method: track_usage
+    pool:
+      max_size: 25
+
+  # wippy.usage:usage_tracker_binding
+  - name: usage_tracker_binding
+    kind: contract.binding
+    meta:
+      comment: Usage tracker contract binding to token usage repository
+      tags:
+        - usage
+        - binding
+        - contract
+    contracts:
+      - contract: wippy.llm:usage_tracker
+        default: true
+        methods:
+          track_usage: wippy.usage:usage_tracker

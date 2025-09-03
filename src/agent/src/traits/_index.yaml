@@ -1,0 +1,33 @@
+version: "1.0"
+namespace: wippy.agent.traits
+
+entries:
+  # wippy.agent.traits:init_time_aware
+  - name: init_time_aware
+    kind: function.lua
+    meta:
+      type: function
+      comment: Initializes time-aware trait with current rounded time context
+    source: file://init_time_aware.lua
+    modules:
+      - time
+      - ctx
+    method: execute
+    
+  # wippy.agent.traits:time_aware
+  - name: time_aware
+    kind: registry.entry
+    meta:
+      name: Time Aware
+      type: agent.trait
+      comment: Adds current time context to agent for time-aware responses with cache stability
+      tags:
+        - time
+        - context
+        - rounded
+        - cache_stable
+    build_func_id: wippy.agent.traits:init_time_aware
+    context:
+      time_interval: 15
+      timezone: UTC
+    

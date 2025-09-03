@@ -1,0 +1,47 @@
+version: "1.0"
+namespace: wippy.llm.util
+
+entries:
+  # wippy.llm.util:compress
+  - name: compress
+    kind: library.lua
+    meta:
+      type: library
+      comment: Intelligent content compression library that adapts to model context limits
+      tags:
+        - llm
+        - compression
+        - summarization
+        - text-processing
+    source: file://compress.lua
+    modules:
+      - text
+    imports:
+      llm: wippy.llm:llm
+      models: wippy.llm.discovery:models
+    
+  # wippy.llm.util:compress_test
+  - name: compress_test
+    kind: function.lua
+    meta:
+      name: Compress Library Test
+      type: test
+      comment: Tests the intelligent content compression library functionality for adapting to model context limits
+      group: LLM / Utils
+      tags:
+        - llm
+        - compression
+        - summarization
+        - text-processing
+        - tests
+    source: file://compress_test.lua
+    modules:
+      - env
+      - text
+    imports:
+      compress: wippy.llm.util:compress
+      llm: wippy.llm:llm
+      models: wippy.llm.discovery:models
+      test: wippy.test:test
+    method: run_tests
+    
