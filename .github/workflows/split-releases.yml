@@ -14,6 +14,7 @@ jobs:
   split:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         package:
           - { folder: actor/src, repo: module-actor }
