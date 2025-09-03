@@ -296,21 +296,25 @@ local function process_tools(raw_spec, additional_tools, trait_contexts, trait_t
             tool_entry.description = tool_info.description or ("Inline tool: " .. canonical_name)
             tool_entry.schema = tool_info.inline_schema
             tool_entry.registry_id = nil
+            tool_entry.meta = {}
         else
             if trait_tool_schemas[canonical_name] then
                 tool_entry.description = tool_info.description or trait_tool_schemas[canonical_name].description or ("Trait tool: " .. canonical_name)
                 tool_entry.schema = trait_tool_schemas[canonical_name].schema
                 tool_entry.registry_id = tool_info.id
+                tool_entry.meta = trait_tool_schemas[canonical_name].meta or {}
             else
                 local original_schema, err = get_tools().get_tool_schema(tool_info.id)
                 if original_schema then
                     tool_entry.description = tool_info.description or original_schema.description
                     tool_entry.schema = original_schema.schema
                     tool_entry.registry_id = tool_info.id
+                    tool_entry.meta = original_schema.meta or {}
                 else
                     tool_entry.description = tool_info.description or ("Tool: " .. canonical_name)
                     tool_entry.schema = nil
                     tool_entry.registry_id = tool_info.id
+                    tool_entry.meta = {}
                 end
             end
         end

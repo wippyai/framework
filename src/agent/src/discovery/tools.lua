@@ -131,6 +131,36 @@ local function run_input_schema_processors(input_schema, tool_id)
     return input_schema
 end
 
+-- Filter out meta fields that are already extracted for LLM tool construction
+local function filter_meta_for_llm(meta)
+    if not meta then
+        return {}
+    end
+
+    local filtered = {}
+
+    -- Fields already extracted and used in tool construction, exclude them
+    local excluded_fields = {
+        input_schema = true,
+        llm_description = true,
+        llm_descirtion = true,  -- typo variant
+        llm_alias = true,
+        title = true,
+        description = true,
+        comment = true,
+        type = true,  -- tool type marker, not needed by LLM
+        name = true   -- if present, already used
+    }
+
+    for key, value in pairs(meta) do
+        if not excluded_fields[key] then
+            filtered[key] = value
+        end
+    end
+
+    return filtered
+end
+
 -- Get the LLM-friendly tool name
 function tool_resolver.get_tool_name(entry)
     -- If llm_alias is specified, use that
@@ -222,7 +252,7 @@ function tool_resolver.get_tool_schema(tool_id)
         title = entry.meta.title or display_name,
         description = description,
         schema = run_input_schema_processors(schema, tool_id), -- Process input schema (cached separately)
-        meta = entry.meta
+        meta = filter_meta_for_llm(entry.meta) -- Filter out redundant fields
     }
 
     return tool
@@ -330,7 +360,7 @@ function tool_resolver.find_tools(criteria)
     -- Add additional criteria
     if criteria then
         if criteria.namespace then
-            query[".ns"] = criteria.namespace  -- ← FIXED: Use .ns instead of ~namespace
+            query[".ns"] = criteria.namespace  -- â† FIXED: Use .ns instead of ~namespace
         end
 
         if criteria.tags and #criteria.tags > 0 then

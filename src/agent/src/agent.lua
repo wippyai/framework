@@ -504,6 +504,32 @@ function agent:step(prompt_builder, runtime_options)
         options.stream = runtime_options.stream_target
     end
 
+    --if has_tools_with_schemas(self.tools) then
+    --    options.tools = extract_tool_schemas_for_llm(self.tools)
+    --
+    --    -- DEBUG: Print tools being sent to LLM
+    --    print("=== TOOLS SENT TO LLM ===")
+    --    for i, tool in ipairs(options.tools) do
+    --        print(string.format("Tool %d: %s", i, tool.name))
+    --        print("  Description:", tool.description or "nil")
+    --        print("  Registry ID:", tool.registry_id or "nil")
+    --        if tool.meta then
+    --            local meta_keys = {}
+    --            for k, _ in pairs(tool.meta) do
+    --                table.insert(meta_keys, k)
+    --            end
+    --            print("  Meta keys:", table.concat(meta_keys, ", "))
+    --            print("  Meta content:", json.encode(tool.meta))
+    --        else
+    --            print("  Meta: nil")
+    --        end
+    --        print("  Schema present:", tool.schema and "yes" or "no")
+    --        print("---")
+    --    end
+    --    print("=== END TOOLS DEBUG ===")
+    --end
+
+
     local result, err = llm_instance.generate(final_messages, options)
     if err then
         return nil, err
