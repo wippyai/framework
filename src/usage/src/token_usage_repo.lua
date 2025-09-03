@@ -2,7 +2,9 @@ local sql = require("sql")
 local json = require("json")
 local uuid = require("uuid")
 local time = require("time")
-local env = require("env")
+
+-- Hardcoded database resource name
+local DB_RESOURCE = "app:db"
 
 local token_usage_repo = {}
 
@@ -16,9 +18,6 @@ token_usage_repo.INTERVAL = {
 
 -- Get a database connection
 local function get_db()
-    -- Get database resource from environment
-    local DB_RESOURCE, _ = env.get("wippy.usage:env-target_db")
-
     local db, err = sql.get(DB_RESOURCE)
     if err then
         return nil, "Failed to connect to database: " .. err
@@ -49,9 +48,9 @@ function token_usage_repo.create(user_id, model_id, prompt_tokens, completion_to
 
     -- Convert meta to JSON if it's a table
     local meta_json = nil
-    if options.meta then
-        if type(options.meta) == "table" then
-            local encoded, err = json.encode(options.meta)
+    if options.metadata then
+        if type(options.metadata) == "table" then
+            local encoded, err = json.encode(options.metadata)
             if err then
                 return nil, "Failed to encode meta: " .. err
             end
@@ -276,7 +275,7 @@ FROM
         -- SQLite implementation using recursive CTE
         local interval_seconds
         local date_format
-
+        
         if interval == token_usage_repo.INTERVAL.HOUR then
             interval_seconds = 3600
             date_format = "%Y-%m-%d %H:00:00"
@@ -293,7 +292,7 @@ FROM
             db:release()
             return nil, "Invalid interval: must be hour, day, week, or month"
         end
-
+        
         query_sql = [[
 WITH RECURSIVE
 time_buckets(bucket_start, bucket_end) AS (

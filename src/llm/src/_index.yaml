@@ -8,7 +8,7 @@ entries:
     meta:
       description: "Testing component"
     component: "wippy/test"
-    version: ">=v0.0.1"
+    version: ">=v0.2.0"
 
   # wippy.llm:embedder
   - name: embedder

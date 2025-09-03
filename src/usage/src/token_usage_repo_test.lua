@@ -71,7 +71,7 @@ local function define_tests()
         -- Clean up test data after all tests
         after_all(function()
             -- Get a database connection for cleanup
-            local db_resource, _ = env.get("wippy.usage:env-target_db")
+            local db_resource, _ = env.get("wippy.usage.env:target_db")
             local db, err = sql.get(db_resource)
             if err then
                 error("Failed to connect to database: " .. err)
@@ -120,7 +120,7 @@ local function define_tests()
             local end_time = test_data.base_time + 3600   -- 1 hour from now
 
             -- Query only for our test users to isolate the data
-            local db_resource, _ = env.get("wippy.usage:env-target_db")
+            local db_resource, _ = env.get("wippy.usage.env:target_db")
             local db, db_err = sql.get(db_resource)
             if db_err then error(db_err) end
 
