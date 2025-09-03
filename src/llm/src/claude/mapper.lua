@@ -328,34 +328,39 @@ function mapper.map_messages(contract_messages)
 end
 
 function mapper.map_tools(contract_tools)
-    if not contract_tools or #contract_tools == 0 then
-        return {}, {}
-    end
-
     local claude_tools = {}
     local name_to_id_map = {}
 
     for _, tool in ipairs(contract_tools) do
         if tool.schema then
-            table.insert(claude_tools, {
-                name = tool.name,
-                description = tool.description,
-                input_schema = tool.schema
-            })
-            name_to_id_map[tool.name] = tool.id or tool.registry_id
-        elseif tool.type then
-            local claude_tool = {
-                type = tool.type,
-                name = tool.name
-            }
+            local claude_meta = tool.meta and tool.meta.claude
 
-            if tool.parameters then
-                for k, v in pairs(tool.parameters) do
-                    claude_tool[k] = v
+            -- Check if this is a Claude native tool
+            if claude_meta and claude_meta.type then
+                -- Native tool format - only include type and tool-specific params
+                local claude_tool = {
+                    type = claude_meta.type,
+                    name = tool.name
+                }
+
+                -- Copy other Claude parameters (excluding type)
+                for key, value in pairs(claude_meta) do
+                    if key ~= "type" then
+                        claude_tool[key] = value
+                    end
                 end
+
+                table.insert(claude_tools, claude_tool)
+            else
+                -- Custom tool format - include description and schema
+                local claude_tool = {
+                    name = tool.name,
+                    description = tool.description,
+                    input_schema = tool.schema
+                }
+                table.insert(claude_tools, claude_tool)
             end
 
-            table.insert(claude_tools, claude_tool)
             name_to_id_map[tool.name] = tool.id or tool.registry_id
         end
     end
