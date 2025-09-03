@@ -39,24 +39,62 @@ local _default_context = {
     -- Default no-op function
     send_message = function(type, data) end,
 
-    -- Mocking system state
+    -- Mocking system state for immutable tables
     mocks = {
-        registry = {}, -- Stores original values
+        registry = {}, -- Stores original table states
         namespace = {} -- For generating unique IDs for tables
     }
 }
 
--- MOCKING SYSTEM
--- Generates a unique ID for a mock target and field
-local function generate_mock_id(target, field)
-    local target_id = tostring(target)
-    if type(target) == "table" then
-        -- Try to get a more meaningful ID for tables
-        if _default_context.mocks.namespace[target] then
-            target_id = _default_context.mocks.namespace[target]
+-- MOCKING SYSTEM FOR IMMUTABLE TABLES
+-- Deep copy function to preserve table contents
+local function deep_copy_table(original)
+    if type(original) ~= "table" then
+        return original
+    end
+
+    local copy = {}
+    for key, value in pairs(original) do
+        if type(value) == "table" then
+            copy[key] = deep_copy_table(value)
+        else
+            copy[key] = value
         end
     end
-    return target_id .. "." .. tostring(field)
+
+    -- Preserve metatable if it exists
+    local mt = getmetatable(original)
+    if mt then
+        setmetatable(copy, mt)
+    end
+
+    return copy
+end
+
+-- Parse a mock path string like "process.send" into path components
+local function parse_mock_path(path)
+    local parts = {}
+    for part in string.gmatch(path, "[^.]+") do
+        table.insert(parts, part)
+    end
+    return parts
+end
+
+-- Get a reference to a nested object by path (e.g., "process" -> _G.process)
+local function get_target_info(path)
+    local parts = parse_mock_path(path)
+    if #parts ~= 2 then
+        error("Invalid mock path: " .. path .. ". Expected format: 'object.field'")
+    end
+
+    local obj_name, field_name = parts[1], parts[2]
+    local obj = _G[obj_name]
+
+    if obj == nil then
+        error("Cannot find object '" .. obj_name .. "' in global scope")
+    end
+
+    return _G, obj_name, obj, field_name
 end
 
 -- Register a named table for better identification in mocks
@@ -80,97 +118,81 @@ local function create_process_send_proxy(replacement)
     end
 end
 
--- Parse a mock path string like "process.send" into object and field
-local function parse_mock_path(path)
-    local parts = {}
-    for part in string.gmatch(path, "[^.]+") do
-        table.insert(parts, part)
-    end
-
-    if #parts == 2 then
-        local obj_name, field_name = parts[1], parts[2]
-        local obj = _G[obj_name]
-
-        if obj == nil then
-            error("Cannot find object '" .. obj_name .. "' in global scope")
-        end
-
-        return obj, field_name
-    else
-        error("Invalid mock path: " .. path .. ". Expected format: 'object.field'")
-    end
-end
-
 -- Setup a mock and store the original value
 function test.mock(target_or_path, field_or_replacement, replacement_optional)
-    local target, field, replacement
+    local container, container_key, target, field, replacement
 
     -- Case 1: mock("process.send", function) - path as string
     if type(target_or_path) == "string" and field_or_replacement ~= nil then
-        target, field = parse_mock_path(target_or_path)
+        container, container_key, target, field = get_target_info(target_or_path)
         replacement = field_or_replacement
+
     -- Case 2: mock(process, "send", function) - object, field, replacement
+    elseif replacement_optional ~= nil then
+        -- For immutable tables, we need to find where this object is stored
+        -- This is more complex, so we'll require using string paths for now
+        error("With immutable tables, please use string path format: mock('object.field', replacement)")
     else
-        target = target_or_path
-        field = field_or_replacement
-        replacement = replacement_optional
+        error("Invalid mock arguments. Use: mock('object.field', replacement)")
     end
 
     if type(target) ~= "table" then
         error("Target must be a table, got " .. type(target))
     end
 
-    local id = generate_mock_id(target, field)
+    local mock_id = target_or_path -- Use the path as ID for string-based mocks
 
-    -- Store original only if not already mocked
-    if _default_context.mocks.registry[id] == nil then
-        _default_context.mocks.registry[id] = {
-            target = target,
-            field = field,
-            original = target[field]
+    -- Store original table only if not already mocked
+    if _default_context.mocks.registry[mock_id] == nil then
+        _default_context.mocks.registry[mock_id] = {
+            container = container,
+            container_key = container_key,
+            original_table = deep_copy_table(target)
         }
     end
 
-    -- Special case for process.send
-    if target == process and field == "send" then
-        -- Store original once if not already stored
-        if not _original_process_send and process.send then
-            _original_process_send = process.send
-        end
+    -- Create new table with the mocked field
+    local new_table = deep_copy_table(target)
 
-        -- Create a proxy that handles both test framework messages and mock behavior
-        target[field] = create_process_send_proxy(replacement)
+    -- Special case for process.send - create proxy
+    if container_key == "process" and field == "send" then
+        -- Store original once if not already stored
+        if not _original_process_send and target.send then
+            _original_process_send = target.send
+        end
+        new_table[field] = create_process_send_proxy(replacement)
     else
-        -- Set the mock normally for other cases
-        target[field] = replacement
+        new_table[field] = replacement
     end
+
+    -- Replace the entire table in its container
+    container[container_key] = new_table
 
     return test
 end
 
 -- Restore a specific mock
 function test.restore_mock(target_or_path, field_optional)
-    local target, field
+    local mock_id
 
     -- Case 1: restore_mock("process.send")
     if type(target_or_path) == "string" and field_optional == nil then
-        target, field = parse_mock_path(target_or_path)
-    -- Case 2: restore_mock(process, "send")
+        mock_id = target_or_path
+    -- Case 2: restore_mock(process, "send") - not supported with immutable tables
     else
-        target = target_or_path
-        field = field_optional
+        error("With immutable tables, please use string path format: restore_mock('object.field')")
     end
 
-    local id = generate_mock_id(target, field)
-    local entry = _default_context.mocks.registry[id]
+    local entry = _default_context.mocks.registry[mock_id]
 
     if entry then
-        entry.target[entry.field] = entry.original
-        _default_context.mocks.registry[id] = nil
+        -- Restore the original table
+        entry.container[entry.container_key] = entry.original_table
+        _default_context.mocks.registry[mock_id] = nil
     end
 
-    -- Special case for process.send - ensure we restore our reference
-    if target == process and field == "send" then
+    -- Special case for process.send - ensure we update our send function
+    if mock_id == "process.send" then
         _update_send_message_function()
     end
 
@@ -190,7 +212,7 @@ function test.restore_all_mocks()
         local entry = _default_context.mocks.registry[id]
         if entry then
             local success, err = pcall(function()
-                entry.target[entry.field] = entry.original
+                entry.container[entry.container_key] = entry.original_table
             end)
 
             if not success then
@@ -204,7 +226,12 @@ function test.restore_all_mocks()
 
     -- Ensure process.send is properly set
     if process and _original_process_send then
-        process.send = _original_process_send
+        -- Find if we have a process mock and restore it properly
+        if _G.process then
+            local restored_process = deep_copy_table(_G.process)
+            restored_process.send = _original_process_send
+            _G.process = restored_process
+        end
         _update_send_message_function()
     end
 
@@ -216,12 +243,12 @@ function test.mock_process(field, replacement)
     -- Ensure _G.process exists before mocking
     if not _G.process then
         -- Save the original state (nil) before creating it
-        local process_id = generate_mock_id(_G, "process")
+        local process_id = "process"
         if not _default_context.mocks.registry[process_id] then
             _default_context.mocks.registry[process_id] = {
-                target = _G,
-                field = "process",
-                original = nil
+                container = _G,
+                container_key = "process",
+                original_table = nil -- Was nil originally
             }
         end
 
@@ -229,17 +256,9 @@ function test.mock_process(field, replacement)
         _G.process = {}
     end
 
-    -- Special case for process.send
-    if field == "send" then
-        if not _original_process_send and process and process.send then
-            _original_process_send = process.send
-        end
-
-        -- Create a proxy for process.send
-        test.mock(_G.process, field, replacement)
-    elseif field then
-        -- Mock other process fields normally
-        test.mock(_G.process, field, replacement)
+    -- Now mock the specific field using the string path approach
+    if field then
+        return test.mock("process." .. field, replacement)
     end
 
     return test
@@ -449,29 +468,62 @@ local function format_value(val)
     end
 end
 
--- Helper function to get debug info for assertions
+-- Helper function to get debug info for assertions, skipping test framework internals
 local function get_debug_info()
-    local info = debug.getinfo(3) -- 3 levels up to get the calling context
+    local level = 3 -- Start 3 levels up from assertion functions
+    local max_level = 10 -- Don't go too deep
+
+    while level <= max_level do
+        local info = debug.getinfo(level)
+        if not info then
+            break
+        end
+
+        -- Skip internal test framework functions
+        local source = info.source or ""
+        local name = info.name or ""
+
+        -- Skip if it's from test framework internals
+        if not (source:match("test%.lua") and (name:match("assert") or name:match("expect") or name == "")) then
+            return {
+                line = info.currentline,
+                source = source
+            }
+        end
+
+        level = level + 1
+    end
+
+    -- Fallback to level 3 if we can't find a good frame
+    local info = debug.getinfo(3)
     return {
-        line = info.currentline,
-        source = info.source
+        line = info and info.currentline or 0,
+        source = info and info.source or "unknown"
     }
+end
+
+-- Helper to format error message consistently
+local function format_error_msg(template, actual, expected, message)
+    local info = get_debug_info()
+    local base_msg = string.format(template, format_value(expected), format_value(actual))
+
+    if message and message ~= "" then
+        return string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message)
+    else
+        return string.format("%s:%d: %s", info.source, info.line, base_msg)
+    end
 end
 
 local function assert_equal(actual, expected, message)
     if actual ~= expected then
-        local info = get_debug_info()
-        error(string.format("%s:%d: Expected %s but got %s: %s",
-            info.source, info.line, format_value(expected), format_value(actual), message), 2)
+        error(format_error_msg("Expected %s but got %s", actual, expected, message), 2)
     end
     return true
 end
 
 local function assert_not_equal(actual, expected, message)
     if actual == expected then
-        local info = get_debug_info()
-        error(string.format("%s:%d: Expected %s to not equal %s: %s",
-            info.source, info.line, format_value(actual), format_value(expected), message), 2)
+        error(format_error_msg("Expected %s to not equal %s", actual, expected, message), 2)
     end
     return true
 end
@@ -479,8 +531,12 @@ end
 local function assert_true(actual, message)
     if actual ~= true then
         local info = get_debug_info()
-        error(string.format("%s:%d: Expected true but got %s: %s",
-            info.source, info.line, format_value(actual), message), 2)
+        local base_msg = string.format("Expected true but got %s", format_value(actual))
+        if message and message ~= "" then
+            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+        else
+            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+        end
     end
     return true
 end
@@ -488,8 +544,12 @@ end
 local function assert_false(actual, message)
     if actual ~= false then
         local info = get_debug_info()
-        error(string.format("%s:%d: Expected false but got %s: %s",
-            info.source, info.line, format_value(actual)), message, 2)
+        local base_msg = string.format("Expected false but got %s", format_value(actual))
+        if message and message ~= "" then
+            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+        else
+            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+        end
     end
     return true
 end
@@ -497,8 +557,12 @@ end
 local function assert_nil(actual, message)
     if actual ~= nil then
         local info = get_debug_info()
-        error(string.format("%s:%d: Expected nil but got %s: %s",
-            info.source, info.line, format_value(actual), message), 2)
+        local base_msg = string.format("Expected nil but got %s", format_value(actual))
+        if message and message ~= "" then
+            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+        else
+            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+        end
     end
     return true
 end
@@ -506,17 +570,26 @@ end
 local function assert_not_nil(actual, message)
     if actual == nil then
         local info = get_debug_info()
-        error(string.format("%s:%d: Expected value to not be nil: %s",
-            info.source, info.line, message), 2)
+        local base_msg = "Expected value to not be nil"
+        if message and message ~= "" then
+            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+        else
+            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+        end
     end
     return true
 end
 
 local function assert_match(str, pattern, message)
     if not string.match(str, pattern) then
-        local info = get_debug_info()
-        error(string.format("%s:%d: Expected %q to match pattern %q: %s",
-            info.source, info.line, str, pattern, message), 2)
+        error(format_error_msg("Expected %s to match pattern %s", str, pattern, message), 2)
+    end
+    return true
+end
+
+local function assert_not_match(str, pattern, message)
+    if string.match(str, pattern) then
+        error(format_error_msg("Expected %s to not match pattern %s", str, pattern, message), 2)
     end
     return true
 end
@@ -545,12 +618,13 @@ function test.expect(actual)
         to_match = function(pattern, message)
             return assert_match(actual, pattern, message)
         end,
+        not_to_match = function(pattern, message)
+            return assert_not_match(actual, pattern, message)
+        end,
         to_be_type = function(expected_type, message)
             local actual_type = type(actual)
             if actual_type ~= expected_type then
-                local info = get_debug_info()
-                error(string.format("%s:%d: Expected type %s but got %s: %s",
-                    info.source, info.line, expected_type, actual_type, message), 2)
+                error(format_error_msg("Expected type %s but got type %s", actual_type, expected_type, message), 2)
             end
             return true
         end,
@@ -565,42 +639,140 @@ function test.expect(actual)
                 end
                 if not found then
                     local info = get_debug_info()
-                    error(string.format("%s:%d: Expected table to contain %s: %s",
-                        info.source, info.line, format_value(expected), message), 2)
+                    local base_msg = string.format("Expected table to contain %s", format_value(expected))
+                    if message and message ~= "" then
+                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                    else
+                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                    end
                 end
                 return true
             elseif type(actual) == "string" then
                 if not string.find(actual, expected, 1, true) then
                     local info = get_debug_info()
-                    error(string.format("%s:%d: Expected string to contain %s: %s",
-                        info.source, info.line, format_value(expected), message), 2)
+                    local base_msg = string.format("Expected string %s to contain %s", format_value(actual), format_value(expected))
+                    if message and message ~= "" then
+                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                    else
+                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                    end
                 end
                 return true
             else
                 local info = get_debug_info()
-                error(string.format("%s:%d: Expected a table or string to check contents: %s",
-                    info.source, info.line, message), 2)
+                local base_msg = "Expected a table or string to check contents"
+                if message and message ~= "" then
+                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                else
+                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                end
+            end
+        end,
+        not_to_contain = function(expected, message)
+            if type(actual) == "table" then
+                local found = false
+                for _, v in pairs(actual) do
+                    if v == expected then
+                        found = true
+                        break
+                    end
+                end
+                if found then
+                    local info = get_debug_info()
+                    local base_msg = string.format("Expected table to not contain %s", format_value(expected))
+                    if message and message ~= "" then
+                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                    else
+                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                    end
+                end
+                return true
+            elseif type(actual) == "string" then
+                if string.find(actual, expected, 1, true) then
+                    local info = get_debug_info()
+                    local base_msg = string.format("Expected string %s to not contain %s", format_value(actual), format_value(expected))
+                    if message and message ~= "" then
+                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                    else
+                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                    end
+                end
+                return true
+            else
+                local info = get_debug_info()
+                local base_msg = "Expected a table or string to check contents"
+                if message and message ~= "" then
+                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                else
+                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                end
             end
         end,
         to_have_key = function(key, message)
             if type(actual) ~= "table" then
                 local info = get_debug_info()
-                error(string.format("%s:%d: Expected a table to check for key: %s",
-                    info.source, info.line, message), 2)
+                local base_msg = "Expected a table to check for key"
+                if message and message ~= "" then
+                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                else
+                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                end
             end
 
             if actual[key] == nil then
                 local info = get_debug_info()
-                error(string.format("%s:%d: Expected table to have key %s: %s",
-                    info.source, info.line, format_value(key), message), 2)
+                local base_msg = string.format("Expected table to have key %s", format_value(key))
+                if message and message ~= "" then
+                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                else
+                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                end
+            end
+            return true
+        end,
+        not_to_have_key = function(key, message)
+            if type(actual) ~= "table" then
+                local info = get_debug_info()
+                local base_msg = "Expected a table to check for key"
+                if message and message ~= "" then
+                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                else
+                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                end
+            end
+
+            if actual[key] ~= nil then
+                local info = get_debug_info()
+                local base_msg = string.format("Expected table to not have key %s", format_value(key))
+                if message and message ~= "" then
+                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
+                else
+                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
+                end
             end
             return true
         end,
         to_be_greater_than = function(expected, message)
             if not (actual > expected) then
-                local info = get_debug_info()
-                error(string.format("%s:%d: Expected %s to be greater than %s: %s",
-                    info.source, info.line, format_value(actual), format_value(expected), message), 2)
+                error(format_error_msg("Expected %s to be greater than %s", actual, expected, message), 2)
+            end
+            return true
+        end,
+        to_be_less_than = function(expected, message)
+            if not (actual < expected) then
+                error(format_error_msg("Expected %s to be less than %s", actual, expected, message), 2)
+            end
+            return true
+        end,
+        to_be_greater_than_or_equal = function(expected, message)
+            if not (actual >= expected) then
+                error(format_error_msg("Expected %s to be greater than or equal to %s", actual, expected, message), 2)
+            end
+            return true
+        end,
+        to_be_less_than_or_equal = function(expected, message)
+            if not (actual <= expected) then
+                error(format_error_msg("Expected %s to be less than or equal to %s", actual, expected, message), 2)
             end
             return true
         end
@@ -639,8 +811,9 @@ local function format_error_message(err)
                 local line = frame.line and frame.line > 0 and frame.line or "?"
                 local func_name = frame.name and frame.name:gsub("[<>]", "") or "unknown"
 
-                -- Don't include any frames from assertion functions
-                if not string.match(func_name or "", "assert") then
+                -- Don't include any frames from assertion functions or test framework internals
+                if not (string.match(func_name or "", "assert") or
+                       string.match(source or "", "test%.lua")) then
                     local prefix = i > 1 and "  " or "->"
                     stack_text = stack_text .. string.format("\n%s %s:%s in %s",
                                                            prefix, source, line, func_name)
