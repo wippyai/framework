@@ -2,10 +2,17 @@ version: "1.0"
 namespace: wippy.usage.env
 
 entries:
+  # wippy.usage.env:envs
+  - name: envs
+    kind: env.storage.os
+    meta:
+      type: envstorage
+      comment: OS storage for environment variables (read-only)
+
   # wippy.usage.env:target_db
   - name: target_db
     kind: env.variable
     meta:
       type: config_key
       comment: Database resource identifier
-    storage: wippy.usage:envs
+    storage: wippy.usage.env:envs
