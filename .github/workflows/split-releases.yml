@@ -27,7 +27,7 @@ jobs:
           - { folder: test, repo: module-test }
           - { folder: views, repo: module-views }
           - { folder: llm/src, repo: module-llm }
-          - { folder: usage, repo: module-usage }
+          - { folder: usage/src, repo: module-usage }
           - { folder: docs, repo: module-docs }
     steps:
       - uses: actions/checkout@v4
