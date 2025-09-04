@@ -14,17 +14,17 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - { folder: actor/src, repo: module-actor }
-          - { folder: agent/src, repo: module-agent }
+          - { folder: actor, repo: module-actor }
+          - { folder: agent, repo: module-agent }
           - { folder: bootloader, repo: module-bootloader }
           - { folder: migration, repo: module-migration }
-          - { folder: relay/src, repo: module-relay }
+          - { folder: relay, repo: module-relay }
           - { folder: security, repo: module-security }
           - { folder: terminal, repo: module-terminal }
           - { folder: test, repo: module-test }
           - { folder: views, repo: module-views }
-          - { folder: llm/src, repo: module-llm }
-          - { folder: usage/src, repo: module-usage }
+          - { folder: llm, repo: module-llm }
+          - { folder: usage, repo: module-usage }
           - { folder: docs, repo: module-docs }
     steps:
       - uses: actions/checkout@v4
