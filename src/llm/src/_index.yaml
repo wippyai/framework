@@ -2,6 +2,29 @@ version: "1.0"
 namespace: wippy.llm
 
 entries:
+  # Requirements
+  - name: env_storage
+    kind: ns.requirement
+    meta:
+      description: "Environment variable storage location"
+    targets:
+      - entry: wippy.llm.claude:api_key
+        path: ".storage"
+      - entry: wippy.llm.claude:api_version
+        path: ".storage"
+      - entry: wippy.llm.claude:base_url
+        path: ".storage"
+      - entry: wippy.llm.claude:timeout
+        path: ".storage"
+      - entry: wippy.llm.openai:api_key
+        path: ".storage"
+      - entry: wippy.llm.openai:base_url
+        path: ".storage"
+      - entry: wippy.llm.openai:organization
+        path: ".storage"
+      - entry: wippy.llm.openai:timeout
+        path: ".storage"
+
   # Dependencies
   - name: __dependency.wippy.test
     kind: "ns.dependency"

@@ -28,7 +28,7 @@ local function resolve_context_values(value_configs)
             local env_key = key .. "_env"
             if ctx_all[env_key] then
                 local env_value = claude_client._env.get(ctx_all[env_key])
-                if env_value then
+                if env_value and env_value ~= '' then
                     result = env_value
                 end
             end
@@ -36,7 +36,7 @@ local function resolve_context_values(value_configs)
 
         if not result and value_config.default_env_var then
             local env_value = claude_client._env.get(value_config.default_env_var)
-            if env_value then
+            if env_value and env_value ~= '' then
                 result = env_value
             end
         end
@@ -200,23 +200,23 @@ function claude_client.request(endpoint_path, payload, options)
         end
     end
 
-    local response
+   local response
     if method == "GET" then
-        response = claude_client._http_client.get(full_url, http_options)
+        response, err = claude_client._http_client.get(full_url, http_options)
     elseif method == "DELETE" then
-        response = claude_client._http_client.delete(full_url, http_options)
+        response, err = claude_client._http_client.delete(full_url, http_options)
     elseif method == "PUT" then
-        response = claude_client._http_client.put(full_url, http_options)
+        response, err = claude_client._http_client.put(full_url, http_options)
     elseif method == "PATCH" then
-        response = claude_client._http_client.patch(full_url, http_options)
+        response, err = claude_client._http_client.patch(full_url, http_options)
     else
-        response = claude_client._http_client.post(full_url, http_options)
+        response, err = claude_client._http_client.post(full_url, http_options)
     end
 
     if not response then
         return nil, {
             status_code = 0,
-            message = "Connection failed"
+            message = "Connection failed: " .. tostring(err)
         }
     end
 
