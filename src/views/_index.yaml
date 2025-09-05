@@ -2,6 +2,23 @@ version: "1.0"
 namespace: wippy.views
 
 entries:
+  # Requirements
+  - name: api_router
+    kind: ns.requirement
+    meta:
+      description: "Injects API router configuration into endpoints"
+    targets:
+      - entry: wippy.views.api:list_pages
+        path: .meta.router
+      - entry: wippy.views.api:list_pages.endpoint
+        path: .meta.router
+      - entry: wippy.views.api:render
+        path: .meta.router
+      - entry: wippy.views.api:render.endpoint
+        path: .meta.router
+      - entry: wippy.views.api:render.endpoint4
+        path: .meta.router
+
   # wippy.views:page_registry
   - name: page_registry
     kind: library.lua
