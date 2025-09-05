@@ -8,18 +8,16 @@ entries:
     meta:
       comment: OpenAI API key for authentication
       icon: tabler:key
-    storage: app.env:router
     variable: OPENAI_API_KEY
-    
+
   # wippy.llm.openai:base_url
   - name: base_url
     kind: env.variable
     meta:
       comment: OpenAI API base URL for custom endpoints or proxies
       icon: tabler:world
-    storage: app.env:router
     variable: OPENAI_BASE_URL
-    
+
   # wippy.llm.openai:client
   - name: client
     kind: library.lua
@@ -32,7 +30,7 @@ entries:
       - env
       - ctx
       - security
-    
+
   # wippy.llm.openai:client_test
   - name: client_test
     kind: function.lua
@@ -57,7 +55,7 @@ entries:
       openai_client: wippy.llm.openai:client
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:driver
   - name: driver
     kind: contract.binding
@@ -100,7 +98,7 @@ entries:
         description: Request timeout in seconds
         default_env: OPENAI_TIMEOUT
         default_value: 120
-    
+
   # wippy.llm.openai:embed
   - name: embed
     kind: function.lua
@@ -114,7 +112,7 @@ entries:
     method: handler
     pool:
       max_size: 50
-    
+
   # wippy.llm.openai:embed_test
   - name: embed_test
     kind: function.lua
@@ -137,7 +135,7 @@ entries:
       embed_handler: wippy.llm.openai:embed
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:generate
   - name: generate
     kind: function.lua
@@ -153,7 +151,7 @@ entries:
     method: handler
     pool:
       max_size: 50
-    
+
   # wippy.llm.openai:generate_test
   - name: generate_test
     kind: function.lua
@@ -177,7 +175,7 @@ entries:
       generate_handler: wippy.llm.openai:generate
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:integration_test
   - name: integration_test
     kind: function.lua
@@ -206,7 +204,7 @@ entries:
       structured_output_handler: wippy.llm.openai:structured_output
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:mapper
   - name: mapper
     kind: library.lua
@@ -217,7 +215,7 @@ entries:
       - json
     imports:
       output: wippy.llm:output
-    
+
   # wippy.llm.openai:mapper_test
   - name: mapper_test
     kind: function.lua
@@ -239,16 +237,15 @@ entries:
       openai_mapper: wippy.llm.openai:mapper
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:organization
   - name: organization
     kind: env.variable
     meta:
       comment: OpenAI organization ID for API access control
       icon: tabler:building
-    storage: app.env:router
     variable: OPENAI_ORGANIZATION
-    
+
   # wippy.llm.openai:provider
   - name: provider
     kind: registry.entry
@@ -274,7 +271,7 @@ entries:
         base_url_env: wippy.llm.openai:base_url
         organization_env: wippy.llm.openai:organization
         timeout_env: wippy.llm.openai:timeout
-    
+
   # wippy.llm.openai:status
   - name: status
     kind: function.lua
@@ -286,7 +283,7 @@ entries:
     method: handler
     pool:
       max_size: 10
-    
+
   # wippy.llm.openai:status_test
   - name: status_test
     kind: function.lua
@@ -309,7 +306,7 @@ entries:
       status_handler: wippy.llm.openai:status
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:structured_output
   - name: structured_output
     kind: function.lua
@@ -326,7 +323,7 @@ entries:
     method: handler
     pool:
       max_size: 25
-    
+
   # wippy.llm.openai:structured_output_test
   - name: structured_output_test
     kind: function.lua
@@ -351,13 +348,11 @@ entries:
       structured_output_handler: wippy.llm.openai:structured_output
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.openai:timeout
   - name: timeout
     kind: env.variable
     meta:
       comment: OpenAI API request timeout in seconds
       icon: tabler:clock
-    storage: app.env:router
     variable: OPENAI_TIMEOUT
-    

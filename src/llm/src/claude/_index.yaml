@@ -8,27 +8,24 @@ entries:
     meta:
       comment: Anthropic API key for Claude authentication
       icon: tabler:key
-    storage: app.env:router
     variable: ANTHROPIC_API_KEY
-    
+
   # wippy.llm.claude:api_version
   - name: api_version
     kind: env.variable
     meta:
       comment: Claude API version
       icon: tabler:versions
-    storage: app.env:router
     variable: ANTHROPIC_API_VERSION
-    
+
   # wippy.llm.claude:base_url
   - name: base_url
     kind: env.variable
     meta:
       comment: Claude API base URL for custom endpoints or proxies
       icon: tabler:world
-    storage: app.env:router
     variable: ANTHROPIC_BASE_URL
-    
+
   # wippy.llm.claude:client
   - name: client
     kind: library.lua
@@ -43,7 +40,7 @@ entries:
     imports:
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
-    
+
   # wippy.llm.claude:client_test
   - name: client_test
     kind: function.lua
@@ -69,7 +66,7 @@ entries:
       claude_client: wippy.llm.claude:client
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.claude:driver
   - name: driver
     kind: contract.binding
@@ -111,7 +108,7 @@ entries:
         description: Request timeout in seconds
         default_env: ANTHROPIC_TIMEOUT
         default_value: 240
-    
+
   # wippy.llm.claude:generate
   - name: generate
     kind: function.lua
@@ -126,7 +123,7 @@ entries:
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
     method: handler
-    
+
   # wippy.llm.claude:generate_test
   - name: generate_test
     kind: function.lua
@@ -151,7 +148,7 @@ entries:
       generate_handler: wippy.llm.claude:generate
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.claude:integration_test
   - name: integration_test
     kind: function.lua
@@ -179,7 +176,7 @@ entries:
       structured_output_handler: wippy.llm.claude:structured_output
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.claude:mapper
   - name: mapper
     kind: library.lua
@@ -191,7 +188,7 @@ entries:
     imports:
       prompt: wippy.llm:prompt
       output: wippy.llm:output
-    
+
   # wippy.llm.claude:mapper_test
   - name: mapper_test
     kind: function.lua
@@ -214,7 +211,7 @@ entries:
       output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.claude:provider
   - name: provider
     kind: registry.entry
@@ -240,7 +237,7 @@ entries:
         api_version_env: wippy.llm.claude:api_version
         base_url_env: wippy.llm.claude:base_url
         timeout_env: wippy.llm.claude:timeout
-    
+
   # wippy.llm.claude:status
   - name: status
     kind: function.lua
@@ -253,7 +250,7 @@ entries:
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
     method: handler
-    
+
   # wippy.llm.claude:status_test
   - name: status_test
     kind: function.lua
@@ -277,7 +274,7 @@ entries:
       status_handler: wippy.llm.claude:status
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.claude:structured_output
   - name: structured_output
     kind: function.lua
@@ -293,7 +290,7 @@ entries:
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
     method: handler
-    
+
   # wippy.llm.claude:structured_output_test
   - name: structured_output_test
     kind: function.lua
@@ -319,13 +316,11 @@ entries:
       structured_output_handler: wippy.llm.claude:structured_output
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.llm.claude:timeout
   - name: timeout
     kind: env.variable
     meta:
       comment: Claude API request timeout in seconds
       icon: tabler:clock
-    storage: app.env:router
     variable: ANTHROPIC_TIMEOUT
-    
