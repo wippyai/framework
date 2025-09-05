@@ -22,8 +22,8 @@ entries:
     targets:
       - entry: wippy.relay.env:max_connections_per_user
         path: ".default"
-    default: "2"
-    
+    default: "5"
+
   - name: queue_multiplier
     kind: ns.requirement
     meta:
@@ -32,7 +32,7 @@ entries:
       - entry: wippy.relay.env:queue_multiplier
         path: ".default"
     default: "100"
-    
+
   - name: user_hub_inactivity_timeout
     kind: ns.requirement
     meta:

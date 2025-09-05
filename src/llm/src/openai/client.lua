@@ -87,14 +87,31 @@ local function parse_error_response(http_response)
         error_info.request_id = http_response.headers["x-request-id"]
     end
 
-    -- Try to parse error body
+    -- Try to parse error body - check for actual content, not just existence
     if http_response and http_response.body then
-        local parsed, decode_err = json.decode(http_response.body)
-        if not decode_err and parsed and parsed.error then
-            error_info.message = parsed.error.message or error_info.message
-            error_info.code = parsed.error.code
-            error_info.param = parsed.error.param
-            error_info.type = parsed.error.type
+        if http_response.body ~= "" and http_response.body ~= "no body" then
+            local parsed, decode_err = json.decode(http_response.body)
+
+            if not decode_err and parsed and parsed.error then
+                error_info.message = parsed.error.message or error_info.message
+                error_info.code = parsed.error.code
+                error_info.param = parsed.error.param
+                error_info.type = parsed.error.type
+
+                -- Handle OpenRouter-style nested error metadata
+                if parsed.error.metadata and parsed.error.metadata.raw then
+                    error_info.nested_error = parsed.error.metadata.raw
+                    error_info.provider_name = parsed.error.metadata.provider_name
+
+                    -- Try to parse the nested error for more specific info
+                    local nested_parsed, nested_err = json.decode(parsed.error.metadata.raw)
+                    if not nested_err and nested_parsed then
+                        if nested_parsed.message then
+                            error_info.detailed_message = nested_parsed.message
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -160,10 +177,11 @@ function openai_client.request(endpoint_path, payload, options)
 
     -- Validate API key
     if not config.api_key then
-        return nil, {
+        local error_response = {
             status_code = 401,
             message = "OpenAI API key is required"
         }
+        return nil, error_response
     end
 
     -- Prepare request
@@ -211,15 +229,17 @@ function openai_client.request(endpoint_path, payload, options)
 
     -- Handle nil response (connection failures)
     if not response then
-        return nil, {
+        local connection_error = {
             status_code = 0,
             message = "Connection failed"
         }
+        return nil, connection_error
     end
 
     -- Check for HTTP errors
     if response.status_code < 200 or response.status_code >= 300 then
-        return nil, parse_error_response(response)
+        local parsed_error = parse_error_response(response)
+        return nil, parsed_error
     end
 
     -- Handle streaming response
@@ -235,11 +255,12 @@ function openai_client.request(endpoint_path, payload, options)
     -- Parse non-streaming response
     local parsed, parse_err = json.decode(response.body)
     if parse_err then
-        return nil, {
+        local parse_error = {
             status_code = response.status_code,
             message = "Failed to parse OpenAI response: " .. parse_err,
             metadata = extract_response_metadata(response)
         }
+        return nil, parse_error
     end
 
     -- Add metadata to the response
@@ -263,10 +284,14 @@ function openai_client.process_stream(stream_response, callbacks)
     local tool_calls_accumulator = {}
     local sent_tool_calls = {}
 
+    -- Track reasoning details for OpenRouter
+    local reasoning_accumulator = {}
+
     -- Default callbacks
     callbacks = callbacks or {}
     local on_content = callbacks.on_content or function() end
     local on_tool_call = callbacks.on_tool_call or function() end
+    local on_reasoning = callbacks.on_reasoning or function() end
     local on_error = callbacks.on_error or function() end
     local on_done = callbacks.on_done or function() end
 
@@ -327,13 +352,19 @@ function openai_client.process_stream(stream_response, callbacks)
                     end
                 end
 
-                -- Create final result
+                -- Create final result with reasoning if present
                 local result = {
                     content = full_content,
                     finish_reason = finish_reason,
                     usage = usage,
                     metadata = metadata
                 }
+
+                -- Add reasoning details if accumulated
+                if next(reasoning_accumulator) then
+                    result.reasoning_details = reasoning_accumulator
+                end
+
                 on_done(result)
                 return full_content, nil, result
             end
@@ -353,6 +384,16 @@ function openai_client.process_stream(stream_response, callbacks)
                     local content_chunk = choice.delta.content
                     full_content = full_content .. content_chunk
                     on_content(content_chunk)
+                end
+
+                -- Handle reasoning details delta (OpenRouter)
+                if choice.delta and choice.delta.reasoning_details then
+                    for _, reasoning_detail in ipairs(choice.delta.reasoning_details) do
+                        table.insert(reasoning_accumulator, reasoning_detail)
+                        if reasoning_detail.text then
+                            on_reasoning(reasoning_detail.text)
+                        end
+                    end
                 end
 
                 -- Handle tool call deltas
@@ -456,13 +497,18 @@ function openai_client.process_stream(stream_response, callbacks)
         end
     end
 
-    -- Create final result
+    -- Create final result with reasoning if present
     local result = {
         content = full_content,
         finish_reason = finish_reason,
         usage = usage,
         metadata = metadata
     }
+
+    -- Add reasoning details if accumulated
+    if next(reasoning_accumulator) then
+        result.reasoning_details = reasoning_accumulator
+    end
 
     on_done(result)
     return full_content, nil, result

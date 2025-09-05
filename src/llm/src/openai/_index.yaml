@@ -262,6 +262,11 @@ entries:
         - provider
         - openai
         - gpt
+    depends_on:
+      - wippy.llm.openai:api_key
+      - wippy.llm.openai:base_url
+      - wippy.llm.openai:organization
+      - wippy.llm.openai:timeout
     driver:
       id: wippy.llm.openai:driver
       options:
