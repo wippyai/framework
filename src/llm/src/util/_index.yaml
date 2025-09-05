@@ -16,6 +16,7 @@ entries:
     source: file://compress.lua
     modules:
       - text
+      - json
     imports:
       llm: wippy.llm:llm
       models: wippy.llm.discovery:models

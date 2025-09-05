@@ -142,6 +142,42 @@ local function get_usage_tracker()
     return nil -- No usage tracking available
 end
 
+-- Merge provider options into contract arguments
+local function merge_provider_options(contract_args, provider_info)
+    if provider_info and provider_info.options then
+        for k, v in pairs(provider_info.options) do
+            if k == "tools" or k == "tool_choice" or k == "stream" then
+                contract_args[k] = v
+            else
+                contract_args.options[k] = v
+            end
+        end
+    end
+end
+
+-- Merge user options into contract arguments
+local function merge_user_options(contract_args, user_options, exclude_keys)
+    exclude_keys = exclude_keys or {}
+
+    for k, v in pairs(user_options) do
+        local should_exclude = false
+        for _, exclude_key in ipairs(exclude_keys) do
+            if k == exclude_key then
+                should_exclude = true
+                break
+            end
+        end
+
+        if not should_exclude then
+            if k == "tools" or k == "tool_choice" or k == "stream" then
+                contract_args[k] = v
+            else
+                contract_args.options[k] = v
+            end
+        end
+    end
+end
+
 ---------------------------
 -- Constants (Backward Compatibility)
 ---------------------------
@@ -218,16 +254,8 @@ function llm.generate(prompt_input, options)
             options = {}
         }
 
-        -- Copy user options to contract options
-        for k, v in pairs(options) do
-            if k ~= "model" and k ~= "provider_id" then
-                if k == "tools" or k == "tool_choice" or k == "stream" then
-                    contract_args[k] = v
-                else
-                    contract_args.options[k] = v
-                end
-            end
-        end
+        -- Copy user options to contract options (no provider options in direct mode)
+        merge_user_options(contract_args, options, {"model", "provider_id"})
 
         -- Call provider contract directly with standard format
         local raw_result, err = provider_instance:generate(contract_args)
@@ -285,16 +313,11 @@ function llm.generate(prompt_input, options)
             options = {}
         }
 
-        -- Copy user options
-        for k, v in pairs(options) do
-            if k ~= "model" then
-                if k == "tools" or k == "tool_call" or k == "stream" then
-                    contract_args[k] = v
-                else
-                    contract_args.options[k] = v
-                end
-            end
-        end
+        -- Merge provider options first (from model YAML)
+        merge_provider_options(contract_args, provider_info)
+
+        -- Merge user options (can override provider defaults)
+        merge_user_options(contract_args, options, {"model"})
 
         -- Call provider contract
         local raw_result, err = provider_instance:generate(contract_args)
@@ -365,12 +388,8 @@ function llm.structured_output(schema, prompt_input, options)
             options = {}
         }
 
-        -- Copy user options to contract options
-        for k, v in pairs(options) do
-            if k ~= "model" and k ~= "provider_id" and k ~= "schema" then
-                contract_args.options[k] = v
-            end
-        end
+        -- Copy user options to contract options (no provider options in direct mode)
+        merge_user_options(contract_args, options, {"model", "provider_id", "schema"})
 
         -- Call provider contract directly with standard format
         local raw_result, err = provider_instance:structured_output(contract_args)
@@ -429,12 +448,11 @@ function llm.structured_output(schema, prompt_input, options)
             options = {}
         }
 
-        -- Copy user options
-        for k, v in pairs(options) do
-            if k ~= "model" and k ~= "schema" then
-                contract_args.options[k] = v
-            end
-        end
+        -- Merge provider options first (from model YAML)
+        merge_provider_options(contract_args, provider_info)
+
+        -- Merge user options (can override provider defaults)
+        merge_user_options(contract_args, options, {"model", "schema"})
 
         -- Call provider contract
         local raw_result, err = provider_instance:structured_output(contract_args)
@@ -494,12 +512,8 @@ function llm.embed(text, options)
             options = {}
         }
 
-        -- Copy user options to contract options
-        for k, v in pairs(options) do
-            if k ~= "model" and k ~= "provider_id" then
-                contract_args.options[k] = v
-            end
-        end
+        -- Copy user options to contract options (no provider options in direct mode)
+        merge_user_options(contract_args, options, {"model", "provider_id"})
 
         -- Call provider contract directly with standard format
         local raw_result, err = provider_instance:embed(contract_args)
@@ -558,12 +572,11 @@ function llm.embed(text, options)
             contract_args.options.dimensions = model_card.dimensions
         end
 
-        -- Copy user options
-        for k, v in pairs(options) do
-            if k ~= "model" and k ~= "dimensions" then
-                contract_args.options[k] = v
-            end
-        end
+        -- Merge provider options first (from model YAML)
+        merge_provider_options(contract_args, provider_info)
+
+        -- Merge user options (can override provider defaults)
+        merge_user_options(contract_args, options, {"model", "dimensions"})
 
         -- Call provider contract
         local raw_result, err = provider_instance:embed(contract_args)

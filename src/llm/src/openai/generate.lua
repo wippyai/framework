@@ -23,6 +23,7 @@ local function handle_streaming(stream_response, context, stream_config)
     local tool_calls = {}
     local finish_reason = nil
     local final_usage = nil
+    local reasoning_details = nil
 
     local stream_content, stream_err, stream_result = generate_handler._client.process_stream(stream_response, {
         on_content = function(chunk)
@@ -51,6 +52,13 @@ local function handle_streaming(stream_response, context, stream_config)
             end
         end,
 
+        on_reasoning = function(reasoning_chunk)
+            -- Send reasoning content via streamer if available
+            if streamer.send_thinking then
+                streamer:send_thinking(reasoning_chunk)
+            end
+        end,
+
         on_error = function(error_info)
             local error_response = generate_handler._mapper.map_error_response(error_info)
             streamer:send_error(error_response.error, error_response.error_message)
@@ -60,6 +68,7 @@ local function handle_streaming(stream_response, context, stream_config)
             streamer:flush()
             finish_reason = result.finish_reason
             final_usage = result.usage
+            reasoning_details = result.reasoning_details
         end
     })
 
@@ -71,7 +80,7 @@ local function handle_streaming(stream_response, context, stream_config)
     end
 
     -- Build contract-compliant success response
-    return {
+    local response = {
         success = true,
         result = {
             content = full_content,
@@ -81,6 +90,15 @@ local function handle_streaming(stream_response, context, stream_config)
         finish_reason = #tool_calls > 0 and output.FINISH_REASON.TOOL_CALL or generate_handler._mapper.map_finish_reason(finish_reason),
         metadata = stream_response.metadata or {}
     }
+
+    -- Add reasoning metadata if present (OpenRouter)
+    if reasoning_details then
+        -- Use the mapper's extract_reasoning_text function for consistency
+        response.metadata.thinking = generate_handler._mapper.extract_reasoning_text(reasoning_details)
+        response.metadata.reasoning_details = reasoning_details
+    end
+
+    return response
 end
 
 ---@param contract_args table Contract arguments
@@ -180,6 +198,11 @@ function generate_handler.handler(contract_args)
     else
         -- Handle non-streaming response
         local success, mapped_response = pcall(function()
+            -- Add reasoning details to response if present
+            if response.reasoning_details then
+                response.reasoning_details = response.reasoning_details
+            end
+
             return generate_handler._mapper.map_success_response(response, context)
         end)
 

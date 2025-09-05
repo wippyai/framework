@@ -207,11 +207,11 @@ local function compress_direct(content, target_chars, model_name, model_info, op
         return nil, "Direct compression failed: " .. err
     end
 
-    if not response.content or response.content == "" then
+    if not response.result or response.result == "" then
         return nil, "Model returned empty response"
     end
 
-    return response.content, nil
+    return response.result, nil
 end
 
 ---@param content string
@@ -263,11 +263,11 @@ local function compress_map_reduce(content, target_chars, model_name, model_info
             return nil, string.format("Failed to compress chunk %d: %s", i, err)
         end
 
-        if not response.content or response.content == "" then
+        if not response.result or response.result == "" then
             return nil, string.format("Empty response for chunk %d", i)
         end
 
-        table.insert(chunk_summaries, response.content)
+        table.insert(chunk_summaries, response.result)
     end
 
     local combined_summaries = table.concat(chunk_summaries, "\n\n")
@@ -284,11 +284,11 @@ local function compress_map_reduce(content, target_chars, model_name, model_info
         return nil, "Failed to synthesize final summary: " .. err
     end
 
-    if not final_response.content or final_response.content == "" then
+    if not final_response.result or final_response.result == "" then
         return nil, "Empty response from synthesis step"
     end
 
-    return final_response.content, nil
+    return final_response.result, nil
 end
 
 ---@param result string
@@ -333,11 +333,11 @@ local function refine_length(result, target_chars, model_name, model_info, optio
         return result, nil
     end
 
-    if not refined_response.content or refined_response.content == "" then
+    if not refined_response.result or refined_response.result == "" then
         return result, nil
     end
 
-    return refine_length(refined_response.content, target_chars, model_name, model_info, options, attempts + 1)
+    return refine_length(refined_response.result, target_chars, model_name, model_info, options, attempts + 1)
 end
 
 ---------------------------

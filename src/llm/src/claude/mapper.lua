@@ -35,6 +35,12 @@ mapper.HTTP_STATUS_MAP = {
     [529] = output.ERROR_TYPE.SERVER_ERROR
 }
 
+-- Approximate token count from text (rough estimation: ~4 chars per token)
+local function approximate_token_count(text)
+    if not text or text == "" then return 0 end
+    return math.ceil(string.len(text) / 4)
+end
+
 function mapper.map_error_response(claude_error)
     if not claude_error then
         return {
@@ -73,17 +79,14 @@ function mapper.map_tokens(claude_usage)
     local tokens = output.usage(
         claude_usage.input_tokens or 0,
         claude_usage.output_tokens or 0,
-        0,
+        0, -- thinking_tokens - calculated separately
         claude_usage.cache_creation_input_tokens or 0,
         claude_usage.cache_read_input_tokens or 0
     )
 
-    if claude_usage.cache_creation_input_tokens then
-        tokens.cache_creation_input_tokens = claude_usage.cache_creation_input_tokens
-    end
-    if claude_usage.cache_read_input_tokens then
-        tokens.cache_read_input_tokens = claude_usage.cache_read_input_tokens
-    end
+    -- Use clean names for consistency
+    tokens.cache_write_tokens = claude_usage.cache_creation_input_tokens or 0
+    tokens.cache_read_tokens = claude_usage.cache_read_input_tokens or 0
 
     return tokens
 end
@@ -486,6 +489,11 @@ function mapper.format_success_response(claude_response, model, name_to_id_map)
     local finish_reason = mapper.map_finish_reason(claude_response.stop_reason)
     local thinking_content = extract_thinking_content_from_blocks(extracted.thinking_blocks)
 
+    -- Calculate approximate thinking tokens from thinking string
+    if tokens and thinking_content and thinking_content ~= "" then
+        tokens.thinking_tokens = approximate_token_count(thinking_content)
+    end
+
     local result = {
         success = true,
         result = {
@@ -508,13 +516,20 @@ function mapper.format_streaming_response(client_result, name_to_id_map, usage, 
     local thinking_content = extract_thinking_content_from_blocks(thinking_blocks)
     local mapped_tool_calls = mapper.map_tool_calls(client_result.tool_calls or {}, name_to_id_map or {})
 
+    local tokens = mapper.map_tokens(usage)
+
+    -- Calculate approximate thinking tokens from thinking string
+    if tokens and thinking_content and thinking_content ~= "" then
+        tokens.thinking_tokens = approximate_token_count(thinking_content)
+    end
+
     local result = {
         success = true,
         result = {
             content = client_result.content or "",
             tool_calls = mapped_tool_calls
         },
-        tokens = mapper.map_tokens(usage),
+        tokens = tokens,
         finish_reason = #mapped_tool_calls > 0 and output.FINISH_REASON.TOOL_CALL or
             mapper.map_finish_reason(finish_reason),
         metadata = response_metadata or {}
