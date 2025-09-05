@@ -8,12 +8,38 @@ entries:
     meta:
       description: "Host ID for the application processes"
     targets:
+      - entry: wippy.relay.env:host
+        path: ".default"
       - entry: central.service
         path: ".host"
       - entry: central.service
         path: ".lifecycle.depends_on +="
       - entry: user
         path: ".meta.default_host"
+
+  - name: env_storage
+    kind: ns.requirement
+    meta:
+      description: "Environment variable storage location"
+    targets:
+      - entry: wippy.relay.env:host
+        path: ".storage"
+      - entry: wippy.relay.env:max_connections_per_user
+        path: ".storage"
+      - entry: wippy.relay.env:queue_multiplier
+        path: ".storage"
+      - entry: wippy.relay.env:user_hub_inactivity_timeout
+        path: ".storage"
+      - entry: wippy.relay.env:user_security_scope
+        path: ".storage"
+
+  - name: user_security_scope
+    kind: ns.requirement
+    meta:
+      description: "Environment variable storage location"
+    targets:
+      - entry: wippy.relay.env:user_security_scope
+        path: ".default"
 
   - name: max_connections_per_user
     kind: ns.requirement

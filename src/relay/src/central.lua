@@ -199,6 +199,7 @@ function get_or_create_user_hub(state, user_id, metadata)
         )
 
     if not hub_pid then
+        logger:error("failed to spawn user hub", { user_id = user_id, error = err, host = state.config })
         return nil
     end
 
