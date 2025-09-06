@@ -1,0 +1,158 @@
+version: "1.0"
+namespace: wippy.dataflow
+
+entries:
+  # wippy.dataflow:client
+  - name: client
+    kind: library.lua
+    meta:
+      name: Unified Workflow Client
+      comment: Simplified client for workflow execution, management and control
+      tags:
+        - workflow
+        - client
+        - execution
+        - management
+      description: "Unified client that combines execution and management functionality.\nProvides simple interface for starting, executing, canceling, and \nmonitoring workflows with proper actor-based authentication.\n"
+    source: file://client.lua
+    modules:
+      - uuid
+      - time
+      - security
+      - funcs
+    imports:
+      commit: wippy.dataflow.persist:commit
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+      dataflow_repo: wippy.dataflow.persist:dataflow_repo
+    
+  # wippy.dataflow:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Workflow Client Tests
+      type: test
+      comment: Comprehensive test suite for the unified workflow client
+      group: Workflow
+      tags:
+        - workflow
+        - client
+        - tests
+        - execution
+        - management
+      description: |
+        Tests all client functionality including workflow execution, management,
+        cancellation, termination, and status checking with proper dependency
+        injection and comprehensive error handling coverage.
+    source: file://client_test.lua
+    modules:
+      - uuid
+      - time
+      - funcs
+    imports:
+      client: wippy.dataflow:client
+      consts: wippy.dataflow:consts
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow:consts
+  - name: consts
+    kind: library.lua
+    meta:
+      name: Dataflow Constants
+      comment: Central repository of constants for the dataflow system
+      tags:
+        - dataflow
+        - constants
+        - configuration
+      description: "Defines constants for dataflow operations including command types, data types, \ncontent types, status values, and message topics.\n"
+    source: file://consts.lua
+    
+  # wippy.dataflow:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: Dataflow Integration Tests
+      type: test
+      comment: End-to-end integration tests for the complete dataflow system
+      group: Workflow
+      tags:
+        - dataflow
+        - integration
+        - e2e
+        - workflow
+        - orchestrator
+      description: |
+        Comprehensive integration tests that verify the complete dataflow system
+        works end-to-end. Tests workflow creation, node execution, orchestrator
+        coordination, and data flow through the entire system.
+    source: file://integration_test.lua
+    modules:
+      - uuid
+      - json
+    imports:
+      client: wippy.dataflow:client
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow:node
+  - name: node
+    kind: library.lua
+    meta:
+      name: Node SDK
+      comment: SDK for creating and managing dataflow nodes
+      tags:
+        - dataflow
+        - node
+        - sdk
+        - input
+        - output
+        - routing
+        - yield
+      description: |
+        Complete Node SDK with multi-input handling, configurable output routing,
+        child node management, yield functionality, and comprehensive completion handling.
+        Supports parent-child coordination and error propagation.
+    source: file://node.lua
+    modules:
+      - json
+      - uuid
+      - time
+      - process
+    imports:
+      commit: wippy.dataflow.persist:commit
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+    
+  # wippy.dataflow:node_test
+  - name: node_test
+    kind: function.lua
+    meta:
+      name: Node SDK Tests
+      type: test
+      comment: Unit tests for the Node SDK with mocking
+      group: Workflow
+      tags:
+        - dataflow
+        - node
+        - sdk
+        - tests
+        - mocking
+      description: |
+        Tests all Node SDK functionality including inputs, outputs, child nodes,
+        yield coordination, routing, and error handling. Uses mocking for isolation.
+    source: file://node_test.lua
+    modules:
+      - uuid
+      - json
+      - time
+    imports:
+      commit: wippy.dataflow.persist:commit
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+      node: wippy.dataflow:node
+      test: wippy.test:test
+    method: run_tests
+    

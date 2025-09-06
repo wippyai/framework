@@ -1,0 +1,79 @@
+version: "1.0"
+namespace: wippy.dataflow.migrations
+
+entries:
+  # wippy.dataflow.migrations:01_create_dataflows_table
+  - name: 01_create_dataflows_table
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - dataflows
+        - dataflow
+      description: Create dataflows table with hierarchical structure
+      depends_on:
+        - ns:wippy.migration
+      target_db: app:db
+      timestamp: "2025-05-15T09:00:00Z"
+    source: file://01_create_dataflows_table.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+    
+  # wippy.dataflow.migrations:02_create_nodes_table
+  - name: 02_create_nodes_table
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - dataflows
+        - dataflow
+      description: Create nodes table with parent-child relationships, linked to dataflows
+      depends_on:
+        - ns:wippy.migration
+      target_db: app:db
+      timestamp: "2025-05-15T09:05:00Z"
+    source: file://02_create_nodes_table.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+    
+  # wippy.dataflow.migrations:03_create_data_table
+  - name: 03_create_data_table
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - dataflows
+        - dataflow
+        - data
+      description: Create data table for dataflow and node data with discriminator
+      depends_on:
+        - ns:wippy.migration
+      target_db: app:db
+      timestamp: "2025-05-15T09:10:00Z"
+    source: file://03_create_data_table.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+    
+  # wippy.dataflow.migrations:05_create_dataflow_commits_table
+  - name: 05_create_dataflow_commits_table
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - dataflows
+        - dataflow
+        - commits
+        - outbox
+      description: Create dataflow_commits table for tracking commit history in outbox pattern
+      depends_on:
+        - ns:wippy.migration
+      target_db: app:db
+      timestamp: "2025-05-15T09:30:00Z"
+    source: file://05_create_dataflow_commits_table.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+    

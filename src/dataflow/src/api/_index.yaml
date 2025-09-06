@@ -1,0 +1,177 @@
+version: "1.0"
+namespace: wippy.dataflow.api
+
+entries:
+  # wippy.dataflow.api:cancel_dataflow
+  - name: cancel_dataflow
+    kind: function.lua
+    meta:
+      comment: Cancel a running dataflow
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    source: file://cancel_dataflow.lua
+    modules:
+      - http
+      - security
+    imports:
+      client: wippy.dataflow:client
+    method: handler
+    
+  # wippy.dataflow.api:cancel_dataflow.endpoint
+  - name: cancel_dataflow.endpoint
+    kind: http.endpoint
+    meta:
+      comment: Cancel dataflow endpoint
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    method: POST
+    func: cancel_dataflow
+    path: /dataflows/{id}/cancel
+    
+  # wippy.dataflow.api:get_dataflow
+  - name: get_dataflow
+    kind: function.lua
+    meta:
+      comment: Get complete dataflow details with nodes and data
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    source: file://get_dataflow.lua
+    modules:
+      - http
+      - security
+    imports:
+      data_reader: wippy.dataflow.persist:data_reader
+      dataflow_repo: wippy.dataflow.persist:dataflow_repo
+      node_reader: wippy.dataflow.persist:node_reader
+    method: handler
+    
+  # wippy.dataflow.api:get_dataflow.endpoint
+  - name: get_dataflow.endpoint
+    kind: http.endpoint
+    meta:
+      comment: Get dataflow endpoint
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    method: GET
+    func: get_dataflow
+    path: /dataflows/{id}
+    
+  # wippy.dataflow.api:get_dataflow_nodes
+  - name: get_dataflow_nodes
+    kind: function.lua
+    meta:
+      comment: Get dataflow nodes only
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    source: file://get_dataflow_nodes.lua
+    modules:
+      - http
+      - security
+    imports:
+      dataflow_repo: wippy.dataflow.persist:dataflow_repo
+      node_reader: wippy.dataflow.persist:node_reader
+    method: handler
+    
+  # wippy.dataflow.api:get_dataflow_nodes.endpoint
+  - name: get_dataflow_nodes.endpoint
+    kind: http.endpoint
+    meta:
+      comment: Get dataflow nodes endpoint
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    method: GET
+    func: get_dataflow_nodes
+    path: /dataflows/{id}/nodes
+    
+  # wippy.dataflow.api:list_dataflows
+  - name: list_dataflows
+    kind: function.lua
+    meta:
+      comment: List user's dataflows with filtering and pagination
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    source: file://list_dataflows.lua
+    modules:
+      - http
+      - security
+    imports:
+      dataflow_repo: wippy.dataflow.persist:dataflow_repo
+    method: handler
+    
+  # wippy.dataflow.api:list_dataflows.endpoint
+  - name: list_dataflows.endpoint
+    kind: http.endpoint
+    meta:
+      comment: List dataflows endpoint
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    method: GET
+    func: list_dataflows
+    path: /dataflows
+    
+  # wippy.dataflow.api:terminate_dataflow
+  - name: terminate_dataflow
+    kind: function.lua
+    meta:
+      comment: Terminate a dataflow forcefully
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    source: file://terminate_dataflow.lua
+    modules:
+      - http
+      - security
+    imports:
+      client: wippy.dataflow:client
+    method: handler
+    
+  # wippy.dataflow.api:terminate_dataflow.endpoint
+  - name: terminate_dataflow.endpoint
+    kind: http.endpoint
+    meta:
+      comment: Terminate dataflow endpoint
+      description: Dataflow management HTTP endpoints
+      depends_on:
+        - app:api
+        - ns:wippy.dataflow
+        - ns:wippy.dataflow.persist
+      router: app:api
+    method: POST
+    func: terminate_dataflow
+    path: /dataflows/{id}/terminate
+    

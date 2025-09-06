@@ -1,0 +1,129 @@
+version: "1.0"
+namespace: wippy.dataflow.node.agent
+
+entries:
+  # wippy.dataflow.node.agent:consts
+  - name: consts
+    kind: library.lua
+    meta:
+      name: Agent Node Constants
+      comment: Centralized constants for agent node execution including data types, status messages, error codes, and configuration defaults.
+      tags:
+        - dataflow
+        - agent
+        - node
+        - constants
+      description: |
+        Provides all constants needed for agent node execution including data types for persistence,
+        status messages, error codes, configuration defaults, and control directive support.
+        Centralizes string constants to avoid duplication across agent node components.
+    source: file://consts.lua
+    
+  # wippy.dataflow.node.agent:control_handler
+  - name: control_handler
+    kind: library.lua
+    meta:
+      name: Agent Control Directive Handler
+      comment: Processes _control directives from tool results including agent/model changes, memory operations, context manipulation, and yield handling.
+      tags:
+        - dataflow
+        - agent
+        - control
+        - directives
+        - yield
+      description: |
+        Handles all _control directive processing for agent nodes including runtime agent/model switching,
+        memory operations (add/clear/delete), context manipulation (session/public_meta), artifact creation,
+        command queuing, and yield handling with child workflow support. Processes control directives from
+        tool results and applies changes to agent context and node state.
+    source: file://control_handler.lua
+    modules:
+      - json
+      - uuid
+    imports:
+      agent_consts: wippy.dataflow.node.agent:consts
+      data_reader: wippy.dataflow.persist:data_reader
+    
+  # wippy.dataflow.node.agent:delegation_handler
+  - name: delegation_handler
+    kind: library.lua
+    meta:
+      name: Agent Delegation Handler
+      comment: Manages delegation workflows including child node creation, result routing, yield coordination, and conversation integration.
+      tags:
+        - dataflow
+        - agent
+        - delegation
+        - yield
+        - children
+      description: |
+        Unified delegation management for both agent framework delegations and control directive delegations.
+        Handles child agent node creation, input/output routing, yield coordination, result integration,
+        error handling, and conversation mapping. Preserves delegation context across agent changes and
+        ensures proper tool call ID mapping for delegation results.
+    source: file://delegation_handler.lua
+    modules:
+      - json
+      - uuid
+    imports:
+      agent_consts: wippy.dataflow.node.agent:consts
+      agent_registry: wippy.agent.discovery:registry
+      data_reader: wippy.dataflow.persist:data_reader
+    
+  # wippy.dataflow.node.agent:node
+  - name: node
+    kind: process.lua
+    meta:
+      name: Agent Execution Node
+      comment: Dataflow node for executing agents with new configuration schema and full agent framework integration.
+      tags:
+        - dataflow
+        - agent
+        - node
+        - process
+        - execution
+      description: |
+        Main dataflow node process for agent execution. Supports both registry-based and inline agent
+        configuration, arena execution with iterations, tool calling, control directives, memory integration,
+        and proper output routing. Uses the new agent framework via agent_context and tool_caller.
+      default_host: app:processes
+    source: file://node.lua
+    modules:
+      - json
+      - uuid
+    imports:
+      tools: wippy.agent.discovery:tools
+      agent_consts: wippy.dataflow.node.agent:consts
+      agent_context: wippy.agent:context
+      control_handler: wippy.dataflow.node.agent:control_handler
+      delegation_handler: wippy.dataflow.node.agent:delegation_handler
+      node_sdk: wippy.dataflow:node
+      prompt_builder: wippy.dataflow.node.agent:prompt_builder
+      tool_caller: wippy.agent.tools:caller
+    method: run
+    
+  # wippy.dataflow.node.agent:prompt_builder
+  - name: prompt_builder
+    kind: library.lua
+    meta:
+      name: Agent Prompt Builder
+      comment: Builds prompts for agent execution by reconstructing conversation history from dataflow persistence with proper tool call ID mapping and memory recall integration.
+      tags:
+        - dataflow
+        - agent
+        - prompt
+        - conversation
+        - reconstruction
+      description: |
+        Reconstructs conversation history from stored agent actions, observations, and memory recalls.
+        Preserves tool call ID mapping for proper function_call/function_result pairing, handles
+        memory recall injection from agent framework, and maintains all message metadata for
+        accurate conversation reconstruction.
+    source: file://prompt_builder.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      agent_consts: wippy.dataflow.node.agent:consts
+      data_reader: wippy.dataflow.persist:data_reader
+    

@@ -1,0 +1,164 @@
+version: "1.0"
+namespace: wippy.dataflow.node.map_reduce
+
+entries:
+  # wippy.dataflow.node.map_reduce:iterator
+  - name: iterator
+    kind: library.lua
+    meta:
+      name: Iteration Manager
+      comment: Manages iteration node creation, UUID mapping, and result collection
+      tags:
+        - dataflow
+        - map-reduce
+        - iteration
+        - nodes
+        - uuid
+        - results
+      description: |
+        Handles the lifecycle of map-reduce iterations including node creation with
+        UUID remapping, input data routing, and result collection. Encapsulates
+        the complex state management required for parallel iteration execution.
+    source: file://iterator.lua
+    modules:
+      - uuid
+    imports:
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+    
+  # wippy.dataflow.node.map_reduce:iterator_test
+  - name: iterator_test
+    kind: function.lua
+    meta:
+      name: Iterator Tests
+      type: test
+      comment: Unit tests for iteration management and node lifecycle
+      group: Workflow / Map-Reduce
+      tags:
+        - dataflow
+        - map-reduce
+        - iteration
+        - nodes
+        - tests
+      description: |
+        Tests iteration creation, UUID remapping, node creation commands,
+        input data routing, and result collection mechanisms.
+    source: file://iterator_test.lua
+    modules:
+      - uuid
+      - json
+    imports:
+      consts: wippy.dataflow:consts
+      iterator: wippy.dataflow.node.map_reduce:iterator
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.node.map_reduce:map_reduce
+  - name: map_reduce
+    kind: process.lua
+    meta:
+      name: Map-Reduce Node
+      comment: Parallel map-reduce execution node for dataflow workflows
+      tags:
+        - dataflow
+        - node
+        - map-reduce
+        - parallel
+        - batch
+        - template
+      description: |
+        Advanced dataflow node that implements map-reduce pattern with template-based
+        child node execution. Supports batching, multiple failure strategies, dependency
+        graphs between templates, and optional result reduction. Handles complex parallel
+        execution scenarios with proper error propagation and result aggregation.
+      default_host: app:processes
+    source: file://map_reduce.lua
+    modules:
+      - funcs
+    imports:
+      consts: wippy.dataflow:consts
+      iterator: wippy.dataflow.node.map_reduce:iterator
+      node: wippy.dataflow:node
+      template_graph: wippy.dataflow.node.map_reduce:template_graph
+    method: run
+    
+  # wippy.dataflow.node.map_reduce:map_reduce_test
+  - name: map_reduce_test
+    kind: function.lua
+    meta:
+      name: Map-Reduce Tests
+      type: test
+      comment: Comprehensive unit and integration tests for map-reduce functionality
+      group: Workflow / Map-Reduce
+      tags:
+        - dataflow
+        - node
+        - map-reduce
+        - tests
+        - mocking
+        - integration
+      description: |
+        Comprehensive tests for map-reduce functionality including configuration
+        validation, input processing, template discovery, batch execution, failure
+        strategies, reducer application, and end-to-end integration workflows.
+        Combines both unit tests with mocking and real integration tests.
+    source: file://map_reduce_test.lua
+    modules:
+      - uuid
+      - json
+    imports:
+      client: wippy.dataflow:client
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+      map_reduce: wippy.dataflow.node.map_reduce:map_reduce
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.node.map_reduce:template_graph
+  - name: template_graph
+    kind: library.lua
+    meta:
+      name: Template Graph Builder
+      comment: Pure library for discovering and building template dependency graphs
+      tags:
+        - dataflow
+        - map-reduce
+        - template
+        - graph
+        - dependency
+        - pure
+      description: |
+        Pure function library for discovering template nodes and building dependency graphs.
+        Handles template discovery, dependency analysis, and root node identification
+        for map-reduce operations. Highly testable with no side effects.
+    source: file://template_graph.lua
+    imports:
+      consts: wippy.dataflow:consts
+      node_reader: wippy.dataflow.persist:node_reader
+    
+  # wippy.dataflow.node.map_reduce:template_graph_test
+  - name: template_graph_test
+    kind: function.lua
+    meta:
+      name: Template Graph Tests
+      type: test
+      comment: Unit tests for template graph building and dependency analysis
+      group: Workflow / Map-Reduce
+      tags:
+        - dataflow
+        - map-reduce
+        - template
+        - graph
+        - tests
+      description: |
+        Comprehensive tests for template discovery, dependency graph construction,
+        root node identification, and circular dependency detection.
+    source: file://template_graph_test.lua
+    modules:
+      - uuid
+    imports:
+      consts: wippy.dataflow:consts
+      template_graph: wippy.dataflow.node.map_reduce:template_graph
+      test: wippy.test:test
+    method: run_tests
+    

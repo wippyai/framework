@@ -1,0 +1,79 @@
+version: "1.0"
+namespace: wippy.dataflow.node.map_reduce.stub
+
+entries:
+  # wippy.dataflow.node.map_reduce.stub:calculate_stats
+  - name: calculate_stats
+    kind: function.lua
+    meta:
+      name: Statistics Calculator
+      comment: Calculate stats from numeric arrays
+      tags:
+        - map-reduce
+        - reduction-pipeline
+        - statistics
+    source: file://calculate_stats.lua
+    modules:
+      - ctx
+    method: run
+    
+  # wippy.dataflow.node.map_reduce.stub:compress_item
+  - name: compress_item
+    kind: function.lua
+    meta:
+      name: Item Compressor
+      comment: Compress iteration results, configurable via ctx
+      tags:
+        - map-reduce
+        - item-pipeline
+        - compression
+    source: file://compress_item.lua
+    modules:
+      - ctx
+    method: run
+    
+  # wippy.dataflow.node.map_reduce.stub:extract_number
+  - name: extract_number
+    kind: function.lua
+    meta:
+      name: Number Extractor
+      comment: Extract numeric values from business data
+      tags:
+        - map-reduce
+        - reduction-pipeline
+        - extraction
+    source: file://extract_number.lua
+    modules:
+      - ctx
+    method: run
+    
+  # wippy.dataflow.node.map_reduce.stub:format_report
+  - name: format_report
+    kind: function.lua
+    meta:
+      name: Report Formatter
+      comment: Format final reports
+      tags:
+        - map-reduce
+        - reduction-pipeline
+        - formatting
+    source: file://format_report.lua
+    modules:
+      - ctx
+    method: run
+    
+  # wippy.dataflow.node.map_reduce.stub:validate_item
+  - name: validate_item
+    kind: function.lua
+    meta:
+      name: Item Validator
+      comment: Filter iteration results, configurable via ctx
+      tags:
+        - map-reduce
+        - item-pipeline
+        - validation
+    source: file://validate_item.lua
+    modules:
+      - ctx
+    method: run
+    

@@ -1,0 +1,260 @@
+version: "1.0"
+namespace: wippy.dataflow.persist
+
+entries:
+  # wippy.dataflow.persist:commit
+  - name: commit
+    kind: library.lua
+    meta:
+      name: Workflow Commit Client
+      comment: Client library for nodes to commit changes to workflows
+      tags:
+        - dataflow
+        - commit
+        - orchestration
+        - node
+      description: Provides an API for node processes to commit changes to workflows, update node status, add child nodes, and send notifications
+      private: true
+    source: file://commit.lua
+    modules:
+      - sql
+      - json
+      - uuid
+      - time
+      - security
+    imports:
+      commit_repo: wippy.dataflow.persist:commit_repo
+      consts: wippy.dataflow:consts
+      ops: wippy.dataflow.persist:ops
+    
+  # wippy.dataflow.persist:commit_repo
+  - name: commit_repo
+    kind: library.lua
+    meta:
+      comment: Repository for managing dataflow commits.
+      tags:
+        - dataflow
+        - commits
+        - repository
+      description: Provides storage and retrieval of commit records for workflow orchestration.
+    source: file://commit_repo.lua
+    modules:
+      - sql
+      - json
+      - time
+    
+  # wippy.dataflow.persist:commit_repo_test
+  - name: commit_repo_test
+    kind: function.lua
+    meta:
+      name: Commit Repository Tests
+      type: test
+      comment: Unit tests for the commit_repo module.
+      group: Workflow
+      tags:
+        - dataflow
+        - commits
+        - repository
+        - tests
+      description: Validates the functionality of the dataflow commit repository.
+    source: file://commit_repo_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+    imports:
+      commit_repo: wippy.dataflow.persist:commit_repo
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.persist:commit_test
+  - name: commit_test
+    kind: function.lua
+    meta:
+      name: Commit Module Tests
+      type: test
+      comment: Comprehensive unit tests for the commit module with mocking support.
+      group: Workflow
+      tags:
+        - dataflow
+        - commit
+        - orchestration
+        - publishing
+        - mocking
+        - tests
+      description: "Validates the functionality of the commit module including command execution, \ntransaction handling, commit application, publishing mechanisms, and edge cases.\nUses mocking for isolated testing of process communication and external dependencies.\n"
+    source: file://commit_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+      - security
+    imports:
+      commit: wippy.dataflow.persist:commit
+      commit_repo: wippy.dataflow.persist:commit_repo
+      ops: wippy.dataflow.persist:ops
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.persist:data_reader
+  - name: data_reader
+    kind: library.lua
+    meta:
+      comment: Data reader for accessing dataflow data.
+      tags:
+        - dataflow
+        - data
+        - query
+      description: Provides a fluent, immutable API for reading data from dataflows with flexible filtering.
+    source: file://data_reader.lua
+    modules:
+      - sql
+      - json
+    
+  # wippy.dataflow.persist:data_reader_test
+  - name: data_reader_test
+    kind: function.lua
+    meta:
+      name: Data Reader Tests
+      type: test
+      comment: Unit tests for the data_reader module.
+      group: Workflow
+      tags:
+        - dataflow
+        - data
+        - query
+        - tests
+      description: Validates the functionality of the data reader API.
+    source: file://data_reader_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+      - security
+    imports:
+      data_reader: wippy.dataflow.persist:data_reader
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.persist:dataflow_repo
+  - name: dataflow_repo
+    kind: library.lua
+    meta:
+      comment: Repository for managing dataflow entities.
+      description: Provides CRUD and listing operations for dataflows.
+    source: file://dataflow_repo.lua
+    modules:
+      - sql
+      - json
+      - time
+    
+  # wippy.dataflow.persist:dataflow_repo_test
+  - name: dataflow_repo_test
+    kind: function.lua
+    meta:
+      name: Workflow Repository Tests
+      type: test
+      comment: Unit tests for the dataflow_repo module.
+      group: Workflow
+      tags:
+        - dataflow
+        - database
+        - repository
+        - tests
+      description: Validates the functionality of the dataflow repository.
+    source: file://dataflow_repo_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+      - security
+    imports:
+      dataflow_repo: wippy.dataflow.persist:dataflow_repo
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.persist:node_reader
+  - name: node_reader
+    kind: library.lua
+    meta:
+      comment: Node reader for accessing dataflow nodes.
+      tags:
+        - dataflow
+        - nodes
+        - query
+      description: Provides a fluent, immutable API for reading node definitions from dataflows with flexible filtering by status, type, parent relationships, and other node properties.
+    source: file://node_reader.lua
+    modules:
+      - sql
+      - json
+    
+  # wippy.dataflow.persist:node_reader_test
+  - name: node_reader_test
+    kind: function.lua
+    meta:
+      name: Node Reader Tests
+      type: test
+      comment: Unit tests for the node_reader module.
+      group: Workflow
+      tags:
+        - dataflow
+        - nodes
+        - query
+        - tests
+      description: Validates the functionality of the node reader API.
+    source: file://node_reader_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+      - security
+    imports:
+      node_reader: wippy.dataflow.persist:node_reader
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.persist:ops
+  - name: ops
+    kind: library.lua
+    meta:
+      description: Defines constants for dataflow operations
+    source: file://ops.lua
+    modules:
+      - sql
+      - time
+      - uuid
+      - json
+    imports:
+      consts: wippy.dataflow:consts
+    
+  # wippy.dataflow.persist:ops_test
+  - name: ops_test
+    kind: function.lua
+    meta:
+      name: Workflow Operations Tests
+      type: test
+      comment: Unit tests for the ops module and its handler implementations.
+      group: Workflow
+      tags:
+        - dataflow
+        - operations
+        - commands
+        - tests
+      description: Validates the functionality of dataflow operation handlers.
+    source: file://ops_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - time
+      - security
+    imports:
+      ops: wippy.dataflow.persist:ops
+      test: wippy.test:test
+    method: run_tests
+    

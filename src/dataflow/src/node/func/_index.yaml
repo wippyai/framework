@@ -1,0 +1,74 @@
+version: "1.0"
+namespace: wippy.dataflow.node.func
+
+entries:
+  # wippy.dataflow.node.func:func_test
+  - name: func_test
+    kind: function.lua
+    meta:
+      name: Function Node Tests
+      type: test
+      comment: Unit tests for the function executor node
+      group: Workflow / Function Node
+      tags:
+        - dataflow
+        - node
+        - function
+        - executor
+        - tests
+      description: |
+        Comprehensive unit tests for the function executor node including
+        configuration validation, input handling, function execution,
+        cancellation support, and error handling scenarios.
+    source: file://func_test.lua
+    modules:
+      - uuid
+      - json
+    imports:
+      client: wippy.dataflow:client
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+      func: wippy.dataflow.node.func:node
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.node.func:node
+  - name: node
+    kind: process.lua
+    meta:
+      name: Function Executor Node
+      comment: Generic node for executing functions within dataflow workflows
+      tags:
+        - dataflow
+        - node
+        - function
+        - executor
+        - cancellable
+      description: "A generic dataflow node that executes functions using the funcs module.\nSupports input data processing, function context configuration, and \ngraceful cancellation handling. Can execute any registered function\nwith proper error handling and result routing.\n"
+      default_host: app:processes
+    source: file://node.lua
+    modules:
+      - funcs
+      - json
+    imports:
+      node: wippy.dataflow:node
+    method: run
+    
+  # wippy.dataflow.node.func:test_func
+  - name: test_func
+    kind: function.lua
+    meta:
+      name: Test Node Function
+      comment: Simple test node for dataflow testing and integration tests
+      tags:
+        - dataflow
+        - node
+        - test
+        - integration
+      description: |
+        A simple test node that processes input data with configurable delay and failure modes.
+    source: file://test_func.lua
+    modules:
+      - time
+    method: run
+    

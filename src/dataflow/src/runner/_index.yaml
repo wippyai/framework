@@ -1,0 +1,166 @@
+version: "1.0"
+namespace: wippy.dataflow.runner
+
+entries:
+  # wippy.dataflow.runner:orchestrator
+  - name: orchestrator
+    kind: process.lua
+    meta:
+      name: Dataflow Orchestrator
+      comment: Main coordination process for workflow execution
+      tags:
+        - dataflow
+        - orchestrator
+        - execution
+        - coordination
+      description: |
+        Coordinates workflow execution using scheduler and workflow_state components.
+        Manages process lifecycle, message routing, and state transitions.
+        Replaces node_runner with cleaner separation of concerns between
+        scheduling logic, state management, and execution coordination.
+      default_host: app:processes
+    source: file://orchestrator.lua
+    modules:
+      - uuid
+      - funcs
+    imports:
+      consts: wippy.dataflow:consts
+      scheduler: wippy.dataflow.runner:scheduler
+      workflow_state: wippy.dataflow.runner:workflow_state
+    method: run
+    
+  # wippy.dataflow.runner:orchestrator_test
+  - name: orchestrator_test
+    kind: function.lua
+    meta:
+      name: Orchestrator Tests
+      type: test
+      comment: Comprehensive test suite for the dataflow orchestrator
+      group: Workflow
+      tags:
+        - dataflow
+        - orchestrator
+        - tests
+        - execution
+        - coordination
+        - actor
+      description: |
+        Comprehensive test coverage for orchestrator including initialization,
+        node execution, commit processing, yield handling, process events,
+        workflow completion, cancellation, and edge cases.
+    source: file://orchestrator_test.lua
+    modules:
+      - uuid
+      - time
+    imports:
+      consts: wippy.dataflow:consts
+      orchestrator: wippy.dataflow.runner:orchestrator
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.runner:scheduler
+  - name: scheduler
+    kind: library.lua
+    meta:
+      name: Pure Dataflow Scheduler
+      comment: Pure scheduling logic for determining next workflow execution steps
+      tags:
+        - dataflow
+        - scheduler
+        - execution
+        - pure
+        - testable
+      description: |
+        Pure function-based scheduler that determines what should execute next in a dataflow.
+        Takes workflow state snapshots and returns execution decisions without side effects.
+        Handles yield-driven, input-ready, and root node execution priorities with deadlock detection.
+    source: file://scheduler.lua
+    imports:
+      consts: wippy.dataflow:consts
+    
+  # wippy.dataflow.runner:scheduler_test
+  - name: scheduler_test
+    kind: function.lua
+    meta:
+      name: Scheduler Tests
+      type: test
+      comment: Comprehensive test suite for the pure scheduler
+      group: Workflow
+      tags:
+        - dataflow
+        - scheduler
+        - tests
+        - pure-function
+      description: |
+        Comprehensive test coverage for scheduler including empty states, root execution,
+        yield-driven workflows, input readiness, priority ordering, completion detection,
+        edge cases, and complex multi-level scenarios.
+    source: file://scheduler_test.lua
+    imports:
+      consts: wippy.dataflow:consts
+      scheduler: wippy.dataflow.runner:scheduler
+      test: wippy.test:test
+    method: run_tests
+    
+  # wippy.dataflow.runner:workflow_state
+  - name: workflow_state
+    kind: library.lua
+    meta:
+      name: Unified Workflow State Manager
+      comment: Unified state management for dataflow execution
+      tags:
+        - dataflow
+        - state
+        - execution
+        - runtime
+        - persistence
+        - unified
+      description: |
+        Replaces root_state and execution_state with single unified component.
+        Handles database loading, commit processing, state updates, and recovery.
+        Provides state snapshots to scheduler and manages process/yield tracking.
+        Integrates persistent and runtime state management with proper recovery.
+    source: file://workflow_state.lua
+    modules:
+      - sql
+      - json
+      - uuid
+      - time
+    imports:
+      commit: wippy.dataflow.persist:commit
+      consts: wippy.dataflow:consts
+      data_reader: wippy.dataflow.persist:data_reader
+      dataflow_repo: wippy.dataflow.persist:dataflow_repo
+      node_reader: wippy.dataflow.persist:node_reader
+      ops: wippy.dataflow.persist:ops
+    
+  # wippy.dataflow.runner:workflow_state_test
+  - name: workflow_state_test
+    kind: function.lua
+    meta:
+      name: Workflow State Tests
+      type: test
+      comment: Comprehensive test suite for the unified workflow state manager
+      group: Workflow
+      tags:
+        - dataflow
+        - state
+        - tests
+        - persistence
+        - recovery
+        - integration
+      description: |
+        Comprehensive test coverage for workflow state including state loading,
+        commit processing, process tracking, yield management, input tracking,
+        scheduler integration, recovery scenarios, and edge cases.
+    source: file://workflow_state_test.lua
+    modules:
+      - sql
+      - uuid
+      - time
+    imports:
+      consts: wippy.dataflow:consts
+      test: wippy.test:test
+      workflow_state: wippy.dataflow.runner:workflow_state
+    method: run_tests
+    
