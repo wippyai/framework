@@ -352,7 +352,7 @@ function openai_mapper.map_options(contract_options)
             openai_options.reasoning_effort = "high"
         end
     else
-        if contract_options.temperature ~= nil then
+        if contract_options.temperature ~= nil and not is_reasoning_request then
             openai_options.temperature = contract_options.temperature
         end
     end
