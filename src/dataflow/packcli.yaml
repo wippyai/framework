@@ -1,0 +1,9 @@
+name: wippy/dataflow
+dir: src
+description: A Packer module
+ignore:
+    - '*.tmp'
+    - '*.log'
+    - .git/
+    - .gitlab/
+    - .docker/
