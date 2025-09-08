@@ -82,15 +82,9 @@ function prompt_builder:_format_action(action_item, builder)
     end
 
     local metadata = action_item.metadata or {}
-    local thinking_blocks = {}
     local text_content = ""
     local tool_calls = {}
     local delegate_calls = {}
-
-    -- todo: totally wrong! should not be here! we must retain format? use new blocks
-    if metadata.llm_meta and metadata.llm_meta.thinking then
-        table.insert(thinking_blocks, metadata.llm_meta.thinking)
-    end
 
     if type(content) == "table" then
         text_content = content.result or ""
@@ -100,22 +94,19 @@ function prompt_builder:_format_action(action_item, builder)
         text_content = content or ""
     end
 
-    local content_parts = {}
+    local has_tool_calls = #tool_calls > 0
+    local has_delegate_calls = #delegate_calls > 0
+    local has_text_content = text_content and text_content ~= ""
 
-    for _, thinking in ipairs(thinking_blocks) do
-        table.insert(content_parts, thinking)
+    -- Always add assistant message if there are tool calls, delegate calls, or text content
+    -- This ensures tool calls have a proper assistant message to attach to
+    if has_tool_calls or has_delegate_calls or has_text_content then
+        local message_meta = metadata.llm_meta or {}
+        builder:add_assistant(text_content or "", message_meta)
     end
 
-    if text_content and text_content ~= "" then
-        table.insert(content_parts, prompt_lib.text(text_content))
-    end
-
-    if #content_parts > 0 then
-        builder:add_message(prompt_lib.ROLE.ASSISTANT, content_parts, nil, metadata.llm_meta)
-    end
-
-    -- Process regular tool calls (create function_call entries)
-    if #tool_calls > 0 then
+    -- Process regular tool calls
+    if has_tool_calls then
         for _, tool_call in ipairs(tool_calls) do
             local call_id = tool_call.id
             if not call_id then
@@ -125,17 +116,13 @@ function prompt_builder:_format_action(action_item, builder)
         end
     end
 
-    -- Process delegate calls (create function_call entries too)
-    -- Delegate calls also need to appear in conversation for proper LLM context
-    if #delegate_calls > 0 then
+    -- Process delegate calls
+    if has_delegate_calls then
         for _, delegate_call in ipairs(delegate_calls) do
             local call_id = delegate_call.id
             if not call_id then
                 return "Delegate call missing ID in action"
             end
-
-            -- Add delegate call as function_call to maintain conversation flow
-            -- The delegation_handler will create child nodes and map results back
             builder:add_function_call(delegate_call.name, delegate_call.arguments, call_id)
         end
     end
@@ -150,13 +137,10 @@ function prompt_builder:_format_observation(obs_item, builder)
     end
 
     local metadata = obs_item.metadata or {}
-
-    -- Handle tool result observations (both regular tools and delegations)
     local tool_call_id = metadata.tool_call_id
     local tool_name = metadata.tool_name
 
     if tool_call_id and tool_name then
-        -- Tool result observation - could be from regular tool or delegation
         local result_content
         if metadata.is_error then
             result_content = "Error: " .. tostring(content)
@@ -175,7 +159,6 @@ function prompt_builder:_format_observation(obs_item, builder)
 
         builder:add_function_result(tool_name, result_content, tool_call_id)
     else
-        -- System feedback or other observation - add as developer message
         local feedback_content = tostring(content)
         if feedback_content and feedback_content ~= "" then
             builder:add_developer(feedback_content)
@@ -208,7 +191,6 @@ function prompt_builder:_format_delegation(delegation_item, builder)
     local tool_name = metadata.tool_name
 
     if tool_call_id and tool_name then
-        -- Delegation result mapped back as function_result
         local result_content
         if type(content) == "table" then
             local json_str, json_err = json.encode(content)
@@ -223,7 +205,6 @@ function prompt_builder:_format_delegation(delegation_item, builder)
 
         builder:add_function_result(tool_name, result_content, tool_call_id)
     else
-        -- Standalone delegation result
         local delegation_text = "Delegation result: " .. tostring(content)
         builder:add_developer(delegation_text)
     end
