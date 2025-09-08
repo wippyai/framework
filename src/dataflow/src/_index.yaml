@@ -2,6 +2,34 @@ version: "1.0"
 namespace: wippy.dataflow
 
 entries:
+  # Dependencies
+  - name: __dependency.wippy.migration
+    kind: "ns.dependency"
+    meta:
+      description: "Migration component"
+    component: "wippy/migration"
+    version: ">=v0.0.10"
+
+  - name: __dependency.wippy.test
+    kind: "ns.dependency"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.2.0"
+
+  # wippy.docs:base64.spec
+  - name: base64.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Module for encoding and decoding data using Base64 standard, providing simple string conversion functions
+      tags:
+        - encoding
+        - base64
+        - string
+        - transformation
+    source: file://docs/base64.spec.md
+
   # wippy.dataflow:client
   - name: client
     kind: library.lua
@@ -25,7 +53,7 @@ entries:
       consts: wippy.dataflow:consts
       data_reader: wippy.dataflow.persist:data_reader
       dataflow_repo: wippy.dataflow.persist:dataflow_repo
-    
+
   # wippy.dataflow:client_test
   - name: client_test
     kind: function.lua
@@ -54,7 +82,7 @@ entries:
       consts: wippy.dataflow:consts
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.dataflow:consts
   - name: consts
     kind: library.lua
@@ -67,7 +95,7 @@ entries:
         - configuration
       description: "Defines constants for dataflow operations including command types, data types, \ncontent types, status values, and message topics.\n"
     source: file://consts.lua
-    
+
   # wippy.dataflow:integration_test
   - name: integration_test
     kind: function.lua
@@ -96,7 +124,7 @@ entries:
       data_reader: wippy.dataflow.persist:data_reader
       test: wippy.test:test
     method: run_tests
-    
+
   # wippy.dataflow:node
   - name: node
     kind: library.lua
@@ -125,7 +153,7 @@ entries:
       commit: wippy.dataflow.persist:commit
       consts: wippy.dataflow:consts
       data_reader: wippy.dataflow.persist:data_reader
-    
+
   # wippy.dataflow:node_test
   - name: node_test
     kind: function.lua
@@ -155,4 +183,3 @@ entries:
       node: wippy.dataflow:node
       test: wippy.test:test
     method: run_tests
-    
