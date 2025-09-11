@@ -1,0 +1,18 @@
+version: "1.0"
+namespace: wippy.bootloader.migrations
+
+entries:
+  # wippy.bootloader.migrations:generate_encryption_key
+  - name: generate_encryption_key
+    kind: function.lua
+    meta:
+      type: migration
+      comment: Migration to generate ENCRYPTION_KEY if not exists
+      priority: 1
+      timestamp: "001"
+    source: file://generate_encryption_key.lua
+    modules:
+      - env
+      - crypto
+      - logger
+    method: migration
