@@ -35,10 +35,51 @@ mapper.HTTP_STATUS_MAP = {
     [529] = output.ERROR_TYPE.SERVER_ERROR
 }
 
+-- Claude API cache control limit
+local MAX_CACHE_BREAKPOINTS = 4
+
 -- Approximate token count from text (rough estimation: ~4 chars per token)
 local function approximate_token_count(text)
     if not text or text == "" then return 0 end
     return math.ceil(string.len(text) / 4)
+end
+
+-- Simple cache marker collapse: keep all system markers + most recent message markers
+local function collapse_cache_positions(system_positions, message_positions)
+    local total_positions = #system_positions + #message_positions
+
+    -- No collapse needed
+    if total_positions <= MAX_CACHE_BREAKPOINTS then
+        return system_positions, message_positions
+    end
+
+    local final_system = {}
+    local final_message = {}
+
+    -- Keep all system markers (usually 1-2)
+    for _, pos in ipairs(system_positions) do
+        table.insert(final_system, pos)
+    end
+
+    -- Use remaining slots for most recent message markers
+    local remaining_slots = MAX_CACHE_BREAKPOINTS - #final_system
+
+    if remaining_slots > 0 and #message_positions > 0 then
+        if #message_positions <= remaining_slots then
+            -- Keep all message markers
+            for _, pos in ipairs(message_positions) do
+                table.insert(final_message, pos)
+            end
+        else
+            -- Keep most recent N markers
+            local start_idx = math.max(1, #message_positions - remaining_slots + 1)
+            for i = start_idx, #message_positions do
+                table.insert(final_message, message_positions[i])
+            end
+        end
+    end
+
+    return final_system, final_message
 end
 
 function mapper.map_error_response(claude_error)
@@ -197,7 +238,9 @@ function mapper.map_messages(contract_messages)
 
     local claude_messages = {}
     local system_blocks = {}
-    local cache_positions = {}
+    local system_cache_positions = {}
+    local message_cache_positions = {}
+    local in_system_phase = true
 
     for i, msg in ipairs(contract_messages) do
         if msg.role == prompt.ROLE.SYSTEM then
@@ -212,8 +255,16 @@ function mapper.map_messages(contract_messages)
                 end
             end
         elseif msg.role == "cache_marker" then
-            table.insert(cache_positions, #system_blocks > 0 and #system_blocks or #claude_messages)
+            if in_system_phase then
+                -- Cache marker applies to system blocks
+                table.insert(system_cache_positions, #system_blocks)
+            else
+                -- Cache marker applies to claude messages
+                table.insert(message_cache_positions, #claude_messages)
+            end
         elseif msg.role == prompt.ROLE.DEVELOPER then
+            -- Developer messages are merged into previous message
+            in_system_phase = false
             if #claude_messages > 0 then
                 local last_msg = claude_messages[#claude_messages]
                 local dev_text = type(msg.content) == "string" and msg.content or
@@ -230,6 +281,7 @@ function mapper.map_messages(contract_messages)
                 end
             end
         elseif msg.role == prompt.ROLE.FUNCTION_RESULT then
+            in_system_phase = false
             local result_text = type(msg.content) == "string" and msg.content or
                 (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
 
@@ -244,6 +296,7 @@ function mapper.map_messages(contract_messages)
                 }
             })
         elseif msg.role == prompt.ROLE.FUNCTION_CALL then
+            in_system_phase = false
             local arguments = normalize_tool_arguments(msg.function_call.arguments)
             local content_blocks = {}
 
@@ -265,6 +318,7 @@ function mapper.map_messages(contract_messages)
                 content = content_blocks
             })
         elseif msg.role == prompt.ROLE.ASSISTANT then
+            in_system_phase = false
             local content_blocks = {}
 
             if msg.metadata and msg.metadata.thinking_blocks then
@@ -303,6 +357,8 @@ function mapper.map_messages(contract_messages)
                 content = content_blocks
             })
         else
+            -- User messages and other types
+            in_system_phase = false
             local content = process_content_array(msg.content)
             if type(content) == "string" then
                 content = {{ type = "text", text = content }}
@@ -314,10 +370,29 @@ function mapper.map_messages(contract_messages)
         end
     end
 
-    if #cache_positions > 0 and #system_blocks > 0 then
-        for _, pos in ipairs(cache_positions) do
+    -- Collapse cache positions if needed
+    local final_system_positions, final_message_positions = collapse_cache_positions(
+        system_cache_positions, message_cache_positions
+    )
+
+    -- Apply cache control to system blocks
+    if #final_system_positions > 0 and #system_blocks > 0 then
+        for _, pos in ipairs(final_system_positions) do
             if pos > 0 and pos <= #system_blocks then
                 system_blocks[pos].cache_control = { type = "ephemeral" }
+            end
+        end
+    end
+
+    -- Apply cache control to claude messages
+    if #final_message_positions > 0 and #claude_messages > 0 then
+        for _, pos in ipairs(final_message_positions) do
+            if pos > 0 and pos <= #claude_messages then
+                -- Apply cache control to the last content block of the message
+                local msg = claude_messages[pos]
+                if msg.content and #msg.content > 0 then
+                    msg.content[#msg.content].cache_control = { type = "ephemeral" }
+                end
             end
         end
     end
