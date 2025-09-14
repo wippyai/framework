@@ -263,14 +263,39 @@ function mapper.map_messages(contract_messages)
                 table.insert(message_cache_positions, #claude_messages)
             end
         elseif msg.role == prompt.ROLE.DEVELOPER then
-            -- Developer messages are merged into previous message
             in_system_phase = false
-            if #claude_messages > 0 then
-                local last_msg = claude_messages[#claude_messages]
-                local dev_text = type(msg.content) == "string" and msg.content or
-                    (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
+            local dev_text = type(msg.content) == "string" and msg.content or
+                (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
 
-                if dev_text ~= "" then
+            if dev_text ~= "" then
+                -- Check if previous message is tool_result (or if no previous messages)
+                local should_create_new_message = false
+
+                if #claude_messages == 0 then
+                    should_create_new_message = true
+                else
+                    local last_msg = claude_messages[#claude_messages]
+                    -- If last message is tool_result, create new user message
+                    if last_msg.role == "user" and last_msg.content and last_msg.content[1] and
+                       last_msg.content[1].type == "tool_result" then
+                        should_create_new_message = true
+                    end
+                end
+
+                if should_create_new_message then
+                    -- Create new user message for developer content
+                    table.insert(claude_messages, {
+                        role = "user",
+                        content = {
+                            {
+                                type = "text",
+                                text = dev_text
+                            }
+                        }
+                    })
+                else
+                    -- Try to merge into previous message (existing logic)
+                    local last_msg = claude_messages[#claude_messages]
                     for j = #last_msg.content, 1, -1 do
                         if last_msg.content[j].type == "text" then
                             last_msg.content[j].text = last_msg.content[j].text ..
