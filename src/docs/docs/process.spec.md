@@ -123,6 +123,7 @@ local message = inbox:receive()
 -- Access message properties
 print("Topic:", message:topic())
 local payload = message:payload()
+local from_pid = message:from()
 
 -- Convert payload to Lua data
 local data = payload:data()

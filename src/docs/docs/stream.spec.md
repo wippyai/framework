@@ -2,8 +2,7 @@
 
 ## Overview
 
-The `Stream` module provides a Lua interface for reading data in chunks from a stream. It supports configurable chunk
-sizes, error handling, and iteration over the stream's contents.
+The `Stream` module provides a Lua interface for reading data from streams. It supports chunk-based reading and token-based scanning with configurable delimiters.
 
 ## Module Interface
 
@@ -13,141 +12,134 @@ sizes, error handling, and iteration over the stream's contents.
 local Stream = require("stream")
 ```
 
-### Stream Object
+## Stream Object
 
-The module primarily works with `Stream` objects, which represent a readable data stream.
-
-### Stream Creation
-
-`Stream` objects are not created directly from Lua. They are expected to be created and passed from an external
-environment.
-
-## Methods
+Stream objects represent readable data sources and are created externally, not directly from Lua.
 
 ### Stream:read([size])
 
-Reads a chunk of data from the stream with an optional size parameter.
+Reads a chunk of data from the stream.
 
-Parameters:
+**Parameters:**
+- `size` (optional number): Maximum bytes to read. Default: 32KB.
 
-- `size` (optional number): The maximum number of bytes to read. If not provided, a default size (32KB) is used.
+**Returns:**
+- On success: `string` (data), `nil`
+- On EOF: `nil`
+- On error: `nil`, `string` (error message)
 
-Returns:
-
-- `string`: The chunk of data read, or `nil` if the end of the stream is reached.
-- `string`: An error message, or `nil` if no error occurred.
+**Behavior:**
+- In coroutine VMs: yields if no data available, resumes when ready
+- In sync VMs: blocks until data available or error/EOF
 
 ### Stream:close()
 
-Closes the stream.
+Closes the stream and releases resources.
 
-Returns:
-
-- `bool` on success
-- `string`: An error message if the operation failed
+**Returns:**
+- On success: `true`
+- On error: `nil`, `string` (error message)
 
 ### Stream:bytes_read()
 
-Returns the total number of bytes read from the stream.
+Returns total bytes read from stream since creation.
 
-Returns:
+**Returns:**
+- `number`: Cumulative bytes read
 
-- `number`: The total number of bytes read.
+### Stream:scanner([split_type])
+
+Creates a Scanner for token-based reading.
+
+**Parameters:**
+- `split_type` (optional string): Token delimiter type
+    - `"lines"` (default): Split on newlines
+    - `"words"`: Split on whitespace
+    - `"bytes"`: Split on individual bytes
+    - `"runes"`: Split on UTF-8 runes
+
+**Returns:**
+- `Scanner` object
+
+**Errors:**
+- Raises error if split_type is invalid
 
 ### Stream.__call([size])
 
-Enables iteration over the stream using a `for` loop with an optional chunk size.
+Iterator for chunk-based reading in for loops.
 
-Parameters:
+**Parameters:**
+- `size` (optional number): Chunk size per iteration. Default: 32KB.
 
-- `size` (optional number): The maximum number of bytes to read per iteration. If not provided, a default size (32KB) is
-  used.
+**Returns:**
+- Iterator function that returns next chunk or `nil` on EOF/error
 
-Returns:
+## Scanner Object
 
-- `function`: An iterator function that returns the next chunk of data on each call.
+Scanner provides token-based reading using Go's bufio.Scanner semantics.
 
-## Iteration
+### Scanner:scan()
 
-The `Stream` object can be used in a `for` loop to iterate over the stream's contents:
+Advances to next token.
 
-```lua
--- Default chunk size
-for chunk in test_stream() do
-  -- Process the chunk of data
-end
+**Returns:**
+- `boolean`: `true` if token available, `false` on EOF or error
 
--- Custom chunk size (1KB)
-for chunk in test_stream(1024) do
-  -- Process the chunk of data
-end
-```
+**Behavior:**
+- In coroutine VMs: yields if no complete token available
+- In sync VMs: blocks until token ready or EOF/error
+- After returning `false`, use `err()` to distinguish EOF from error
+
+### Scanner:text()
+
+Returns current token text.
+
+**Returns:**
+- `string`: Token text from last successful `scan()` call
+
+**Behavior:**
+- Only valid after `scan()` returns `true`
+- Text buffer may be overwritten by subsequent `scan()` calls
+
+### Scanner:err()
+
+Returns first non-EOF error encountered.
+
+**Returns:**
+- `nil`: No error (including EOF)
+- `string`: Error message
+
+## Lifecycle and Resource Management
+
+**Stream Lifecycle:**
+- Streams are created externally with UnitOfWork integration
+- Closing stream automatically stops associated scanners
+- UnitOfWork cleanup automatically closes unclosed streams
+
+**Scanner Lifecycle:**
+- Scanners follow underlying stream lifecycle
+- No explicit close method - cleanup handled by stream
+- Multiple scanners can be created from same stream
+
+## Async Behavior
+
+**Coroutine VMs:**
+- `stream:read()` and `scanner:scan()` are non-blocking
+- Operations yield when waiting for data
+- Resume when data available or EOF/error occurs
+
+**Sync VMs:**
+- All operations block until completion
+- No yielding behavior
 
 ## Error Handling
 
-- Methods return an error message as the second return value if an error occurs.
-- The `read()` method returns `nil` as the first value to indicate the end of the stream.
-- Attempting to read from a closed stream will return an error.
+**Stream Errors:**
+- Context cancellation propagated as error
+- IO errors wrapped with descriptive messages
+- EOF distinguished from errors in return values
 
-## Behavior
-
-- The `read()` method reads a chunk of data from the underlying stream. The chunk size is determined by the size
-  parameter or the default size if not specified.
-- The `close()` method closes the underlying stream.
-- The `bytes_read()` method returns the cumulative number of bytes read from the stream.
-- The iterator function returned by `__call()` allows iterating over the stream in a `for` loop. Each iteration yields
-  the next chunk of data until the end of the stream is reached.
-- If the iterator function encounters an error, it terminates the iteration and returns `nil` in the next iteration.
-
-## Thread Safety
-
-- The `Stream` module does not provide explicit thread safety guarantees. Concurrent access to the same `Stream` object
-  from multiple threads may lead to undefined behavior.
-
-## Best Practices
-
-- Check for errors after each method call, especially `read()` and `close()`.
-- Use the `for` loop iteration pattern to process streams in a concise and idiomatic way.
-- Consider providing an explicit chunk size for better performance when working with known data formats.
-- Close the stream when finished to release resources.
-- Avoid concurrent access to the same `Stream` object from multiple threads.
-
-## Example Usage
-
-```lua
--- Assuming a Stream object named 'test_stream' is available
-
--- Read and print all chunks from the stream with default chunk size
-while true do
-  local chunk, err = test_stream:read()
-  if err then
-    error("Error reading stream: " .. err)
-  end
-  if not chunk then
-    break
-  end
-  print("Chunk:", chunk)
-end
-
--- Read with specific chunk size (1KB)
-local chunk, err = test_stream:read(1024)
-if err then
-  error("Error reading stream: " .. err)
-end
-print("1KB chunk:", chunk)
-
--- Get the total number of bytes read
-local totalBytes = test_stream:bytes_read()
-print("Total bytes read:", totalBytes)
-
--- Close the stream
-local err = test_stream:close()
-if err then
-  error("Error closing stream: " .. err)
-end
-
--- Iterate over the stream using a for loop with custom chunk size
-for chunk in test_stream(512) do
-  print("512-byte chunk:", chunk)
-end
-```
+**Scanner Errors:**
+- Split configuration errors raised immediately
+- Reading errors available via `err()` method
+- EOF is not considered an error
