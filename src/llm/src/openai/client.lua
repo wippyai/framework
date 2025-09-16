@@ -80,7 +80,11 @@ local function parse_error_response(http_response)
     local error_info = {
         status_code = http_response and http_response.status_code or 0,
         message = "OpenAI API error: " .. (http_response and http_response.status_code or "connection failed")
+
     }
+
+    -- open router and other providers sometimes store error in various places
+    print("error detected", http_response.body)
 
     -- Add request ID if available
     if http_response and http_response.headers and http_response.headers["x-request-id"] then
@@ -203,6 +207,8 @@ function openai_client.request(endpoint_path, payload, options)
             payload.stream_options = {
                 include_usage = true
             }
+        else
+            payload.usage = { include = true }
         end
 
         http_options.body = json.encode(payload)
