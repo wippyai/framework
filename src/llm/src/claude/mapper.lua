@@ -251,6 +251,15 @@ local function consolidate_messages(messages)
     return result
 end
 
+local function ensure_content_exists(messages)
+    for i = 1, #messages - 1 do
+        if not messages[i].content or #messages[i].content == 0 then
+            messages[i].content = {{ type = "text", text = "intercepted" }}
+        end
+    end
+    return messages
+end
+
 function mapper.map_messages(contract_messages)
     if not contract_messages or #contract_messages == 0 then
         return {
@@ -446,6 +455,7 @@ function mapper.map_messages(contract_messages)
     end
 
     claude_messages = consolidate_messages(claude_messages)
+    claude_messages = ensure_content_exists(claude_messages)
 
     return {
         messages = claude_messages,

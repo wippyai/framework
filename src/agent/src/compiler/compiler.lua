@@ -295,7 +295,7 @@ local function process_tools(raw_spec, additional_tools, trait_contexts, trait_t
         if tool_info.inline_schema then
             tool_entry.description = tool_info.description or ("Inline tool: " .. canonical_name)
             tool_entry.schema = tool_info.inline_schema
-            tool_entry.registry_id = nil
+            tool_entry.registry_id = tool_info.id  -- FIX: Preserve registry_id even with inline schema
             tool_entry.meta = {}
         else
             if trait_tool_schemas[canonical_name] then

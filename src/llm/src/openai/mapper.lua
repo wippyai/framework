@@ -48,7 +48,7 @@ local function apply_cache_control_to_message(message)
 
     for _, content_part in ipairs(message.content) do
         if content_part.type == "text" then
-            content_part.cache_control = {type = "ephemeral"}
+            content_part.cache_control = { type = "ephemeral" }
         end
     end
 end
@@ -88,12 +88,12 @@ end
 local function normalize_content(content)
     -- Handle empty/nil content
     if content == "" or content == nil then
-        return {{type = "text", text = ""}}
+        return { { type = "text", text = "" } }
     end
 
     -- Handle string content
     if type(content) == "string" then
-        return {{type = "text", text = content}}
+        return { { type = "text", text = content } }
     end
 
     -- Handle array content
@@ -153,7 +153,6 @@ function openai_mapper.map_messages(contract_messages, options)
             end
             -- Skip cache marker message (don't add to processed_messages)
             i = i + 1
-
         elseif msg.role == "user" or msg.role == "system" then
             -- Standard user/system messages - use structured content
             local processed_msg = {
@@ -162,12 +161,11 @@ function openai_mapper.map_messages(contract_messages, options)
             }
             table.insert(processed_messages, processed_msg)
             i = i + 1
-
         elseif msg.role == "assistant" then
             -- Assistant messages - ALWAYS use simple string content for OpenRouter compatibility
             local assistant_msg = {
                 role = "assistant",
-                content = openai_mapper.standardize_content(msg.content),  -- Simple string only
+                content = openai_mapper.standardize_content(msg.content), -- Simple string only
                 tool_calls = {}
             }
 
@@ -183,14 +181,17 @@ function openai_mapper.map_messages(contract_messages, options)
                 local func_msg = contract_messages[i]
 
                 if func_msg.function_call and func_msg.function_call.id then
+                    local arguments = func_msg.function_call.arguments
+                    if type(arguments) == "table" and not next(arguments) then
+                        arguments = { invoke = true }
+                    end
+
                     table.insert(assistant_msg.tool_calls, {
                         id = func_msg.function_call.id,
                         type = "function",
                         ["function"] = {
                             name = func_msg.function_call.name,
-                            arguments = (type(func_msg.function_call.arguments) == "table")
-                                and json.encode(func_msg.function_call.arguments)
-                                or tostring(func_msg.function_call.arguments)
+                            arguments = (type(arguments) == "table") and json.encode(arguments) or tostring(arguments)
                         }
                     })
                 end
@@ -203,7 +204,6 @@ function openai_mapper.map_messages(contract_messages, options)
             end
 
             table.insert(processed_messages, assistant_msg)
-
         elseif msg.role == "function_result" then
             -- Convert function results to tool messages - use simple string content
             local tool_content = ""
@@ -225,7 +225,7 @@ function openai_mapper.map_messages(contract_messages, options)
 
             local tool_msg = {
                 role = "tool",
-                content = tool_content  -- Simple string for OpenRouter compatibility
+                content = tool_content -- Simple string for OpenRouter compatibility
             }
 
             if msg.function_call_id then
@@ -238,7 +238,6 @@ function openai_mapper.map_messages(contract_messages, options)
 
             table.insert(processed_messages, tool_msg)
             i = i + 1
-
         elseif msg.role == "developer" then
             -- Convert developer messages to system messages
             local content = ""
@@ -257,11 +256,9 @@ function openai_mapper.map_messages(contract_messages, options)
                 content = normalize_content(content)
             })
             i = i + 1
-
         elseif msg.role == "function_call" then
             -- Standalone function_call (shouldn't happen with proper consolidation above)
             i = i + 1
-
         else
             -- Skip unknown message types
             i = i + 1
@@ -434,6 +431,7 @@ function openai_mapper.map_tokens(openai_usage)
     if openai_usage.prompt_tokens_details and openai_usage.prompt_tokens_details.cached_tokens then
         tokens.cache_read_tokens = openai_usage.prompt_tokens_details.cached_tokens
         tokens.cache_write_tokens = math.max(0, tokens.prompt_tokens - tokens.cache_read_tokens)
+        tokens.prompt_tokens = tokens.prompt_tokens - tokens.cache_read_tokens
     end
 
     return tokens
