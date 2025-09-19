@@ -142,7 +142,6 @@ function openai_mapper.map_messages(contract_messages, options)
 
     while i <= #contract_messages do
         local msg = contract_messages[i]
-
         -- Clear metadata
         msg.metadata = nil
 
@@ -176,26 +175,53 @@ function openai_mapper.map_messages(contract_messages, options)
 
             i = i + 1 -- Move to next message
 
-            -- Check if next messages are function_calls that should be consolidated
-            while i <= #contract_messages and contract_messages[i].role == "function_call" do
-                local func_msg = contract_messages[i]
+            -- Collect ALL function_calls that belong to this assistant message
+            -- Look ahead through remaining messages to find all related function calls
+            local function_calls_found = {}
+            local j = i
+            while j <= #contract_messages do
+                local current_msg = contract_messages[j]
 
-                if func_msg.function_call and func_msg.function_call.id then
-                    local arguments = func_msg.function_call.arguments
-                    if type(arguments) == "table" and not next(arguments) then
-                        arguments = { invoke = true }
-                    end
-
-                    table.insert(assistant_msg.tool_calls, {
-                        id = func_msg.function_call.id,
-                        type = "function",
-                        ["function"] = {
-                            name = func_msg.function_call.name,
-                            arguments = (type(arguments) == "table") and json.encode(arguments) or tostring(arguments)
-                        }
+                if current_msg.role == "function_call" and current_msg.function_call and current_msg.function_call.id then
+                    -- Collect this function call
+                    table.insert(function_calls_found, {
+                        index = j,
+                        msg = current_msg
                     })
+                elseif current_msg.role == "assistant" then
+                    -- Stop when we hit another assistant message
+                    break
+                elseif current_msg.role == "function_result" then
+                    -- This handles interleaved function_call/function_result patterns
+                elseif current_msg.role == "user" then
+                    -- Stop when we hit a user message (new conversation turn)
+                    break
                 end
-                i = i + 1
+                j = j + 1
+            end
+
+            -- Process all collected function calls
+            for _, func_call_info in ipairs(function_calls_found) do
+                local func_msg = func_call_info.msg
+                local arguments = func_msg.function_call.arguments
+                if type(arguments) == "table" and not next(arguments) then
+                    arguments = { invoke = true }
+                end
+
+                table.insert(assistant_msg.tool_calls, {
+                    id = func_msg.function_call.id,
+                    type = "function",
+                    ["function"] = {
+                        name = func_msg.function_call.name,
+                        arguments = (type(arguments) == "table") and json.encode(arguments) or tostring(arguments)
+                    }
+                })
+            end
+
+            -- Mark all collected function calls as processed by creating a set of indices
+            local processed_indices = {}
+            for _, func_call_info in ipairs(function_calls_found) do
+                processed_indices[func_call_info.index] = true
             end
 
             -- Remove tool_calls field if empty
@@ -204,6 +230,15 @@ function openai_mapper.map_messages(contract_messages, options)
             end
 
             table.insert(processed_messages, assistant_msg)
+
+            -- Continue processing, but skip the function calls we already processed
+            while i <= #contract_messages do
+                if processed_indices[i] then
+                    i = i + 1
+                else
+                    break
+                end
+            end
         elseif msg.role == "function_result" then
             -- Convert function results to tool messages - use simple string content
             local tool_content = ""
@@ -257,14 +292,13 @@ function openai_mapper.map_messages(contract_messages, options)
             })
             i = i + 1
         elseif msg.role == "function_call" then
-            -- Standalone function_call (shouldn't happen with proper consolidation above)
+            -- Skip orphaned function calls - they should have been collected by assistant message processing
             i = i + 1
         else
             -- Skip unknown message types
             i = i + 1
         end
     end
-
     return processed_messages
 end
 
