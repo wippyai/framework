@@ -208,7 +208,9 @@ function openai_client.request(endpoint_path, payload, options)
                 include_usage = true
             }
         else
-            payload.usage = { include = true }
+            if config.base_url:match("openrouter") then
+                payload.usage = { include = true }
+            end
         end
 
         http_options.body = json.encode(payload)
