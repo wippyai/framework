@@ -162,7 +162,7 @@ function claude_client.request(endpoint_path, payload, options)
             default_env_var = nil
         },
         timeout = {
-            default_value = 240,
+            default_value = 600,
             default_env_var = "ANTHROPIC_TIMEOUT"
         },
         headers = {

@@ -149,7 +149,7 @@ function generate_handler.handler(contract_args)
     end
 
     local request_options = {
-        timeout = contract_args.timeout or 240
+        timeout = contract_args.timeout or 600
     }
 
     local stream_config = nil

@@ -223,7 +223,7 @@ local function define_tests()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(options.timeout).to_equal(240) -- Default timeout
+                        expect(options.timeout).to_equal(600) -- Default timeout
                         return {
                             content = { { type = "text", text = "Default timeout" } },
                             stop_reason = "end_turn",

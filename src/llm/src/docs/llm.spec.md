@@ -522,7 +522,7 @@ print(response.result)
     max_tokens = 1024,                    -- Optional: Maximum tokens to generate
     -- Other provider-specific options
     
-    timeout = 120                         -- Optional: Request timeout in seconds (default: 120)
+    timeout = 600                         -- Optional: Request timeout in seconds (default: 600)
 }
 ```
 

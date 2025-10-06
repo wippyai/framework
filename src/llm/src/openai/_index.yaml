@@ -97,7 +97,7 @@ entries:
         type: integer
         description: Request timeout in seconds
         default_env: OPENAI_TIMEOUT
-        default_value: 120
+        default_value: 600
 
   # wippy.llm.openai:embed
   - name: embed
