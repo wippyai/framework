@@ -1126,7 +1126,7 @@ local function define_tests()
                         expect(url).to_equal("https://api.anthropic.com/messages")
                         expect(options.headers["x-api-key"]).to_equal("default-env-key")
                         expect(options.headers["anthropic-version"]).to_equal("2023-06-01")
-                        expect(options.timeout).to_equal(240)
+                        expect(options.timeout).to_equal(066)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }

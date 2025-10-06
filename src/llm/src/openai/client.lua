@@ -170,7 +170,7 @@ function openai_client.request(endpoint_path, payload, options)
             default_env_var = "OPENAI_ORGANIZATION"
         },
         timeout = {
-            default_value = 120,
+            default_value = 600,
             default_env_var = "OPENAI_TIMEOUT"
         },
         headers = {
