@@ -1,0 +1,5 @@
+name: wippy/test
+dir: .
+description: Testing component
+ignore:
+  - "README.md"

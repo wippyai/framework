@@ -1,0 +1,5 @@
+name: wippy/views
+dir: .
+description: Views component
+ignore:
+  - "README.md"

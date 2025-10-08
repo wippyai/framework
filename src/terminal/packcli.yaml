@@ -1,0 +1,5 @@
+name: wippy/terminal
+dir: .
+description: Terminal
+ignore:
+  - "README.md"
