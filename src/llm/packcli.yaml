@@ -1,0 +1,5 @@
+name: wippy/llm
+dir: .
+description: LLM component
+ignore:
+  - "README.md"

@@ -1,0 +1,5 @@
+name: wippy/relay
+dir: .
+description: Relay component
+ignore:
+  - "README.md"

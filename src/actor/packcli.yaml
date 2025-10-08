@@ -1,0 +1,5 @@
+name: wippy/actor
+dir: .
+description: Actor component
+ignore:
+  - "README.md"

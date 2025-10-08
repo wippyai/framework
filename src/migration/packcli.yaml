@@ -1,0 +1,5 @@
+name: wippy/migration
+dir: .
+description: Migration component
+ignore:
+  - "README.md"
