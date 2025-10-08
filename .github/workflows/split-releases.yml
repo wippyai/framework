@@ -30,17 +30,18 @@ jobs:
           - { folder: usage, repo: module-usage }
           - { folder: docs, repo: module-docs }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: |
-          split_sha=`git subtree split --prefix=src/${{ matrix.package.folder }}`
-          repo_url="https://${{ secrets.SUBSPLIT_WRITE_ACCESS }}@github.com/wippyai/${{ matrix.package.repo }}.git"
-          if [ -z $(git ls-remote --tags "$repo_url" | grep "$split_sha") ]; then \
-            gh release create ${{ github.ref_name }} \
-              --repo wippyai/${{ matrix.package.repo }} \
-              --target "$split_sha" \
-              --generate-notes \
-              --notes '[Full release information in Wippy Framework monorepo](https://github.com/wippyai/typhoon/releases/tag/${{ github.ref_name }}).'; \
-          fi
+      - name: Publishing
+        uses: wippyai/action-module-release@main
+        with:
+          directory: src/${{ matrix.package.folder }}
+          tag: ${{ github.ref_name }}
+          username: ${{ secrets.WIPPY_USERNAME }}
+          password: ${{ secrets.WIPPY_PASSWORD }}
+
+          # Deprecated:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          repository: ${{ github.repository }}
