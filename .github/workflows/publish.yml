@@ -1,17 +1,14 @@
-name: Split releases
+name: Publish in the Wippy Registry
 
 on:
   release:
     types: ['published']
 
 concurrency:
-  group: split
-
-env:
-  GH_TOKEN: ${{ secrets.SUBSPLIT_WRITE_ACCESS }}
+  group: publish
 
 jobs:
-  split:
+  publish:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
