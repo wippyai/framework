@@ -17,18 +17,18 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - { folder: actor, repo: module-actor }
-          - { folder: agent, repo: module-agent }
-          - { folder: bootloader, repo: module-bootloader }
-          - { folder: migration, repo: module-migration }
-          - { folder: relay, repo: module-relay }
-          - { folder: security, repo: module-security }
-          - { folder: terminal, repo: module-terminal }
-          - { folder: test, repo: module-test }
-          - { folder: views, repo: module-views }
-          - { folder: llm, repo: module-llm }
-          - { folder: usage, repo: module-usage }
-          - { folder: docs, repo: module-docs }
+          - { folder: actor }
+          - { folder: agent }
+          - { folder: bootloader }
+          - { folder: migration }
+          - { folder: relay }
+          - { folder: security }
+          - { folder: terminal }
+          - { folder: test }
+          - { folder: views }
+          - { folder: llm }
+          - { folder: usage }
+          - { folder: docs }
     steps:
       - uses: actions/checkout@v5
         with:
@@ -41,7 +41,3 @@ jobs:
           tag: ${{ github.ref_name }}
           username: ${{ secrets.WIPPY_USERNAME }}
           password: ${{ secrets.WIPPY_PASSWORD }}
-
-          # Deprecated:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          repository: ${{ github.repository }}
