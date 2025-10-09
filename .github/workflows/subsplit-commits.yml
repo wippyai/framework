@@ -1,0 +1,26 @@
+name: Split commits
+
+on:
+  push:
+    branches: ['main', '*.*']
+
+concurrency:
+  group: split
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - { folder: migration, repo: module-migration }
+          - { folder: usage, repo: module-usage }
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: |
+          repo_url="https://${{ secrets.SUBSPLIT_WRITE_ACCESS }}@github.com/wippyai/${{ matrix.package.repo }}.git"
+          git subtree push --prefix src/${{ matrix.package.folder }} "$repo_url" ${{ github.ref_name }}
