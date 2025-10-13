@@ -34,6 +34,7 @@ local function entry_to_raw_spec(entry)
         name = (entry.meta and entry.meta.name) or "",
         title = (entry.meta and entry.meta.title) or "",
         description = (entry.meta and entry.meta.comment) or "",
+        meta = entry.meta or {},
         model = entry.data.model,
         max_tokens = entry.data.max_tokens,
         temperature = entry.data.temperature,

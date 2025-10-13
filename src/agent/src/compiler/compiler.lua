@@ -411,6 +411,7 @@ function compiler.compile(raw_spec, user_config)
         id = raw_spec.id,
         name = raw_spec.name,
         description = raw_spec.description,
+        meta = raw_spec.meta or {},
         model = raw_spec.model,
         max_tokens = raw_spec.max_tokens,
         temperature = raw_spec.temperature,
