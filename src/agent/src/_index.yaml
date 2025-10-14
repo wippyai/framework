@@ -17,15 +17,6 @@ entries:
     component: "wippy/llm"
     version: ">=v0.3.0"
 
-  # wippy.actor:actor
-  - name: actor
-    kind: library.lua
-    meta:
-      comment: Actor pattern library for btea processes
-    source: file://actor.lua
-    modules:
-      - json
-
   # wippy.agent:agent
   - name: agent
     kind: library.lua
