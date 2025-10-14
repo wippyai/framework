@@ -24,6 +24,31 @@ entries:
         path: ".storage"
       - entry: wippy.llm.openai:timeout
         path: ".storage"
+      - entry: wippy.llm.google.env:vertex_base_url
+        path: ".storage"
+      - entry: wippy.llm.google.env:generative_ai_base_url
+        path: ".storage"
+      - entry: wippy.llm.google.env:vertex_location
+        path: ".storage"
+      - entry: wippy.llm.google.env:vertex_timeout
+        path: ".storage"
+      - entry: wippy.llm.google.env:generative_ai_timeout
+        path: ".storage"
+      - entry: wippy.llm.google.env:api_key
+        path: ".storage"
+      - entry: wippy.llm.google.env:google_credentials
+        path: ".storage"
+
+  - name: process_host
+    kind: ns.requirement
+    meta:
+      description: "Host ID for processes"
+    targets:
+      - entry: wippy.llm.google.oauth2:token_refresher
+        path: ".meta.default_host"
+      - entry: wippy.llm.google.oauth2:token_refresher.service
+        path: ".host"
+    default: "app:processes"
 
   # Dependencies
   - name: __dependency.wippy.test

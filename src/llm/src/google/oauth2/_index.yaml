@@ -1,0 +1,47 @@
+version: "1.0"
+namespace: wippy.llm.google.oauth2
+
+entries:
+  # wippy.llm.google.oauth2:oauth2
+  - name: oauth2
+    kind: library.lua
+    meta:
+      type: library
+      comment: Google OAuth2 library for obtaining access tokens
+      tags:
+        - google
+        - oauth2
+    source: file://oauth2.lua
+    modules:
+      - http_client
+      - time
+      - crypto
+      - json
+    imports:
+      google_config: wippy.llm.google:config
+
+  # wippy.llm.google.oauth2:token_refresher
+  - name: token_refresher
+    kind: process.lua
+    meta:
+      comment: Background process to refresh Google OAuth2 tokens
+      description: Periodically refreshes OAuth2 access tokens using the oauth2 library
+    source: file://token_refresher.lua
+    modules:
+      - time
+      - store
+      - env
+    imports:
+      google_oauth2: wippy.llm.google.oauth2:oauth2
+      google_config: wippy.llm.google:config
+    method: run
+
+  # wippy.llm.google.oauth2:token_refresher.service
+  - name: token_refresher.service
+    kind: process.service
+    meta:
+      comment: Google OAuth2 Token Refresher Service
+      description: Always-running service to keep Google OAuth2 tokens fresh
+    lifecycle:
+      auto_start: true
+    process: token_refresher

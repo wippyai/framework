@@ -1,0 +1,76 @@
+version: "1.0"
+namespace: wippy.llm.google.vertex
+
+entries:
+  # wippy.llm.google.vertex:provider
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: vertex
+      type: llm.provider
+      title: Vertex AI
+      comment: Google Vertex AI provider
+      tags:
+        - llm
+        - provider
+        - google
+        - vertex
+    driver:
+      id: wippy.llm.google.vertex:driver_binding
+      options:
+        client_id: wippy.llm.google.vertex:client_binding
+        base_url_env: wippy.llm.google.env:vertex_base_url
+        location_env: wippy.llm.google.env:vertex_location
+        project_env: wippy.llm.google.env:vertex_project
+        timeout_env: wippy.llm.google.env:vertex_timeout
+
+  # wippy.llm.google.vertex:driver_binding
+  - name: driver_binding
+    kind: contract.binding
+    meta:
+      name: Google Vertex AI Driver
+      comment: Driver implementation for Google Vertex AI
+      tags:
+        - google
+        - vertex
+        - llm
+        - driver
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: wippy.llm.google:generate
+      - contract: wippy.llm:structured_output
+        methods:
+          structured_output: wippy.llm.google:structured_output
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.google:status
+
+  # wippy.llm.google.vertex:client_binding
+  - name: client_binding
+    kind: contract.binding
+    meta:
+      name: Google Vertex AI Client
+      comment: Client implementation for Google Vertex AI
+      tags:
+        - google
+        - vertex
+        - llm
+        - client
+    contracts:
+      - contract: wippy.llm.google:client_contract
+        methods:
+          request: wippy.llm.google.vertex:client
+
+  # wippy.llm.google.vertex:client
+  - name: client
+    kind: function.lua
+    meta:
+      comment: Google Vertex AI client for HTTP requests
+    source: file://client.lua
+    modules:
+      - json
+    imports:
+      google_client: wippy.llm.google:client
+      google_config: wippy.llm.google:config
+    method: request

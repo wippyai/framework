@@ -1,0 +1,122 @@
+version: "1.0"
+namespace: wippy.llm.google
+
+entries:
+  # wippy.llm.google:client_contract
+  - name: client_contract
+    kind: contract.definition
+    meta:
+      comment: Client interface for Google LLM providers
+      description: Defines the methods and schemas for interacting with Google LLM services.
+    methods:
+      - name: request
+        description: Make a request to the LLM service
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "endpoint_path": {
+                    "type": "string",
+                    "description": "API endpoint path"
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Model name"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "description": "Request payload",
+                    "additionalProperties": true
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Additional request options",
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["endpoint_path", "model", "payload"],
+                "additionalProperties": true
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful generation response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Generation response\",\n          \"properties\": {\n            \"content\": {\"type\": \"string\", \"description\": \"Generated text content\"},\n            \"tool_calls\": {\n              \"type\": \"array\",\n              \"description\": \"Tool calls made by the model (empty array if none)\",\n              \"items\": {\n                \"type\": \"object\",\n                \"properties\": {\n                  \"id\": {\"type\": \"string\"},\n                  \"name\": {\"type\": \"string\"},\n                  \"arguments\": {\"type\": \"object\"}\n                },\n                \"required\": [\"id\", \"name\", \"arguments\"]\n              }\n            }\n          },\n          \"required\": [\"content\", \"tool_calls\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"description\": \"Token usage information\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"completion_tokens\": {\"type\": \"integer\"},\n            \"thinking_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"},\n            \"cache_creation_input_tokens\": {\"type\": \"integer\"},\n            \"cache_read_input_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"finish_reason\": {\n          \"type\": \"string\",\n          \"enum\": [\"stop\", \"length\", \"filtered\", \"tool_call\", \"error\"]\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata including usage tracking\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"context_length_exceeded\", \n            \"content_filtered\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context (request_id, status_code, etc.)\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
+            format: application/schema+json
+
+  # wippy.llm.google:client
+  - name: client
+    kind: library.lua
+    meta:
+      type: library
+      comment: Google low-level HTTP client
+      tags:
+        - google
+    source: file://client.lua
+    modules:
+      - json
+      - http_client
+
+  # wippy.llm.google:config
+  - name: config
+    kind: library.lua
+    meta:
+      type: library
+      comment: Google configuration library
+      tags:
+        - google
+    source: file://config.lua
+    modules:
+      - base64
+      - json
+      - env
+      - store
+
+  # wippy.llm.google:generate
+  - name: generate
+    kind: function.lua
+    meta:
+      comment: Google text generation handler supporting tool calling, and reasoning models via unified contract
+    source: file://generate.lua
+    modules:
+      - contract
+      - ctx
+    imports:
+      google_mapper: wippy.llm.google:mapper
+      output: wippy.llm:output
+      google_config: wippy.llm.google:config
+    method: handler
+
+  # wippy.llm.google:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Google contract mapper with consistent error handling, token usage mapping, and reasoning detection
+    source: file://mapper.lua
+    modules:
+      - json
+    imports:
+      output: wippy.llm:output
+
+  # wippy.llm.google:status
+  - name: status
+    kind: function.lua
+    meta:
+      comment: Google provider status handler for health checks and connection testing
+    source: file://status.lua
+    method: handler
+
+  # wippy.llm.google:structured_output
+  - name: structured_output
+    kind: function.lua
+    meta:
+      comment: Google structured output handler with JSON schema validation and reasoning model support via unified contract
+    source: file://structured_output.lua
+    modules:
+      - contract
+      - ctx
+      - json
+      - hash
+    imports:
+      google_config: wippy.llm.google:config
+      google_mapper: wippy.llm.google:mapper
+    method: handler
