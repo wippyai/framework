@@ -8,7 +8,7 @@ entries:
     meta:
       comment: Vertex AI API base URL for custom endpoints or proxies
       icon: tabler:world
-    default: "https://%saiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models"
+    default: "https://%saiplatform.googleapis.com/v1"
     variable: VERTEX_AI_BASE_URL
 
   # wippy.llm.google.env:generative_ai_base_url

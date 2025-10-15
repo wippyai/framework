@@ -60,19 +60,12 @@ function config.get_project_id()
     return get_credentials().project_id
 end
 
-function config.get_vertex_base_url(project_id, location)
+function config.get_vertex_base_url(location)
     location = location or config.get_vertex_location()
-    project_id = project_id or config.get_project_id()
 
     local prefix_location = location == "global" and "" or location .. "-"
-    if not project_id or project_id == "" then
-        return nil, "Google `project_id` is missing"
-    end
-    if not location or location == "" then
-        return nil, "Vertex AI `location` is missing"
-    end
 
-    return string.format(env.get("VERTEX_AI_BASE_URL"), prefix_location, project_id, location)
+    return string.format(env.get("VERTEX_AI_BASE_URL"), prefix_location)
 end
 
 function config.get_vertex_location()

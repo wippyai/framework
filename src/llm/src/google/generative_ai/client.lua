@@ -6,36 +6,39 @@ local generative_ai_client = {}
 
 function generative_ai_client.request(contract_args)
     contract_args.options = contract_args.options or {}
-
-    if not contract_args.model or contract_args.model == "" then
-        return nil, { status_code = 400, message = "Model is required" }
-    end
-    if not contract_args.endpoint_path or contract_args.endpoint_path == "" then
-        return nil, {status_code = 400, message = "Endpoint path is required"}
-    end
+    contract_args.options.method = contract_args.options.method or "POST"
 
     local api_key = config.get_gemini_api_key()
 
     if not api_key then
-        return nil, {status_code = 401, message = "Google Gemini API key is missing"}
+        return {status_code = 401, message = "Google Gemini API key is missing"}
     end
 
-    local http_options = {
+    local options = {
         headers = {
             ["x-goog-api-key"] = api_key
         },
-        timeout = contract_args.options.timeout or config.get_generative_ai_timeout(),
-        body = json.encode(contract_args.payload or {})
+        timeout = contract_args.options.timeout or config.get_generative_ai_timeout()
     }
+    if contract_args.options.method == "POST" then
+        options.body = json.encode(contract_args.payload or {})
+    end
 
     local base_url = contract_args.options.base_url or config.get_generative_ai_base_url()
+    if contract_args.model and contract_args.model ~= "" then
+        base_url = base_url .. "/" .. contract_args.model
+    end
+    if contract_args.endpoint_path and contract_args.endpoint_path ~= "" then
+        base_url = base_url .. ":" .. contract_args.endpoint_path
+    end
 
-    local response, err = client.post(
-        base_url .. "/" .. contract_args.model .. ":" .. contract_args.endpoint_path,
-        http_options
-    )
+    local response, err = client.request(contract_args.options.method, base_url, options)
 
-    return response, err
+    if err then
+        return err
+    end
+
+    return response
 end
 
 return generative_ai_client

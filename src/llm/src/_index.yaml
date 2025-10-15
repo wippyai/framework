@@ -281,9 +281,7 @@ entries:
         - providers
     source: file://llm.lua
     modules:
-      - uuid
       - security
-      - json
     imports:
       contract: contract
       models: wippy.llm.discovery:models

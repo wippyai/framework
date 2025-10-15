@@ -171,7 +171,6 @@ function mapper.map_messages(contract_messages, options)
                         functionResponse = {
                             name = msg.name,
                             response = {
-                                name = msg.name,
                                 content = tool_content
                             }
                         }

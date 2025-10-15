@@ -7,7 +7,7 @@ local status = {
     _contract = contract,
 }
 
-function status.handler()
+function status.handler(contract_args)
     local client_contract, err = status._contract.get(config.CLIENT_CONTRACT_ID)
     if err then
         return {
@@ -28,23 +28,26 @@ function status.handler()
         }
     end
 
-    local _, request_err = client_instance:request("/models", nil, {method = "GET"})
+    local response = client_instance:request({
+        model = contract_args.model,
+        options = { method = "GET" }
+    })
 
-    if request_err then
+    if response and response.status_code and response.status_code ~= 200 then
         local result = { status = false }
         result.status = "unhealthy"
-        result.message = request_err.message or "Connection failed"
+        result.message = response.message or "Connection failed"
 
         -- Network/connection errors
-        if request_err.status_code == 0 or not request_err.status_code then
+        if response.status_code == 0 or not response.status_code then
             result.status = "unhealthy"
             result.message = "Connection failed"
         -- Rate limit - degraded but service is available
-        elseif request_err.status_code == 429 then
+        elseif response.status_code == 429 then
             result.status = "degraded"
             result.message = "Rate limited but service is available"
         -- Server errors - degraded
-        elseif request_err.status_code and request_err.status_code >= 500 and request_err.status_code < 600 then
+        elseif response.status_code and response.status_code >= 500 and response.status_code < 600 then
             result.status = "degraded"
             result.message = "Service experiencing issues"
         end

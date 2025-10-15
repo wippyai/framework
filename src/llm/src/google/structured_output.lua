@@ -114,16 +114,12 @@ function structured_output.handler(contract_args)
         })
     end
 
-    local response, request_err = client_instance:request({
+    local response = client_instance:request({
         endpoint_path = "generateContent",
         model = contract_args.model,
         payload = payload,
         options = { timeout = contract_args.timeout }
     })
-
-    if request_err then
-        return structured_output._mapper.map_error_response(err)
-    end
 
     local success, mapped_response = pcall(function()
         return structured_output._mapper.map_success_response(response)

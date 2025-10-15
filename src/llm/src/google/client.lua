@@ -38,10 +38,17 @@ local function parse_error_response(http_response)
     return error_info
 end
 
-function client.post(url, http_options)
-    http_options.headers["Content-Type"] = "application/json"
+function client.request(method, url, http_options)
+    http_options.headers["Accept"] = "application/json"
 
-    local response, err = http_client.post(url, http_options)
+    local response = nil
+    local err = nil
+    if method == "GET" then
+        response, err = http_client.get(url, http_options)
+    else
+        http_options.headers["Content-Type"] = "application/json"
+        response, err = http_client.post(url, http_options)
+    end
 
     if not response then
         return nil, {

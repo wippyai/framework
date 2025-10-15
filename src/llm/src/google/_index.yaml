@@ -103,6 +103,11 @@ entries:
     meta:
       comment: Google provider status handler for health checks and connection testing
     source: file://status.lua
+    modules:
+      - contract
+      - ctx
+    imports:
+      google_config: wippy.llm.google:config
     method: handler
 
   # wippy.llm.google:structured_output

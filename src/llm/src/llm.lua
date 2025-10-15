@@ -1,9 +1,7 @@
 local models = require("models")
 local providers = require("providers")
 local contract = require("contract")
-local uuid = require("uuid")
 local security = require("security")
-local json = require("json")
 
 local llm = {}
 
@@ -601,6 +599,48 @@ function llm.embed(text, options)
 
         return normalized
     end
+end
+
+function llm.status(options)
+    if not options or not options.model then
+        return nil, "Model is required in options"
+    end
+
+    local actor = security.actor()
+    if actor then
+        options.user = actor:id()
+    end
+
+    local contract_args = { model = options.model, options = {} }
+    local provider_info = nil
+
+    if options.provider_id then
+        provider_info = { id = options.provider_id, options = {} }
+    else
+        local model_card, err = resolve_model(options.model)
+        if not model_card then
+            return nil, err
+        end
+
+        -- Get first provider (highest priority)
+        if not model_card.providers or #model_card.providers == 0 then
+            return nil, "Model has no configured providers: " .. options.model
+        end
+        provider_info = model_card.providers[1]
+        merge_provider_options(contract_args, provider_info)
+    end
+
+    local providers_module = llm._providers or providers
+    local provider_instance, err = providers_module.open(provider_info.id, provider_info.options or {})
+    if not provider_instance then
+        return nil, "Failed to open provider: " .. (err or "unknown error")
+    end
+
+    merge_user_options(contract_args, options, {"model", "provider_id"})
+
+    local result, err = provider_instance:status(contract_args)
+
+    return result, err
 end
 
 function llm.available_models(capability)
