@@ -18,10 +18,10 @@ entries:
     driver:
       id: wippy.llm.google.generative_ai:driver_binding
       options:
-        client_id: wippy.llm.google.vertex:client_binding
+        client_id: wippy.llm.google.generative_ai:client_binding
         base_url_env: wippy.llm.google.env:generative_ai_base_url
         api_key_env: wippy.llm.google.env:api_key
-        timeout_env: wippy.llm.google.env:vertex_timeout
+        timeout_env: wippy.llm.google.env:generative_ai_timeout
 
   # wippy.llm.google.generative_ai:driver_binding
   - name: driver_binding

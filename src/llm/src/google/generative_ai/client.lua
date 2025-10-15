@@ -1,4 +1,4 @@
-local client = require("google_http_client")
+local client = require("google_client")
 local config = require("google_config")
 local json = require("json")
 

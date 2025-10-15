@@ -56,6 +56,10 @@ function config.get_oauth2_token()
     return store_instance:get(config.OAUTH2_TOKEN_CACHE_KEY)
 end
 
+function config.get_gemini_api_key()
+    return env.get("GEMINI_API_KEY")
+end
+
 function config.get_project_id()
     return get_credentials().project_id
 end
