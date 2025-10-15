@@ -2,11 +2,12 @@ version: "1.0"
 namespace: wippy.views
 
 entries:
-  # Requirements
+  # wippy.views:api_router
   - name: api_router
     kind: ns.requirement
     meta:
-      description: "Injects API router configuration into endpoints"
+      description: Injects API router configuration into endpoints
+      parent: app.deps:__dependency.wippy.views
     targets:
       - entry: wippy.views.api:list_pages
         path: .meta.router
@@ -18,6 +19,137 @@ entries:
         path: .meta.router
       - entry: wippy.views.api:render.endpoint4
         path: .meta.router
+
+  # wippy.views:env_contract
+  - name: env_contract
+    kind: contract.definition
+    meta:
+      version: "1.0"
+      name: Environment Variable Provider Contract
+      description: Contract interface for environment variable providers and consumers
+    methods:
+      - name: load_mappings
+        description: Load environment variable mappings from provider
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "filter": {
+                    "type": "object",
+                    "description": "Optional filter criteria for mappings"
+                  }
+                },
+                "additionalProperties": false
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "success": {"type": "boolean"},
+                  "mappings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {"type": "string"},
+                        "priority": {"type": "integer"},
+                        "mappings": {"type": "object"}
+                      },
+                      "required": ["id", "priority", "mappings"]
+                    }
+                  },
+                  "error": {"type": "string"}
+                },
+                "required": ["success"]
+              }
+            format: application/schema+json
+      - name: resolve_env_values
+        description: Resolve environment variable values from context
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "context": {
+                    "type": "object",
+                    "description": "Context mapping from keys to environment variable names"
+                  }
+                },
+                "required": ["context"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "success": {"type": "boolean"},
+                  "resolved": {
+                    "type": "object",
+                    "description": "Resolved environment variable values"
+                  },
+                  "error": {"type": "string"}
+                },
+                "required": ["success"]
+              }
+            format: application/schema+json
+
+  # wippy.views:env_contract_binding
+  - name: env_contract_binding
+    kind: contract.binding
+    meta:
+      comment: Contract binding for environment variable provider
+      description: Implements the environment variable provider contract using env_loader library
+    contracts:
+      - contract: wippy.views:env_contract
+        methods:
+          load_mappings: wippy.views:env_loader
+          resolve_env_values: wippy.views:env_loader
+
+  # wippy.views:env_loader
+  - name: env_loader
+    kind: library.lua
+    meta:
+      type: framework.library
+      comment: Framework environment variable mapping loader
+      description: Core framework library for loading and resolving environment variable mappings from registry
+    source: file://env_loader.lua
+    modules:
+      - registry
+      - env
+
+  # wippy.views:env_mapping_schema
+  - name: env_mapping_schema
+    kind: registry.entry
+    meta:
+      version: "1.0"
+      name: Environment Variable Mapping Schema
+      type: schema.definition
+      description: Schema definition for view.env_mapping registry entries
+    priority_conventions:
+      application_mappings: 20-29
+      environment_overrides: 30+
+      framework_defaults: 0-9
+      system_overrides: 10-19
+    schema:
+      type: object
+      properties:
+        mappings:
+          type: object
+          description: Key-value pairs mapping view context names to environment variables
+          additionalProperties:
+            type: string
+        priority:
+          type: integer
+          description: Priority order for merging mappings (higher priority overrides lower)
+          default: 0
+          maximum: 100
+          minimum: 0
+      required:
+        - mappings
 
   # wippy.views:page_registry
   - name: page_registry
@@ -45,6 +177,7 @@ entries:
     imports:
       page_registry: wippy.views:page_registry
       resource_registry: wippy.views:resource_registry
+      env_loader: wippy.views:env_loader
 
   # wippy.views:resource_registry
   - name: resource_registry
