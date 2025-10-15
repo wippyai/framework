@@ -73,6 +73,7 @@ function client.request(method, url, http_options)
     end
 
     parsed.metadata = extract_response_metadata(response)
+    parsed.status_code = response.status_code
 
     return parsed
 end

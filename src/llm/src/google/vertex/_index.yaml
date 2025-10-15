@@ -19,6 +19,7 @@ entries:
       id: wippy.llm.google.vertex:driver_binding
       options:
         client_id: wippy.llm.google.vertex:client_binding
+        google_credentials_env: wippy.llm.google.env:google_credentials
         base_url_env: wippy.llm.google.env:vertex_base_url
         location_env: wippy.llm.google.env:vertex_location
         project_env: wippy.llm.google.env:vertex_project

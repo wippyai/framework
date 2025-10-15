@@ -121,6 +121,10 @@ function structured_output.handler(contract_args)
         options = { timeout = contract_args.timeout }
     })
 
+    if response.status_code < 200 or response.status_code >= 300 then
+        return structured_output._mapper.map_error_response(response)
+    end
+
     local success, mapped_response = pcall(function()
         return structured_output._mapper.map_success_response(response)
     end)
