@@ -2,7 +2,10 @@ local client = require("google_client")
 local config = require("google_config")
 local json = require("json")
 
-local vertex_client = {}
+local vertex_client = {
+    _client = client,
+    _config = config
+}
 
 local PROJECT_REQUIRED_ENDPOINTS = {
     "generateContent"
@@ -22,8 +25,8 @@ local function build_url(base_url, contract_args)
     end
 
     if is_project_required then
-        local project_id = contract_args.options.project or config.get_project_id()
-        local location = contract_args.options.location or config.get_vertex_location()
+        local project_id = contract_args.options.project or vertex_client._config.get_project_id()
+        local location = contract_args.options.location or vertex_client._config.get_vertex_location()
         url = string.format("%s/projects/%s/locations/%s", url, project_id, location)
     end
 
@@ -43,7 +46,7 @@ function vertex_client.request(contract_args)
     contract_args.options = contract_args.options or {}
     contract_args.options.method = contract_args.options.method or "POST"
 
-    local token = config.get_oauth2_token()
+    local token = vertex_client._config.get_oauth2_token()
     if not token then
         return {status_code = 401, message = "Google OAuth2 token is missing"}
     end
@@ -52,7 +55,7 @@ function vertex_client.request(contract_args)
         headers = {
             ["Authorization"] = "Bearer " .. token.access_token
         },
-        timeout = contract_args.options.timeout or config.get_vertex_timeout()
+        timeout = contract_args.options.timeout or vertex_client._config.get_vertex_timeout()
     }
     if contract_args.options.method == "POST" then
         options.body = json.encode(contract_args.payload or {})
@@ -60,13 +63,13 @@ function vertex_client.request(contract_args)
 
     local base_url = contract_args.options.base_url
     if not base_url then
-        base_url, err = config.get_vertex_base_url(contract_args.options.location)
+        base_url, err = vertex_client._config.get_vertex_base_url(contract_args.options.location)
         if err then
             return { status_code = 401, message = err }
         end
     end
 
-    local response, err = client.request(contract_args.options.method, build_url(base_url, contract_args), options)
+    local response, err = vertex_client._client.request(contract_args.options.method, build_url(base_url, contract_args), options)
 
     if err then
         return err

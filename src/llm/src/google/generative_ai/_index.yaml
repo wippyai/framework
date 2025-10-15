@@ -73,3 +73,22 @@ entries:
       google_client: wippy.llm.google:client
       google_config: wippy.llm.google:config
     method: request
+
+  # wippy.llm.google.generative_ai:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Google Generative AI Client Unit Tests
+      type: test
+      comment: Unit tests for Google Generative AI client
+      group: LLM / Drivers / Generative AI
+      tags:
+        - unit-test
+        - generative_ai_client
+    source: file://client_test.lua
+    modules:
+      - json
+    imports:
+      generative_ai_client: wippy.llm.google.generative_ai:client
+      test: wippy.test:test
+    method: run_tests
