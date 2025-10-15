@@ -81,12 +81,14 @@ function structured_output.handler(contract_args)
 
     local payload = {
         contents = messages,
-        response_mime_type = "application/json",
-        responseSchema = contract_args.schema
+        generationConfig = {
+            response_mime_type = "application/json",
+            responseSchema = contract_args.schema
+        }
     }
 
     if #system_instructions > 0 then
-        payload.systemInstruction.parts = system_instructions
+        payload.systemInstruction = { parts = system_instructions }
     end
 
     local mapped_options = structured_output._mapper.map_options(contract_args.options)
