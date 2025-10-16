@@ -56,6 +56,25 @@ entries:
       - json
       - http_client
 
+  # wippy.llm.google:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Google low-level HTTP client Unit Tests
+      type: test
+      comment: Unit tests for Google low-level HTTP client
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - google_http_client
+    source: file://client_test.lua
+    modules:
+      - json
+    imports:
+      google_client: wippy.llm.google:client
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.llm.google:config
   - name: config
     kind: library.lua

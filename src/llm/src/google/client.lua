@@ -1,7 +1,9 @@
 local json = require("json")
 local http_client = require("http_client")
 
-local client = {}
+local client = {
+    _http_client = http_client
+}
 
 local function extract_response_metadata(response_body)
     if not response_body then
@@ -25,15 +27,16 @@ local function parse_error_response(http_response)
 
     if http_response.body then
         local parsed, decode_err = json.decode(http_response.body)
-        if not decode_err and parsed and parsed.error then
-            error_info.message = parsed.error.message or error_info.message
-            error_info.code = parsed.error.code
-            error_info.param = parsed.error.param
-            error_info.type = parsed.error.type
+        if not decode_err and parsed then
+            error_info.metadata = extract_response_metadata(parsed)
+            if parsed.error then
+                error_info.message = parsed.error.message or error_info.message
+                error_info.code = parsed.error.code
+                error_info.param = parsed.error.param
+                error_info.type = parsed.error.type
+            end
         end
     end
-
-    error_info.metadata = extract_response_metadata(http_response)
 
     return error_info
 end
@@ -44,10 +47,10 @@ function client.request(method, url, http_options)
     local response = nil
     local err = nil
     if method == "GET" then
-        response, err = http_client.get(url, http_options)
+        response, err = client._http_client.get(url, http_options)
     else
         http_options.headers["Content-Type"] = "application/json"
-        response, err = http_client.post(url, http_options)
+        response, err = client._http_client.post(url, http_options)
     end
 
     if not response then
@@ -67,12 +70,12 @@ function client.request(method, url, http_options)
         local parse_error = {
             status_code = response.status_code,
             message = "Failed to parse Google response: " .. parse_err,
-            metadata = extract_response_metadata(response)
+            metadata = {}
         }
         return nil, parse_error
     end
 
-    parsed.metadata = extract_response_metadata(response)
+    parsed.metadata = extract_response_metadata(parsed)
     parsed.status_code = response.status_code
 
     return parsed

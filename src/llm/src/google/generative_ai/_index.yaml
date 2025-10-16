@@ -81,7 +81,7 @@ entries:
       name: Google Generative AI Client Unit Tests
       type: test
       comment: Unit tests for Google Generative AI client
-      group: LLM / Drivers / Generative AI
+      group: LLM / Drivers / Google
       tags:
         - unit-test
         - generative_ai_client

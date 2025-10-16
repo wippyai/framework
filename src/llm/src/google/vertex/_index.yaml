@@ -83,7 +83,7 @@ entries:
       name: Google Vertex AI Client Unit Tests
       type: test
       comment: Unit tests for Google Vertex AI client
-      group: LLM / Drivers / Vertex AI
+      group: LLM / Drivers / Google
       tags:
         - unit-test
         - vertex_ai_client
