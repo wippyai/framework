@@ -1,5 +1,6 @@
 local json = require("json")
 local output = require("output")
+local time = require("time")
 
 local mapper = {}
 
@@ -217,7 +218,7 @@ function mapper.map_tools(contract_tools)
 end
 
 function mapper.map_tool_config(contract_choice, available_tools)
-    if not contract_choice or contract_choice == "auto" or contract_choice == "any" then
+    if not contract_choice or contract_choice == "auto" or contract_choice == "any" or contract_choice == "" then
         return {mode = "AUTO"}, nil
     elseif contract_choice == "none" then
         return {mode = "NONE"}, nil
@@ -259,7 +260,7 @@ function mapper.map_tool_calls(function_calls)
     local contract_tool_calls = {}
     for i, function_call in ipairs(function_calls) do
         contract_tool_calls[i] = {
-            id = (function_call.name or "func") .. "_" .. os.time() .. "_" .. math.random(1000, 9999),
+            id = (function_call.name or "func") .. "_" .. time.now():unix(),
             name = function_call.name,
             arguments = function_call.args or {},
         }
@@ -379,7 +380,7 @@ function mapper.standardize_content(content)
     elseif type(content) == "table" then
         local result = ""
         for _, part in ipairs(content) do
-            if part.type == "text" then
+            if part.type == "text" and type(part.text) == "string" and part.text ~= "" then
                 result = result .. part.text
             end
         end

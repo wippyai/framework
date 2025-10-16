@@ -44,7 +44,7 @@ function generate.handler(contract_args)
             payload.generationConfig[key] = value
         end
     end
-    if #payload.generationConfig == 0 then
+    if next(payload.generationConfig) == nil then
         payload.generationConfig = nil
     end
 
