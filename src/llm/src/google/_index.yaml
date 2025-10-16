@@ -205,6 +205,26 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  # wippy.llm.google:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: Google Integration Tests
+      type: test
+      comment: Integration tests for Google LLM driver
+      group: LLM / Drivers / Google
+      tags:
+        - integration-test
+        - google
+    source: file://integration_test.lua
+    modules:
+      - env
+    imports:
+      google_generate: wippy.llm.google:generate
+      google_structured_output: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.llm.google:mapper
   - name: mapper
     kind: library.lua

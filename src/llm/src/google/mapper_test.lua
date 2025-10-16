@@ -77,7 +77,8 @@ local function define_tests()
                                 type = "image",
                                 source = {
                                     type = "url",
-                                    url = "https://example.com/image.jpg"
+                                    url = "https://example.com/image.jpg",
+                                    mime_type = "image/jpeg"
                                 }
                             }
                         }
@@ -533,7 +534,7 @@ local function define_tests()
                 expect(params.properties.array.uniqueItems).to_be_true()
 
                 expect(params.required[1]).to_equal("text")
-                expect(params.additionalProperties).to_be_false()
+                expect(params.additionalProperties).to_be_nil() -- Google does not support this, so should be filtered out
             end)
 
             it("should handle schema with nested objects", function()

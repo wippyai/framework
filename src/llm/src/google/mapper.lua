@@ -12,6 +12,7 @@ local function filter_tool_schema(schema)
         end
 
         obj.multipleOf = nil
+        obj.additionalProperties = nil
 
         for key, value in pairs(obj) do
             if type(value) == "table" then
@@ -60,10 +61,10 @@ end
 
 local function convert_image_content(content_part)
     if content_part.type == "image" and content_part.source then
-        if content_part.source.type == "url" then
+        if content_part.source.type == "url" and content_part.source.mime_type then
             return {
                 fileData = {
-                    mimeType = "",
+                    mimeType = content_part.source.mime_type,
                     fileUri = content_part.source.url
                 }
             }
