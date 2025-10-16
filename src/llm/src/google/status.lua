@@ -34,7 +34,7 @@ function status.handler(contract_args)
     })
 
     if response and response.status_code and response.status_code ~= 200 then
-        local result = { status = false }
+        local result = { success = false }
         result.status = "unhealthy"
         result.message = response.message or "Connection failed"
 
