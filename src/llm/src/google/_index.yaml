@@ -35,7 +35,6 @@ entries:
                     "additionalProperties": true
                   }
                 },
-                "required": ["endpoint_path", "model", "payload"],
                 "additionalProperties": true
               }
             format: application/schema+json
