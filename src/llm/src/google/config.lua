@@ -4,7 +4,11 @@ local json = require("json")
 local store = require("store")
 local ctx = require("ctx")
 
-local config = {}
+local config = {
+    _env = env,
+    _ctx = ctx,
+    _store = store,
+}
 
 config.OAUTH2_TOKEN_CACHE_KEY = "google_oauth2_token"
 config.DEFAULT_CACHE_ID = "app:cache"
@@ -12,7 +16,7 @@ config.CLIENT_CONTRACT_ID = "wippy.llm.google:client_contract"
 
 local function get_value(key, default_env_var)
     local safe_ctx_get = function (ctx_key)
-        local success, v = pcall(function() return ctx.get(ctx_key) end)
+        local success, v = pcall(function() return config._ctx.get(ctx_key) end)
 
         return success and v or nil
     end
@@ -26,14 +30,14 @@ local function get_value(key, default_env_var)
     -- Check for env variable reference
     local env_key_value = safe_ctx_get(key .. "_env")
     if env_key_value and env_key_value ~= "" then
-        local env_value = env.get(env_key_value)
+        local env_value = config._env.get(env_key_value)
         if env_value and env_value ~= "" then
             return env_value
         end
     end
 
     -- Use default env variable
-    local env_value = env.get(default_env_var)
+    local env_value = config._env.get(default_env_var)
     if env_value and env_value ~= "" then
         return env_value
     end
@@ -80,7 +84,7 @@ function config.get_private_key()
 end
 
 function config.get_oauth2_token()
-    local store_instance, err = store.get(env.get("APP_CACHE") or config.DEFAULT_CACHE_ID)
+    local store_instance, err = config._store.get(config._env.get("APP_CACHE") or config.DEFAULT_CACHE_ID)
     if err then
         return nil, "Failed to access cache store: " .. err
     end

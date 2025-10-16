@@ -91,6 +91,26 @@ entries:
       - store
       - ctx
 
+  # wippy.llm.google:config_test
+  - name: config_test
+    kind: function.lua
+    meta:
+      name: Google configuration Unit Tests
+      type: test
+      comment: Unit tests for Google configuration
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - configuration
+    source: file://config_test.lua
+    modules:
+      - base64
+      - json
+    imports:
+      google_config: wippy.llm.google:config
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.llm.google:generate
   - name: generate
     kind: function.lua
