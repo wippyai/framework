@@ -247,6 +247,23 @@ entries:
       google_config: wippy.llm.google:config
     method: handler
 
+  # wippy.llm.google:status_test
+  - name: status_test
+    kind: function.lua
+    meta:
+      name: Google provider status handler Unit Tests
+      type: test
+      comment: Unit tests for Google provider status handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - status
+    source: file://status_test.lua
+    imports:
+      google_status: wippy.llm.google:status
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.llm.google:structured_output
   - name: structured_output
     kind: function.lua
