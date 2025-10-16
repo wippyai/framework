@@ -129,6 +129,21 @@ entries:
         - system
     source: file://docs/env.spec.md
 
+  # wippy.docs:expr.spec
+  - name: expr.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Dynamic expression compilation and evaluation based on expr-lang/expr Go library with support for compile-once-run-many pattern, type safety, and extensive built-in functions
+      tags:
+        - expressions
+        - evaluation
+        - scripting
+        - dynamic
+        - compiler
+        - expr-lang
+    source: file://docs/expr.spec.md
+
   # wippy.docs:events.spec
   - name: events.spec
     kind: registry.entry
