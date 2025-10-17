@@ -1,0 +1,18 @@
+version: "1.0"
+namespace: wippy.views.docs
+
+entries:
+  # wippy.views.docs:views.spec
+  - name: views.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Comprehensive guide for the wippy.views framework covering environment variable management, extensible mapping system, contract architecture, and best practices for applications
+      tags:
+        - views
+        - environment
+        - configuration
+        - framework
+        - contracts
+    source: file://views.spec.md
+    
