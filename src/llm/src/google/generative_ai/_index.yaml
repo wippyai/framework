@@ -1,0 +1,94 @@
+version: "1.0"
+namespace: wippy.llm.google.generative_ai
+
+entries:
+  # wippy.llm.google.generative_ai:provider
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: generative_ai
+      type: llm.provider
+      title: Generative AI
+      comment: Google Generative AI provider
+      tags:
+        - llm
+        - provider
+        - google
+        - generative_ai
+    driver:
+      id: wippy.llm.google.generative_ai:driver_binding
+      options:
+        client_id: wippy.llm.google.generative_ai:client_binding
+        base_url_env: wippy.llm.google.env:generative_ai_base_url
+        api_key_env: wippy.llm.google.env:api_key
+        timeout_env: wippy.llm.google.env:generative_ai_timeout
+
+  # wippy.llm.google.generative_ai:driver_binding
+  - name: driver_binding
+    kind: contract.binding
+    meta:
+      name: Google Generative AI Driver
+      comment: Driver implementation for Google Generative AI
+      tags:
+        - google
+        - generative_ai
+        - llm
+        - driver
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: wippy.llm.google:generate
+      - contract: wippy.llm:structured_output
+        methods:
+          structured_output: wippy.llm.google:structured_output
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.google:status
+
+  # wippy.llm.google.generative_ai:client_binding
+  - name: client_binding
+    kind: contract.binding
+    meta:
+      name: Google Generative AI Client
+      comment: Client implementation for Google Generative AI
+      tags:
+        - google
+        - generative_ai
+        - llm
+        - client
+    contracts:
+      - contract: wippy.llm.google:client_contract
+        methods:
+          request: wippy.llm.google.generative_ai:client
+
+  # wippy.llm.google.generative_ai:client
+  - name: client
+    kind: function.lua
+    meta:
+      comment: Google Generative AI client for HTTP requests
+    source: file://client.lua
+    modules:
+      - json
+    imports:
+      google_client: wippy.llm.google:client
+      google_config: wippy.llm.google:config
+    method: request
+
+  # wippy.llm.google.generative_ai:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Google Generative AI Client Unit Tests
+      type: test
+      comment: Unit tests for Google Generative AI client
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - generative_ai_client
+    source: file://client_test.lua
+    modules:
+      - json
+    imports:
+      generative_ai_client: wippy.llm.google.generative_ai:client
+      test: wippy.test:test
+    method: run_tests

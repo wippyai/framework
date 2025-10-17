@@ -40,12 +40,13 @@ function prompt.text(content)
 end
 
 -- Create an image content part from URL
-function prompt.image(url)
+function prompt.image(url, mime_type)
     return {
         type = prompt.CONTENT_TYPE.IMAGE,
         source = {
             type = "url",
-            url = url
+            url = url,
+            mime_type = mime_type
         }
     }
 end

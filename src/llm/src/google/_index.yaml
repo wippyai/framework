@@ -1,0 +1,317 @@
+version: "1.0"
+namespace: wippy.llm.google
+
+entries:
+  # wippy.llm.google:client_contract
+  - name: client_contract
+    kind: contract.definition
+    meta:
+      comment: Client interface for Google LLM providers
+      description: Defines the methods and schemas for interacting with Google LLM services.
+    methods:
+      - name: request
+        description: Make a request to the LLM service
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "endpoint_path": {
+                    "type": "string",
+                    "description": "API endpoint path"
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Model name"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "description": "Request payload",
+                    "additionalProperties": true
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Additional request options",
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "status_code": {
+                    "type": "integer",
+                    "description": "HTTP status code of the response"
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "Error message if the request failed"
+                  },
+                  "createTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Timestamp when the response was created"
+                  },
+                  "responseId": {
+                    "type": "string",
+                    "description": "Unique identifier for the response"
+                  },
+                  "modelVersion": {
+                    "type": "string",
+                    "description": "Version of the model used"
+                  },
+                  "candidates": {
+                    "type": "array",
+                    "description": "Array of response candidates",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "usageMetadata": {
+                    "type": "object",
+                    "description": "Metadata about token usage",
+                    "properties": {
+                      "totalTokenCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Total number of tokens used"
+                      },
+                      "thoughtsTokenCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of tokens used for thoughts/reasoning"
+                      },
+                      "promptTokenCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of tokens in the prompt"
+                      },
+                      "candidatesTokenCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of tokens in the candidates"
+                      }
+                    }
+                  }
+                }
+              }
+            format: application/schema+json
+
+  # wippy.llm.google:client
+  - name: client
+    kind: library.lua
+    meta:
+      type: library
+      comment: Google low-level HTTP client
+      tags:
+        - google
+    source: file://client.lua
+    modules:
+      - json
+      - http_client
+
+  # wippy.llm.google:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Google low-level HTTP client Unit Tests
+      type: test
+      comment: Unit tests for Google low-level HTTP client
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - google_http_client
+    source: file://client_test.lua
+    modules:
+      - json
+    imports:
+      google_client: wippy.llm.google:client
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.google:config
+  - name: config
+    kind: library.lua
+    meta:
+      type: library
+      comment: Google configuration library
+      tags:
+        - google
+    source: file://config.lua
+    modules:
+      - base64
+      - json
+      - env
+      - store
+      - ctx
+
+  # wippy.llm.google:config_test
+  - name: config_test
+    kind: function.lua
+    meta:
+      name: Google configuration Unit Tests
+      type: test
+      comment: Unit tests for Google configuration
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - configuration
+    source: file://config_test.lua
+    modules:
+      - base64
+      - json
+    imports:
+      google_config: wippy.llm.google:config
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.google:generate
+  - name: generate
+    kind: function.lua
+    meta:
+      comment: Google text generation handler supporting tool calling, and reasoning models via unified contract
+    source: file://generate.lua
+    modules:
+      - contract
+      - ctx
+    imports:
+      google_mapper: wippy.llm.google:mapper
+      output: wippy.llm:output
+      google_config: wippy.llm.google:config
+    method: handler
+
+  # wippy.llm.google:generate_test
+  - name: generate_test
+    kind: function.lua
+    meta:
+      name: Google Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for Google generate handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - generation
+    source: file://generate_test.lua
+    modules:
+      - base64
+      - json
+    imports:
+      google_generate: wippy.llm.google:generate
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.google:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: Google Integration Tests
+      type: test
+      comment: Integration tests for Google LLM driver
+      group: LLM / Drivers / Google
+      tags:
+        - integration-test
+        - google
+    source: file://integration_test.lua
+    modules:
+      - env
+    imports:
+      google_generate: wippy.llm.google:generate
+      google_structured_output: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.google:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Google contract mapper with consistent error handling, token usage mapping, and reasoning detection
+    source: file://mapper.lua
+    modules:
+      - json
+      - time
+    imports:
+      output: wippy.llm:output
+
+  # wippy.llm.google:mapper_test
+  - name: mapper_test
+    kind: function.lua
+    meta:
+      name: Google Mapper Unit Tests
+      type: test
+      comment: Unit tests for Google mapper
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - mapper
+    source: file://mapper_test.lua
+    imports:
+      google_mapper: wippy.llm.google:mapper
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.google:status
+  - name: status
+    kind: function.lua
+    meta:
+      comment: Google provider status handler for health checks and connection testing
+    source: file://status.lua
+    modules:
+      - contract
+      - ctx
+    imports:
+      google_config: wippy.llm.google:config
+    method: handler
+
+  # wippy.llm.google:status_test
+  - name: status_test
+    kind: function.lua
+    meta:
+      name: Google provider status handler Unit Tests
+      type: test
+      comment: Unit tests for Google provider status handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - status
+    source: file://status_test.lua
+    imports:
+      google_status: wippy.llm.google:status
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.google:structured_output
+  - name: structured_output
+    kind: function.lua
+    meta:
+      comment: Google structured output handler with JSON schema validation and reasoning model support via unified contract
+    source: file://structured_output.lua
+    modules:
+      - contract
+      - ctx
+      - json
+      - hash
+    imports:
+      google_config: wippy.llm.google:config
+      google_mapper: wippy.llm.google:mapper
+    method: handler
+
+  # wippy.llm.google:structured_output_test
+  - name: structured_output_test
+    kind: function.lua
+    meta:
+      name: Google structured output handler Unit Tests
+      type: test
+      comment: Unit tests for Google structured output handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - structured-output
+    source: file://structured_output_test.lua
+    imports:
+      google_structured_output: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests

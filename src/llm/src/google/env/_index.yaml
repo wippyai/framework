@@ -1,0 +1,63 @@
+version: "1.0"
+namespace: wippy.llm.google.env
+
+entries:
+  # wippy.llm.google.env:vertex_base_url
+  - name: vertex_base_url
+    kind: env.variable
+    meta:
+      comment: Vertex AI API base URL for custom endpoints or proxies
+      icon: tabler:world
+    default: "https://%saiplatform.googleapis.com/v1"
+    variable: VERTEX_AI_BASE_URL
+
+  # wippy.llm.google.env:generative_ai_base_url
+  - name: generative_ai_base_url
+    kind: env.variable
+    meta:
+      comment: Generative AI API base URL for custom endpoints or proxies
+      icon: tabler:world
+    default: "https://generativelanguage.googleapis.com/v1beta/models"
+    variable: GEN_AI_API_BASE_URL
+
+  # wippy.llm.google.env:vertex_location
+  - name: vertex_location
+    kind: env.variable
+    meta:
+      comment: Location for Vertex AI
+      icon: tabler:world
+    variable: VERTEX_AI_LOCATION
+
+  # wippy.llm.google.env:vertex_timeout
+  - name: vertex_timeout
+    kind: env.variable
+    meta:
+      comment: Vertex AI API request timeout in seconds
+      icon: tabler:clock
+    default: "600"
+    variable: VERTEX_AI_TIMEOUT
+
+  # wippy.llm.google.env:generative_ai_timeout
+  - name: generative_ai_timeout
+    kind: env.variable
+    meta:
+      comment: Generative AI API request timeout in seconds
+      icon: tabler:clock
+    default: "600"
+    variable: GEN_AI_TIMEOUT
+
+  # wippy.llm.google.env:api_key
+  - name: api_key
+    kind: env.variable
+    meta:
+      comment: API key for Google Generative AI authentication
+      icon: tabler:key
+    variable: GEMINI_API_KEY
+
+  # wippy.llm.google.env:google_credentials
+  - name: google_credentials
+    kind: env.variable
+    meta:
+      comment: Base64-encoded Google service account credentials for OAuth2 authentication
+      icon: tabler:key
+    variable: GOOGLE_CREDENTIALS
