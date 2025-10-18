@@ -126,10 +126,10 @@ function mapper.map_messages(contract_messages, options)
         local msg = contract_messages[i]
         msg.metadata = nil
 
-        if msg.role == "developer" or msg.role == "system" then
+        if msg.role == "system" then
             table.insert(system_instructions, { text = mapper.standardize_content(msg.content) })
             i = i + 1
-        elseif msg.role == "user" then
+        elseif msg.role == "user" or msg.role == "developer" then
             table.insert(processed_messages, { role = "user", parts = normalize_content(msg.content) })
             i = i + 1
         elseif msg.role == "assistant" then
@@ -147,23 +147,23 @@ function mapper.map_messages(contract_messages, options)
                 if #msg.content == 1 and msg.content[1].type == "text" then
                     tool_content = msg.content[1].text
                 else
-                 -- Otherwise assume the table IS the structured content the function returned
-                 tool_content = msg.content
+                    -- Otherwise assume the table IS the structured content the function returned
+                    tool_content = msg.content
                 end
             elseif type(msg.content) == "string" then
-                 local decoded, decode_err = json.decode(msg.content)
-                 if not decode_err then
+                local decoded, decode_err = json.decode(msg.content)
+                if not decode_err then
                     tool_content = decoded -- Use decoded table/value
-                 else
+                else
                     -- If not valid JSON, pass the raw string as content
                     tool_content = msg.content
-                 end
+                end
             elseif msg.content ~= nil then
                 -- Handle other non-nil types (boolean, number)
-                 tool_content = msg.content
+                tool_content = msg.content
             else
-                 -- Default to empty object or string if content is nil
-                 tool_content = ""
+                -- Default to empty object or string if content is nil
+                tool_content = ""
             end
 
             table.insert(processed_messages, {
@@ -181,12 +181,14 @@ function mapper.map_messages(contract_messages, options)
             })
             i = i + 1
         elseif msg.role == "function_call" then
-            local arguments = msg.function_call.arguments
+            local arguments = (type(msg.function_call.arguments) == "string")
+                and json.decode(msg.function_call.arguments)
+                or msg.function_call.arguments
 
             table.insert(processed_messages, { role = "model", parts = {
                 functionCall = {
                     name = msg.function_call.name,
-                    args = (type(arguments) == "string") and json.decode(arguments) or arguments
+                    args = next(arguments or {}) ~= nil and arguments or nil
                 }
             } })
             i = i + 1
