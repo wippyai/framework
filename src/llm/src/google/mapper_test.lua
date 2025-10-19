@@ -47,7 +47,7 @@ local function define_tests()
                 expect(google_messages[1].parts[1].text).to_equal("Simple string message")
             end)
 
-            it("should handle developer role as system instruction", function()
+            it("should handle developer role as user role", function()
                 local contract_messages = {
                     {
                         role = "developer",
@@ -61,10 +61,12 @@ local function define_tests()
 
                 local google_messages, system_instructions = mapper.map_messages(contract_messages)
 
-                expect(#system_instructions).to_equal(1)
-                expect(system_instructions[1].text).to_equal("Debug mode enabled")
-                expect(#google_messages).to_equal(1)
+                expect(#system_instructions).to_equal(0)
+                expect(#google_messages).to_equal(2)
                 expect(google_messages[1].role).to_equal("user")
+                expect(google_messages[1].parts[1].text).to_equal("Debug mode enabled")
+                expect(google_messages[2].role).to_equal("user")
+                expect(google_messages[2].parts[1].text).to_equal("Test")
             end)
 
             it("should convert image content to Google format (URL)", function()
@@ -136,6 +138,39 @@ local function define_tests()
                 expect(google_messages[1].parts.functionCall).not_to_be_nil()
                 expect(google_messages[1].parts.functionCall.name).to_equal("get_weather")
                 expect(google_messages[1].parts.functionCall.args.location).to_equal("New York")
+            end)
+
+            it("should exclude empty arguments in function_call", function()
+                local messages_empty_args, _ = mapper.map_messages({
+                    {
+                        role = "function_call",
+                        function_call = {
+                            name = "get_weather",
+                            arguments = {}
+                        }
+                    }
+                })
+
+                expect(#messages_empty_args).to_equal(1)
+                expect(messages_empty_args[1].role).to_equal("model")
+                expect(messages_empty_args[1].parts.functionCall).not_to_be_nil()
+                expect(messages_empty_args[1].parts.functionCall.name).to_equal("get_weather")
+                expect(messages_empty_args[1].parts.functionCall.arg).to_be_nil()
+
+                local messages_nil_args, _ = mapper.map_messages({
+                    {
+                        role = "function_call",
+                        function_call = {
+                            name = "get_weather"
+                        }
+                    }
+                })
+
+                expect(#messages_nil_args).to_equal(1)
+                expect(messages_nil_args[1].role).to_equal("model")
+                expect(messages_nil_args[1].parts.functionCall).not_to_be_nil()
+                expect(messages_nil_args[1].parts.functionCall.name).to_equal("get_weather")
+                expect(messages_nil_args[1].parts.functionCall.arg).to_be_nil()
             end)
 
             it("should handle string arguments in function_call", function()
