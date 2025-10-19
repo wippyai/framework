@@ -3,13 +3,10 @@ local funcs = require("funcs")
 local page_registry = require("page_registry")
 local resource_registry = require("resource_registry")
 local env = require("env")
+local env_loader = require("env_loader")
 
 -- Main module
 local renderer = {}
-
-local global_envs = {
-    ["hostname"] = "APP_BASE_URL"
-}
 
 -- Get data for a page from its data function
 -- Returns: data_table, error_message (nil on success)
@@ -79,6 +76,14 @@ function renderer.render(page_id, params, query)
     -- Group resources by type
     local grouped_resources = resource_registry.group_by_type(page_resources)
 
+    -- Load environment mappings from registry via env_loader
+    local resolved_env, env_err = env_loader.get_resolved_env()
+    if env_err then
+        -- Log warning but don't fail render - use empty env context
+        print("Warning: Failed to load environment mappings: " .. env_err)
+        resolved_env = {}
+    end
+
     -- Build the final render context
     local render_context = {
         -- Wrap the successfully fetched page-specific data under the 'data' key
@@ -89,17 +94,9 @@ function renderer.render(page_id, params, query)
         query_params = query,       -- Using original variable name
         route_params = params,      -- Using original variable name
 
-        -- shared env variables
-        env = {}
+        -- Environment variables loaded from registry mappings
+        env = resolved_env or {}
     }
-
-    -- adding env variables to the context
-    for key, value in pairs(global_envs) do
-        local env_value = env.get(value)
-        if env_value then
-            render_context.env[key] = env_value
-        end
-    end
 
     -- Get the template set
     local tmpl_id = page.template_set
