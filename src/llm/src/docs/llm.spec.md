@@ -715,25 +715,28 @@ print(response.result)
     
     -- Thinking capabilities (for models with thinking support)
     thinking_effort = 0,                  -- Optional: 0-100, for models with thinking capability
-    
-    -- Tool configuration (for tool calling only)
-    tool_ids = {"system:weather", "tools:calculator"}, -- Optional: List of tool IDs to use
-    tool_schemas = { ... },               -- Optional: Tool definitions matching tool_resolver format
-    tool_call = "auto",                   -- Optional: "auto", "any", tool-name (forced)
-    
+
+    -- Tool configuration (for tool calling)
+    tools = {                             -- Optional: Array of tool definitions
+        {
+            name = "tool_name",
+            description = "What the tool does",
+            schema = {                    -- JSON schema for tool parameters
+                type = "object",
+                properties = { ... },
+                required = { ... }
+            }
+        }
+    },
+    tool_choice = "auto",                 -- Optional: "auto", "none", "any", or tool name
+
     -- Streaming configuration
     stream = {                            -- Optional: For streaming responses
         reply_to = "process-id",          -- Required for streaming: Process ID to send chunks to
         topic = "llm_response",           -- Optional: Topic name for streaming messages
+        buffer_size = 10                  -- Optional: Buffer size for chunks
     },
 
-    -- Provider override options (primarily for local models)
-    provider_options = {                  -- Optional: Override model provider settings
-        base_url = "http://localhost:1234/v1",  -- API endpoint for local models
-        api_key_env = "OPENAI_API_KEY",         -- Environment variable for API key
-        -- Any other provider-specific options
-    },
-    
     -- Generation parameters (model specific)
     temperature = 0.7,                    -- Optional: Controls randomness (0-1)
     top_p = 0.9,                          -- Optional: Nucleus sampling parameter
