@@ -6,11 +6,16 @@ This document specifies the standard input and output formats for the LLM functi
 
 The LLM library provides a unified interface for working with large language models from various providers (OpenAI, Anthropic, Google, etc.). Key features include:
 
-- Text generation with various models
-- Tool/function calling capabilities
-- Structured output generation
-- Embedding generation
-- Model discovery and capability filtering
+- **Text generation** with various models
+- **Smart model resolution** - resolve models by name, class, or with `class:name` syntax
+- **Tool/function calling** capabilities
+- **Structured output generation** with JSON schemas
+- **Embedding generation** for semantic search
+- **Model discovery** and capability filtering
+- **Model classes** for grouping and prioritizing models
+- **Usage tracking** for monitoring token consumption
+- **Provider status** checking for health monitoring
+- **Security integration** with automatic user context
 
 ## 2. Basic Text Generation
 
@@ -20,6 +25,7 @@ The LLM library provides a unified interface for working with large language mod
 local llm = require("llm")
 
 -- Generate text with a simple string prompt
+-- Note: The model must be registered in your registry configuration (see section 11)
 local response = llm.generate("What are the three laws of robotics?", {
     model = "gpt-4o"
 })
@@ -51,6 +57,35 @@ local response = llm.generate(builder, {
 
 print(response.result)
 ```
+
+### Example: Smart Model Resolution
+
+The library supports flexible model resolution - you can specify models by name, class, or use the `class:` prefix:
+
+```lua
+local llm = require("llm")
+
+-- Option 1: Use model by exact name
+local response = llm.generate("Hello!", {
+    model = "gpt-4o"  -- Exact model name
+})
+
+-- Option 2: Use model class (gets highest priority model in that class)
+local response = llm.generate("Hello!", {
+    model = "fast"  -- Will resolve to the highest priority "fast" class model
+})
+
+-- Option 3: Explicit class syntax with class: prefix
+local response = llm.generate("Hello!", {
+    model = "class:reasoning"  -- Explicitly request a model from "reasoning" class
+})
+```
+
+The resolution order is:
+1. Try to find model by exact name
+2. If not found, try to find it as a model class
+3. If using `class:` prefix, only search in that class
+4. Return the highest priority model from the matched class
 
 ## 3. Prompt Builder Usage
 
@@ -101,45 +136,89 @@ local messages = builder:get_messages()
 local response = llm.generate(builder, { model = "gpt-4o" })
 ```
 
+### Advanced Prompt Builder Features
+
+#### Message Metadata
+
+You can attach metadata to messages for tracking or provider-specific features:
+
+```lua
+local builder = prompt.new()
+
+-- Add message with metadata
+builder:add_system("You are a helpful assistant.", {
+    priority = "high",
+    context_id = "conversation_123"
+})
+
+builder:add_user("What's the weather?", {
+    user_id = "user_456",
+    timestamp = os.time()
+})
+```
+
+#### Cache Markers
+
+For models that support prompt caching (like Claude), you can add cache markers to optimize repeated prompts:
+
+```lua
+local builder = prompt.new()
+
+-- Add system context
+builder:add_system("You are an expert on quantum physics with 20 years of experience...")
+
+-- Mark this point for caching (everything before will be cached)
+builder:add_cache_marker("physics_context")
+
+-- Add the actual user question (this won't be cached)
+builder:add_user("Explain quantum entanglement in simple terms")
+
+-- On subsequent calls, the system message will be served from cache
+```
+
+#### Message Merging
+
+The prompt builder automatically merges consecutive messages of the same role:
+
+```lua
+local builder = prompt.new()
+
+builder:add_user("First part of the question")
+builder:add_user("Second part of the question")
+
+-- These will be automatically merged into one user message with content:
+-- "First part of the question\n\nSecond part of the question"
+```
+
+#### Cloning Builders
+
+You can clone a builder to create variations without modifying the original:
+
+```lua
+local base_builder = prompt.new()
+base_builder:add_system("You are a helpful assistant.")
+
+-- Clone for different conversations
+local conversation1 = base_builder:clone()
+conversation1:add_user("What is AI?")
+
+local conversation2 = base_builder:clone()
+conversation2:add_user("What is ML?")
+
+-- base_builder remains unchanged
+```
+
 ## 4. Tool Calling
 
 Tools allow the model to call functions to access external data or perform operations.
 
-### Example: Weather Tool
+### Example: Basic Tool Usage
 
 ```lua
 local llm = require("llm")
 local prompt = require("prompt")
 
--- Create a prompt
-local builder = prompt.new()
-builder:add_user("What's the weather in Tokyo right now?")
-
--- Generate with tool access
-local response = llm.generate(builder, {
-    model = "gpt-4o",
-    tool_ids = { "system:weather" },  -- Reference to pre-registered tools
-    temperature = 0
-})
-
--- Check if there are tool calls in the response
-if response.tool_calls then
-    for _, tool_call in ipairs(response.tool_calls) do
-        print("Tool: " .. tool_call.name)
-        print("Arguments: " .. require("json").encode(tool_call.arguments))
-        
-        -- Here you would handle the tool call by executing the actual function
-        -- and then continue the conversation with the result
-    end
-end
-```
-
-### Example: Custom Tool Schema
-
-```lua
-local llm = require("llm")
-
--- Define a calculator tool schema
+-- Define a calculator tool
 local calculator_tool = {
     name = "calculate",
     description = "Perform mathematical calculations",
@@ -155,12 +234,101 @@ local calculator_tool = {
     }
 }
 
--- Generate with custom tool schema
-local response = llm.generate("What is 125 * 16?", {
-    model = "claude-3-5-haiku",
-    tool_schemas = {
-        ["test:calculator"] = calculator_tool
+-- Create a prompt
+local builder = prompt.new()
+builder:add_user("What is 125 * 16?")
+
+-- Generate with tool access
+local response = llm.generate(builder, {
+    model = "gpt-4o",
+    tools = { calculator_tool },  -- Array of tool definitions
+    tool_choice = "auto",         -- Let model decide when to use tools
+    temperature = 0
+})
+
+-- Check if there are tool calls in the response
+if response.tool_calls and #response.tool_calls > 0 then
+    for _, tool_call in ipairs(response.tool_calls) do
+        print("Tool: " .. tool_call.name)
+        print("Arguments: " .. require("json").encode(tool_call.arguments))
+
+        -- Here you would handle the tool call by executing the actual function
+        -- and then continue the conversation with the result
+    end
+end
+```
+
+### Example: Multiple Tools
+
+```lua
+local llm = require("llm")
+
+-- Define multiple tools
+local tools = {
+    {
+        name = "get_weather",
+        description = "Get current weather for a location",
+        schema = {
+            type = "object",
+            properties = {
+                location = { type = "string", description = "City name" },
+                units = { type = "string", enum = {"celsius", "fahrenheit"} }
+            },
+            required = { "location" }
+        }
+    },
+    {
+        name = "search_web",
+        description = "Search the web for information",
+        schema = {
+            type = "object",
+            properties = {
+                query = { type = "string", description = "Search query" }
+            },
+            required = { "query" }
+        }
     }
+}
+
+-- Generate with multiple tools
+local response = llm.generate("What's the weather in Tokyo?", {
+    model = "claude-3-5-haiku",
+    tools = tools,
+    tool_choice = "auto"
+})
+```
+
+### Tool Choice Options
+
+You can control how the model uses tools with the `tool_choice` parameter:
+
+```lua
+-- Let the model decide when to use tools
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "auto"  -- Default: model decides
+})
+
+-- Disable tool use (generate text only)
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "none"  -- Never use tools
+})
+
+-- Require the model to use any available tool
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "any"  -- Must use a tool
+})
+
+-- Force the model to use a specific tool
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "get_weather"  -- Must use get_weather tool
 })
 ```
 
@@ -278,11 +446,64 @@ local embed_models = llm.available_models(llm.CAPABILITY.EMBED)
 print("Models supporting generation: " .. #generate_models)
 print("Models supporting tool use: " .. #tool_models)
 print("Models supporting embeddings: " .. #embed_models)
+```
 
--- Get models grouped by provider
-local providers = llm.models_by_provider()
-for provider_name, provider in pairs(providers) do
-    print(provider_name .. ": " .. #provider.models .. " models")
+### Example: Working with Model Classes
+
+Model classes allow you to group models by characteristics (e.g., "fast", "reasoning", "vision"):
+
+```lua
+local llm = require("llm")
+
+-- Get all available model classes
+local classes = llm.get_classes()
+for _, class in ipairs(classes) do
+    print("Class: " .. class.name)
+    print("  Title: " .. class.title)
+    print("  Description: " .. class.description)
+end
+
+-- Example output:
+-- Class: fast
+--   Title: Fast Models
+--   Description: Quick response models optimized for speed
+-- Class: reasoning
+--   Title: Reasoning Models
+--   Description: Models with enhanced reasoning capabilities
+```
+
+### Example: Inspecting Model Information
+
+Each model card contains detailed information:
+
+```lua
+local llm = require("llm")
+
+local all_models = llm.available_models()
+for _, model in ipairs(all_models) do
+    print("Model: " .. model.name)
+    print("  Title: " .. model.title)
+    print("  Description: " .. model.description)
+    print("  Max tokens: " .. model.max_tokens)
+    print("  Output tokens: " .. model.output_tokens)
+
+    -- Check capabilities
+    print("  Capabilities:")
+    for _, cap in ipairs(model.capabilities) do
+        print("    - " .. cap)
+    end
+
+    -- Check model classes
+    if model.class and #model.class > 0 then
+        print("  Classes: " .. table.concat(model.class, ", "))
+    end
+
+    -- Check pricing (per million tokens)
+    if model.pricing then
+        print("  Pricing:")
+        print("    Input: $" .. (model.pricing.input or 0) .. "/M tokens")
+        print("    Output: $" .. (model.pricing.output or 0) .. "/M tokens")
+    end
 end
 ```
 
@@ -353,6 +574,133 @@ else
 end
 ```
 
+## 8. Usage Tracking and Provider Status
+
+### Usage Tracking
+
+The LLM library automatically tracks token usage through integration with the contract system. Usage records are included in the response:
+
+```lua
+local llm = require("llm")
+
+-- Make an LLM call
+local response = llm.generate("Explain quantum entanglement", {
+    model = "claude-3-5-haiku"
+})
+
+-- Access usage tracking information
+if response.usage_record then
+    print("Usage Record:")
+    print("  User ID: " .. (response.usage_record.user_id or "N/A"))
+    print("  Model: " .. response.usage_record.model_id)
+    print("  Prompt tokens: " .. response.usage_record.prompt_tokens)
+    print("  Completion tokens: " .. response.usage_record.completion_tokens)
+    print("  Total tokens: " .. response.usage_record.total_tokens)
+
+    -- Pricing information (if available)
+    if response.usage_record.cost then
+        print("  Estimated cost: $" .. response.usage_record.cost)
+    end
+end
+```
+
+The usage tracking system automatically:
+- Captures user context from security.actor()
+- Records token consumption per request
+- Tracks costs based on model pricing
+- Stores usage history via contract integration
+
+### Provider Status Checks
+
+Check the health and availability of LLM providers:
+
+```lua
+local llm = require("llm")
+
+-- Check status of a specific provider
+local status = llm.status("wippy.llm.openai")
+
+if status then
+    print("Provider: " .. status.provider_id)
+    print("Status: " .. (status.healthy and "Healthy" or "Unhealthy"))
+
+    if status.error then
+        print("Error: " .. status.error_message)
+    end
+
+    -- Check available models
+    if status.models then
+        print("Available models: " .. #status.models)
+        for _, model in ipairs(status.models) do
+            print("  - " .. model)
+        end
+    end
+else
+    print("Provider not found or unavailable")
+end
+```
+
+### Example: Health Check for All Providers
+
+```lua
+local llm = require("llm")
+
+-- Get all available providers
+local providers = llm.models_by_provider()
+
+print("Provider Health Check:")
+print("----------------------")
+
+for provider_id, provider_info in pairs(providers) do
+    local status = llm.status(provider_id)
+
+    if status and status.healthy then
+        print(provider_id .. ": OK (" .. #provider_info.models .. " models)")
+    elseif status then
+        print(provider_id .. ": FAILED - " .. (status.error_message or "Unknown error"))
+    else
+        print(provider_id .. ": NOT CONFIGURED")
+    end
+end
+```
+
+### Example: Monitoring Token Usage
+
+```lua
+local llm = require("llm")
+
+-- Track usage across multiple calls
+local total_tokens = 0
+local total_cost = 0
+
+local prompts = {
+    "What is machine learning?",
+    "Explain neural networks.",
+    "How does backpropagation work?"
+}
+
+for i, prompt_text in ipairs(prompts) do
+    local response = llm.generate(prompt_text, {
+        model = "gpt-4o"
+    })
+
+    if response and not response.error then
+        total_tokens = total_tokens + response.tokens.total_tokens
+
+        if response.usage_record and response.usage_record.cost then
+            total_cost = total_cost + response.usage_record.cost
+        end
+
+        print(string.format("Query %d: %d tokens", i, response.tokens.total_tokens))
+    end
+end
+
+print(string.format("\nTotal usage: %d tokens", total_tokens))
+if total_cost > 0 then
+    print(string.format("Total cost: $%.4f", total_cost))
+end
+```
+
 ## 9. Comprehensive Examples
 
 ### Complete Conversation Flow with Tools
@@ -392,9 +740,8 @@ builder:add_user("What's the weather like in Paris today?")
 -- First LLM call - expect a tool call
 local response = llm.generate(builder, {
     model = "gpt-4o",
-    tool_schemas = {
-        ["weather:current"] = weather_tool
-    }
+    tools = { weather_tool },
+    tool_choice = "auto"
 })
 
 -- Check for tool calls
@@ -496,25 +843,28 @@ print(response.result)
     
     -- Thinking capabilities (for models with thinking support)
     thinking_effort = 0,                  -- Optional: 0-100, for models with thinking capability
-    
-    -- Tool configuration (for tool calling only)
-    tool_ids = {"system:weather", "tools:calculator"}, -- Optional: List of tool IDs to use
-    tool_schemas = { ... },               -- Optional: Tool definitions matching tool_resolver format
-    tool_call = "auto",                   -- Optional: "auto", "any", tool-name (forced)
-    
+
+    -- Tool configuration (for tool calling)
+    tools = {                             -- Optional: Array of tool definitions
+        {
+            name = "tool_name",
+            description = "What the tool does",
+            schema = {                    -- JSON schema for tool parameters
+                type = "object",
+                properties = { ... },
+                required = { ... }
+            }
+        }
+    },
+    tool_choice = "auto",                 -- Optional: "auto", "none", "any", or tool name
+
     -- Streaming configuration
     stream = {                            -- Optional: For streaming responses
         reply_to = "process-id",          -- Required for streaming: Process ID to send chunks to
         topic = "llm_response",           -- Optional: Topic name for streaming messages
+        buffer_size = 10                  -- Optional: Buffer size for chunks
     },
 
-    -- Provider override options (primarily for local models)
-    provider_options = {                  -- Optional: Override model provider settings
-        base_url = "http://localhost:1234/v1",  -- API endpoint for local models
-        api_key_env = "OPENAI_API_KEY",         -- Environment variable for API key
-        -- Any other provider-specific options
-    },
-    
     -- Generation parameters (model specific)
     temperature = 0.7,                    -- Optional: Controls randomness (0-1)
     top_p = 0.9,                          -- Optional: Nucleus sampling parameter
