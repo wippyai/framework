@@ -6,11 +6,16 @@ This document specifies the standard input and output formats for the LLM functi
 
 The LLM library provides a unified interface for working with large language models from various providers (OpenAI, Anthropic, Google, etc.). Key features include:
 
-- Text generation with various models
-- Tool/function calling capabilities
-- Structured output generation
-- Embedding generation
-- Model discovery and capability filtering
+- **Text generation** with various models
+- **Smart model resolution** - resolve models by name, class, or with `class:name` syntax
+- **Tool/function calling** capabilities
+- **Structured output generation** with JSON schemas
+- **Embedding generation** for semantic search
+- **Model discovery** and capability filtering
+- **Model classes** for grouping and prioritizing models
+- **Usage tracking** for monitoring token consumption
+- **Provider status** checking for health monitoring
+- **Security integration** with automatic user context
 
 ## 2. Basic Text Generation
 
@@ -51,6 +56,35 @@ local response = llm.generate(builder, {
 
 print(response.result)
 ```
+
+### Example: Smart Model Resolution
+
+The library supports flexible model resolution - you can specify models by name, class, or use the `class:` prefix:
+
+```lua
+local llm = require("llm")
+
+-- Option 1: Use model by exact name
+local response = llm.generate("Hello!", {
+    model = "gpt-4o"  -- Exact model name
+})
+
+-- Option 2: Use model class (gets highest priority model in that class)
+local response = llm.generate("Hello!", {
+    model = "fast"  -- Will resolve to the highest priority "fast" class model
+})
+
+-- Option 3: Explicit class syntax with class: prefix
+local response = llm.generate("Hello!", {
+    model = "class:reasoning"  -- Explicitly request a model from "reasoning" class
+})
+```
+
+The resolution order is:
+1. Try to find model by exact name
+2. If not found, try to find it as a model class
+3. If using `class:` prefix, only search in that class
+4. Return the highest priority model from the matched class
 
 ## 3. Prompt Builder Usage
 
@@ -99,6 +133,78 @@ local messages = builder:get_messages()
 
 -- Use the builder with the LLM library
 local response = llm.generate(builder, { model = "gpt-4o" })
+```
+
+### Advanced Prompt Builder Features
+
+#### Message Metadata
+
+You can attach metadata to messages for tracking or provider-specific features:
+
+```lua
+local builder = prompt.new()
+
+-- Add message with metadata
+builder:add_system("You are a helpful assistant.", {
+    priority = "high",
+    context_id = "conversation_123"
+})
+
+builder:add_user("What's the weather?", {
+    user_id = "user_456",
+    timestamp = os.time()
+})
+```
+
+#### Cache Markers
+
+For models that support prompt caching (like Claude), you can add cache markers to optimize repeated prompts:
+
+```lua
+local builder = prompt.new()
+
+-- Add system context
+builder:add_system("You are an expert on quantum physics with 20 years of experience...")
+
+-- Mark this point for caching (everything before will be cached)
+builder:add_cache_marker("physics_context")
+
+-- Add the actual user question (this won't be cached)
+builder:add_user("Explain quantum entanglement in simple terms")
+
+-- On subsequent calls, the system message will be served from cache
+```
+
+#### Message Merging
+
+The prompt builder automatically merges consecutive messages of the same role:
+
+```lua
+local builder = prompt.new()
+
+builder:add_user("First part of the question")
+builder:add_user("Second part of the question")
+
+-- These will be automatically merged into one user message with content:
+-- "First part of the question\n\nSecond part of the question"
+```
+
+#### Cloning Builders
+
+You can clone a builder to create variations without modifying the original:
+
+```lua
+local base_builder = prompt.new()
+base_builder:add_system("You are a helpful assistant.")
+
+-- Clone for different conversations
+local conversation1 = base_builder:clone()
+conversation1:add_user("What is AI?")
+
+local conversation2 = base_builder:clone()
+conversation2:add_user("What is ML?")
+
+-- base_builder remains unchanged
 ```
 
 ## 4. Tool Calling
