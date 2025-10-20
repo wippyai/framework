@@ -445,11 +445,64 @@ local embed_models = llm.available_models(llm.CAPABILITY.EMBED)
 print("Models supporting generation: " .. #generate_models)
 print("Models supporting tool use: " .. #tool_models)
 print("Models supporting embeddings: " .. #embed_models)
+```
 
--- Get models grouped by provider
-local providers = llm.models_by_provider()
-for provider_name, provider in pairs(providers) do
-    print(provider_name .. ": " .. #provider.models .. " models")
+### Example: Working with Model Classes
+
+Model classes allow you to group models by characteristics (e.g., "fast", "reasoning", "vision"):
+
+```lua
+local llm = require("llm")
+
+-- Get all available model classes
+local classes = llm.get_classes()
+for _, class in ipairs(classes) do
+    print("Class: " .. class.name)
+    print("  Title: " .. class.title)
+    print("  Description: " .. class.description)
+end
+
+-- Example output:
+-- Class: fast
+--   Title: Fast Models
+--   Description: Quick response models optimized for speed
+-- Class: reasoning
+--   Title: Reasoning Models
+--   Description: Models with enhanced reasoning capabilities
+```
+
+### Example: Inspecting Model Information
+
+Each model card contains detailed information:
+
+```lua
+local llm = require("llm")
+
+local all_models = llm.available_models()
+for _, model in ipairs(all_models) do
+    print("Model: " .. model.name)
+    print("  Title: " .. model.title)
+    print("  Description: " .. model.description)
+    print("  Max tokens: " .. model.max_tokens)
+    print("  Output tokens: " .. model.output_tokens)
+
+    -- Check capabilities
+    print("  Capabilities:")
+    for _, cap in ipairs(model.capabilities) do
+        print("    - " .. cap)
+    end
+
+    -- Check model classes
+    if model.class and #model.class > 0 then
+        print("  Classes: " .. table.concat(model.class, ", "))
+    end
+
+    -- Check pricing (per million tokens)
+    if model.pricing then
+        print("  Pricing:")
+        print("    Input: $" .. (model.pricing.input or 0) .. "/M tokens")
+        print("    Output: $" .. (model.pricing.output or 0) .. "/M tokens")
+    end
 end
 ```
 
@@ -559,9 +612,8 @@ builder:add_user("What's the weather like in Paris today?")
 -- First LLM call - expect a tool call
 local response = llm.generate(builder, {
     model = "gpt-4o",
-    tool_schemas = {
-        ["weather:current"] = weather_tool
-    }
+    tools = { weather_tool },
+    tool_choice = "auto"
 })
 
 -- Check for tool calls
