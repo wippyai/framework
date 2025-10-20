@@ -211,41 +211,13 @@ conversation2:add_user("What is ML?")
 
 Tools allow the model to call functions to access external data or perform operations.
 
-### Example: Weather Tool
+### Example: Basic Tool Usage
 
 ```lua
 local llm = require("llm")
 local prompt = require("prompt")
 
--- Create a prompt
-local builder = prompt.new()
-builder:add_user("What's the weather in Tokyo right now?")
-
--- Generate with tool access
-local response = llm.generate(builder, {
-    model = "gpt-4o",
-    tool_ids = { "system:weather" },  -- Reference to pre-registered tools
-    temperature = 0
-})
-
--- Check if there are tool calls in the response
-if response.tool_calls then
-    for _, tool_call in ipairs(response.tool_calls) do
-        print("Tool: " .. tool_call.name)
-        print("Arguments: " .. require("json").encode(tool_call.arguments))
-        
-        -- Here you would handle the tool call by executing the actual function
-        -- and then continue the conversation with the result
-    end
-end
-```
-
-### Example: Custom Tool Schema
-
-```lua
-local llm = require("llm")
-
--- Define a calculator tool schema
+-- Define a calculator tool
 local calculator_tool = {
     name = "calculate",
     description = "Perform mathematical calculations",
@@ -261,12 +233,101 @@ local calculator_tool = {
     }
 }
 
--- Generate with custom tool schema
-local response = llm.generate("What is 125 * 16?", {
-    model = "claude-3-5-haiku",
-    tool_schemas = {
-        ["test:calculator"] = calculator_tool
+-- Create a prompt
+local builder = prompt.new()
+builder:add_user("What is 125 * 16?")
+
+-- Generate with tool access
+local response = llm.generate(builder, {
+    model = "gpt-4o",
+    tools = { calculator_tool },  -- Array of tool definitions
+    tool_choice = "auto",         -- Let model decide when to use tools
+    temperature = 0
+})
+
+-- Check if there are tool calls in the response
+if response.tool_calls and #response.tool_calls > 0 then
+    for _, tool_call in ipairs(response.tool_calls) do
+        print("Tool: " .. tool_call.name)
+        print("Arguments: " .. require("json").encode(tool_call.arguments))
+
+        -- Here you would handle the tool call by executing the actual function
+        -- and then continue the conversation with the result
+    end
+end
+```
+
+### Example: Multiple Tools
+
+```lua
+local llm = require("llm")
+
+-- Define multiple tools
+local tools = {
+    {
+        name = "get_weather",
+        description = "Get current weather for a location",
+        schema = {
+            type = "object",
+            properties = {
+                location = { type = "string", description = "City name" },
+                units = { type = "string", enum = {"celsius", "fahrenheit"} }
+            },
+            required = { "location" }
+        }
+    },
+    {
+        name = "search_web",
+        description = "Search the web for information",
+        schema = {
+            type = "object",
+            properties = {
+                query = { type = "string", description = "Search query" }
+            },
+            required = { "query" }
+        }
     }
+}
+
+-- Generate with multiple tools
+local response = llm.generate("What's the weather in Tokyo?", {
+    model = "claude-3-5-haiku",
+    tools = tools,
+    tool_choice = "auto"
+})
+```
+
+### Tool Choice Options
+
+You can control how the model uses tools with the `tool_choice` parameter:
+
+```lua
+-- Let the model decide when to use tools
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "auto"  -- Default: model decides
+})
+
+-- Disable tool use (generate text only)
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "none"  -- Never use tools
+})
+
+-- Require the model to use any available tool
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "any"  -- Must use a tool
+})
+
+-- Force the model to use a specific tool
+local response = llm.generate(prompt, {
+    model = "gpt-4o",
+    tools = tools,
+    tool_choice = "get_weather"  -- Must use get_weather tool
 })
 ```
 
