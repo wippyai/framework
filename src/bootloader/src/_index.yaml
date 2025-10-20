@@ -18,8 +18,6 @@ entries:
     targets:
       - entry: bootloader.service
         path: ".lifecycle.depends_on +="
-      - entry: wippy.bootloader.env:encryption_key
-        path: ".meta.target_db"
     default: "app:db"
 
   - name: env_storage
