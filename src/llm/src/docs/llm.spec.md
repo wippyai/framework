@@ -25,6 +25,7 @@ The LLM library provides a unified interface for working with large language mod
 local llm = require("llm")
 
 -- Generate text with a simple string prompt
+-- Note: The model must be registered in your registry configuration (see section 11)
 local response = llm.generate("What are the three laws of robotics?", {
     model = "gpt-4o"
 })
@@ -570,6 +571,133 @@ if err then
     print("Error: " .. err)
 else
     print(response.result)
+end
+```
+
+## 8. Usage Tracking and Provider Status
+
+### Usage Tracking
+
+The LLM library automatically tracks token usage through integration with the contract system. Usage records are included in the response:
+
+```lua
+local llm = require("llm")
+
+-- Make an LLM call
+local response = llm.generate("Explain quantum entanglement", {
+    model = "claude-3-5-haiku"
+})
+
+-- Access usage tracking information
+if response.usage_record then
+    print("Usage Record:")
+    print("  User ID: " .. (response.usage_record.user_id or "N/A"))
+    print("  Model: " .. response.usage_record.model_id)
+    print("  Prompt tokens: " .. response.usage_record.prompt_tokens)
+    print("  Completion tokens: " .. response.usage_record.completion_tokens)
+    print("  Total tokens: " .. response.usage_record.total_tokens)
+
+    -- Pricing information (if available)
+    if response.usage_record.cost then
+        print("  Estimated cost: $" .. response.usage_record.cost)
+    end
+end
+```
+
+The usage tracking system automatically:
+- Captures user context from security.actor()
+- Records token consumption per request
+- Tracks costs based on model pricing
+- Stores usage history via contract integration
+
+### Provider Status Checks
+
+Check the health and availability of LLM providers:
+
+```lua
+local llm = require("llm")
+
+-- Check status of a specific provider
+local status = llm.status("wippy.llm.openai")
+
+if status then
+    print("Provider: " .. status.provider_id)
+    print("Status: " .. (status.healthy and "Healthy" or "Unhealthy"))
+
+    if status.error then
+        print("Error: " .. status.error_message)
+    end
+
+    -- Check available models
+    if status.models then
+        print("Available models: " .. #status.models)
+        for _, model in ipairs(status.models) do
+            print("  - " .. model)
+        end
+    end
+else
+    print("Provider not found or unavailable")
+end
+```
+
+### Example: Health Check for All Providers
+
+```lua
+local llm = require("llm")
+
+-- Get all available providers
+local providers = llm.models_by_provider()
+
+print("Provider Health Check:")
+print("----------------------")
+
+for provider_id, provider_info in pairs(providers) do
+    local status = llm.status(provider_id)
+
+    if status and status.healthy then
+        print(provider_id .. ": OK (" .. #provider_info.models .. " models)")
+    elseif status then
+        print(provider_id .. ": FAILED - " .. (status.error_message or "Unknown error"))
+    else
+        print(provider_id .. ": NOT CONFIGURED")
+    end
+end
+```
+
+### Example: Monitoring Token Usage
+
+```lua
+local llm = require("llm")
+
+-- Track usage across multiple calls
+local total_tokens = 0
+local total_cost = 0
+
+local prompts = {
+    "What is machine learning?",
+    "Explain neural networks.",
+    "How does backpropagation work?"
+}
+
+for i, prompt_text in ipairs(prompts) do
+    local response = llm.generate(prompt_text, {
+        model = "gpt-4o"
+    })
+
+    if response and not response.error then
+        total_tokens = total_tokens + response.tokens.total_tokens
+
+        if response.usage_record and response.usage_record.cost then
+            total_cost = total_cost + response.usage_record.cost
+        end
+
+        print(string.format("Query %d: %d tokens", i, response.tokens.total_tokens))
+    end
+end
+
+print(string.format("\nTotal usage: %d tokens", total_tokens))
+if total_cost > 0 then
+    print(string.format("Total cost: $%.4f", total_cost))
 end
 ```
 
