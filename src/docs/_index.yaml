@@ -342,22 +342,6 @@ entries:
         - supervision
     source: file://docs/process.spec.md
 
-  # wippy.docs:react_arena.spec
-  - name: react_arena.spec
-    kind: registry.entry
-    meta:
-      type: module.spec
-      comment: Specification for React Arena configurations in dataflow systems, covering execution environments, tool integration, output formats, and control directives for AI agents
-      tags:
-        - react
-        - arena
-        - agent
-        - dataflow
-        - configuration
-        - tools
-        - ai
-    source: file://docs/react_arena.spec.md
-
   # wippy.docs:registry.spec
   - name: registry.spec
     kind: registry.entry
