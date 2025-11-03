@@ -64,7 +64,7 @@ local AGENT_CONFIG = {
         defaults = {
             max_messages = 20,
             max_actions = 8,
-            message_types = {prompt.ROLE.USER, prompt.ROLE.ASSISTANT, prompt.ROLE.FUNCTION_RESULT, prompt.ROLE.DEVELOPER},
+            message_types = { prompt.ROLE.USER, prompt.ROLE.ASSISTANT, prompt.ROLE.FUNCTION_RESULT, prompt.ROLE.DEVELOPER },
             scan_limit = 50,
             max_items = 3,
             max_length = 1000,
@@ -130,6 +130,10 @@ local function execute_prompt_functions(self, runtime_context)
 
         if not err and prompt_text and prompt_text ~= "" then
             table.insert(prompt_parts, prompt_text)
+        end
+
+        if err then
+            print(err)
         end
     end
 

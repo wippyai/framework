@@ -3,8 +3,99 @@ local json = require("json")
 local logger = require("logger")
 local migration_registry = require("migration_registry")
 local runner = require("runner")
+local sql = require("sql")
 
 local log = logger:named("boot")
+
+local function get_description(skip)
+    if skip.name and skip.name ~= "" then
+        return skip.name
+    end
+    return "No description"
+end
+
+local function wait_for_database(db_id, max_attempts, sleep_ms)
+    for attempt = 1, max_attempts do
+        local db, err = sql.get(db_id)
+        if not err then
+            db:release()
+            if attempt > 1 then
+                log:info("Database connection established", {
+                    database = db_id,
+                    attempts = attempt
+                })
+            end
+            return true, nil
+        end
+
+        if attempt < max_attempts then
+            log:warn("Database not ready, retrying...", {
+                database = db_id,
+                attempt = attempt,
+                max_attempts = max_attempts,
+                error = err
+            })
+            time.sleep(sleep_ms .. "ms")
+        else
+            log:error("Database connection failed after max attempts", {
+                database = db_id,
+                attempts = max_attempts,
+                error = err
+            })
+            return false, err
+        end
+    end
+
+    return false, "Max retry attempts reached"
+end
+
+local function log_migration(migration, database)
+    local prefix
+    local log_level
+
+    if migration.status == "applied" then
+        prefix = "APPLIED"
+        log_level = "info"
+    elseif migration.status == "reverted" then
+        prefix = "REVERTED"
+        log_level = "info"
+    elseif migration.status == "error" then
+        prefix = "FAILED"
+        log_level = "error"
+    elseif migration.status == "skipped" then
+        if migration.skip_type == "already_applied" then
+            prefix = "EXISTING"
+            log_level = "info"
+        else
+            prefix = "SKIPPED"
+            log_level = "warn"
+        end
+    else
+        prefix = "UNKNOWN"
+        log_level = "warn"
+    end
+
+    local log_data = {
+        database = database,
+        description = migration.description or "No description"
+    }
+
+    if migration.status == "error" then
+        log_data.error = migration.error
+    elseif migration.status == "applied" or migration.status == "reverted" then
+        log_data.duration = migration.duration
+    elseif migration.status == "skipped" then
+        log_data.reason = migration.reason
+    end
+
+    if log_level == "error" then
+        log:error(prefix .. ": " .. migration.id, log_data)
+    elseif log_level == "warn" then
+        log:warn(prefix .. ": " .. migration.id, log_data)
+    else
+        log:info(prefix .. ": " .. migration.id, log_data)
+    end
+end
 
 local function run()
     log:info("Initializing migration bootloader")
@@ -38,6 +129,27 @@ local function run()
     for _, db_resource in ipairs(target_dbs) do
         log:info("Processing migrations for database", { database = db_resource })
 
+        local db_ready, db_err = wait_for_database(db_resource, 20, 500)
+        if not db_ready then
+            had_failure = true
+            log:error("Database unavailable, skipping migrations", {
+                database = db_resource,
+                error = db_err
+            })
+
+            local db_stats = {
+                database = db_resource,
+                applied = 0,
+                failed = 0,
+                skipped = 0,
+                total = 0,
+                status = "error",
+                duration = 0
+            }
+            table.insert(total_stats.databases, db_stats)
+            break
+        end
+
         local db_runner = runner.setup(db_resource)
         local result = db_runner:run()
 
@@ -60,26 +172,22 @@ local function run()
 
         if result.status == "error" then
             had_failure = true
-            log:error("Migration failed for database", {
+            log:error("Migration failed", {
                 database = db_resource,
                 error = result.error,
                 applied = db_stats.applied,
                 failed = db_stats.failed
             })
 
-            if result.skipped_details and #result.skipped_details > 0 then
-                for _, skip in ipairs(result.skipped_details) do
-                    log:info("Skipped migration", {
-                        database = db_resource,
-                        migration = skip.name,
-                        reason = skip.reason
-                    })
+            if result.migrations and #result.migrations > 0 then
+                for _, migration in ipairs(result.migrations) do
+                    log_migration(migration, db_resource)
                 end
             end
 
             break
         else
-            log:info("Completed migrations for database", {
+            log:info("Completed migrations", {
                 database = db_resource,
                 applied = db_stats.applied,
                 skipped = db_stats.skipped,
@@ -87,13 +195,9 @@ local function run()
                 duration = db_stats.duration
             })
 
-            if result.skipped_details and #result.skipped_details > 0 then
-                for _, skip in ipairs(result.skipped_details) do
-                    log:info("Skipped migration", {
-                        database = db_resource,
-                        migration = skip.name,
-                        reason = skip.reason
-                    })
+            if result.migrations and #result.migrations > 0 then
+                for _, migration in ipairs(result.migrations) do
+                    log_migration(migration, db_resource)
                 end
             end
         end

@@ -21,13 +21,11 @@ function migrations.find(options)
 
     -- Apply filtering options
     if options.target_db then
-        criteria.meta = criteria.meta or {}
-        criteria.meta.target_db = options.target_db
+        criteria["meta.target_db"] = options.target_db
     end
 
     if options.tags and #options.tags > 0 then
-        criteria.meta = criteria.meta or {}
-        criteria.meta.tags = options.tags
+        criteria["meta.tags"] = options.tags
     end
 
     -- Query the registry
