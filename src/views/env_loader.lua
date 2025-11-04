@@ -17,9 +17,7 @@ function env_loader.load_mappings(filter)
 
     -- Build registry query
     local query = {
-        meta = {
-            type = "view.env_mapping"
-        }
+        ["meta.type"] = "view.env_mapping"
     }
 
     -- Apply optional filter
