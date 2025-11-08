@@ -56,7 +56,7 @@ local consts = {
     -- Defaults
     DEFAULTS = {
         MAX_CONNECTIONS_PER_USER = 10,
-        USER_HUB_INACTIVITY_TIMEOUT = "300s",
+        USER_HUB_INACTIVITY_TIMEOUT = "7200s",
         QUEUE_MULTIPLIER = 100,
         HOST = nil,
         USER_SECURITY_SCOPE = nil
