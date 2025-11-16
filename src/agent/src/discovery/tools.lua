@@ -55,7 +55,7 @@ local function sanitize_name(name)
 end
 
 -- Process the input schema using registered processors
-local function run_input_schema_processors(input_schema, tool_id)
+function tool_resolver.run_input_schema_processors(input_schema, tool_id)
     local registry = get_registry()
 
     local processors = registry.find({ [".kind"] = "function.lua", ["meta.type"] = "input_schema_processor" })
@@ -251,7 +251,7 @@ function tool_resolver.get_tool_schema(tool_id)
         name = display_name,
         title = entry.meta.title or display_name,
         description = description,
-        schema = run_input_schema_processors(schema, tool_id), -- Process input schema (cached separately)
+        schema = tool_resolver.run_input_schema_processors(schema, tool_id), -- Process input schema (cached separately)
         meta = filter_meta_for_llm(entry.meta) -- Filter out redundant fields
     }
 
