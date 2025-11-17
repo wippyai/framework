@@ -294,7 +294,7 @@ local function process_tools(raw_spec, additional_tools, trait_contexts, trait_t
 
         if tool_info.inline_schema then
             tool_entry.description = tool_info.description or ("Inline tool: " .. canonical_name)
-            tool_entry.schema = tool_info.inline_schema
+            tool_entry.schema = get_tools().run_input_schema_processors(tool_info.inline_schema, tool_info.id)
             tool_entry.registry_id = tool_info.id  -- FIX: Preserve registry_id even with inline schema
             tool_entry.meta = {}
         else
