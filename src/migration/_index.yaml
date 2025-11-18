@@ -2,6 +2,24 @@ version: "1.0"
 namespace: wippy.migration
 
 entries:
+  # Requirements
+  - name: app_db
+    kind: ns.requirement
+    meta:
+      description: "Application database ID for migrations"
+    targets:
+      - entry: wippy.migration:migration_bootloader
+        path: ".meta.requires +="
+    default: "app:db"
+
+  # Dependencies
+  - name: __dependency.wippy.bootloader
+    kind: "ns.dependency"
+    meta:
+      description: "Bootloader component for orchestration"
+    component: "wippy/bootloader"
+    version: ">=v0.3.0"
+
   # wippy.migration:core
   - name: core
     kind: library.lua
@@ -55,3 +73,22 @@ entries:
     imports:
       registry: wippy.migration:registry
       repository: wippy.migration:repository
+
+  # wippy.migration:migration_bootloader
+  - name: migration_bootloader
+    kind: function.lua
+    meta:
+      type: bootloader
+      order: 20
+      description: Run database migrations for all targets
+      requires:
+        - wippy.bootloader.bootloaders:encryption_key
+    source: file://migration_bootloader.lua
+    modules:
+      - time
+      - sql
+      - logger
+    imports:
+      migration_registry: wippy.migration:registry
+      runner: wippy.migration:runner
+    method: run

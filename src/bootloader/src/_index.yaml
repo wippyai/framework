@@ -11,59 +11,47 @@ entries:
       - entry: bootloader.service
         path: ".host"
 
-  - name: app_db
-    kind: ns.requirement
-    meta:
-      description: "Application database ID"
-    targets:
-      - entry: bootloader.service
-        path: ".lifecycle.depends_on +="
-    default: "app:db"
-
   - name: env_storage
     kind: ns.requirement
     meta:
-      description: "Environment storage for bootloader variables"
+      description: "Environment storage for ENCRYPTION_KEY"
     targets:
-      - entry: wippy.bootloader.env:encryption_key
+      - entry: wippy.bootloader.bootloaders:encryption_key_var
         path: ".storage"
     default: "app.env:file"
 
-  # Dependencies
-  - name: __dependency.wippy.migration
-    kind: "ns.dependency"
+  # wippy.bootloader:bootloader_registry
+  - name: bootloader_registry
+    kind: library.lua
     meta:
-      description: "Migration component"
-    component: "wippy/migration"
-    version: ">=v0.0.1"
+      comment: Registry for bootloader discovery
+    source: file://bootloader_registry.lua
+    imports:
+      registry: :registry
 
   # wippy.bootloader:bootloader
   - name: bootloader
     kind: process.lua
     meta:
-      comment: Migration bootloader process
+      comment: Main bootloader orchestrator
     source: file://bootloader.lua
     modules:
       - time
       - json
-      - sql
-      - env
       - logger
       - funcs
     imports:
-      migration_registry: wippy.migration:registry
-      runner: wippy.migration:runner
+      bootloader_registry: wippy.bootloader:bootloader_registry
+      registry: :registry
     method: run
 
   # wippy.bootloader:bootloader.service
   - name: bootloader.service
     kind: process.service
     meta:
-      comment: Migration bootloader service with terminal UI
+      comment: Bootloader service with auto-start
     host: app:processes
     lifecycle:
-      depends_on:
-        - app:db
       auto_start: true
       restart:
         initial_delay: 1s

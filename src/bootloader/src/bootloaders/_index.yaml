@@ -1,0 +1,31 @@
+version: "1.0"
+namespace: wippy.bootloader.bootloaders
+
+entries:
+  # Environment variables
+  # wippy.bootloader.bootloaders:encryption_key_var
+  - name: encryption_key_var
+    kind: env.variable
+    meta:
+      comment: Auto-generated hex-encoded encryption key for data security
+      icon: tabler:lock
+      auto_generated: true
+      private: true
+    readonly: false
+    storage: # Will be set by env_storage requirement
+    variable: ENCRYPTION_KEY
+
+  # Bootloaders
+  # wippy.bootloader.bootloaders:encryption_key
+  - name: encryption_key
+    kind: function.lua
+    meta:
+      type: bootloader
+      order: 10
+      description: Generate ENCRYPTION_KEY if not exists
+    source: file://encryption_key_bootloader.lua
+    modules:
+      - env
+      - crypto
+      - logger
+    method: run
