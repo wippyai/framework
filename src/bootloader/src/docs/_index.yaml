@@ -1,0 +1,17 @@
+version: "1.0"
+namespace: wippy.bootloader.docs
+
+entries:
+  # wippy.bootloader.docs:bootloader.spec
+  - name: bootloader.spec
+    kind: registry.entry
+    meta:
+      type: module.spec
+      comment: Bootloader orchestration component that discovers and executes initialization functions in priority order during application startup
+      tags:
+        - bootloader
+        - initialization
+        - orchestration
+        - startup
+        - registry
+    source: file://bootloader.spec.md

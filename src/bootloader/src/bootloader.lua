@@ -1,231 +1,318 @@
 local time = require("time")
 local json = require("json")
 local logger = require("logger")
-local migration_registry = require("migration_registry")
-local runner = require("runner")
-local sql = require("sql")
+local funcs = require("funcs")
+local bootloader_registry = require("bootloader_registry")
+local registry = require("registry")
 
 local log = logger:named("boot")
 
-local function get_description(skip)
-    if skip.name and skip.name ~= "" then
-        return skip.name
-    end
-    return "No description"
-end
-
-local function wait_for_database(db_id, max_attempts, sleep_ms)
-    for attempt = 1, max_attempts do
-        local db, err = sql.get(db_id)
-        if not err then
-            db:release()
-            if attempt > 1 then
-                log:info("Database connection established", {
-                    database = db_id,
-                    attempts = attempt
-                })
-            end
-            return true, nil
-        end
-
-        if attempt < max_attempts then
-            log:warn("Database not ready, retrying...", {
-                database = db_id,
-                attempt = attempt,
-                max_attempts = max_attempts,
-                error = err
-            })
-            time.sleep(sleep_ms .. "ms")
-        else
-            log:error("Database connection failed after max attempts", {
-                database = db_id,
-                attempts = max_attempts,
-                error = err
-            })
-            return false, err
-        end
-    end
-
-    return false, "Max retry attempts reached"
-end
-
-local function log_migration(migration, database)
+local function log_bootloader_result(bootloader_entry, result)
     local prefix
     local log_level
 
-    if migration.status == "applied" then
-        prefix = "APPLIED"
+    if result.status == "success" then
+        prefix = "SUCCESS"
         log_level = "info"
-    elseif migration.status == "reverted" then
-        prefix = "REVERTED"
-        log_level = "info"
-    elseif migration.status == "error" then
+    elseif result.status == "error" then
         prefix = "FAILED"
         log_level = "error"
-    elseif migration.status == "skipped" then
-        if migration.skip_type == "already_applied" then
-            prefix = "EXISTING"
-            log_level = "info"
-        else
-            prefix = "SKIPPED"
-            log_level = "warn"
-        end
+    elseif result.status == "skipped" then
+        prefix = "SKIPPED"
+        log_level = "info"
     else
         prefix = "UNKNOWN"
         log_level = "warn"
     end
 
     local log_data = {
-        database = database,
-        description = migration.description or "No description"
+        order = bootloader_entry.meta and bootloader_entry.meta.order,
+        description = bootloader_entry.meta and bootloader_entry.meta.description,
+        message = result.message
     }
 
-    if migration.status == "error" then
-        log_data.error = migration.error
-    elseif migration.status == "applied" or migration.status == "reverted" then
-        log_data.duration = migration.duration
-    elseif migration.status == "skipped" then
-        log_data.reason = migration.reason
+    if result.duration then
+        log_data.duration = result.duration
+    end
+
+    if result.details then
+        log_data.details = result.details
     end
 
     if log_level == "error" then
-        log:error(prefix .. ": " .. migration.id, log_data)
+        log:error(prefix .. ": " .. bootloader_entry.id, log_data)
     elseif log_level == "warn" then
-        log:warn(prefix .. ": " .. migration.id, log_data)
+        log:warn(prefix .. ": " .. bootloader_entry.id, log_data)
     else
-        log:info(prefix .. ": " .. migration.id, log_data)
+        log:info(prefix .. ": " .. bootloader_entry.id, log_data)
     end
 end
 
-local function run()
-    log:info("Initializing migration bootloader")
-
-    local target_dbs, err = migration_registry.get_target_dbs()
-    if err then
-        log:error("Failed to discover target databases", { error = err })
-        return false, "Failed to discover target databases: " .. err
+local function is_service_id(dep_id)
+    -- Service IDs contain ':' but don't have '.' in namespace part
+    -- Bootloader IDs: "wippy.bootloader.bootloaders:encryption_key"
+    -- Service IDs: "app:db", "system:logger"
+    if not dep_id:match(":") then
+        return false
     end
 
-    if not target_dbs or #target_dbs == 0 then
-        log:info("No target databases found")
-        return true, "No migrations to apply"
-    end
+    local namespace = dep_id:match("^([^:]+):")
+    -- If namespace contains '.', it's a bootloader
+    return not namespace:match("%.")
+end
 
-    log:info("Discovered target databases", {
-        count = #target_dbs,
-        databases = target_dbs
+local function wait_for_service(service_id, max_attempts, sleep_ms)
+    log:info("Waiting for service", {
+        service = service_id,
+        max_attempts = max_attempts
     })
 
+    for attempt = 1, max_attempts do
+        -- Check if service entry exists in registry
+        local entry, err = registry.get(service_id)
+
+        if entry then
+            log:info("Service is available", {
+                service = service_id,
+                attempts = attempt
+            })
+            return true, nil
+        end
+
+        if attempt < max_attempts then
+            log:debug("Service not ready, retrying...", {
+                service = service_id,
+                attempt = attempt,
+                max_attempts = max_attempts
+            })
+            time.sleep(sleep_ms .. "ms")
+        end
+    end
+
+    local err_msg = "Service not available after " .. max_attempts .. " attempts"
+    log:error("Service wait timeout", {
+        service = service_id,
+        attempts = max_attempts
+    })
+
+    return false, err_msg
+end
+
+local function check_dependencies(entry, completed_bootloaders)
+    -- Check if bootloader has requirements
+    if not entry.meta or not entry.meta.requires then
+        return true, nil
+    end
+
+    local requires = entry.meta.requires
+    if type(requires) ~= "table" then
+        requires = { requires }
+    end
+
+    -- Check each requirement
+    local missing_bootloaders = {}
+    local failed_services = {}
+
+    for _, dep_id in ipairs(requires) do
+        if is_service_id(dep_id) then
+            -- Service dependency - wait for it to be available
+            local ok, err = wait_for_service(dep_id, 20, 500)
+            if not ok then
+                table.insert(failed_services, dep_id .. " (" .. err .. ")")
+            end
+        else
+            -- Bootloader dependency - check if completed
+            local found = false
+            for _, completed_id in ipairs(completed_bootloaders) do
+                if completed_id == dep_id then
+                    found = true
+                    break
+                end
+            end
+
+            if not found then
+                table.insert(missing_bootloaders, dep_id)
+            end
+        end
+    end
+
+    -- Combine errors
+    local all_errors = {}
+    if #missing_bootloaders > 0 then
+        table.insert(all_errors, "Missing bootloaders: " .. table.concat(missing_bootloaders, ", "))
+    end
+    if #failed_services > 0 then
+        table.insert(all_errors, "Unavailable services: " .. table.concat(failed_services, ", "))
+    end
+
+    if #all_errors > 0 then
+        return false, all_errors
+    end
+
+    return true, nil
+end
+
+local function execute_bootloader(entry, options, completed_bootloaders)
+    local bootloader_id = entry.id
+    local start_time = time.now()
+
+    log:info("Executing bootloader", {
+        id = bootloader_id,
+        order = entry.meta and entry.meta.order,
+        description = entry.meta and entry.meta.description,
+        requires = entry.meta and entry.meta.requires
+    })
+
+    -- Check dependencies
+    local deps_ok, dep_errors = check_dependencies(entry, completed_bootloaders)
+    if not deps_ok then
+        local error_message = table.concat(dep_errors, "; ")
+        log:error("Bootloader dependencies not met", {
+            id = bootloader_id,
+            errors = dep_errors
+        })
+
+        return {
+            status = "error",
+            message = "Dependencies not met: " .. error_message,
+            duration = 0
+        }
+    end
+
+    -- Create function executor
+    local executor = funcs.new()
+
+    -- Execute bootloader
+    local result, err = executor:call(bootloader_id, options)
+    local end_time = time.now()
+    local duration = end_time:sub(start_time):milliseconds()
+
+    if err then
+        log:error("Bootloader execution failed", {
+            id = bootloader_id,
+            error = err
+        })
+
+        return {
+            status = "error",
+            message = "Execution failed: " .. tostring(err),
+            duration = duration
+        }
+    end
+
+    -- Validate result
+    if type(result) ~= "table" then
+        log:error("Bootloader returned invalid result", {
+            id = bootloader_id,
+            result_type = type(result)
+        })
+
+        return {
+            status = "error",
+            message = "Bootloader must return a table with status field",
+            duration = duration
+        }
+    end
+
+    result.duration = duration
+    result.id = bootloader_id
+
+    return result
+end
+
+local function run(options)
+    options = options or {}
+
+    log:info("Starting application bootloader")
+
+    -- Find all bootloaders
+    local bootloaders, err = bootloader_registry.find()
+    if err then
+        log:error("Failed to discover bootloaders", { error = err })
+        return false, "Failed to discover bootloaders: " .. err
+    end
+
+    if not bootloaders or #bootloaders == 0 then
+        log:warn("No bootloaders found")
+        return true, "No bootloaders to execute"
+    end
+
+    log:info("Discovered bootloaders", {
+        count = #bootloaders
+    })
+
+    -- Log sorted bootloader list
+    for i, entry in ipairs(bootloaders) do
+        log:info("Bootloader scheduled", {
+            position = i,
+            id = entry.id,
+            order = entry.meta and entry.meta.order or 999,
+            description = entry.meta and entry.meta.description or "No description"
+        })
+    end
+
+    -- Execution statistics
     local total_stats = {
-        applied = 0,
+        success = 0,
         failed = 0,
         skipped = 0,
-        total = 0,
-        databases = {}
+        total = #bootloaders,
+        bootloaders = {}
     }
 
     local had_failure = false
+    local completed_bootloaders = {}
 
-    for _, db_resource in ipairs(target_dbs) do
-        log:info("Processing migrations for database", { database = db_resource })
+    -- Execute each bootloader in order
+    for _, entry in ipairs(bootloaders) do
+        local result = execute_bootloader(entry, options, completed_bootloaders)
 
-        local db_ready, db_err = wait_for_database(db_resource, 20, 500)
-        if not db_ready then
-            had_failure = true
-            log:error("Database unavailable, skipping migrations", {
-                database = db_resource,
-                error = db_err
-            })
+        log_bootloader_result(entry, result)
 
-            local db_stats = {
-                database = db_resource,
-                applied = 0,
-                failed = 0,
-                skipped = 0,
-                total = 0,
-                status = "error",
-                duration = 0
-            }
-            table.insert(total_stats.databases, db_stats)
-            break
-        end
-
-        local db_runner = runner.setup(db_resource)
-        local result = db_runner:run()
-
-        local db_stats = {
-            database = db_resource,
-            applied = result.migrations_applied or 0,
-            failed = result.migrations_failed or 0,
-            skipped = result.migrations_skipped or 0,
-            total = result.migrations_found or 0,
+        -- Save result
+        table.insert(total_stats.bootloaders, {
+            id = entry.id,
+            order = entry.meta and entry.meta.order,
             status = result.status,
+            message = result.message,
             duration = result.duration
-        }
+        })
 
-        table.insert(total_stats.databases, db_stats)
-
-        total_stats.applied = total_stats.applied + db_stats.applied
-        total_stats.failed = total_stats.failed + db_stats.failed
-        total_stats.skipped = total_stats.skipped + db_stats.skipped
-        total_stats.total = total_stats.total + db_stats.total
-
-        if result.status == "error" then
+        -- Update counters
+        if result.status == "success" then
+            total_stats.success = total_stats.success + 1
+            -- Track completed bootloaders for dependency checking
+            table.insert(completed_bootloaders, entry.id)
+        elseif result.status == "error" then
+            total_stats.failed = total_stats.failed + 1
             had_failure = true
-            log:error("Migration failed", {
-                database = db_resource,
-                error = result.error,
-                applied = db_stats.applied,
-                failed = db_stats.failed
+
+            log:error("Bootloader failed, stopping execution", {
+                id = entry.id,
+                error = result.message
             })
-
-            if result.migrations and #result.migrations > 0 then
-                for _, migration in ipairs(result.migrations) do
-                    log_migration(migration, db_resource)
-                end
-            end
-
             break
-        else
-            log:info("Completed migrations", {
-                database = db_resource,
-                applied = db_stats.applied,
-                skipped = db_stats.skipped,
-                failed = db_stats.failed,
-                duration = db_stats.duration
-            })
-
-            if result.migrations and #result.migrations > 0 then
-                for _, migration in ipairs(result.migrations) do
-                    log_migration(migration, db_resource)
-                end
-            end
+        elseif result.status == "skipped" then
+            total_stats.skipped = total_stats.skipped + 1
+            -- Skipped bootloaders are also considered completed for dependencies
+            table.insert(completed_bootloaders, entry.id)
         end
     end
 
     local completion_status = had_failure and "error" or "success"
     local completion_message = had_failure
-        and "Migration bootloader completed with errors"
-        or "Migration bootloader completed successfully"
+        and "Bootloader completed with errors"
+        or "Bootloader completed successfully"
 
     log:info(completion_message, {
         status = completion_status,
-        databases_processed = #total_stats.databases,
-        total_migrations = total_stats.total,
-        applied = total_stats.applied,
+        bootloaders_executed = #total_stats.bootloaders,
+        success = total_stats.success,
         failed = total_stats.failed,
         skipped = total_stats.skipped
     })
 
-    return not had_failure, {
-        status = completion_status,
-        databases_processed = #total_stats.databases,
-        applied = total_stats.applied,
-        failed = total_stats.failed,
-        skipped = total_stats.skipped,
-        total = total_stats.total,
-        databases = total_stats.databases
-    }
+    return not had_failure, total_stats
 end
 
 return { run = run }
