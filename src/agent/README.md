@@ -9,16 +9,10 @@
 <h1 align="center">Agent Module</h1>
 <div align="center">
 
-[![Latest Release](https://img.shields.io/github/v/release/wippyai/module-agent?style=flat-square)][releases-page]
-[![License](https://img.shields.io/github/license/wippyai/module-agent?style=flat-square)](LICENSE)
 [![Documentation](https://img.shields.io/badge/Wippy-Documentation-brightgreen.svg?style=flat-square)][wippy-documentation]
 
 </div>
 
-> [!NOTE]
-> This repository is read-only.
-> The code is generated from the [wippyai/framework][wippy-framework] repository.
 
 [wippy-documentation]: https://docs.wippy.ai
-[releases-page]: https://github.com/wippyai/module-agent/releases
 [wippy-framework]: https://github.com/wippyai/framework
