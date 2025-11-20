@@ -31,7 +31,7 @@ function env_loader.load_mappings(filter)
     local entries, err = registry.find(query)
 
     if err then
-        return nil, "Failed to find env_mapping entries: " .. err
+        return nil, "Failed to find env_mapping entries: " .. tostring(err)
     end
 
     if not entries then
@@ -92,12 +92,12 @@ end
 function env_loader.get_env_context(filter)
     local mappings_data, err = env_loader.load_mappings(filter)
     if err then
-        return nil, "Failed to load mappings: " .. err
+        return nil, "Failed to load mappings: " .. tostring(err)
     end
 
     local context, err = env_loader.build_env_context(mappings_data)
     if err then
-        return nil, "Failed to build context: " .. err
+        return nil, "Failed to build context: " .. tostring(err)
     end
 
     return context, nil
@@ -130,7 +130,7 @@ function env_loader.get_resolved_env(filter)
 
     local resolved, err = env_loader.resolve_env_values(context)
     if err then
-        return nil, "Failed to resolve environment values: " .. err
+        return nil, "Failed to resolve environment values: " .. tostring(err)
     end
 
     return resolved, nil

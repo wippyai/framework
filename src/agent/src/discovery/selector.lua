@@ -103,7 +103,7 @@ function agent_selector.select_agent(user_prompt, class_name)
     })
 
     if err then
-        return nil, "Failed to analyze agents: " .. err
+        return nil, "Failed to analyze agents: " .. tostring(err)
     end
 
     if not response then

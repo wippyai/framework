@@ -28,7 +28,7 @@ function renderer.get_page_data(page, params, query)
 
     if err then
         -- Return nil for data, and the error message as the second value
-        return nil, "Failed to get page data from '" .. page.data_func .. "': " .. err
+        return nil, "Failed to get page data from '" .. page.data_func .. "': " .. tostring(err)
     end
 
     -- Success: return the result table and nil for the error
@@ -45,7 +45,7 @@ function renderer.render(page_id, params, query)
     -- Get the page from registry
     local page, err = page_registry.get(page_id)
     if err then
-        return nil, "Failed to get page '" .. page_id .. "': " .. err
+        return nil, "Failed to get page '" .. page_id .. "': " .. tostring(err)
     end
 
     -- Check security if the page is secure

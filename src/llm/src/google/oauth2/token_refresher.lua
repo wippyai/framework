@@ -11,13 +11,13 @@ local function refresh_token()
 
     local store_instance, err = store.get(env.get("APP_CACHE") or config.DEFAULT_CACHE_ID)
     if err then
-        print("Failed to access cache store: " .. err)
+        print("Failed to access cache store: " .. tostring(err))
         return
     end
 
     local response, err = oauth2.get_token()
     if err then
-        print("Failed to refresh token: " .. err)
+        print("Failed to refresh token: " .. tostring(err))
         store_instance:release()
         return
     end
@@ -29,7 +29,7 @@ local function refresh_token()
 
     local _, err = store_instance:set(config.OAUTH2_TOKEN_CACHE_KEY, token, response.expires_in)
     if err then
-        print("Failed to store token in cache: " .. err)
+        print("Failed to store token in cache: " .. tostring(err))
         store_instance:release()
         return
     end

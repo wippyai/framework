@@ -200,7 +200,7 @@ function tool_resolver.get_tool_schema(tool_id)
         else
             schema, err = json.decode(entry.meta.input_schema)
             if err then
-                return nil, "Invalid schema format: " .. err
+                return nil, "Invalid schema format: " .. tostring(err)
             end
         end
 
@@ -371,7 +371,7 @@ function tool_resolver.find_tools(criteria)
     -- Query registry
     local entries, err = registry.find(query)
     if err then
-        return nil, "Failed to find tools: " .. err
+        return nil, "Failed to find tools: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then

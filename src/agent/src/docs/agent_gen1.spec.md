@@ -233,7 +233,7 @@ function run_conversation(query)
         local result, err = agent:step()
         
         if err then
-            print("Error: " .. err)
+            print("Error: " .. tostring(err))
             break
         end
         

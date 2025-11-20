@@ -22,7 +22,7 @@ function providers.get_all()
     })
 
     if err then
-        return nil, "Registry error: " .. err
+        return nil, "Registry error: " .. tostring(err)
     end
 
     if not entries then
@@ -63,7 +63,7 @@ function providers.open(provider_id, context_overrides)
     -- Get the specific provider by ID directly
     local provider_entry, err = providers._registry.get(provider_id)
     if err then
-        return nil, "Registry error: " .. err
+        return nil, "Registry error: " .. tostring(err)
     end
 
     if not provider_entry then
@@ -95,7 +95,7 @@ function providers.open(provider_id, context_overrides)
     -- Get the base provider contract using injected contract module
     local provider_contract, err = providers._contract.get(CONTRACT_ID)
     if err then
-        return nil, "Failed to get provider contract: " .. err
+        return nil, "Failed to get provider contract: " .. tostring(err)
     end
 
     -- Open the binding with merged context
@@ -104,7 +104,7 @@ function providers.open(provider_id, context_overrides)
         :open(binding_id)
 
     if err then
-        return nil, "Failed to open provider binding: " .. err
+        return nil, "Failed to open provider binding: " .. tostring(err)
     end
 
     return instance

@@ -15,7 +15,7 @@ local function _generate_schema_name(schema)
     local schema_str = json.encode(schema)
     local digest, err = hash.sha256(schema_str)
     if err then
-        return nil, "Failed to generate schema name: " .. err
+        return nil, "Failed to generate schema name: " .. tostring(err)
     end
     return "schema_" .. digest:sub(1,16), nil
 end
@@ -101,7 +101,7 @@ function structured_output.handler(contract_args)
     local client_contract, err = structured_output._contract.get(config.CLIENT_CONTRACT_ID)
     if err then
         return structured_output._mapper.map_error_response({
-            message = "Failed to get client contract: " .. err,
+            message = "Failed to get client contract: " .. tostring(err),
             status_code = 500
         })
     end
@@ -111,7 +111,7 @@ function structured_output.handler(contract_args)
         :open(structured_output._ctx.get("client_id"))
     if err then
         return structured_output._mapper.map_error_response({
-            message = "Failed to open client binding: " .. err,
+            message = "Failed to open client binding: " .. tostring(err),
             status_code = 500
         })
     end

@@ -21,7 +21,7 @@ local function generate_encryption_key()
     local random_bytes, err = crypto.random.bytes(32)
     if err then
         log:error("Failed to generate random bytes", { error = err })
-        return nil, "Failed to generate random bytes: " .. err
+        return nil, "Failed to generate random bytes: " .. tostring(err)
     end
 
     local hex_key = binary_to_hex(random_bytes)
@@ -51,7 +51,7 @@ local function run(options)
         log:error("Failed to generate encryption key", { error = err })
         return {
             status = "error",
-            message = "Failed to generate encryption key: " .. err
+            message = "Failed to generate encryption key: " .. tostring(err)
         }
     end
 

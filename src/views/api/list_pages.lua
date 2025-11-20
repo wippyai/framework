@@ -32,7 +32,7 @@ local function handler()
         res:set_status(http.STATUS.INTERNAL_ERROR)
         res:write_json({
             success = false,
-            error = "Failed to find internal pages: " .. err
+            error = "Failed to find internal pages: " .. tostring(err)
         })
         return
     end

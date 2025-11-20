@@ -85,7 +85,7 @@ local client, err = websocket.connect("ws://example.com/socket", {
     write_timeout = "10s"
 })
 if not client then
-    error("Connection failed: " .. err)
+    error("Connection failed: " .. tostring(err))
 end
 ```
 
@@ -242,7 +242,7 @@ local client, err = websocket.connect("ws://example.com/socket", {
     pong_timeout = "20s"
 })
 if not client then
-    error("Connection failed: " .. err)
+    error("Connection failed: " .. tostring(err))
 end
 
 -- Start a receive loop in a coroutine

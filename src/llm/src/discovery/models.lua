@@ -24,7 +24,7 @@ function models.get_by_name(name)
     })
 
     if err then
-        return nil, "Registry error: " .. err
+        return nil, "Registry error: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then
@@ -47,7 +47,7 @@ function models.get_by_class(class_name)
     })
 
     if err then
-        return nil, "Registry error: " .. err
+        return nil, "Registry error: " .. tostring(err)
     end
 
     if not entries then
@@ -88,7 +88,7 @@ function models.get_all()
     })
 
     if err then
-        return nil, "Registry error: " .. err
+        return nil, "Registry error: " .. tostring(err)
     end
 
     if not entries then
@@ -122,7 +122,7 @@ function models.get_all_classes()
     })
 
     if err then
-        return nil, "Registry error: " .. err
+        return nil, "Registry error: " .. tostring(err)
     end
 
     if not entries then

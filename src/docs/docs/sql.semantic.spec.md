@@ -20,7 +20,7 @@ local ok, err = db:execute([[
         +summary TEXT                 -- Auxiliary data
     )
 ]])
-if err then error("Failed to create table: " .. err) end
+if err then error("Failed to create table: " .. tostring(err)) end
 ```
 
 ### Inserting Vectors
@@ -33,7 +33,7 @@ local ok, err = db:execute(
     "INSERT INTO documents(doc_id, embedding, category, title, summary) VALUES (CAST(? AS INTEGER), ?, ?, ?, ?)",
     {1, "[0.1, 0.2, 0.3, ...]", "article", "Vector Search Introduction", "An overview of vector search technology"}
 )
-if err then error("Failed to insert: " .. err) end
+if err then error("Failed to insert: " .. tostring(err)) end
 ```
 
 **Note:** Always use `CAST(? AS INTEGER)` for primary key values, as Lua numbers are floating-point by default.
@@ -58,7 +58,7 @@ local results, err = db:query([[
     ORDER BY distance      -- Sort by similarity
 ]], {query_vec})
 
-if err then error("Search failed: " .. err) end
+if err then error("Search failed: " .. tostring(err)) end
 
 -- Process results
 for i, doc in ipairs(results) do
@@ -101,7 +101,7 @@ local ok, err = db:execute([[
         summary
     )
 ]])
-if err then error("Failed to create text search table: " .. err) end
+if err then error("Failed to create text search table: " .. tostring(err)) end
 ```
 
 ### Indexing Text Data
@@ -112,7 +112,7 @@ local ok, err = db:execute(
     "INSERT INTO doc_content(doc_id, title, content, summary) VALUES (?, ?, ?, ?)",
     {1, "Vector Search Introduction", "Vector search enables similarity-based retrieval...", "An overview of vector search technology"}
 )
-if err then error("Indexing failed: " .. err) end
+if err then error("Indexing failed: " .. tostring(err)) end
 ```
 
 ### Text Search with Ranking
@@ -135,7 +135,7 @@ local results, err = db:query([[
     ORDER BY relevance
 ]], {query})
 
-if err then error("Text search failed: " .. err) end
+if err then error("Text search failed: " .. tostring(err)) end
 ```
 
 ## Vector Operations

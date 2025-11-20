@@ -344,7 +344,7 @@ local token, err = token_store:create(actor, base_scope, {
 if token then
     print("Created new token: " .. token)
 else
-    print("Failed to create token: " .. err)
+    print("Failed to create token: " .. tostring(err))
 end
 
 -- Always close the token store when done

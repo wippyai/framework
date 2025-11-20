@@ -31,7 +31,7 @@ function migrations.find(options)
     -- Query the registry
     local entries, err = registry.find(criteria)
     if err then
-        return nil, "Failed to find migrations: " .. err
+        return nil, "Failed to find migrations: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then
@@ -56,7 +56,7 @@ function migrations.get(id)
 
     local entry, err = registry.get(id)
     if err then
-        return nil, "Failed to get migration: " .. err
+        return nil, "Failed to get migration: " .. tostring(err)
     end
 
     return entry
@@ -68,7 +68,7 @@ function migrations.get_target_dbs()
     local entries, err = registry.find(BASE_MIGRATION_CRITERIA)
 
     if err then
-        return nil, "Failed to query registry: " .. err
+        return nil, "Failed to query registry: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then
@@ -99,7 +99,7 @@ function migrations.get_tags()
     local entries, err = registry.find(BASE_MIGRATION_CRITERIA)
 
     if err then
-        return nil, "Failed to query registry: " .. err
+        return nil, "Failed to query registry: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then

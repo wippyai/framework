@@ -13,7 +13,7 @@ function pages.find_all()
     })
 
     if err then
-        return nil, "Failed to find virtual pages: " .. err
+        return nil, "Failed to find virtual pages: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then

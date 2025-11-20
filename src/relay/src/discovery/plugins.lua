@@ -25,7 +25,7 @@ function discovery.get_plugins()
     })
 
     if err then
-        return nil, "Failed to discover plugins: " .. err
+        return nil, "Failed to discover plugins: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then

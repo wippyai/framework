@@ -64,7 +64,7 @@ function tool_caller:validate(tool_calls)
                 args = arguments,
                 registry_id = registry_id,
                 meta = {},
-                error = "Failed to get tool schema: " .. err,
+                error = "Failed to get tool schema: " .. tostring(err),
                 valid = false
             }
             goto continue
@@ -121,7 +121,7 @@ local function execute_single_tool(executor, call_id, tool_call, context)
         if err then
             return {
                 result = nil,
-                error = "Failed to parse arguments: " .. err,
+                error = "Failed to parse arguments: " .. tostring(err),
                 tool_call = tool_call
             }
         end
@@ -201,7 +201,7 @@ local function execute_parallel(self, context, validated_tools)
             local parsed_args, err = json.decode(args)
             if err then
                 results[call_id] = {
-                    error = "Failed to parse arguments: " .. err,
+                    error = "Failed to parse arguments: " .. tostring(err),
                     tool_call = tool_call
                 }
                 goto continue

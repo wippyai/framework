@@ -568,7 +568,7 @@ local response, err = llm.generate("Hello", {
 })
 
 if err then
-    print("Error: " .. err)
+    print("Error: " .. tostring(err))
 else
     print(response.result)
 end

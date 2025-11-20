@@ -488,7 +488,7 @@ if req:is_content_type(http.CONTENT.MULTIPART) then
   local form, err = req:parse_multipart(20 * 1024 * 1024)
   if err then
     res:set_status(http.STATUS.BAD_REQUEST)
-    res:write("Failed to parse form: " .. err)
+    res:write("Failed to parse form: " .. tostring(err))
     return
   end
   
@@ -500,7 +500,7 @@ if req:is_content_type(http.CONTENT.MULTIPART) then
     local stream, err = avatar:stream()
     if err then
       res:set_status(http.STATUS.INTERNAL_ERROR)
-      res:write("Failed to create stream: " .. err)
+      res:write("Failed to create stream: " .. tostring(err))
       return
     end
     
@@ -512,7 +512,7 @@ if req:is_content_type(http.CONTENT.MULTIPART) then
     local success, err = fsObj:writefile(targetPath, stream)
     if not success then
       res:set_status(http.STATUS.INTERNAL_ERROR)
-      res:write("Failed to save file: " .. err)
+      res:write("Failed to save file: " .. tostring(err))
       return
     end
     

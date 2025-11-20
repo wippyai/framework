@@ -49,7 +49,7 @@ local function run(options)
     if err then
         return {
             status = "error",
-            message = "Failed to discover target databases: " .. err
+            message = "Failed to discover target databases: " .. tostring(err)
         }
     end
 

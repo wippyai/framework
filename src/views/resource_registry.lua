@@ -12,7 +12,7 @@ function resources.find_all()
     })
 
     if err then
-        return nil, "Failed to find resources: " .. err
+        return nil, "Failed to find resources: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then
@@ -140,7 +140,7 @@ function resources.collect_for_page(page, page_registry, all_resources)
         -- Get all resources from registry if not provided
         local res_list, err = resources.find_all()
         if err then
-            return {}, "Failed to collect resources: " .. err
+            return {}, "Failed to collect resources: " .. tostring(err)
         end
         all_resources = res_list
     end
