@@ -19,7 +19,7 @@ function test_registry.find(options)
     -- Get registry snapshot
     local snapshot, err = registry.snapshot()
     if err then
-        return nil, "Failed to get registry snapshot: " .. err
+        return nil, "Failed to get registry snapshot: " .. tostring(err)
     end
 
     -- Find test entries

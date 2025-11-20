@@ -28,7 +28,7 @@ local loader_instance, err = loader.new(filesystem_name)
 -- Example:
 local loader_instance, err = loader.new("app:local")
 if not loader_instance then
-  print("Error creating loader: " .. err)
+  print("Error creating loader: " .. tostring(err))
   return
 end
 ```
@@ -53,7 +53,7 @@ local variables = {
 
 local entries, err = loader_instance:load_directory("/path/to/configs", variables)
 if not entries then
-  print("Error loading entries: " .. err)
+  print("Error loading entries: " .. tostring(err))
   return
 end
 ```
@@ -71,7 +71,7 @@ local entries, err = loader_instance:load_file(file_path, variables)
 -- Example:
 local entries, err = loader_instance:load_file("/path/to/config.yaml", variables)
 if not entries then
-  print("Error loading file: " .. err)
+  print("Error loading file: " .. tostring(err))
   return
 end
 ```
@@ -191,7 +191,7 @@ local loader = require("loader")
 -- Create a loader instance for the "app:local" filesystem
 local loader_instance, err = loader.new("app:local")
 if not loader_instance then
-  print("Error creating loader: " .. err)
+  print("Error creating loader: " .. tostring(err))
   return
 end
 
@@ -205,7 +205,7 @@ local variables = {
 -- Load all configuration files from a directory with variable interpolation
 local entries, err = loader_instance:load_directory("/path/to/configs", variables)
 if not entries then
-  print("Error loading entries: " .. err)
+  print("Error loading entries: " .. tostring(err))
   return
 end
 
@@ -232,7 +232,7 @@ end
 -- Example: Alternative approach using a single file
 local service_entries, err = loader_instance:load_file("/path/to/services.yaml", variables)
 if not service_entries then
-  print("Error loading services file: " .. err)
+  print("Error loading services file: " .. tostring(err))
   return
 end
 

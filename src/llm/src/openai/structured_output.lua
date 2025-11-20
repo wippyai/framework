@@ -14,7 +14,7 @@ local function _generate_schema_name(schema)
     local schema_str = json.encode(schema)
     local digest, err = hash.sha256(schema_str)
     if err then
-        return nil, "Failed to generate schema name: " .. err
+        return nil, "Failed to generate schema name: " .. tostring(err)
     end
     return "schema_" .. digest:sub(1,16), nil
 end

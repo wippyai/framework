@@ -69,7 +69,7 @@ function generate.handler(contract_args)
     local client_contract, err = generate._contract.get(config.CLIENT_CONTRACT_ID)
     if err then
         return generate._mapper.map_error_response({
-            message = "Failed to get client contract: " .. err,
+            message = "Failed to get client contract: " .. tostring(err),
             status_code = 500
         })
     end
@@ -79,7 +79,7 @@ function generate.handler(contract_args)
         :open(generate._ctx.get("client_id"))
     if err then
         return generate._mapper.map_error_response({
-            message = "Failed to open client binding: " .. err,
+            message = "Failed to open client binding: " .. tostring(err),
             status_code = 500
         })
     end

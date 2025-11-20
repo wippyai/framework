@@ -250,7 +250,7 @@ local function run(options)
     if not success then
         return {
             status = "error",
-            message = "Initialization failed: " .. err
+            message = "Initialization failed: " .. tostring(err)
         }
     end
 

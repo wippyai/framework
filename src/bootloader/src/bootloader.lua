@@ -118,7 +118,7 @@ local function check_dependencies(entry, completed_bootloaders)
             -- Service dependency - wait for it to be available
             local ok, err = wait_for_service(dep_id, 20, 500)
             if not ok then
-                table.insert(failed_services, dep_id .. " (" .. err .. ")")
+                table.insert(failed_services, dep_id .. " (" .. tostring(err) .. ")")
             end
         else
             -- Bootloader dependency - check if completed
@@ -174,7 +174,7 @@ local function execute_bootloader(entry, options, completed_bootloaders)
 
         return {
             status = "error",
-            message = "Dependencies not met: " .. error_message,
+            message = "Dependencies not met: " .. tostring(err)or_message,
             duration = 0
         }
     end
@@ -229,7 +229,7 @@ local function run(options)
     local bootloaders, err = bootloader_registry.find()
     if err then
         log:error("Failed to discover bootloaders", { error = err })
-        return false, "Failed to discover bootloaders: " .. err
+        return false, "Failed to discover bootloaders: " .. tostring(err)
     end
 
     if not bootloaders or #bootloaders == 0 then

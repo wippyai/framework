@@ -311,7 +311,7 @@ local contract = require("contract")
 -- Get contract definition
 local user_service, err = contract.get("user:service")
 if err then
-    error("Failed to get contract: " .. err)
+    error("Failed to get contract: " .. tostring(err))
 end
 
 -- Open using default binding (if available and requires no context)
@@ -320,7 +320,7 @@ if err then
     -- Fallback to specific binding if default doesn't work
     instance, err = user_service:open("user:database_impl")
     if err then
-        error("Failed to open any binding: " .. err)
+        error("Failed to open any binding: " .. tostring(err))
     end
 end
 
@@ -361,7 +361,7 @@ local contract = require("contract")
 -- Get contract definitions for schema validation and planning
 local user_contract, err = contract.get("user:service")
 if err then
-    error("Required user service contract not available: " .. err)
+    error("Required user service contract not available: " .. tostring(err))
 end
 
 -- Inspect contract schema during initialization
@@ -413,7 +413,7 @@ local contract = require("contract")
 -- Get contract definition
 local user_service, err = contract.get("user:service")
 if err then
-    error("Failed to get contract: " .. err)
+    error("Failed to get contract: " .. tostring(err))
 end
 
 -- Try default binding first
@@ -422,7 +422,7 @@ if err then
     -- Fallback to specific implementation
     instance, err = user_service:open("user:database_impl")
     if err then
-        error("Failed to open binding: " .. err)
+        error("Failed to open binding: " .. tostring(err))
     end
 end
 
@@ -644,7 +644,7 @@ end
 -- Discover available implementations
 local implementations, err = contract.find_implementations("user:service")
 if err then
-    error("Failed to find implementations: " .. err)
+    error("Failed to find implementations: " .. tostring(err))
 end
 
 print("Available implementations:")
@@ -703,7 +703,7 @@ function safe_service_call(service_contract_id, binding_id, method_name, ...)
     -- Get contract safely
     local contract_def, err = contract.get(service_contract_id)
     if err then
-        return nil, "Failed to get contract " .. service_contract_id .. ": " .. err
+        return nil, "Failed to get contract " .. service_contract_id .. ": " .. tostring(err)
     end
     
     -- Try to open instance safely
@@ -714,12 +714,12 @@ function safe_service_call(service_contract_id, binding_id, method_name, ...)
         -- Try default binding first
         instance, err = contract_def:open()
         if err then
-            return nil, "Failed to open default binding: " .. err
+            return nil, "Failed to open default binding: " .. tostring(err)
         end
     end
     
     if err then
-        return nil, "Failed to open binding " .. (binding_id or "default") .. ": " .. err
+        return nil, "Failed to open binding " .. (binding_id or "default") .. ": " .. tostring(err)
     end
     
     -- Verify contract implementation
@@ -730,7 +730,7 @@ function safe_service_call(service_contract_id, binding_id, method_name, ...)
     -- Call method safely
     local result, err = instance[method_name](instance, ...)
     if err then
-        return nil, "Method call failed: " .. err
+        return nil, "Method call failed: " .. tostring(err)
     end
     
     return result, nil

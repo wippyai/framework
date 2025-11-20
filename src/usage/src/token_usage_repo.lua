@@ -20,7 +20,7 @@ token_usage_repo.INTERVAL = {
 local function get_db()
     local db, err = sql.get(DB_RESOURCE)
     if err then
-        return nil, "Failed to connect to database: " .. err
+        return nil, "Failed to connect to database: " .. tostring(err)
     end
     return db
 end
@@ -52,7 +52,7 @@ function token_usage_repo.create(user_id, model_id, prompt_tokens, completion_to
         if type(options.metadata) == "table" then
             local encoded, err = json.encode(options.metadata)
             if err then
-                return nil, "Failed to encode meta: " .. err
+                return nil, "Failed to encode meta: " .. tostring(err)
             end
             meta_json = encoded
         else
@@ -102,7 +102,7 @@ function token_usage_repo.create(user_id, model_id, prompt_tokens, completion_to
     db:release()
 
     if err then
-        return nil, "Failed to create token usage record: " .. err
+        return nil, "Failed to create token usage record: " .. tostring(err)
     end
 
     return {
@@ -156,7 +156,7 @@ function token_usage_repo.get_summary(start_time, end_time)
     db:release()
 
     if err then
-        return nil, "Failed to get usage summary: " .. err
+        return nil, "Failed to get usage summary: " .. tostring(err)
     end
 
     -- Default values if no results or no matching data
@@ -275,7 +275,7 @@ FROM
         -- SQLite implementation using recursive CTE
         local interval_seconds
         local date_format
-        
+
         if interval == token_usage_repo.INTERVAL.HOUR then
             interval_seconds = 3600
             date_format = "%Y-%m-%d %H:00:00"
@@ -292,7 +292,7 @@ FROM
             db:release()
             return nil, "Invalid interval: must be hour, day, week, or month"
         end
-        
+
         query_sql = [[
 WITH RECURSIVE
 time_buckets(bucket_start, bucket_end) AS (
@@ -338,7 +338,7 @@ ORDER BY
     db:release()
 
     if err then
-        return nil, "Failed to get usage by time: " .. err
+        return nil, "Failed to get usage by time: " .. tostring(err)
     end
 
     -- Return empty array if no results
@@ -416,7 +416,7 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
     db:release()
 
     if err then
-        return nil, "Failed to get usage by model: " .. err
+        return nil, "Failed to get usage by model: " .. tostring(err)
     end
 
     -- Return empty array if no results

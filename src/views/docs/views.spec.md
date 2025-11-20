@@ -87,25 +87,25 @@ local env_loader = require("env_loader")
 -- Load all environment mappings
 local mappings, err = env_loader.load_mappings()
 if err then
-    error("Failed to load mappings: " .. err)
+    error("Failed to load mappings: " .. tostring(err))
 end
 
 -- Build environment context with priority merging
 local context, err = env_loader.build_env_context(mappings)
 if err then
-    error("Failed to build context: " .. err)
+    error("Failed to build context: " .. tostring(err))
 end
 
 -- Resolve environment variable values
 local resolved, err = env_loader.resolve_env_values(context)
 if err then
-    error("Failed to resolve values: " .. err)
+    error("Failed to resolve values: " .. tostring(err))
 end
 
 -- Complete workflow in one call
 local resolved, err = env_loader.get_resolved_env()
 if err then
-    error("Failed to get resolved environment: " .. err)
+    error("Failed to get resolved environment: " .. tostring(err))
 end
 ```
 
@@ -119,7 +119,7 @@ local filter = {
 
 local mappings, err = env_loader.load_mappings(filter)
 if err then
-    error("Failed to load filtered mappings: " .. err)
+    error("Failed to load filtered mappings: " .. tostring(err))
 end
 ```
 
@@ -129,13 +129,13 @@ end
 -- Validate priority against conventions
 local valid, err = env_loader.validate_priority(25, "APPLICATION_MAPPINGS")
 if not valid then
-    error("Invalid priority: " .. err)
+    error("Invalid priority: " .. tostring(err))
 end
 
 -- Get recommended priority for category
 local priority, err = env_loader.get_recommended_priority("FRAMEWORK_DEFAULTS")
 if err then
-    error("Unknown category: " .. err)
+    error("Unknown category: " .. tostring(err))
 end
 -- priority = 0 (minimum for framework defaults)
 ```
@@ -334,7 +334,7 @@ local function safe_get_environment()
     local resolved, err = env_loader.get_resolved_env()
     if err then
         -- Log error and provide fallback
-        print("Environment resolution failed: " .. err)
+        print("Environment resolution failed: " .. tostring(err))
         return {
             app_url = "http://localhost:3000",  -- Fallback values
             debug_mode = "true"
@@ -352,7 +352,7 @@ Validate resolved values and provide defaults:
 local function get_app_config()
     local resolved, err = env_loader.get_resolved_env()
     if err then
-        error("Failed to resolve environment: " .. err)
+        error("Failed to resolve environment: " .. tostring(err))
     end
     
     -- Validate required values
@@ -387,7 +387,7 @@ local function initialize_app()
     })
     
     if err then
-        error("Failed to initialize application environment: " .. err)
+        error("Failed to initialize application environment: " .. tostring(err))
     end
     
     -- Validate required configuration
@@ -414,7 +414,7 @@ local function load_plugin_config(plugin_name)
     
     local resolved, err = env_loader.get_resolved_env(filter)
     if err then
-        return nil, "Failed to load plugin config: " .. err
+        return nil, "Failed to load plugin config: " .. tostring(err)
     end
     
     return resolved, nil
@@ -591,7 +591,7 @@ end
 -- Check for missing environment variables
 local resolved, err = env_loader.resolve_env_values(context)
 if err then
-    print("Resolution error: " .. err)
+    print("Resolution error: " .. tostring(err))
 end
 
 -- Resolved values may be incomplete if env vars are missing
@@ -628,7 +628,7 @@ local entries, err = registry.find({
 })
 
 if err then
-    print("Registry query failed: " .. err)
+    print("Registry query failed: " .. tostring(err))
 elseif not entries or #entries == 0 then
     print("No environment mapping entries found")
 else
@@ -689,7 +689,7 @@ local function update_environment_mapping(namespace, name, new_mappings, priorit
     -- Get existing entry
     local entry, err = registry.get(namespace .. ":" .. name)
     if err then
-        return nil, "Failed to get existing entry: " .. err
+        return nil, "Failed to get existing entry: " .. tostring(err)
     end
     
     -- Update mappings
@@ -699,7 +699,7 @@ local function update_environment_mapping(namespace, name, new_mappings, priorit
     -- Save updated entry
     local success, err = registry.update(namespace .. ":" .. name, entry)
     if err then
-        return nil, "Failed to update entry: " .. err
+        return nil, "Failed to update entry: " .. tostring(err)
     end
     
     return true, nil
@@ -744,7 +744,7 @@ local function load_environment_config(environment)
     
     local resolved, err = env_loader.get_resolved_env(filter)
     if err then
-        return nil, "Failed to load " .. environment .. " config: " .. err
+        return nil, "Failed to load " .. environment .. " config: " .. tostring(err)
     end
     
     return resolved, nil

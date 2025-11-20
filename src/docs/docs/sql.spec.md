@@ -450,18 +450,18 @@ if err then error(err) end
 local ok, err = tx:execute("UPDATE accounts SET balance = balance - ? WHERE id = ?", {100, 1})
 if err then
     tx:rollback()
-    error("Transfer failed: " .. err)
+    error("Transfer failed: " .. tostring(err))
 end
 
 ok, err = tx:execute("UPDATE accounts SET balance = balance + ? WHERE id = ?", {100, 2})
 if err then
     tx:rollback()
-    error("Transfer failed: " .. err)
+    error("Transfer failed: " .. tostring(err))
 end
 
 -- Commit the transaction
 ok, err = tx:commit()
-if err then error("Commit failed: " .. err) end
+if err then error("Commit failed: " .. tostring(err)) end
 
 -- Release the database when done
 db:release()
@@ -769,7 +769,7 @@ local withdraw_exec = withdraw:run_with(tx)
 local withdraw_result, err = withdraw_exec:exec()
 if err then
     tx:rollback()
-    error("Transfer failed: " .. err)
+    error("Transfer failed: " .. tostring(err))
 end
 
 if withdraw_result.rows_affected == 0 then
@@ -787,7 +787,7 @@ local deposit_exec = deposit:run_with(tx)
 local deposit_result, err = deposit_exec:exec()
 if err then
     tx:rollback()
-    error("Transfer failed: " .. err)
+    error("Transfer failed: " .. tostring(err))
 end
 
 -- Create a transaction record
@@ -805,12 +805,12 @@ local trans_exec = transaction_insert:run_with(tx)
 local trans_result, err = trans_exec:exec()
 if err then
     tx:rollback()
-    error("Transfer recording failed: " .. err)
+    error("Transfer recording failed: " .. tostring(err))
 end
 
 -- Commit the transaction
 local ok, err = tx:commit()
-if err then error("Commit failed: " .. err) end
+if err then error("Commit failed: " .. tostring(err)) end
 
 print("Transfer completed successfully")
 

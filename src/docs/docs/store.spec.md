@@ -173,7 +173,7 @@ storeObj:release()
 -- Get store connection from resource registry
 local storeObj, err = store.get("data_store")
 if err then
-    print("Failed to connect to store: " .. err)
+    print("Failed to connect to store: " .. tostring(err))
     return
 end
 
@@ -183,7 +183,7 @@ if err then
     if err == "key not found" then
         print("API key not configured")
     else
-        print("Error retrieving API key: " .. err)
+        print("Error retrieving API key: " .. tostring(err))
     end
     return
 end
@@ -211,7 +211,7 @@ for _, item_key in ipairs(items) do
     local item, err = storeObj:get(item_key)
     if err then
         if err ~= "key not found" then
-            error("Failed to get " .. item_key .. ": " .. err)
+            error("Failed to get " .. item_key .. ": " .. tostring(err))
         end
     else
         -- Process the item
@@ -221,7 +221,7 @@ for _, item_key in ipairs(items) do
             -- Update the item
             item.quantity = item.quantity - 1
             local success, err = storeObj:set(item_key, item)
-            if err then error("Failed to update " .. item_key .. ": " .. err) end
+            if err then error("Failed to update " .. item_key .. ": " .. tostring(err)) end
         end
     end
 end

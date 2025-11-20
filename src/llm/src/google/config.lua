@@ -57,7 +57,7 @@ local function get_credentials()
 
     local parsed, err = json.decode(decoded)
     if err then
-        error("Failed to parse Google credentials JSON: " .. err)
+        error("Failed to parse Google credentials JSON: " .. tostring(err))
     end
 
     return parsed
@@ -86,7 +86,7 @@ end
 function config.get_oauth2_token()
     local store_instance, err = config._store.get(config._env.get("APP_CACHE") or config.DEFAULT_CACHE_ID)
     if err then
-        return nil, "Failed to access cache store: " .. err
+        return nil, "Failed to access cache store: " .. tostring(err)
     end
 
     return store_instance:get(config.OAUTH2_TOKEN_CACHE_KEY)

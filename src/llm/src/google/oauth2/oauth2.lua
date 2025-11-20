@@ -27,7 +27,7 @@ function oauth2.get_token()
     }, config.get_private_key(), "RS256")
 
     if err then
-        return nil, "Failed to sign JWT: " .. err
+        return nil, "Failed to sign JWT: " .. tostring(err)
     end
 
     local response, err = http.post(config.get_token_uri(), {

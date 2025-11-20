@@ -259,7 +259,7 @@ local function get_memory_contract(self, runtime_context)
 
     local memory_contract_def, err = contract_module.get(AGENT_CONFIG.memory.contract_id)
     if err then
-        return nil, "Failed to get memory contract: " .. err
+        return nil, "Failed to get memory contract: " .. tostring(err)
     end
 
     local merged_context = {}
@@ -279,7 +279,7 @@ local function get_memory_contract(self, runtime_context)
 
     local memory_instance, err = memory_contract_def:open(self.memory_contract.implementation_id, merged_context)
     if err then
-        return nil, "Failed to open memory implementation: " .. err
+        return nil, "Failed to open memory implementation: " .. tostring(err)
     end
 
     return memory_instance

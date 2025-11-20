@@ -74,7 +74,7 @@ local function define_tests()
             local db_resource, _ = env.get("wippy.usage.env:target_db")
             local db, err = sql.get(db_resource)
             if err then
-                error("Failed to connect to database: " .. err)
+                error("Failed to connect to database: " .. tostring(err))
             end
 
             -- Only delete our specific test records by using the collected usage_ids

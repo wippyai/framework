@@ -74,7 +74,7 @@ migrations.table_exists_queries = {
 function migrations.table_exists(db)
     local db_type, err = db:type()
     if err then
-        return nil, "Failed to determine database type: " .. err
+        return nil, "Failed to determine database type: " .. tostring(err)
     end
 
     local check_query = migrations.table_exists_queries[db_type]
@@ -84,7 +84,7 @@ function migrations.table_exists(db)
 
     local result, err = db:query(check_query)
     if err then
-        return nil, "Failed to check if table exists: " .. err
+        return nil, "Failed to check if table exists: " .. tostring(err)
     end
 
     -- Handle different result formats from different database types
@@ -110,7 +110,7 @@ function migrations.init_tracking_table(db)
 
     local db_type, err = db:type()
     if err then
-        return nil, "Failed to determine database type: " .. err
+        return nil, "Failed to determine database type: " .. tostring(err)
     end
     local schema = migrations.schemas[db_type]
     if not schema then
@@ -197,7 +197,7 @@ function migrations.is_applied(db, id)
     local params = { id }
     local result, err = db:query(query, params)
     if err then
-        return nil, "Failed to check migration status: " .. err
+        return nil, "Failed to check migration status: " .. tostring(err)
     end
 
     return result[1] and result[1].count > 0, nil

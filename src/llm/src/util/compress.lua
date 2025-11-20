@@ -204,7 +204,7 @@ local function compress_direct(content, target_chars, model_name, model_info, op
     })
 
     if err then
-        return nil, "Direct compression failed: " .. err
+        return nil, "Direct compression failed: " .. tostring(err)
     end
 
     if not response.result or response.result == "" then
@@ -230,12 +230,12 @@ local function compress_map_reduce(content, target_chars, model_name, model_info
     })
 
     if err then
-        return nil, "Failed to create text splitter: " .. err
+        return nil, "Failed to create text splitter: " .. tostring(err)
     end
 
     local chunks, err = splitter:split_text(content)
     if err then
-        return nil, "Failed to split content: " .. err
+        return nil, "Failed to split content: " .. tostring(err)
     end
 
     if #chunks == 0 then
@@ -281,7 +281,7 @@ local function compress_map_reduce(content, target_chars, model_name, model_info
     })
 
     if err then
-        return nil, "Failed to synthesize final summary: " .. err
+        return nil, "Failed to synthesize final summary: " .. tostring(err)
     end
 
     if not final_response.result or final_response.result == "" then

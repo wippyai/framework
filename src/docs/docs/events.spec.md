@@ -102,7 +102,7 @@ Most operations can return errors:
 -- Handle subscription errors
 local subscription, err = events.subscribe("users", "*.created")
 if not subscription then
-    error("Failed to subscribe: " .. err)
+    error("Failed to subscribe: " .. tostring(err))
 end
 
 -- Handle channel errors

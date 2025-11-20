@@ -280,7 +280,7 @@ local function fetch_data(url, options)
     })
     
     if err then
-        return nil, "HTTP request failed: " .. err
+        return nil, "HTTP request failed: " .. tostring(err)
     end
     
     if response.status_code >= 400 then
@@ -308,7 +308,7 @@ local function process_json_data(json_string)
     -- Parse JSON
     local data, err = json.decode(json_string)
     if err then
-        return nil, "Failed to parse JSON: " .. err
+        return nil, "Failed to parse JSON: " .. tostring(err)
     end
     
     -- Process data
@@ -317,7 +317,7 @@ local function process_json_data(json_string)
     -- Convert back to JSON
     local result_json, err = json.encode(result)
     if err then
-        return nil, "Failed to encode result: " .. err
+        return nil, "Failed to encode result: " .. tostring(err)
     end
     
     return result_json

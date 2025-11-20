@@ -444,7 +444,7 @@ end
 -- Get the current snapshot
 local snapshot, err = registry.snapshot()
 if not snapshot then
-  print("Error getting snapshot: " .. err)
+  print("Error getting snapshot: " .. tostring(err))
   return
 end
 
@@ -490,7 +490,7 @@ end
 -- Create a changeset from the snapshot
 local snapshot, err = registry.snapshot()
 if not snapshot then
-  print("Error getting snapshot: " .. err)
+  print("Error getting snapshot: " .. tostring(err))
   return
 end
 
@@ -533,7 +533,7 @@ local version, err = changes:apply()
 if version then
   print("Created version: " .. version:id())
 else
-  print("Error applying changes: " .. err)
+  print("Error applying changes: " .. tostring(err))
 end
 ```
 
@@ -548,7 +548,7 @@ local currentVersion, err = registry.current_version()
 if currentVersion then
   print("Current version: " .. currentVersion:id())
 else
-  print("Error getting current version: " .. err)
+  print("Error getting current version: " .. tostring(err))
 end
 
 -- List all versions
@@ -564,7 +564,7 @@ if versions then
     end
   end
 else
-  print("Error getting versions: " .. err)
+  print("Error getting versions: " .. tostring(err))
 end
 
 -- Get a snapshot at a specific version
@@ -579,10 +579,10 @@ if oldVersion then
     local oldServices = oldSnapshot:find({[".kind"] = "service"})
     print("Found " .. #oldServices .. " services at version 42")
   else
-    print("Error getting snapshot: " .. err)
+    print("Error getting snapshot: " .. tostring(err))
   end
 else
-  print("Error getting version: " .. err)
+  print("Error getting version: " .. tostring(err))
 end
 
 -- Apply a specific version (rollback)
@@ -590,7 +590,7 @@ local success, err = registry.apply_version(oldVersion)
 if success then
   print("Successfully rolled back to version " .. oldVersion:id())
 else
-  print("Error rolling back: " .. err)
+  print("Error rolling back: " .. tostring(err))
 end
 ```
 
@@ -603,7 +603,7 @@ local registry = require("registry")
 -- Get current registry state
 local snapshot, err = registry.snapshot()
 if not snapshot then
-  print("Error getting snapshot: " .. err)
+  print("Error getting snapshot: " .. tostring(err))
   return
 end
 local currentEntries = snapshot:entries()
@@ -622,7 +622,7 @@ local targetEntries = {
 -- Build delta between current state and target state
 local changeset, err = registry.build_delta(currentEntries, targetEntries)
 if not changeset then
-  print("Error building delta: " .. err)
+  print("Error building delta: " .. tostring(err))
   return
 end
 
@@ -649,6 +649,6 @@ local version, err = changes:apply()
 if version then
   print("Updated registry to version: " .. version:id())
 else
-  print("Error applying changes: " .. err)
+  print("Error applying changes: " .. tostring(err))
 end
 ```

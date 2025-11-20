@@ -332,7 +332,7 @@ while true do
     if err == "EOF" then
         break
     elseif err then
-        error("Read error: " .. err)
+        error("Read error: " .. tostring(err))
     end
     -- Process data
 end
@@ -343,7 +343,7 @@ local f = fs:open("important.txt", "w")
 f:write("critical data")
 local ok, err = f:sync()
 if not ok then
-    error("Failed to sync: " .. err)
+    error("Failed to sync: " .. tostring(err))
 end
 f:close()
 ```

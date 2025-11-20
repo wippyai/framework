@@ -13,7 +13,7 @@ function status.handler(contract_args)
         return {
             success = false,
             status = 500,
-            message = "Failed to get client contract: " .. err
+            message = "Failed to get client contract: " .. tostring(err)
         }
     end
 
@@ -24,7 +24,7 @@ function status.handler(contract_args)
         return {
             success = false,
             status = 500,
-            message = "Failed to open client binding: " .. err
+            message = "Failed to open client binding: " .. tostring(err)
         }
     end
 

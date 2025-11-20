@@ -28,17 +28,17 @@ Example:
 ```lua
 local splitter, err = text.splitter.recursive({chunk_size = 1000})
 if err then
-    error("Failed to create splitter: " .. err)
+    error("Failed to create splitter: " .. tostring(err))
 end
 
 local differ, err = text.diff.new({diff_timeout = 1.0})
 if err then
-    error("Failed to create differ: " .. err)
+    error("Failed to create differ: " .. tostring(err))
 end
 
 local regex, err = text.regexp.compile("\\d+")
 if err then
-    error("Failed to compile regex: " .. err)
+    error("Failed to compile regex: " .. tostring(err))
 end
 ```
 
@@ -76,7 +76,7 @@ local splitter, err = text.splitter.recursive({
     keep_separator = false
 })
 if err then
-    error("Failed to create splitter: " .. err)
+    error("Failed to create splitter: " .. tostring(err))
 end
 ```
 
@@ -112,7 +112,7 @@ local splitter, err = text.splitter.markdown({
     join_table_rows = false
 })
 if err then
-    error("Failed to create splitter: " .. err)
+    error("Failed to create splitter: " .. tostring(err))
 end
 ```
 
@@ -151,7 +151,7 @@ local differ, err = text.diff.new({
     patch_margin = 4
 })
 if err then
-    error("Failed to create differ: " .. err)
+    error("Failed to create differ: " .. tostring(err))
 end
 ```
 
@@ -180,7 +180,7 @@ Compiles a regular expression pattern for reuse. Uses Go's regexp syntax.
 ```lua
 local regex, err = text.regexp.compile("\\b\\d{3}-\\d{3}-\\d{4}\\b")
 if err then
-    error("Failed to compile regex: " .. err)
+    error("Failed to compile regex: " .. tostring(err))
 end
 ```
 
@@ -210,7 +210,7 @@ Splits a single text string into chunks according to the splitter's configuratio
 local content = "This is a long document that needs to be split into smaller chunks for processing..."
 local chunks, err = splitter:split_text(content)
 if err then
-    error("Failed to split text: " .. err)
+    error("Failed to split text: " .. tostring(err))
 end
 
 for i, chunk in ipairs(chunks) do
@@ -250,7 +250,7 @@ local pages = {
 
 local chunks, err = splitter:split_batch(pages)
 if err then
-    error("Failed to split batch: " .. err)
+    error("Failed to split batch: " .. tostring(err))
 end
 
 for i, chunk in ipairs(chunks) do
@@ -293,7 +293,7 @@ local new_text = "The quick red fox"
 
 local diffs, err = differ:compare(old_text, new_text)
 if err then
-    error("Failed to compare texts: " .. err)
+    error("Failed to compare texts: " .. tostring(err))
 end
 
 for i, diff in ipairs(diffs) do
@@ -325,12 +325,12 @@ Converts an array of diff operations into a human-readable unified diff format, 
 ```lua
 local diffs, err = differ:compare("Hello world", "Hello beautiful world")
 if err then
-    error("Compare failed: " .. err)
+    error("Compare failed: " .. tostring(err))
 end
 
 local pretty, err = differ:pretty_text(diffs)
 if err then
-    error("Pretty text failed: " .. err)
+    error("Pretty text failed: " .. tostring(err))
 end
 
 print(pretty)
@@ -356,12 +356,12 @@ Converts an array of diff operations into HTML format with proper `<ins>` and `<
 ```lua
 local diffs, err = differ:compare("Hello world", "Hello beautiful world")
 if err then
-    error("Compare failed: " .. err)
+    error("Compare failed: " .. tostring(err))
 end
 
 local html, err = differ:pretty_html(diffs)
 if err then
-    error("Pretty HTML failed: " .. err)
+    error("Pretty HTML failed: " .. tostring(err))
 end
 
 print(html)
@@ -391,7 +391,7 @@ Each patch object contains:
 ```lua
 local patches, err = differ:patch_make("Hello world", "Hello beautiful world")
 if err then
-    error("Failed to create patches: " .. err)
+    error("Failed to create patches: " .. tostring(err))
 end
 
 print("Created " .. #patches .. " patches")
@@ -433,7 +433,7 @@ local modified = "Hello beautiful world"
 -- Create patches internally
 local patches, err = differ:patch_make(original, modified)
 if err then
-    error("Patch creation failed: " .. err)
+    error("Patch creation failed: " .. tostring(err))
 end
 
 -- Apply patches
@@ -477,7 +477,7 @@ Analyzes an array of diff operations and returns statistics about the changes.
 ```lua
 local diffs, err = differ:compare("The old text", "The new text")
 if err then
-    error("Compare failed: " .. err)
+    error("Compare failed: " .. tostring(err))
 end
 
 local summary = differ:summarize(diffs)
@@ -692,7 +692,7 @@ local function apply_git_style_patches(original_content, patch_data)
         match_threshold = 0.3
     })
     if err then
-        error("Failed to create differ: " .. err)
+        error("Failed to create differ: " .. tostring(err))
     end
     
     -- Convert external patch format to our format
@@ -729,7 +729,7 @@ local text = require("text")
 local function ai_generate_patches(original_code, modification_instructions)
     local differ, err = text.diff.new()
     if err then
-        error("Failed to create differ: " .. err)
+        error("Failed to create differ: " .. tostring(err))
     end
     
     -- AI logic would generate the modified code based on instructions
@@ -739,7 +739,7 @@ local function ai_generate_patches(original_code, modification_instructions)
     -- Generate patches that can be shared with other systems
     local patches, err = differ:patch_make(original_code, modified_code)
     if err then
-        error("Failed to generate patches: " .. err)
+        error("Failed to generate patches: " .. tostring(err))
     end
     
     -- Return patches in a format that external systems can use
@@ -776,7 +776,7 @@ local text = require("text")
 local function patch_exchange_workflow()
     local differ, err = text.diff.new()
     if err then
-        error("Failed to create differ: " .. err)
+        error("Failed to create differ: " .. tostring(err))
     end
     
     -- System A generates patches
@@ -785,7 +785,7 @@ local function patch_exchange_workflow()
     
     local patches, err = differ:patch_make(original_doc, modified_doc)
     if err then
-        error("Failed to create patches: " .. err)
+        error("Failed to create patches: " .. tostring(err))
     end
     
     -- Serialize patches for transmission (simplified)
@@ -835,7 +835,7 @@ local function safe_external_patch_application(text_content, external_patches)
         patch_delete_threshold = 0.8  -- More lenient threshold
     })
     if err then
-        return nil, "Failed to create differ: " .. err
+        return nil, "Failed to create differ: " .. tostring(err)
     end
     
     -- Validate patch format
@@ -914,7 +914,7 @@ local doc_differ = text.diff.new({
 local function safe_text_processing(old_text, new_text)
     local differ, err = text.diff.new({diff_timeout = 5.0})
     if err then
-        return nil, "Failed to create differ: " .. err
+        return nil, "Failed to create differ: " .. tostring(err)
     end
     
     -- Validate inputs
@@ -925,13 +925,13 @@ local function safe_text_processing(old_text, new_text)
     -- Perform comparison
     local diffs, err = differ:compare(old_text, new_text)
     if err then
-        return nil, "Comparison failed: " .. err
+        return nil, "Comparison failed: " .. tostring(err)
     end
     
     -- Generate output
     local pretty, err = differ:pretty_text(diffs)
     if err then
-        return nil, "Pretty text generation failed: " .. err
+        return nil, "Pretty text generation failed: " .. tostring(err)
     end
     
     return {
@@ -955,7 +955,7 @@ local function complete_document_workflow()
         chunk_overlap = 150
     })
     if err then
-        error("Failed to create splitter: " .. err)
+        error("Failed to create splitter: " .. tostring(err))
     end
     
     local differ, err = text.diff.new({
@@ -963,7 +963,7 @@ local function complete_document_workflow()
         match_threshold = 0.5
     })
     if err then
-        error("Failed to create differ: " .. err)
+        error("Failed to create differ: " .. tostring(err))
     end
     
     -- Process document
@@ -991,24 +991,24 @@ New section added.
     -- Generate diff and patches
     local diffs, err = differ:compare(original_doc, modified_doc)
     if err then
-        error("Failed to compare: " .. err)
+        error("Failed to compare: " .. tostring(err))
     end
     
     local patches, err = differ:patch_make(original_doc, modified_doc)
     if err then
-        error("Failed to create patches: " .. err)
+        error("Failed to create patches: " .. tostring(err))
     end
     
     local summary = differ:summarize(diffs)
     local pretty_diff, err = differ:pretty_text(diffs)
     if err then
-        error("Failed to create pretty diff: " .. err)
+        error("Failed to create pretty diff: " .. tostring(err))
     end
     
     -- Split the modified document for processing
     local chunks, err = splitter:split_text(modified_doc)
     if err then
-        error("Failed to split document: " .. err)
+        error("Failed to split document: " .. tostring(err))
     end
     
     -- Export patches for external systems

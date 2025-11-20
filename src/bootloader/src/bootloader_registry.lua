@@ -19,7 +19,7 @@ function bootloaders.find(options)
 
     local entries, err = registry.find(criteria)
     if err then
-        return nil, "Failed to find bootloaders: " .. err
+        return nil, "Failed to find bootloaders: " .. tostring(err)
     end
 
     if not entries or #entries == 0 then
@@ -49,7 +49,7 @@ function bootloaders.get(id)
 
     local entry, err = registry.get(id)
     if err then
-        return nil, "Failed to get bootloader: " .. err
+        return nil, "Failed to get bootloader: " .. tostring(err)
     end
 
     return entry
