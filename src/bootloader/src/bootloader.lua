@@ -174,7 +174,7 @@ local function execute_bootloader(entry, options, completed_bootloaders)
 
         return {
             status = "error",
-            message = "Dependencies not met: " .. tostring(err)or_message,
+            message = "Dependencies not met: " .. tostring(error_message),
             duration = 0
         }
     end
