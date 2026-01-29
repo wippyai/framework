@@ -1,24 +1,16 @@
-<p align="center">
-    <a href="https://wippy.ai" target="_blank">
-        <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="https://github.com/wippyai/.github/blob/main/logo/wippy-text-dark.svg?raw=true">
-            <img width="30%" align="center" src="https://github.com/wippyai/.github/blob/main/logo/wippy-text-light.svg?raw=true" alt="Wippy logo">
-        </picture>
-    </a>
-</p>
-<h1 align="center">Terminal Module</h1>
-<div align="center">
+# Terminal
 
-[![Latest Release](https://img.shields.io/github/v/release/wippyai/module-terminal?style=flat-square)][releases-page]
-[![License](https://img.shields.io/github/license/wippyai/module-terminal?style=flat-square)](LICENSE)
-[![Documentation](https://img.shields.io/badge/Wippy-Documentation-brightgreen.svg?style=flat-square)][wippy-documentation]
+Terminal host for CLI applications.
 
-</div>
+## Usage
 
-> [!NOTE]
-> This repository is read-only.
-> The code is generated from the [wippyai/framework][wippy-framework] repository.
+Add dependency to your module:
 
-[wippy-documentation]: https://docs.wippy.ai
-[releases-page]: https://github.com/wippyai/module-terminal/releases
-[wippy-framework]: https://github.com/wippyai/framework
+```yaml
+- name: terminal
+  kind: ns.dependency
+  component: wippy/terminal
+  version: "*"
+```
+
+The terminal host starts automatically and enables CLI processes.

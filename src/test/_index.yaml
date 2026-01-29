@@ -2,7 +2,18 @@ version: "1.0"
 namespace: wippy.test
 
 entries:
-  # wippy.test:registry
+  - name: definition
+    kind: ns.definition
+    readme: file://README.md
+    meta:
+      title: Test Framework
+      description: BDD-style testing framework for Lua applications
+
+  - name: terminal
+    kind: ns.dependency
+    component: wippy/terminal
+    version: "*"
+
   - name: registry
     kind: library.lua
     meta:
@@ -12,8 +23,7 @@ entries:
       - time
     imports:
       base_registry: :registry
-    
-  # wippy.test:test
+
   - name: test
     kind: library.lua
     meta:
@@ -22,4 +32,18 @@ entries:
     modules:
       - time
       - json
-    
+
+  - name: runner
+    kind: process.lua
+    meta:
+      comment: CLI test runner with live progress display
+      command:
+        name: test
+        short: Run all tests with meta.type=test
+    source: file://runner.lua
+    method: main
+    modules:
+      - io
+      - registry
+      - funcs
+      - time

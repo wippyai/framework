@@ -2,9 +2,17 @@ version: "1.0"
 namespace: wippy.terminal
 
 entries:
-  # wippy.terminal:bapp
-  - name: bapp
-    kind: library.lua
+  - name: definition
+    kind: ns.definition
+    readme: file://README.md
     meta:
-      comment: Unified terminal application library
-    source: file://bapp.lua
+      title: Terminal
+      description: Terminal host for CLI applications
+
+  - name: host
+    kind: terminal.host
+    meta:
+      comment: Default terminal host for CLI processes
+    hide_logs: false
+    lifecycle:
+      auto_start: true

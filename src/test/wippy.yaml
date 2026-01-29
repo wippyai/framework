@@ -1,0 +1,13 @@
+organization: wippy
+module: test
+description: BDD-style testing framework with CLI runner
+license: Apache-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - testing
+  - bdd
+  - assertions
+  - mocks
+  - lua
+  - cli
