@@ -42,6 +42,7 @@ entries:
     modules:
       - time
       - json
+      - sql
     imports:
       core: wippy.migration:core
       repository: wippy.migration:repository
