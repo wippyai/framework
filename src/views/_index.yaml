@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.views
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Views
+      description: UI view components
+
   # wippy.views:api_router
   - name: api_router
     kind: ns.requirement

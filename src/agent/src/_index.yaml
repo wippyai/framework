@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.agent
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Agent
+      description: LLM agent framework with tool support and conversation management
+
   # Dependencies
   - name: __dependency.wippy.test
     kind: "ns.dependency"

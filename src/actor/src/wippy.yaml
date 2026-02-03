@@ -1,0 +1,13 @@
+organization: wippy
+module: actor
+description: Actor pattern library for message-passing concurrency
+license: Apache-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - actor
+  - concurrency
+  - message-passing
+exclude_meta:
+  type:
+    - test

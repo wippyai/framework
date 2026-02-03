@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.terminal
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Terminal
+      description: Terminal UI components and utilities
+
   # wippy.terminal:bapp
   - name: bapp
     kind: library.lua

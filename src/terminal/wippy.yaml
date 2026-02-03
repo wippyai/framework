@@ -1,0 +1,13 @@
+organization: wippy
+module: terminal
+description: Terminal UI components and utilities
+license: Apache-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - terminal
+  - ui
+  - cli
+exclude_meta:
+  type:
+    - test

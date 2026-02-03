@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.actor
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Actor
+      description: Actor pattern library for message-passing concurrency
+
   # Dependencies
   - name: __dependency.wippy.test
     kind: "ns.dependency"

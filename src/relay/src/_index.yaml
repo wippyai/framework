@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.relay
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Relay
+      description: WebSocket relay and messaging infrastructure
+
   # Requirements
   - name: application_host
     kind: ns.requirement

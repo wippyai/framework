@@ -1,0 +1,19 @@
+version: "1.0"
+namespace: wippy.embeddings.migrations
+
+entries:
+  # wippy.embeddings.migrations:01_create_embeddings_table
+  - name: 01_create_embeddings_table
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - embeddings
+        - vector
+        - database
+      description: Create embeddings_512 table for vector embeddings storage
+      timestamp: "2025-04-05T09:00:00Z"
+    source: file://01_create_embeddings_table.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate

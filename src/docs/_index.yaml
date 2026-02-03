@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.docs
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Docs
+      description: Module specifications and documentation
+
   # wippy.docs:base64.spec
   - name: base64.spec
     kind: registry.entry

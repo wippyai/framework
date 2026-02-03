@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.test
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Test
+      description: BDD-style testing framework
+
   # wippy.test:registry
   - name: registry
     kind: library.lua

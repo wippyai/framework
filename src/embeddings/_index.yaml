@@ -1,0 +1,96 @@
+version: "1.0"
+namespace: wippy.embeddings
+
+entries:
+  - name: definition
+    kind: ns.definition
+    readme: file://README.md
+    meta:
+      title: Embeddings
+      description: Vector embeddings storage and similarity search
+
+  # Requirements
+  - name: target_db
+    kind: ns.requirement
+    meta:
+      description: "Application database ID"
+    targets:
+      - entry: wippy.embeddings.migrations:01_create_embeddings_table
+        path: ".meta.target_db"
+      - entry: wippy.embeddings.env:target_db
+        path: ".default"
+    default: "app:db"
+
+  # Dependencies
+  - name: llm
+    kind: ns.dependency
+    component: wippy/llm
+    version: "*"
+
+  - name: migration
+    kind: ns.dependency
+    component: wippy/migration
+    version: "*"
+
+  - name: test
+    kind: ns.dependency
+    component: wippy/test
+    version: "*"
+
+  # wippy.embeddings:embedding_repo
+  - name: embedding_repo
+    kind: library.lua
+    meta:
+      comment: Repository for persisting vector embeddings
+      tags:
+        - vector
+        - embeddings
+        - persistence
+        - storage
+      description: Universal embedding storage and retrieval system for both PostgreSQL and SQLite
+    source: file://embedding_repo.lua
+    modules:
+      - sql
+      - json
+      - uuid
+      - time
+      - env
+
+  # wippy.embeddings:embedding_repo_test
+  - name: embedding_repo_test
+    kind: function.lua
+    meta:
+      name: Embedding Repository Test
+      type: test
+      comment: Tests the embedding_repo library for vector operations
+      group: LLM / Embeddings (SQL)
+      tags:
+        - embeddings
+        - vector
+        - tests
+    source: file://embedding_repo_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - env
+    imports:
+      embedding_repo: wippy.embeddings:embedding_repo
+      test: wippy.test:test
+    method: run
+
+  # wippy.embeddings:embeddings
+  - name: embeddings
+    kind: library.lua
+    meta:
+      comment: Vector embedding generation and search utilities
+      tags:
+        - vector
+        - embeddings
+        - search
+        - ai
+      description: System for generating, managing and searching vector embeddings with token management
+    source: file://embeddings.lua
+    imports:
+      embedding_repo: wippy.embeddings:embedding_repo
+      llm: wippy.llm:llm

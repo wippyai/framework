@@ -1,0 +1,14 @@
+organization: wippy
+module: views
+description: Template views and page rendering
+license: Apache-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - views
+  - templates
+  - rendering
+  - pages
+exclude_meta:
+  type:
+    - test

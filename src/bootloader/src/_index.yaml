@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.bootloader
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Bootloader
+      description: Application bootloader and initialization orchestrator
+
   # Requirements
   - name: application_host
     kind: ns.requirement

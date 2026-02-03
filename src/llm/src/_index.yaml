@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.llm
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: LLM
+      description: Multi-provider LLM integration library
+
   # Requirements
   - name: env_storage
     kind: ns.requirement

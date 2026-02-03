@@ -1,0 +1,13 @@
+organization: wippy
+module: security
+description: Security policies for access control
+license: Apache-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - security
+  - policies
+  - access-control
+exclude_meta:
+  type:
+    - test

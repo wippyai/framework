@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.security
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Security
+      description: Security policies for access control
+
   # wippy.security:general
   - name: general
     kind: security.policy

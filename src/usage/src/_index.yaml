@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.usage
 
 entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Usage
+      description: Token usage tracking for LLM applications
+
   # Requirements
   - name: target_db
     kind: ns.requirement
