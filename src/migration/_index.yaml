@@ -77,7 +77,7 @@ entries:
       - time
       - funcs
     imports:
-      registry: wippy.migration:registry
+      migration_registry: wippy.migration:registry
       repository: wippy.migration:repository
 
   # wippy.migration:migration_bootloader
