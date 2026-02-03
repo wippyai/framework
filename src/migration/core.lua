@@ -46,7 +46,7 @@ function migration_core.create_migration_fn(context)
         }
 
         -- Run the migration definition function to collect implementations
-        local success, err = cpcall(fn)
+        local success, err = pcall(fn)
         if not success then
             context.current_migration = old_migration
             error("Error in migration definition: " .. tostring(err))
@@ -89,7 +89,7 @@ function migration_core.create_database_fn(context)
         }
 
         -- Execute database implementation definition
-        local success, err = cpcall(fn)
+        local success, err = pcall(fn)
         if not success then
             context.current_database = old_database
             error("Error in database implementation: " .. tostring(err))
@@ -179,7 +179,7 @@ function migration_core.define(fn)
     migration_core.setup_globals(context)
 
     -- Run definition function to collect migrations
-    local success, err = cpcall(fn)
+    local success, err = pcall(fn)
     
     -- Always clean up globals, even if there was an error
     migration_core.cleanup_globals()

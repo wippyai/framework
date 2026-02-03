@@ -88,9 +88,9 @@ local function execute_migration(migration_item, options)
     local success, err
 
     if direction == "up" then
-        success, err = cpcall(impl.up, tx)
+        success, err = pcall(impl.up, tx)
     else
-        success, err = cpcall(impl.down, tx)
+        success, err = pcall(impl.down, tx)
 
         if success then
             local remove_ok, remove_err = repository.remove_migration(tx, migration_id)
@@ -137,7 +137,7 @@ local function execute_migration(migration_item, options)
     end
 
     if direction == "up" and impl.after then
-        local after_success, after_err = cpcall(impl.after, tx)
+        local after_success, after_err = pcall(impl.after, tx)
         if not after_success then
             tx:rollback()
 
@@ -232,7 +232,7 @@ function migration.run(fn, options)
         }
     end
 
-    local success, implementations_or_err = cpcall(migration_core.define, fn)
+    local success, implementations_or_err = pcall(migration_core.define, fn)
     if not success then
         if need_release then db:release() end
 
