@@ -1,6 +1,7 @@
 local agent_registry = require("agent_registry")
 local compiler = require("compiler")
 local agent = require("agent")
+local contract = require("contract")
 
 local agent_context = {}
 agent_context.__index = agent_context
@@ -8,10 +9,53 @@ agent_context.__index = agent_context
 agent_context._agent_registry = nil
 agent_context._compiler = nil
 agent_context._agent = nil
+agent_context._resolver = nil
+agent_context._resolver_checked = false
+
+local RESOLVER_CONTRACT = "wippy.agent:resolver"
 
 local function get_agent_registry() return agent_context._agent_registry or agent_registry end
 local function get_compiler() return agent_context._compiler or compiler end
 local function get_agent() return agent_context._agent or agent end
+
+local function get_resolver()
+    if agent_context._resolver_checked then
+        return agent_context._resolver
+    end
+    agent_context._resolver_checked = true
+
+    local resolver_contract, err = contract.get(RESOLVER_CONTRACT)
+    if err or not resolver_contract then
+        return nil
+    end
+
+    local instance, open_err = resolver_contract:open()
+    if open_err or not instance then
+        return nil
+    end
+
+    agent_context._resolver = instance
+    return instance
+end
+
+local function resolve_agent_via_contract(agent_id)
+    local resolver = get_resolver()
+    if not resolver then
+        return nil
+    end
+
+    local can_resolve, can_err = resolver:can_resolve({ agent_id = agent_id })
+    if not can_resolve or can_err then
+        return nil
+    end
+
+    local spec, resolve_err = resolver:resolve({ agent_id = agent_id })
+    if resolve_err or not spec then
+        return nil
+    end
+
+    return spec
+end
 
 local function merge_contexts(base_context, override_context)
     local merged = {}
@@ -168,14 +212,21 @@ function agent_context:load_agent(agent_spec_or_id, options)
         agent_identifier = raw_spec.id or raw_spec.name or "inline-agent"
     else
         agent_identifier = agent_spec_or_id
-        local registry = get_agent_registry()
-        local err
-        raw_spec, err = registry.get_by_id(agent_identifier)
+
+        -- Try contract-based resolution first
+        raw_spec = resolve_agent_via_contract(agent_identifier)
+
+        -- Fallback to legacy registry path
         if not raw_spec then
-            raw_spec, err = registry.get_by_name(agent_identifier)
-        end
-        if not raw_spec then
-            return nil, "Failed to load agent '" .. agent_identifier .. "': " .. (err or "not found")
+            local registry = get_agent_registry()
+            local err
+            raw_spec, err = registry.get_by_id(agent_identifier)
+            if not raw_spec then
+                raw_spec, err = registry.get_by_name(agent_identifier)
+            end
+            if not raw_spec then
+                return nil, "Failed to load agent '" .. agent_identifier .. "': " .. (err or "not found")
+            end
         end
     end
 

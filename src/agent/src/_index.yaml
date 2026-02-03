@@ -133,6 +133,8 @@ entries:
         - compilation
       description: "Provides a clean abstraction for managing agent lifecycle including loading agents by ID/name, \ncompilation with traits and tools, runtime agent/model switching, context merging, and caching.\nHandles the complexity of agent registry lookup, compilation, and state management while \nproviding simple methods for agent switching during execution (e.g., from control directives).\n"
     source: file://context.lua
+    modules:
+      - contract
     imports:
       agent: wippy.agent:agent
       agent_registry: wippy.agent.discovery:registry
@@ -278,4 +280,53 @@ entries:
                 },
                 "required": ["memories"]
               }
+            format: application/schema+json
+
+  # wippy.agent:resolver
+  - name: resolver
+    kind: contract.definition
+    meta:
+      comment: Agent resolution contract for loading agent specs by ID
+      description: |
+        Contract for resolving agent identifiers to agent specifications.
+        Applications provide bindings to handle resolution (e.g., skill: prefix).
+        If no binding exists, context.lua falls back to direct registry lookup.
+    methods:
+      - name: resolve
+        description: Resolve an agent identifier to an agent specification
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string",
+                    "description": "Agent identifier (ID, name, or prefixed like skill:uuid)"
+                  }
+                },
+                "required": ["agent_id"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "description": "Agent specification for compilation"
+              }
+            format: application/schema+json
+      - name: can_resolve
+        description: Check if this resolver can handle the given agent ID
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "agent_id": {"type": "string"}
+                },
+                "required": ["agent_id"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {"type": "boolean"}
             format: application/schema+json
