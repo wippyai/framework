@@ -6,7 +6,22 @@ entries:
     kind: ns.definition
     meta:
       title: Test
-      description: BDD-style testing framework
+      description: BDD-style testing framework with assertions and mocking
+
+  # dependency: wippy/terminal (provides terminal.host for process execution)
+  - name: terminal_dep
+    kind: ns.dependency
+    component: wippy/terminal
+    version: "*"
+
+  # wippy.test:terminal
+  - name: terminal
+    kind: library.lua
+    meta:
+      comment: Terminal output helpers for test display
+    source: file://terminal.lua
+    modules:
+      - io
 
   # wippy.test:registry
   - name: registry
@@ -18,14 +33,63 @@ entries:
       - time
     imports:
       base_registry: :registry
-    
+
+  # wippy.test:discovery
+  - name: discovery
+    kind: library.lua
+    meta:
+      comment: Test discovery, sorting, and filtering
+    source: file://discovery.lua
+
+  # wippy.test:display
+  - name: display
+    kind: library.lua
+    meta:
+      comment: TUI rendering for test results
+    source: file://display.lua
+    imports:
+      terminal: wippy.test:terminal
+
   # wippy.test:test
   - name: test
     kind: library.lua
     meta:
-      comment: BDD-style testing framework with operation progress reporting
+      comment: BDD-style testing framework with direct assertions and mocking
     source: file://test.lua
     modules:
       - time
       - json
-    
+      - ctx
+
+  # wippy.test:runner
+  - name: runner
+    kind: process.lua
+    meta:
+      comment: CLI test runner with live progress display
+      command:
+        name: test
+        short: Run tests
+    source: file://runner.lua
+    method: main
+    modules:
+      - io
+      - funcs
+      - time
+      - channel
+    imports:
+      terminal: wippy.test:terminal
+      registry: wippy.test:registry
+      discovery: wippy.test:discovery
+      display: wippy.test:display
+
+  # wippy.test:self_test
+  - name: self_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: test-framework
+      comment: Self-test for the test framework
+    source: file://self_test.lua
+    method: run
+    imports:
+      test: wippy.test:test

@@ -1,6 +1,7 @@
 local test = {}
 local time = require("time")
 local json = require("json")
+local ctx = require("ctx")
 
 -- Store original process.send for communication
 local _original_process_send = nil
@@ -449,8 +450,8 @@ function test.it_skip(name, fn)
     })
 end
 
--- Assertion helpers
-local function format_value(val)
+-- Value formatting for assertion error messages
+local function format_value(val: any): string
     if type(val) == "string" then
         return string.format("%q", val)
     elseif type(val) == "table" then
@@ -468,315 +469,167 @@ local function format_value(val)
     end
 end
 
--- Helper function to get debug info for assertions, skipping test framework internals
-local function get_debug_info()
-    local level = 3 -- Start 3 levels up from assertion functions
-    local max_level = 10 -- Don't go too deep
+-- Assertion functions
 
-    while level <= max_level do
-        local info = debug.getinfo(level)
-        if not info then
-            break
-        end
-
-        -- Skip internal test framework functions
-        local source = info.source or ""
-        local name = info.name or ""
-
-        -- Skip if it's from test framework internals
-        if not (source:match("test%.lua") and (name:match("assert") or name:match("expect") or name == "")) then
-            return {
-                line = info.currentline,
-                source = source
-            }
-        end
-
-        level = level + 1
-    end
-
-    -- Fallback to level 3 if we can't find a good frame
-    local info = debug.getinfo(3)
-    return {
-        line = info and info.currentline or 0,
-        source = info and info.source or "unknown"
-    }
-end
-
--- Helper to format error message consistently
-local function format_error_msg(template, actual, expected, message)
-    local info = get_debug_info()
-    local base_msg = string.format(template, format_value(expected), format_value(actual))
-
-    if message and message ~= "" then
-        return string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message)
-    else
-        return string.format("%s:%d: %s", info.source, info.line, base_msg)
-    end
-end
-
-local function assert_equal(actual, expected, message)
+function test.eq(actual: any, expected: any, msg: string?)
     if actual ~= expected then
-        error(format_error_msg("Expected %s but got %s", actual, expected, message), 2)
+        error((msg or "assertion failed") .. ": expected " .. format_value(expected) .. ", got " .. format_value(actual), 2)
     end
-    return true
 end
 
-local function assert_not_equal(actual, expected, message)
+function test.neq(actual: any, expected: any, msg: string?)
     if actual == expected then
-        error(format_error_msg("Expected %s to not equal %s", actual, expected, message), 2)
+        error((msg or "assertion failed") .. ": expected not " .. format_value(expected), 2)
     end
-    return true
 end
 
-local function assert_true(actual, message)
-    if actual ~= true then
-        local info = get_debug_info()
-        local base_msg = string.format("Expected true but got %s", format_value(actual))
-        if message and message ~= "" then
-            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-        else
-            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-        end
+function test.ok(val: any, msg: string?): any
+    if not val then
+        error((msg or "assertion failed") .. ": expected truthy value, got " .. format_value(val), 2)
     end
-    return true
+    return val
 end
 
-local function assert_false(actual, message)
-    if actual ~= false then
-        local info = get_debug_info()
-        local base_msg = string.format("Expected false but got %s", format_value(actual))
-        if message and message ~= "" then
-            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-        else
-            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-        end
-    end
-    return true
+function test.fail(msg: string?)
+    error(msg or "assertion failed", 2)
 end
 
-local function assert_nil(actual, message)
-    if actual ~= nil then
-        local info = get_debug_info()
-        local base_msg = string.format("Expected nil but got %s", format_value(actual))
-        if message and message ~= "" then
-            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-        else
-            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-        end
+function test.is_nil(val: any, msg: string?)
+    if val ~= nil then
+        error((msg or "assertion failed") .. ": expected nil, got " .. format_value(val), 2)
     end
-    return true
 end
 
-local function assert_not_nil(actual, message)
-    if actual == nil then
-        local info = get_debug_info()
-        local base_msg = "Expected value to not be nil"
-        if message and message ~= "" then
-            error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-        else
-            error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-        end
+function test.not_nil(val: any, msg: string?): any
+    if val == nil then
+        error((msg or "assertion failed") .. ": expected non-nil value", 2)
     end
-    return true
+    return val
 end
 
-local function assert_match(str, pattern, message)
-    if not string.match(str, pattern) then
-        error(format_error_msg("Expected %s to match pattern %s", str, pattern, message), 2)
+function test.is_true(val: any, msg: string?)
+    if val ~= true then
+        error((msg or "assertion failed") .. ": expected true, got " .. format_value(val), 2)
     end
-    return true
 end
 
-local function assert_not_match(str, pattern, message)
-    if string.match(str, pattern) then
-        error(format_error_msg("Expected %s to not match pattern %s", str, pattern, message), 2)
+function test.is_false(val: any, msg: string?)
+    if val ~= false then
+        error((msg or "assertion failed") .. ": expected false, got " .. format_value(val), 2)
     end
-    return true
 end
 
--- Expect function that returns assertion methods
-function test.expect(actual)
-    return {
-        to_equal = function(expected, message)
-            return assert_equal(actual, expected, message)
-        end,
-        not_to_equal = function(expected, message)
-            return assert_not_equal(actual, expected, message)
-        end,
-        to_be_true = function(message)
-            return assert_true(actual, message)
-        end,
-        to_be_false = function(message)
-            return assert_false(actual, message)
-        end,
-        to_be_nil = function(message)
-            return assert_nil(actual, message)
-        end,
-        not_to_be_nil = function(message)
-            return assert_not_nil(actual, message)
-        end,
-        to_match = function(pattern, message)
-            return assert_match(actual, pattern, message)
-        end,
-        not_to_match = function(pattern, message)
-            return assert_not_match(actual, pattern, message)
-        end,
-        to_be_type = function(expected_type, message)
-            local actual_type = type(actual)
-            if actual_type ~= expected_type then
-                error(format_error_msg("Expected type %s but got type %s", actual_type, expected_type, message), 2)
-            end
-            return true
-        end,
-        to_contain = function(expected, message)
-            if type(actual) == "table" then
-                local found = false
-                for _, v in pairs(actual) do
-                    if v == expected then
-                        found = true
-                        break
-                    end
-                end
-                if not found then
-                    local info = get_debug_info()
-                    local base_msg = string.format("Expected table to contain %s", format_value(expected))
-                    if message and message ~= "" then
-                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                    else
-                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                    end
-                end
-                return true
-            elseif type(actual) == "string" then
-                if not string.find(actual, expected, 1, true) then
-                    local info = get_debug_info()
-                    local base_msg = string.format("Expected string %s to contain %s", format_value(actual), format_value(expected))
-                    if message and message ~= "" then
-                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                    else
-                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                    end
-                end
-                return true
-            else
-                local info = get_debug_info()
-                local base_msg = "Expected a table or string to check contents"
-                if message and message ~= "" then
-                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                else
-                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                end
-            end
-        end,
-        not_to_contain = function(expected, message)
-            if type(actual) == "table" then
-                local found = false
-                for _, v in pairs(actual) do
-                    if v == expected then
-                        found = true
-                        break
-                    end
-                end
-                if found then
-                    local info = get_debug_info()
-                    local base_msg = string.format("Expected table to not contain %s", format_value(expected))
-                    if message and message ~= "" then
-                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                    else
-                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                    end
-                end
-                return true
-            elseif type(actual) == "string" then
-                if string.find(actual, expected, 1, true) then
-                    local info = get_debug_info()
-                    local base_msg = string.format("Expected string %s to not contain %s", format_value(actual), format_value(expected))
-                    if message and message ~= "" then
-                        error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                    else
-                        error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                    end
-                end
-                return true
-            else
-                local info = get_debug_info()
-                local base_msg = "Expected a table or string to check contents"
-                if message and message ~= "" then
-                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                else
-                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                end
-            end
-        end,
-        to_have_key = function(key, message)
-            if type(actual) ~= "table" then
-                local info = get_debug_info()
-                local base_msg = "Expected a table to check for key"
-                if message and message ~= "" then
-                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                else
-                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                end
-            end
+function test.is_string(val: any, msg: string?): string
+    if type(val) ~= "string" then
+        error((msg or "assertion failed") .. ": expected string, got " .. type(val), 2)
+    end
+    return val
+end
 
-            if actual[key] == nil then
-                local info = get_debug_info()
-                local base_msg = string.format("Expected table to have key %s", format_value(key))
-                if message and message ~= "" then
-                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                else
-                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                end
-            end
-            return true
-        end,
-        not_to_have_key = function(key, message)
-            if type(actual) ~= "table" then
-                local info = get_debug_info()
-                local base_msg = "Expected a table to check for key"
-                if message and message ~= "" then
-                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                else
-                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                end
-            end
+function test.is_number(val: any, msg: string?): number
+    if type(val) ~= "number" then
+        error((msg or "assertion failed") .. ": expected number, got " .. type(val), 2)
+    end
+    return val
+end
 
-            if actual[key] ~= nil then
-                local info = get_debug_info()
-                local base_msg = string.format("Expected table to not have key %s", format_value(key))
-                if message and message ~= "" then
-                    error(string.format("%s:%d: %s (%s)", info.source, info.line, base_msg, message), 2)
-                else
-                    error(string.format("%s:%d: %s", info.source, info.line, base_msg), 2)
-                end
-            end
-            return true
-        end,
-        to_be_greater_than = function(expected, message)
-            if not (actual > expected) then
-                error(format_error_msg("Expected %s to be greater than %s", actual, expected, message), 2)
-            end
-            return true
-        end,
-        to_be_less_than = function(expected, message)
-            if not (actual < expected) then
-                error(format_error_msg("Expected %s to be less than %s", actual, expected, message), 2)
-            end
-            return true
-        end,
-        to_be_greater_than_or_equal = function(expected, message)
-            if not (actual >= expected) then
-                error(format_error_msg("Expected %s to be greater than or equal to %s", actual, expected, message), 2)
-            end
-            return true
-        end,
-        to_be_less_than_or_equal = function(expected, message)
-            if not (actual <= expected) then
-                error(format_error_msg("Expected %s to be less than or equal to %s", actual, expected, message), 2)
-            end
-            return true
-        end
-    }
+function test.is_table(val: any, msg: string?): {any}
+    if type(val) ~= "table" then
+        error((msg or "assertion failed") .. ": expected table, got " .. type(val), 2)
+    end
+    return val
+end
+
+function test.is_function(val: any, msg: string?)
+    if type(val) ~= "function" then
+        error((msg or "assertion failed") .. ": expected function, got " .. type(val), 2)
+    end
+    return val
+end
+
+function test.is_boolean(val: any, msg: string?): boolean
+    if type(val) ~= "boolean" then
+        error((msg or "assertion failed") .. ": expected boolean, got " .. type(val), 2)
+    end
+    return val
+end
+
+function test.contains(str: string, substr: string, msg: string?): string
+    if type(str) ~= "string" or not string.find(str, substr, 1, true) then
+        error((msg or "assertion failed") .. ": expected string to contain '" .. tostring(substr) .. "'", 2)
+    end
+    return str
+end
+
+function test.matches(str: string, pattern: string, msg: string?): string
+    if type(str) ~= "string" or not string.match(str, pattern) then
+        error((msg or "assertion failed") .. ": expected string to match pattern '" .. tostring(pattern) .. "'", 2)
+    end
+    return str
+end
+
+function test.has_key(tbl: {any}, key: any, msg: string?): any
+    if type(tbl) ~= "table" then
+        error((msg or "assertion failed") .. ": expected table, got " .. type(tbl), 2)
+    end
+    if tbl[key] == nil then
+        error((msg or "assertion failed") .. ": expected table to have key '" .. tostring(key) .. "'", 2)
+    end
+    return tbl[key]
+end
+
+function test.len(val: any, expected: number, msg: string?)
+    local actual = #val
+    if actual ~= expected then
+        error((msg or "assertion failed") .. ": expected length " .. tostring(expected) .. ", got " .. tostring(actual), 2)
+    end
+end
+
+function test.gt(a: number, b: number, msg: string?)
+    if not (a > b) then
+        error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " > " .. format_value(b), 2)
+    end
+end
+
+function test.gte(a: number, b: number, msg: string?)
+    if not (a >= b) then
+        error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " >= " .. format_value(b), 2)
+    end
+end
+
+function test.lt(a: number, b: number, msg: string?)
+    if not (a < b) then
+        error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " < " .. format_value(b), 2)
+    end
+end
+
+function test.lte(a: number, b: number, msg: string?)
+    if not (a <= b) then
+        error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " <= " .. format_value(b), 2)
+    end
+end
+
+function test.throws(fn: () -> (), msg: string?): any
+    local ok, err = pcall(fn)
+    if ok then
+        error((msg or "throws failed") .. ": expected function to throw", 2)
+    end
+    return err
+end
+
+function test.has_error(val: any, err: any, msg: string?)
+    if val ~= nil then
+        error((msg or "has_error failed") .. ": expected nil result, got " .. format_value(val), 2)
+    end
+    if err == nil then
+        error((msg or "has_error failed") .. ": expected error, got nil", 2)
+    end
+end
+
+function test.no_error(val: any, err: any, msg: string?)
+    if err ~= nil then
+        error((msg or "no_error failed") .. ": unexpected error: " .. tostring(err), 2)
+    end
 end
 
 -- Format error with stack trace into a structured object
@@ -889,8 +742,7 @@ local function run_test(suite, test_case)
         end
     end
 
-    -- we are using cpcall since it allows coroutine yields inside it
-    local success, err = cpcall(test_case.fn)
+    local success, err = pcall(test_case.fn)
 
     -- Execute after_each hooks from current suite to ancestors (reverse order)
     for i = #ancestry, 1, -1 do
@@ -1163,11 +1015,10 @@ function test.run_cases(define_cases_fn)
             _original_process_send = process.send
         end
 
-        -- Setup globals for easier writing of test cases
+        -- Setup BDD globals
         _G.it = test.it
         _G.it_skip = test.it_skip
         _G.describe = test.describe
-        _G.expect = test.expect
         _G.before_each = test.before_each
         _G.after_each = test.after_each
         _G.before_all = test.before_all
@@ -1179,11 +1030,22 @@ function test.run_cases(define_cases_fn)
         _G.restore_mock = test.restore_mock
         _G.restore_all_mocks = test.restore_all_mocks
 
-        -- Set up process integration with options (PID and topic)
+        -- Set up process integration with explicit options first
         test.setup_process_integration(options)
 
         -- Let the test file define its cases
         define_cases_fn()
+
+        -- Auto-detect parent context if no explicit PID was provided
+        if not _default_context.target_pid then
+            local parent_pid = ctx.get("parent_pid")
+            if parent_pid then
+                test.setup_process_integration({
+                    pid = parent_pid,
+                    topic = ctx.get("test_topic") or "test:update"
+                })
+            end
+        end
 
         -- Run all the tests
         local results = test.run()
@@ -1234,8 +1096,8 @@ function test.run_cases(define_cases_fn)
 
         -- Clean up globals
         _G.it = nil
+        _G.it_skip = nil
         _G.describe = nil
-        _G.expect = nil
         _G.before_each = nil
         _G.after_each = nil
         _G.before_all = nil
@@ -1265,6 +1127,5 @@ end
 -- Aliases for BDD-style syntax
 test.spec = test.describe
 test.context = test.describe
-test.assert = test.expect
 
 return test
