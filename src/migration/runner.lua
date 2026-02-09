@@ -2,7 +2,7 @@ local sql = require("sql")
 local time = require("time")
 local funcs = require("funcs")
 local repository = require("repository")
-local registry_finder = require("registry")
+local registry_finder = require("migration_registry")
 
 local runner = {}
 

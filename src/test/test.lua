@@ -889,8 +889,7 @@ local function run_test(suite, test_case)
         end
     end
 
-    -- we are using cpcall since it allows coroutine yields inside it
-    local success, err = cpcall(test_case.fn)
+    local success, err = pcall(test_case.fn)
 
     -- Execute after_each hooks from current suite to ancestors (reverse order)
     for i = #ancestry, 1, -1 do
