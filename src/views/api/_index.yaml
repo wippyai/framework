@@ -18,7 +18,7 @@ entries:
     pool:
       size: 4
       workers: 4
-    
+
   # wippy.views.api:list_pages.endpoint
   - name: list_pages.endpoint
     kind: http.endpoint
@@ -29,7 +29,35 @@ entries:
     method: GET
     func: list_pages
     path: /pages/list
-    
+
+  # wippy.views.api:list_components
+  - name: list_components
+    kind: function.lua
+    meta:
+      comment: Lists all view components with metadata
+      description: Components listing endpoint
+      router: app:api.public
+    source: file://list_components.lua
+    modules:
+      - http
+    imports:
+      page_registry: wippy.views:page_registry
+    method: handler
+    pool:
+      size: 4
+      workers: 4
+
+  # wippy.views.api:list_components.endpoint
+  - name: list_components.endpoint
+    kind: http.endpoint
+    meta:
+      comment: Endpoint that lists all accessible view components
+      description: View components listing endpoint
+      router: app:api.public
+    method: GET
+    func: list_components
+    path: /components/list
+
   # wippy.views.api:render
   - name: render
     kind: function.lua
@@ -47,7 +75,7 @@ entries:
     method: handler
     pool:
       size: 4
-    
+
   # wippy.views.api:render.endpoint
   - name: render.endpoint
     kind: http.endpoint
@@ -58,15 +86,26 @@ entries:
     method: GET
     func: render
     path: /pages/content/{id}
-    
-  # wippy.views.api:render.endpoint4
-  - name: render.endpoint4
+
+  # wippy.views.api:public_url
+  - name: public_url
+    kind: function.lua
+    meta:
+      comment: Returns base URL for component page assets
+      router: app:api.public
+    source: file://public_url.lua
+    modules:
+      - http
+    imports:
+      page_registry: wippy.views:page_registry
+    method: handler
+
+  # wippy.views.api:public_url.endpoint
+  - name: public_url.endpoint
     kind: http.endpoint
     meta:
-      comment: Endpoint that renders a virtual page by ID
-      description: CMS page renderer endpoint
+      comment: Component page public URL endpoint
       router: app:api.public
     method: GET
-    func: render
-    path: /pages/content4/{id}
-    
+    func: public_url
+    path: /pages/public/{id}

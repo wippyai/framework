@@ -19,11 +19,17 @@ entries:
         path: .meta.router
       - entry: wippy.views.api:list_pages.endpoint
         path: .meta.router
+      - entry: wippy.views.api:list_components
+        path: .meta.router
+      - entry: wippy.views.api:list_components.endpoint
+        path: .meta.router
       - entry: wippy.views.api:render
         path: .meta.router
       - entry: wippy.views.api:render.endpoint
         path: .meta.router
-      - entry: wippy.views.api:render.endpoint4
+      - entry: wippy.views.api:public_url
+        path: .meta.router
+      - entry: wippy.views.api:public_url.endpoint
         path: .meta.router
 
   # wippy.views:env_contract
@@ -192,5 +198,30 @@ entries:
       comment: Registry for managing page resources
       description: Provides functions to find and access page resources
     source: file://resource_registry.lua
+    modules:
+      - registry
+
+  # Dependencies
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      scope: dev
+    component: wippy/test
+    version: "*"
+
+  # Tests
+  - name: page_registry_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Page registry, resource registry, and env loader tests
+    source: file://page_registry_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      page_registry: wippy.views:page_registry
+      resource_registry: wippy.views:resource_registry
+      env_loader: wippy.views:env_loader
     modules:
       - registry
