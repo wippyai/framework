@@ -32,6 +32,17 @@ entries:
       - entry: wippy.views.api:public_url.endpoint
         path: .meta.router
 
+  # wippy.views:api_url_env
+  - name: api_url_env
+    kind: ns.requirement
+    meta:
+      description: Name of environment variable containing the public API URL
+      parent: app.deps:__dependency.wippy.views
+    targets:
+      - entry: wippy.views:page_registry
+        path: .meta.api_url_env
+    default: PUBLIC_API_URL
+
   # wippy.views:env_contract
   - name: env_contract
     kind: contract.definition
@@ -173,6 +184,7 @@ entries:
     modules:
       - registry
       - security
+      - env
 
   # wippy.views:renderer
   - name: renderer

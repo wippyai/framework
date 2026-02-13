@@ -1,6 +1,7 @@
 local http = require("http")
 local registry = require("registry")
 local json = require("json")
+local env = require("env")
 
 type AppIdentity = {
     title: string,
@@ -46,6 +47,13 @@ local function get_req(name: string): string
     return ""
 end
 
+local function derive_ws_url(api_url: string): string
+    if api_url == "" then
+        return ""
+    end
+    return api_url:gsub("^https://", "wss://"):gsub("^http://", "ws://")
+end
+
 local function handler()
     local res = http.response()
     if not res then
@@ -54,7 +62,6 @@ local function handler()
 
     local facade_url = get_req("fe_facade_url")
     local entry_path = get_req("fe_entry_path")
-    local domain = get_req("domain")
 
     local iframe_origin = ""
     if facade_url ~= "" then
@@ -66,14 +73,12 @@ local function handler()
         iframe_url = facade_url .. entry_path .. "?waitForCustomConfig"
     end
 
+    local api_url_env = get_req("api_url_env")
     local api_url = ""
     local ws_url = ""
-    if domain ~= "" then
-        local is_localhost = domain:match("^localhost") or domain:match("^127%.") or domain:match("^%[::1%]")
-        local scheme = is_localhost and "http" or "https"
-        local ws_scheme = is_localhost and "ws" or "wss"
-        api_url = scheme .. "://" .. domain
-        ws_url = ws_scheme .. "://" .. domain
+    if api_url_env ~= "" then
+        api_url = env.get(api_url_env) or ""
+        ws_url = derive_ws_url(api_url)
     end
 
     local config: FacadeConfig = {

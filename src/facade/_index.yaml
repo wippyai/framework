@@ -27,13 +27,14 @@ entries:
         path: .meta.router
 
   # Core configuration
-  - name: domain
+  - name: api_url_env
     kind: ns.requirement
     meta:
-      description: Canonical app domain (e.g. localhost:8085, app.wippy.ai)
+      description: Name of environment variable containing the public API URL
     targets:
-      - entry: wippy.facade:domain
+      - entry: wippy.facade:api_url_env
         path: .default
+    default: PUBLIC_API_URL
 
   - name: fe_facade_url
     kind: ns.requirement
@@ -196,6 +197,7 @@ entries:
       - http
       - registry
       - json
+      - env
 
   - name: config_endpoint
     kind: http.endpoint

@@ -5,7 +5,7 @@ local registry = require("registry")
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "domain", "session_type",
+    "fe_facade_url", "fe_entry_path", "api_url_env", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel",
     "custom_css", "app_title", "app_icon", "app_name", "login_path",
@@ -15,7 +15,7 @@ local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
         fe_facade_url = "https://front.wippy.ai",
         fe_entry_path = "/iframe.html",
-        domain = "",
+        api_url_env = "PUBLIC_API_URL",
         session_type = "non-persistent",
         history_mode = "hash",
         show_admin = "true",
@@ -57,52 +57,30 @@ local function teardown_registry()
     changes:apply()
 end
 
+local function derive_ws_url(api_url: string): string
+    if api_url == "" then
+        return ""
+    end
+    return api_url:gsub("^https://", "wss://"):gsub("^http://", "ws://")
+end
+
 local function define_tests()
     test.describe("config handler", function()
-        test.describe("domain URL derivation", function()
-            test.it("derives http/ws for localhost domain", function()
-                local domain = "localhost:8085"
-                local is_localhost = domain:match("^localhost") or domain:match("^127%.") or domain:match("^%[::1%]")
-                local scheme = is_localhost and "http" or "https"
-                local ws_scheme = is_localhost and "ws" or "wss"
-
-                test.eq(scheme, "http")
-                test.eq(ws_scheme, "ws")
-                test.eq(scheme .. "://" .. domain, "http://localhost:8085")
-                test.eq(ws_scheme .. "://" .. domain, "ws://localhost:8085")
+        test.describe("ws url derivation", function()
+            test.it("derives ws from http api url", function()
+                test.eq(derive_ws_url("http://localhost:8085"), "ws://localhost:8085")
             end)
 
-            test.it("derives https/wss for production domain", function()
-                local domain = "app.wippy.ai"
-                local is_localhost = domain:match("^localhost") or domain:match("^127%.") or domain:match("^%[::1%]")
-                local scheme = is_localhost and "http" or "https"
-                local ws_scheme = is_localhost and "ws" or "wss"
-
-                test.eq(scheme, "https")
-                test.eq(ws_scheme, "wss")
-                test.eq(scheme .. "://" .. domain, "https://app.wippy.ai")
-                test.eq(ws_scheme .. "://" .. domain, "wss://app.wippy.ai")
+            test.it("derives wss from https api url", function()
+                test.eq(derive_ws_url("https://app.wippy.ai"), "wss://app.wippy.ai")
             end)
 
-            test.it("derives http/ws for 127.0.0.1", function()
-                local domain = "127.0.0.1:8085"
-                local is_localhost = domain:match("^localhost") or domain:match("^127%.") or domain:match("^%[::1%]")
-                local scheme = is_localhost and "http" or "https"
-
-                test.eq(scheme, "http")
+            test.it("returns empty for empty url", function()
+                test.eq(derive_ws_url(""), "")
             end)
 
-            test.it("returns empty URLs when domain is empty", function()
-                local domain = ""
-                local api_url = ""
-                local ws_url = ""
-                if domain ~= "" then
-                    api_url = "http://" .. domain
-                    ws_url = "ws://" .. domain
-                end
-
-                test.eq(api_url, "")
-                test.eq(ws_url, "")
+            test.it("preserves path in ws url", function()
+                test.eq(derive_ws_url("http://localhost:8085/api"), "ws://localhost:8085/api")
             end)
         end)
 
@@ -190,6 +168,12 @@ local function define_tests()
 
                 local entry = registry.get(NS .. "app_title")
                 test.eq(entry.data.default, "Custom App")
+            end)
+
+            test.it("api_url_env defaults to PUBLIC_API_URL", function()
+                local entry = registry.get(NS .. "api_url_env")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "PUBLIC_API_URL")
             end)
 
             test.it("returns all default requirement values", function()
