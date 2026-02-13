@@ -5,7 +5,7 @@ local client = {
     _http_client = http_client
 }
 
-local function extract_response_metadata(response_body)
+local function extract_response_metadata(response_body: any)
     if not response_body then
         return {}
     end

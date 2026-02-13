@@ -12,7 +12,6 @@ local function define_tests()
 
     describe("Tool Caller", function()
         local tool_caller
-        local original_package_loaded = {}
 
         -- Mock tool schemas
         local tool_schemas = {
@@ -58,12 +57,6 @@ local function define_tests()
         }
 
         before_each(function()
-            -- Store original modules
-            original_package_loaded.json = package.loaded.json
-            original_package_loaded.uuid = package.loaded.uuid
-            original_package_loaded.tools = package.loaded.tools
-            original_package_loaded.funcs = package.loaded.funcs
-
             -- Reset tool results to ensure clean state
             tool_results = {
                 ["test:calculator"] = { result = 42 },
@@ -93,17 +86,9 @@ local function define_tests()
                 end
             }
 
-            local uuid_counter = 1000
-            local mock_uuid = {
-                v7 = function()
-                    uuid_counter = uuid_counter + 1
-                    return "uuid_" .. uuid_counter
-                end
-            }
-
             local mock_tools = {
                 get_tool_schema = function(registry_id)
-                    local schema = tool_schemas[registry_id]
+                    local schema = (tool_schemas :: any)[registry_id]
                     if schema then
                         return schema, nil
                     else
@@ -120,7 +105,7 @@ local function define_tests()
                             local new_executor = {
                                 context = ctx,
                                 call = function(self, registry_id, args)
-                                    local result_data = tool_results[registry_id]
+                                    local result_data = (tool_results :: any)[registry_id]
                                     if result_data then
                                         if result_data.error then
                                             return nil, result_data.error
@@ -132,8 +117,7 @@ local function define_tests()
                                     end
                                 end,
                                 async = function(self, registry_id, args)
-                                    -- Mock async command - simplified version
-                                    local result_data = tool_results[registry_id]
+                                    local result_data = (tool_results :: any)[registry_id]
                                     local final_result = nil
                                     local final_error = nil
 
@@ -151,7 +135,7 @@ local function define_tests()
                                         response = function()
                                             return {
                                                 receive = function()
-                                                    return {}, true -- payload_wrapper, ok
+                                                    return {}, true
                                                 end
                                             }
                                         end,
@@ -177,28 +161,17 @@ local function define_tests()
                 end
             }
 
-            -- Inject mock modules
-            package.loaded.json = mock_json
-            package.loaded.uuid = mock_uuid
-            package.loaded.tools = mock_tools
-            package.loaded.funcs = mock_funcs
-
-            -- Clear any cached tool_caller module
-            package.loaded.tool_caller = nil
-
-            -- Now require tool_caller with mocked dependencies
+            -- Inject mocks via internal fields
             tool_caller = require("tool_caller")
+            tool_caller._json = mock_json
+            tool_caller._tools = mock_tools
+            tool_caller._funcs = mock_funcs
         end)
 
         after_each(function()
-            -- Restore original modules
-            package.loaded.json = original_package_loaded.json
-            package.loaded.uuid = original_package_loaded.uuid
-            package.loaded.tools = original_package_loaded.tools
-            package.loaded.funcs = original_package_loaded.funcs
-
-            -- Clear tool_caller from cache
-            package.loaded.tool_caller = nil
+            tool_caller._json = nil
+            tool_caller._tools = nil
+            tool_caller._funcs = nil
             tool_caller = nil
         end)
 
@@ -206,23 +179,23 @@ local function define_tests()
             it("should create a new tool caller instance", function()
                 local caller = tool_caller.new()
 
-                expect(caller).not_to_be_nil()
-                expect(caller.strategy).to_equal(tool_caller.STRATEGY.SEQUENTIAL)
-                expect(caller.executor).not_to_be_nil()
+                test.not_nil(caller)
+                test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
+                test.not_nil(caller.executor)
             end)
 
             it("should default to sequential strategy", function()
                 local caller = tool_caller.new()
 
-                expect(caller.strategy).to_equal(tool_caller.STRATEGY.SEQUENTIAL)
+                test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
             end)
 
             it("should allow setting parallel strategy", function()
                 local caller = tool_caller.new()
                 local result = caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
 
-                expect(caller.strategy).to_equal(tool_caller.STRATEGY.PARALLEL)
-                expect(result).to_equal(caller) -- Should return self for chaining
+                test.eq(caller.strategy, tool_caller.STRATEGY.PARALLEL)
+                test.eq(result, caller) -- Should return self for chaining
             end)
 
             it("should ignore invalid strategies", function()
@@ -231,7 +204,7 @@ local function define_tests()
 
                 caller:set_strategy("invalid_strategy")
 
-                expect(caller.strategy).to_equal(original_strategy)
+                test.eq(caller.strategy, original_strategy)
             end)
 
             it("should allow strategy chaining", function()
@@ -239,8 +212,8 @@ local function define_tests()
 
                 local result = caller:set_strategy(tool_caller.STRATEGY.PARALLEL):set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
 
-                expect(result).to_equal(caller)
-                expect(caller.strategy).to_equal(tool_caller.STRATEGY.SEQUENTIAL)
+                test.eq(result, caller)
+                test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
             end)
         end)
 
@@ -259,16 +232,16 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(tool_calls)
 
-                expect(err).to_be_nil()
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(1)
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 1)
 
                 local tool_data = next(validated_tools)
-                expect(validated_tools[tool_data]).not_to_be_nil()
-                expect(validated_tools[tool_data].valid).to_be_true()
-                expect(validated_tools[tool_data].name).to_equal("calculator")
-                expect(validated_tools[tool_data].registry_id).to_equal("test:calculator")
-                expect(validated_tools[tool_data].args).to_be_type("table")
+                test.not_nil(validated_tools[tool_data])
+                test.is_true(validated_tools[tool_data].valid)
+                test.eq(validated_tools[tool_data].name, "calculator")
+                test.eq(validated_tools[tool_data].registry_id, "test:calculator")
+                test.eq(type(validated_tools[tool_data].args), "table")
             end)
 
             it("should handle multiple tool calls", function()
@@ -291,13 +264,13 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(tool_calls)
 
-                expect(err).to_be_nil()
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(2)
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 2)
 
                 -- Check both tools are valid
                 for _, tool_data in pairs(validated_tools) do
-                    expect(tool_data.valid).to_be_true()
+                    test.is_true(tool_data.valid)
                 end
             end)
 
@@ -306,9 +279,9 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate({})
 
-                expect(err).to_be_nil()
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(0)
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 0)
             end)
 
             it("should handle nil tool calls", function()
@@ -316,9 +289,9 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(nil)
 
-                expect(err).to_be_nil()
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(0)
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 0)
             end)
 
             it("should handle tool schema errors", function()
@@ -335,13 +308,13 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(tool_calls)
 
-                expect(err).to_be_nil()
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(1)
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 1)
 
                 local tool_data = next(validated_tools)
-                expect(validated_tools[tool_data].valid).to_be_false()
-                expect(validated_tools[tool_data].error).to_contain("Failed to get tool schema")
+                test.is_false(validated_tools[tool_data].valid)
+                test.contains(validated_tools[tool_data].error, "Failed to get tool schema")
             end)
 
             it("should preserve tool context", function()
@@ -359,11 +332,11 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(tool_calls)
 
-                expect(err).to_be_nil()
+                test.is_nil(err)
                 local tool_data = next(validated_tools)
-                expect(validated_tools[tool_data].context).not_to_be_nil()
-                expect(validated_tools[tool_data].context.precision).to_equal("high")
-                expect(validated_tools[tool_data].context.timeout).to_equal(30)
+                test.not_nil(validated_tools[tool_data].context)
+                test.eq(validated_tools[tool_data].context.precision, "high")
+                test.eq(validated_tools[tool_data].context.timeout, 30)
             end)
 
             it("should handle exclusive tools", function()
@@ -386,12 +359,12 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(tool_calls)
 
-                expect(err).to_equal("Exclusive tool found, other tools skipped")
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(1)
+                test.eq(err, "Exclusive tool found, other tools skipped")
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 1)
 
                 local tool_data = next(validated_tools)
-                expect(validated_tools[tool_data].name).to_equal("exclusive_tool")
+                test.eq(validated_tools[tool_data].name, "exclusive_tool")
             end)
 
             it("should reject multiple exclusive tools", function()
@@ -422,9 +395,9 @@ local function define_tests()
 
                 local validated_tools, err = caller:validate(tool_calls)
 
-                expect(validated_tools).not_to_be_nil()
-                expect(count_table_elements(validated_tools)).to_equal(0)
-                expect(err).to_equal("Multiple exclusive tools found, cannot process")
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 0)
+                test.eq(err, "Multiple exclusive tools found, cannot process")
             end)
         end)
 
@@ -447,11 +420,11 @@ local function define_tests()
                 local context = { user_id = "test_user" }
                 local results = caller:execute(context, validated_tools)
 
-                expect(results).not_to_be_nil()
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_equal(42)
-                expect(results["call_123"].error).to_be_nil()
-                expect(results["call_123"].tool_call).not_to_be_nil()
+                test.not_nil(results)
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42)
+                test.is_nil(results["call_123"].error)
+                test.not_nil(results["call_123"].tool_call)
             end)
 
             it("should execute multiple tools in sequence", function()
@@ -477,10 +450,10 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results).not_to_be_nil()
-                expect(count_table_elements(results)).to_equal(2)
-                expect(results["call_123"].result).to_equal(42)
-                expect(results["call_456"].result).to_equal("Sunny, 25°C")
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 2)
+                test.eq(results["call_123"].result, 42)
+                test.eq(results["call_456"].result, "Sunny, 25°C")
             end)
 
             it("should handle tool execution errors", function()
@@ -498,9 +471,9 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_be_nil()
-                expect(results["call_123"].error).to_equal("Tool execution failed")
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+                test.eq(results["call_123"].error, "Tool execution failed")
             end)
 
             it("should handle invalid tools", function()
@@ -519,10 +492,10 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_be_nil()
-                expect(results["call_123"].error).to_equal("Tool validation failed")
-                expect(results["call_123"].tool_call).not_to_be_nil()
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+                test.eq(results["call_123"].error, "Tool validation failed")
+                test.not_nil(results["call_123"].tool_call)
             end)
 
             it("should parse string arguments", function()
@@ -540,8 +513,8 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_equal(42)
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42)
             end)
 
             it("should handle invalid JSON arguments", function()
@@ -559,9 +532,9 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_be_nil()
-                expect(results["call_123"].error).to_contain("Failed to parse arguments")
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+                test.contains(results["call_123"].error, "Failed to parse arguments")
             end)
 
             it("should merge contexts with session priority", function()
@@ -582,8 +555,8 @@ local function define_tests()
                 local results = caller:execute(context, validated_tools)
 
                 -- The test passes if execution succeeded with proper context merging
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_equal(42)
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42)
             end)
         end)
 
@@ -611,10 +584,10 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results).not_to_be_nil()
-                expect(count_table_elements(results)).to_equal(2)
-                expect(results["call_123"].result).to_equal(42)
-                expect(results["call_456"].result).to_equal("Sunny, 25°C")
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 2)
+                test.eq(results["call_123"].result, 42)
+                test.eq(results["call_456"].result, "Sunny, 25°C")
             end)
 
             it("should handle parallel execution errors", function()
@@ -640,10 +613,10 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"].result).to_equal(42)
-                expect(results["call_123"].error).to_be_nil()
-                expect(results["call_456"].result).to_be_nil()
-                expect(results["call_456"].error).to_equal("Tool execution failed")
+                test.eq(results["call_123"].result, 42)
+                test.is_nil(results["call_123"].error)
+                test.is_nil(results["call_456"].result)
+                test.eq(results["call_456"].error, "Tool execution failed")
             end)
 
             it("should handle parallel execution with invalid tools", function()
@@ -670,8 +643,8 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"].result).to_equal(42)
-                expect(results["call_456"].error).to_equal("Tool validation failed")
+                test.eq(results["call_123"].result, 42)
+                test.eq(results["call_456"].error, "Tool validation failed")
             end)
         end)
 
@@ -681,8 +654,8 @@ local function define_tests()
 
                 local results = caller:execute({}, {})
 
-                expect(results).not_to_be_nil()
-                expect(count_table_elements(results)).to_equal(0)
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 0)
             end)
 
             it("should handle execution with nil context", function()
@@ -690,8 +663,8 @@ local function define_tests()
 
                 local results = caller:execute(nil, {})
 
-                expect(results).not_to_be_nil()
-                expect(count_table_elements(results)).to_equal(0)
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 0)
             end)
 
             it("should handle execution with nil validated tools", function()
@@ -699,8 +672,8 @@ local function define_tests()
 
                 local results = caller:execute({}, nil)
 
-                expect(results).not_to_be_nil()
-                expect(count_table_elements(results)).to_equal(0)
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 0)
             end)
 
             it("should handle missing registry_id in tool calls", function()
@@ -719,15 +692,15 @@ local function define_tests()
                 local results = caller:execute({}, validated_tools)
 
                 -- Just check that we get some kind of error
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_be_nil()
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
 
                 -- The execute should have failed in some way
                 -- Either error is set, or result is nil, or both
                 local has_error = results["call_123"].error ~= nil
                 local no_result = results["call_123"].result == nil
 
-                expect(has_error or no_result).to_be_true()
+                test.is_true(has_error or no_result)
             end)
 
             it("should set call_id in execution context", function()
@@ -745,24 +718,24 @@ local function define_tests()
 
                 local results = caller:execute({}, validated_tools)
 
-                expect(results["call_123"]).not_to_be_nil()
-                expect(results["call_123"].result).to_equal(42) -- Execution succeeded
-                expect(results["call_123"].error).to_be_nil()
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42) -- Execution succeeded
+                test.is_nil(results["call_123"].error)
             end)
         end)
 
         describe("Constants Export", function()
             it("should export strategy constants", function()
-                expect(tool_caller.STRATEGY).not_to_be_nil()
-                expect(tool_caller.STRATEGY.SEQUENTIAL).to_equal("sequential")
-                expect(tool_caller.STRATEGY.PARALLEL).to_equal("parallel")
+                test.not_nil(tool_caller.STRATEGY)
+                test.eq(tool_caller.STRATEGY.SEQUENTIAL, "sequential")
+                test.eq(tool_caller.STRATEGY.PARALLEL, "parallel")
             end)
 
             it("should export function status constants", function()
-                expect(tool_caller.FUNC_STATUS).not_to_be_nil()
-                expect(tool_caller.FUNC_STATUS.PENDING).to_equal("pending")
-                expect(tool_caller.FUNC_STATUS.SUCCESS).to_equal("success")
-                expect(tool_caller.FUNC_STATUS.ERROR).to_equal("error")
+                test.not_nil(tool_caller.FUNC_STATUS)
+                test.eq(tool_caller.FUNC_STATUS.PENDING, "pending")
+                test.eq(tool_caller.FUNC_STATUS.SUCCESS, "success")
+                test.eq(tool_caller.FUNC_STATUS.ERROR, "error")
             end)
         end)
 
@@ -770,9 +743,9 @@ local function define_tests()
             it("should have all required methods", function()
                 local caller = tool_caller.new()
 
-                expect(type(caller.validate)).to_equal("function")
-                expect(type(caller.execute)).to_equal("function")
-                expect(type(caller.set_strategy)).to_equal("function")
+                test.eq(type(caller.validate), "function")
+                test.eq(type(caller.execute), "function")
+                test.eq(type(caller.set_strategy), "function")
             end)
 
             it("should maintain consistent interface", function()
@@ -780,15 +753,15 @@ local function define_tests()
 
                 -- Test method chaining
                 local result = caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
-                expect(result).to_equal(caller)
+                test.eq(result, caller)
 
                 -- Test that methods return expected types
                 local validated, err = caller:validate({})
-                expect(type(validated)).to_equal("table")
-                expect(err == nil or type(err) == "string").to_be_true()
+                test.eq(type(validated), "table")
+                test.is_true(err == nil or type(err) == "string")
 
                 local execution_result = caller:execute({}, {})
-                expect(type(execution_result)).to_equal("table")
+                test.eq(type(execution_result), "table")
             end)
         end)
     end)
@@ -800,7 +773,10 @@ local function define_tests()
 
         before_all(function()
             -- Use real modules for integration tests
-            package.loaded.tool_caller = nil
+            tool_caller = require("tool_caller")
+            tool_caller._json = nil
+            tool_caller._tools = nil
+            tool_caller._funcs = nil
         end)
 
         it("should call real delay tool sequentially", function()
@@ -823,27 +799,27 @@ local function define_tests()
 
             -- Validate the tool call
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()
-            expect(validated_tools).not_to_be_nil()
-            expect(count_table_elements(validated_tools)).to_equal(1)
+            test.is_nil(err)
+            test.not_nil(validated_tools)
+            test.eq(count_table_elements(validated_tools), 1)
 
             -- Execute the tool
             local context = { test_run = "integration" }
             local results = caller:execute(context, validated_tools)
 
             -- Verify results
-            expect(results).not_to_be_nil()
+            test.not_nil(results)
             local call_id = next(validated_tools)
-            expect(results[call_id]).not_to_be_nil()
-            expect(results[call_id].error).to_be_nil()
-            expect(results[call_id].result).not_to_be_nil()
+            test.not_nil(results[call_id])
+            test.is_nil(results[call_id].error)
+            test.not_nil(results[call_id].result)
 
             -- Check the actual result from delay tool
             local result = results[call_id].result
-            expect(result.message).to_equal("Hello from real tool!")
-            expect(result.delay_applied).to_equal(50)
-            expect(result.timestamp).not_to_be_nil()
-            expect(result.unix_time).not_to_be_nil()
+            test.eq(result.message, "Hello from real tool!")
+            test.eq(result.delay_applied, 50)
+            test.not_nil(result.timestamp)
+            test.not_nil(result.unix_time)
         end)
 
         it("should execute multiple real tools sequentially with proper ordering", function()
@@ -887,24 +863,24 @@ local function define_tests()
 
             -- Validate and execute
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()
-            expect(count_table_elements(validated_tools)).to_equal(3)
+            test.is_nil(err)
+            test.eq(count_table_elements(validated_tools), 3)
 
             local results = caller:execute({}, validated_tools)
             local end_time = time.now()
 
             -- Verify all calls succeeded
-            expect(results).not_to_be_nil()
-            expect(count_table_elements(results)).to_equal(3)
+            test.not_nil(results)
+            test.eq(count_table_elements(results), 3)
 
             for call_id, result in pairs(results) do
-                expect(result.error).to_be_nil()
-                expect(result.result).not_to_be_nil()
+                test.is_nil(result.error)
+                test.not_nil(result.result)
             end
 
             -- Verify total execution time is at least sum of delays (sequential)
             local total_duration = end_time:sub(start_time):milliseconds()
-            expect(total_duration >= 90).to_be_true() -- 30+20+40 = 90ms minimum
+            test.is_true(total_duration >= 90) -- 30+20+40 = 90ms minimum
 
             -- Note: We can't easily verify exact execution order since the tool calls
             -- are processed from a hash table, not in array order. The important thing
@@ -914,9 +890,9 @@ local function define_tests()
                 messages_found[result.result.message] = true
             end
 
-            expect(messages_found["First call"]).to_be_true()
-            expect(messages_found["Second call"]).to_be_true()
-            expect(messages_found["Third call"]).to_be_true()
+            test.is_true(messages_found["First call"])
+            test.is_true(messages_found["Second call"])
+            test.is_true(messages_found["Third call"])
         end)
 
         it("should execute multiple real tools in parallel", function()
@@ -960,25 +936,25 @@ local function define_tests()
 
             -- Validate and execute in parallel
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()
-            expect(count_table_elements(validated_tools)).to_equal(3)
+            test.is_nil(err)
+            test.eq(count_table_elements(validated_tools), 3)
 
             local results = caller:execute({}, validated_tools)
             local end_time = time.now()
 
             -- Verify all calls succeeded
-            expect(results).not_to_be_nil()
-            expect(count_table_elements(results)).to_equal(3)
+            test.not_nil(results)
+            test.eq(count_table_elements(results), 3)
 
             for call_id, result in pairs(results) do
-                expect(result.error).to_be_nil()
-                expect(result.result).not_to_be_nil()
+                test.is_nil(result.error)
+                test.not_nil(result.result)
             end
 
             -- Verify total execution time is closer to max delay (parallel)
             local total_duration = end_time:sub(start_time):milliseconds()
-            expect(total_duration < 150).to_be_true() -- Should be much less than 150ms (60+40+50)
-            expect(total_duration >= 60).to_be_true()  -- Should be at least max delay (60ms)
+            test.is_true(total_duration < 150) -- Should be much less than 150ms (60+40+50)
+            test.is_true(total_duration >= 60)  -- Should be at least max delay (60ms)
 
             -- Verify all results are present
             local messages = {}
@@ -991,9 +967,9 @@ local function define_tests()
                 message_set[msg] = true
             end
 
-            expect(message_set["Parallel call 1"]).to_be_true()
-            expect(message_set["Parallel call 2"]).to_be_true()
-            expect(message_set["Parallel call 3"]).to_be_true()
+            test.is_true(message_set["Parallel call 1"])
+            test.is_true(message_set["Parallel call 2"])
+            test.is_true(message_set["Parallel call 3"])
         end)
 
         it("should handle real tool with various parameter combinations", function()
@@ -1031,30 +1007,30 @@ local function define_tests()
                 }
 
                 local validated_tools, err = caller:validate(tool_calls)
-                expect(err).to_be_nil()
+                test.is_nil(err)
 
                 local results = caller:execute({}, validated_tools)
                 local call_id = next(validated_tools)
 
-                expect(results[call_id].error).to_be_nil()
-                expect(results[call_id].result).not_to_be_nil()
+                test.is_nil(results[call_id].error)
+                test.not_nil(results[call_id].result)
 
                 local result = results[call_id].result
-                expect(result.delay_applied).not_to_be_nil()
-                expect(result.timestamp).not_to_be_nil()
-                expect(result.unix_time).not_to_be_nil()
+                test.not_nil(result.delay_applied)
+                test.not_nil(result.timestamp)
+                test.not_nil(result.unix_time)
 
                 -- Verify defaults work
                 if not test_case.message then
-                    expect(result.message).to_equal("Hello")
+                    test.eq(result.message, "Hello")
                 else
-                    expect(result.message).to_equal(test_case.message)
+                    test.eq(result.message, test_case.message)
                 end
 
                 if not test_case.delay_ms then
-                    expect(result.delay_applied).to_equal(100) -- Default
+                    test.eq(result.delay_applied, 100) -- Default
                 else
-                    expect(result.delay_applied).to_equal(test_case.delay_ms)
+                    test.eq(result.delay_applied, test_case.delay_ms)
                 end
             end
         end)
@@ -1077,23 +1053,23 @@ local function define_tests()
             }
 
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()
+            test.is_nil(err)
 
             local results = caller:execute({}, validated_tools)
             local call_id = next(validated_tools)
 
             -- The tool should either succeed (if it handles negative gracefully)
             -- or fail with a proper error message
-            expect(results[call_id]).not_to_be_nil()
+            test.not_nil(results[call_id])
 
             if results[call_id].error then
                 -- If it errors, it should be a string
-                expect(type(results[call_id].error)).to_equal("string")
-                expect(results[call_id].result).to_be_nil()
+                test.eq(type(results[call_id].error), "string")
+                test.is_nil(results[call_id].result)
             else
                 -- If it succeeds, result should be valid
-                expect(results[call_id].result).not_to_be_nil()
-                expect(results[call_id].result.message).to_equal("Test message")
+                test.not_nil(results[call_id].result)
+                test.eq(results[call_id].result.message, "Test message")
             end
         end)
 
@@ -1119,7 +1095,7 @@ local function define_tests()
             }
 
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()
+            test.is_nil(err)
 
             -- Execute with session context
             local context = {
@@ -1132,30 +1108,30 @@ local function define_tests()
             local results = caller:execute(context, validated_tools)
             local call_id = next(validated_tools)
 
-            expect(results[call_id].error).to_be_nil()
-            expect(results[call_id].result).not_to_be_nil()
+            test.is_nil(results[call_id].error)
+            test.not_nil(results[call_id].result)
 
             local result = results[call_id].result
-            expect(result.message).to_equal("Context verification test")
-            expect(result.context_error).to_be_nil()
-            expect(result.context_received).not_to_be_nil()
+            test.eq(result.message, "Context verification test")
+            test.is_nil(result.context_error)
+            test.not_nil(result.context_received)
 
             local ctx_received = result.context_received
 
             -- Verify session context values were received
-            expect(ctx_received.session_key).to_equal("session_value")
-            expect(ctx_received.user_id).to_equal("test_user_123")
-            expect(ctx_received.test_run).to_equal("context_verification")
+            test.eq(ctx_received.session_key, "session_value")
+            test.eq(ctx_received.user_id, "test_user_123")
+            test.eq(ctx_received.test_run, "context_verification")
 
             -- Verify tool context values were received
-            expect(ctx_received.tool_context_key).to_equal("tool_value")
+            test.eq(ctx_received.tool_context_key, "tool_value")
 
             -- Verify session context overrides tool context for shared keys
-            expect(ctx_received.shared_key).to_equal("from_context")
+            test.eq(ctx_received.shared_key, "from_context")
 
             -- Verify call_id was set by the caller
-            expect(ctx_received.call_id).not_to_be_nil()
-            expect(type(ctx_received.call_id)).to_equal("string")
+            test.not_nil(ctx_received.call_id)
+            test.eq(type(ctx_received.call_id), "string")
         end)
 
         it("should handle empty and nil contexts properly", function()
@@ -1177,29 +1153,29 @@ local function define_tests()
             }
 
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()
+            test.is_nil(err)
 
             -- Execute with empty session context
             local results = caller:execute({}, validated_tools)
             local call_id = next(validated_tools)
 
-            expect(results[call_id].error).to_be_nil()
-            expect(results[call_id].result).not_to_be_nil()
+            test.is_nil(results[call_id].error)
+            test.not_nil(results[call_id].result)
 
             local result = results[call_id].result
-            expect(result.context_error).to_be_nil()
-            expect(result.context_received).not_to_be_nil()
+            test.is_nil(result.context_error)
+            test.not_nil(result.context_received)
 
             local ctx_received = result.context_received
 
             -- Should still have call_id set by caller
-            expect(ctx_received.call_id).not_to_be_nil()
+            test.not_nil(ctx_received.call_id)
 
             -- Other context values should be nil
-            expect(ctx_received.session_key).to_be_nil()
-            expect(ctx_received.user_id).to_be_nil()
-            expect(ctx_received.tool_context_key).to_be_nil()
-            expect(ctx_received.shared_key).to_be_nil()
+            test.is_nil(ctx_received.session_key)
+            test.is_nil(ctx_received.user_id)
+            test.is_nil(ctx_received.tool_context_key)
+            test.is_nil(ctx_received.shared_key)
         end)
 
         it("should produce consistent results with both sequential and parallel strategies", function()
@@ -1225,30 +1201,30 @@ local function define_tests()
             }
 
             local seq_validated, err = sequential_caller:validate(tool_calls)
-            expect(err).to_be_nil()
+            test.is_nil(err)
 
             local seq_results = sequential_caller:execute({}, seq_validated)
-            expect(count_table_elements(seq_results)).to_equal(2)
+            test.eq(count_table_elements(seq_results), 2)
 
             -- Test same tool calls with parallel strategy
             local parallel_caller = tool_caller.new()
             parallel_caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
 
             local par_validated, err = parallel_caller:validate(tool_calls)
-            expect(err).to_be_nil()
+            test.is_nil(err)
 
             local par_results = parallel_caller:execute({}, par_validated)
-            expect(count_table_elements(par_results)).to_equal(2)
+            test.eq(count_table_elements(par_results), 2)
 
             -- Both should succeed with same results (different timing)
             for _, result in pairs(seq_results) do
-                expect(result.error).to_be_nil()
-                expect(result.result).not_to_be_nil()
+                test.is_nil(result.error)
+                test.not_nil(result.result)
             end
 
             for _, result in pairs(par_results) do
-                expect(result.error).to_be_nil()
-                expect(result.result).not_to_be_nil()
+                test.is_nil(result.error)
+                test.not_nil(result.result)
             end
 
             -- Verify both strategies produced the expected messages
@@ -1262,10 +1238,10 @@ local function define_tests()
                 par_messages[result.result.message] = true
             end
 
-            expect(seq_messages["Sequential 1"]).to_be_true()
-            expect(seq_messages["Sequential 2"]).to_be_true()
-            expect(par_messages["Sequential 1"]).to_be_true()
-            expect(par_messages["Sequential 2"]).to_be_true()
+            test.is_true(seq_messages["Sequential 1"])
+            test.is_true(seq_messages["Sequential 2"])
+            test.is_true(par_messages["Sequential 1"])
+            test.is_true(par_messages["Sequential 2"])
         end)
 
         it("should handle real tool validation failures", function()
@@ -1283,19 +1259,19 @@ local function define_tests()
             }
 
             local validated_tools, err = caller:validate(tool_calls)
-            expect(err).to_be_nil()  -- Validation doesn't fail, but marks tool as invalid
-            expect(validated_tools).not_to_be_nil()
-            expect(count_table_elements(validated_tools)).to_equal(1)
+            test.is_nil(err)  -- Validation doesn't fail, but marks tool as invalid
+            test.not_nil(validated_tools)
+            test.eq(count_table_elements(validated_tools), 1)
 
             local call_id = next(validated_tools)
-            expect(validated_tools[call_id].valid).to_be_false()
-            expect(validated_tools[call_id].error).not_to_be_nil()
+            test.is_false(validated_tools[call_id].valid)
+            test.not_nil(validated_tools[call_id].error)
 
             -- Execute anyway - should handle invalid tool gracefully
             local results = caller:execute({}, validated_tools)
-            expect(results[call_id]).not_to_be_nil()
-            expect(results[call_id].result).to_be_nil()
-            expect(results[call_id].error).not_to_be_nil()
+            test.not_nil(results[call_id])
+            test.is_nil(results[call_id].result)
+            test.not_nil(results[call_id].error)
         end)
     end)
 end

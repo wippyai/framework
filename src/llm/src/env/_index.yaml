@@ -1,0 +1,19 @@
+version: "1.0"
+namespace: wippy.llm.env
+
+entries:
+  - name: envs
+    kind: env.storage.os
+    meta:
+      type: envstorage
+      comment: OS storage for LLM environment variables
+
+  # wippy.llm.env:enable_integration_tests
+  - name: enable_integration_tests
+    kind: env.variable
+    meta:
+      scope: dev
+      comment: Flag to enable integration tests with real API calls
+      icon: tabler:test-pipe
+    variable: ENABLE_INTEGRATION_TESTS
+    storage: wippy.llm.env:envs

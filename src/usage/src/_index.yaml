@@ -14,21 +14,20 @@ entries:
     meta:
       description: "Application database ID for usage tracking"
     targets:
-      - entry: wippy.usage.env:target_db
-        path: ".default"
+      - entry: wippy.usage:target_db
+        path: .default
       - entry: wippy.usage.migrations:01_create_token_usage_table
-        path: ".meta.env-target_db"
-    default: "app:db"
+        path: ".meta.target_db"
 
   # Dependencies
-  - name: __dependency.wippy.test
+  - name: dep.wippy.test
     kind: "ns.dependency"
     meta:
       description: "Testing component"
     component: "wippy/test"
     version: ">=v0.2.0"
 
-  - name: __dependency.wippy.migration
+  - name: dep.wippy.migration
     kind: "ns.dependency"
     meta:
       description: "Migration component"
@@ -50,6 +49,7 @@ entries:
       - json
       - uuid
       - time
+      - registry
 
   # wippy.usage:token_usage_repo_test
   - name: token_usage_repo_test
@@ -71,7 +71,7 @@ entries:
       - uuid
       - json
       - time
-      - env
+      - registry
     imports:
       test: wippy.test:test
       token_usage_repo: wippy.usage:token_usage_repo

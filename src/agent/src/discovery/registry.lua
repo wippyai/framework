@@ -1,5 +1,54 @@
 local registry = require("registry")
 
+type RegistryEntry = {
+    id: string,
+    meta: {
+        type: string?,
+        name: string?,
+        title: string?,
+        comment: string?,
+        class: string | {string}?,
+    }?,
+    data: {
+        model: string?,
+        max_tokens: number?,
+        temperature: number?,
+        thinking_effort: string?,
+        prompt: string?,
+        traits: {string}?,
+        tools: {string}?,
+        memory: {any}?,
+        delegates: {any}?,
+        memory_contract: any?,
+        context: {[string]: any}?,
+        start_prompts: {any}?,
+    },
+}
+
+type RawAgentSpec = {
+    id: string,
+    name: string,
+    title: string,
+    description: string,
+    meta: table,
+    model: string?,
+    max_tokens: number?,
+    temperature: number?,
+    thinking_effort: string?,
+    prompt: string?,
+    traits: {string},
+    tools: {string},
+    memory: {any},
+    delegates: {any},
+    memory_contract: any?,
+    context: {[string]: any},
+    start_prompts: {any},
+}
+
+type ListByClassOpts = {
+    raw_entries: boolean?,
+}
+
 ---------------------------
 -- Main module
 ---------------------------
@@ -14,7 +63,7 @@ agent_registry.AGENT_TYPE = "agent.gen1"
 agent_registry._registry = nil
 
 -- Internal: Get registry instance
-local function get_registry()
+local function get_registry(): typeof(registry)
     return agent_registry._registry or registry
 end
 
@@ -23,12 +72,12 @@ end
 ---------------------------
 
 -- Internal: Check if an entry is a valid agent
-local function is_valid_agent(entry)
+local function is_valid_agent(entry: RegistryEntry?): boolean?
     return entry and entry.meta and entry.meta.type == agent_registry.AGENT_TYPE
 end
 
 -- Internal: Convert registry entry to raw agent spec
-local function entry_to_raw_spec(entry)
+local function entry_to_raw_spec(entry: any): any
     return {
         id = entry.id,
         name = (entry.meta and entry.meta.name) or "",
@@ -54,13 +103,13 @@ end
 -- Public API Functions
 ---------------------------
 
-function agent_registry.get_by_id(agent_id)
+function agent_registry.get_by_id(agent_id: string): (any, string?)
     if not agent_id then
         return nil, "Agent ID is required"
     end
 
     local reg = get_registry()
-    local entry, err = reg.get(agent_id)
+    local entry, err = reg.get(tostring(agent_id))
     if not entry then
         return nil, "No agent found with ID: " .. tostring(agent_id) .. (err and ", error: " .. tostring(err) or "")
     end
@@ -72,7 +121,7 @@ function agent_registry.get_by_id(agent_id)
     return entry_to_raw_spec(entry)
 end
 
-function agent_registry.get_by_name(name)
+function agent_registry.get_by_name(name: string): (any, string?)
     if not name then
         return nil, "Agent name is required"
     end
@@ -91,12 +140,12 @@ function agent_registry.get_by_name(name)
     return entry_to_raw_spec(entries[1])
 end
 
-function agent_registry.list_by_class(class_name, opts)
+function agent_registry.list_by_class(class_name: string, opts: ListByClassOpts?): ({any}?, string?)
     if not class_name or #class_name == 0 then
         return nil, "class_name required"
     end
 
-    opts = opts or {}
+    opts = (opts or {}) :: ListByClassOpts
     local reg = get_registry()
     local query = {
         [".kind"] = "registry.entry",

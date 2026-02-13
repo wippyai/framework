@@ -24,7 +24,7 @@ local function define_tests()
                 }
 
                 local result = config.get_gemini_api_key()
-                expect(result).to_equal("direct_value")
+                tests.eq(result, "direct_value")
             end)
 
             it("should return env variable reference when direct value is missing", function()
@@ -47,7 +47,7 @@ local function define_tests()
                 }
 
                 local result = config.get_gemini_api_key()
-                expect(result).to_equal("env_ref_value")
+                tests.eq(result, "env_ref_value")
             end)
 
             it("should return default env variable when others are missing", function()
@@ -67,7 +67,7 @@ local function define_tests()
                 }
 
                 local result = config.get_gemini_api_key()
-                expect(result).to_equal("default_env_value")
+                tests.eq(result, "default_env_value")
             end)
 
             it("should return nil when no values are available", function()
@@ -84,7 +84,7 @@ local function define_tests()
                 }
 
                 local result = config.get_gemini_api_key()
-                expect(result).to_be_nil()
+                tests.is_nil(result)
             end)
 
             it("should ignore empty string values", function()
@@ -107,7 +107,7 @@ local function define_tests()
                 }
 
                 local result = config.get_gemini_api_key()
-                expect(result).to_equal("fallback_value")
+                tests.eq(result, "fallback_value")
             end)
         end)
 
@@ -138,12 +138,12 @@ local function define_tests()
                     end
                 }
 
-                expect(config.has_credentials()).to_be_true()
-                expect(config.get_token_uri()).to_equal("https://oauth2.googleapis.com/token")
-                expect(config.get_client_email()).to_equal("test@project.iam.gserviceaccount.com")
-                expect(config.get_private_key_id()).to_equal("key123")
-                expect(config.get_private_key()).to_contain("BEGIN PRIVATE KEY")
-                expect(config.get_project_id()).to_equal("test-project")
+                tests.is_true(config.has_credentials())
+                tests.eq(config.get_token_uri(), "https://oauth2.googleapis.com/token")
+                tests.eq(config.get_client_email(), "test@project.iam.gserviceaccount.com")
+                tests.eq(config.get_private_key_id(), "key123")
+                tests.contains(config.get_private_key(), "BEGIN PRIVATE KEY")
+                tests.eq(config.get_project_id(), "test-project")
             end)
 
             it("should return false when credentials are missing", function()
@@ -159,7 +159,7 @@ local function define_tests()
                     end
                 }
 
-                expect(config.has_credentials()).to_be_false()
+                tests.is_false(config.has_credentials())
             end)
 
             it("should handle invalid base64 credentials", function()
@@ -178,7 +178,7 @@ local function define_tests()
                     end
                 }
 
-                expect(config.has_credentials()).to_be_false()
+                tests.is_false(config.has_credentials())
             end)
 
             it("should handle invalid JSON credentials", function()
@@ -197,7 +197,7 @@ local function define_tests()
                     end
                 }
 
-                expect(config.has_credentials()).to_be_false()
+                tests.is_false(config.has_credentials())
             end)
         end)
 
@@ -229,10 +229,10 @@ local function define_tests()
 
                 local token, err = config.get_oauth2_token()
 
-                expect(err).to_be_nil()
-                expect(token).not_to_be_nil()
-                expect(token.access_token).to_equal("cached_token_123")
-                expect(token.expires_at).to_equal(1234567890)
+                tests.is_nil(err)
+                assert(token)
+                tests.eq(token.access_token, "cached_token_123")
+                tests.eq(token.expires_at, 1234567890)
             end)
 
             it("should use custom cache ID from APP_CACHE env", function()
@@ -245,7 +245,7 @@ local function define_tests()
 
                 config._store = {
                     get = function(cache_id)
-                        expect(cache_id).to_equal(custom_cache_id)
+                        tests.eq(cache_id, custom_cache_id)
                         return mock_store_instance, nil
                     end
                 }
@@ -271,7 +271,7 @@ local function define_tests()
 
                 config._store = {
                     get = function(cache_id)
-                        expect(cache_id).to_equal(config.DEFAULT_CACHE_ID)
+                        tests.eq(cache_id, config.DEFAULT_CACHE_ID)
                         return mock_store_instance, nil
                     end
                 }
@@ -300,8 +300,8 @@ local function define_tests()
 
                 local token, err = config.get_oauth2_token()
 
-                expect(token).to_be_nil()
-                expect(err).to_contain("Failed to access cache store")
+                tests.is_nil(token)
+                tests.contains(err, "Failed to access cache store")
             end)
 
             it("should return nil when token is not in cache", function()
@@ -325,7 +325,7 @@ local function define_tests()
 
                 local token, err = config.get_oauth2_token()
 
-                expect(token).to_be_nil()
+                tests.is_nil(token)
             end)
         end)
 
@@ -341,7 +341,7 @@ local function define_tests()
                 }
 
                 local api_key = config.get_gemini_api_key()
-                expect(api_key).to_equal("test-api-key-123")
+                tests.eq(api_key, "test-api-key-123")
             end)
 
             it("should return API key from environment", function()
@@ -361,7 +361,7 @@ local function define_tests()
                 }
 
                 local api_key = config.get_gemini_api_key()
-                expect(api_key).to_equal("env-api-key-456")
+                tests.eq(api_key, "env-api-key-456")
             end)
         end)
 
@@ -388,8 +388,8 @@ local function define_tests()
                 }
 
                 local base_url, err = config.get_vertex_base_url()
-                expect(err).to_be_nil()
-                expect(base_url).to_equal("https://us-central1-aiplatform.googleapis.com/v1")
+                tests.is_nil(err)
+                tests.eq(base_url, "https://us-central1-aiplatform.googleapis.com/v1")
             end)
 
             it("should construct base URL without prefix for global location", function()
@@ -413,8 +413,8 @@ local function define_tests()
                 }
 
                 local base_url, err = config.get_vertex_base_url()
-                expect(err).to_be_nil()
-                expect(base_url).to_equal("https://aiplatform.googleapis.com/v1")
+                tests.is_nil(err)
+                tests.eq(base_url, "https://aiplatform.googleapis.com/v1")
             end)
 
             it("should accept custom location parameter", function()
@@ -436,8 +436,8 @@ local function define_tests()
                 }
 
                 local base_url, err = config.get_vertex_base_url("europe-west1")
-                expect(err).to_be_nil()
-                expect(base_url).to_equal("https://europe-west1-aiplatform.googleapis.com/v1")
+                tests.is_nil(err)
+                tests.eq(base_url, "https://europe-west1-aiplatform.googleapis.com/v1")
             end)
 
             it("should return location from context", function()
@@ -457,7 +457,7 @@ local function define_tests()
                 }
 
                 local location = config.get_vertex_location()
-                expect(location).to_equal("asia-northeast1")
+                tests.eq(location, "asia-northeast1")
             end)
 
             it("should return timeout as number", function()
@@ -477,7 +477,7 @@ local function define_tests()
                 }
 
                 local timeout = config.get_vertex_timeout()
-                expect(timeout).to_equal(120)
+                tests.eq(timeout, 120)
             end)
 
             it("should return default timeout when not configured", function()
@@ -494,7 +494,7 @@ local function define_tests()
                 }
 
                 local timeout = config.get_vertex_timeout()
-                expect(timeout).to_equal(600)
+                tests.eq(timeout, 600)
             end)
         end)
 
@@ -516,7 +516,7 @@ local function define_tests()
                 }
 
                 local base_url = config.get_generative_ai_base_url()
-                expect(base_url).to_equal("https://custom.generativelanguage.googleapis.com/v1")
+                tests.eq(base_url, "https://custom.generativelanguage.googleapis.com/v1")
             end)
 
             it("should return base URL from environment", function()
@@ -536,7 +536,7 @@ local function define_tests()
                 }
 
                 local base_url = config.get_generative_ai_base_url()
-                expect(base_url).to_equal("https://generativelanguage.googleapis.com/v1beta")
+                tests.eq(base_url, "https://generativelanguage.googleapis.com/v1beta")
             end)
 
             it("should return timeout from context", function()
@@ -556,7 +556,7 @@ local function define_tests()
                 }
 
                 local timeout = config.get_generative_ai_timeout()
-                expect(timeout).to_equal("90")
+                tests.eq(timeout, "90")
             end)
 
             it("should return timeout from environment", function()
@@ -576,7 +576,7 @@ local function define_tests()
                 }
 
                 local timeout = config.get_generative_ai_timeout()
-                expect(timeout).to_equal("180")
+                tests.eq(timeout, "180")
             end)
         end)
 
@@ -598,21 +598,21 @@ local function define_tests()
                 }
 
                 local api_key = config.get_gemini_api_key()
-                expect(api_key).to_equal("fallback-key")
+                tests.eq(api_key, "fallback-key")
             end)
         end)
 
         describe("Constants", function()
             it("should have correct cache key constant", function()
-                expect(config.OAUTH2_TOKEN_CACHE_KEY).to_equal("google_oauth2_token")
+                tests.eq(config.OAUTH2_TOKEN_CACHE_KEY, "google_oauth2_token")
             end)
 
             it("should have correct default cache ID constant", function()
-                expect(config.DEFAULT_CACHE_ID).to_equal("app:cache")
+                tests.eq(config.DEFAULT_CACHE_ID, "app:cache")
             end)
 
             it("should have correct client contract ID constant", function()
-                expect(config.CLIENT_CONTRACT_ID).to_equal("wippy.llm.google:client_contract")
+                tests.eq(config.CLIENT_CONTRACT_ID, "wippy.llm.google:client_contract")
             end)
         end)
     end)

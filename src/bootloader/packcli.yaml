@@ -1,5 +1,0 @@
-name: wippy/bootloader
-dir: .
-description: Bootloader component
-ignore:
-  - "README.md"

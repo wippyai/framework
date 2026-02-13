@@ -29,17 +29,17 @@ local function define_tests()
                 claude_client._http_client = {
                     post = function(url, options)
                         called_method = "POST"
-                        expect(options.headers["content-type"]).to_equal("application/json")
-                        expect(options.headers["x-api-key"]).to_equal("test-key")
-                        expect(options.headers["anthropic-version"]).to_equal("2023-06-01")
-                        expect(options.body).not_to_be_nil()
+                        test.eq(options.headers["content-type"], "application/json")
+                        test.eq(options.headers["x-api-key"], "test-key")
+                        test.eq(options.headers["anthropic-version"], "2023-06-01")
+                        test.not_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("POST")
+                test.is_nil(err)
+                test.eq(called_method, "POST")
             end)
 
             it("should support GET method", function()
@@ -59,16 +59,16 @@ local function define_tests()
                 claude_client._http_client = {
                     get = function(url, options)
                         called_method = "GET"
-                        expect(options.headers["content-type"]).to_be_nil()
-                        expect(options.headers["x-api-key"]).to_equal("test-key")
-                        expect(options.body).to_be_nil()
+                        test.is_nil(options.headers["content-type"])
+                        test.eq(options.headers["x-api-key"], "test-key")
+                        test.is_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/status", nil, { method = "GET" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("GET")
+                test.is_nil(err)
+                test.eq(called_method, "GET")
             end)
 
             it("should support DELETE method", function()
@@ -88,15 +88,15 @@ local function define_tests()
                 claude_client._http_client = {
                     delete = function(url, options)
                         called_method = "DELETE"
-                        expect(options.headers["content-type"]).to_be_nil()
-                        expect(options.body).to_be_nil()
+                        test.is_nil(options.headers["content-type"])
+                        test.is_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/resource/123", nil, { method = "DELETE" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("DELETE")
+                test.is_nil(err)
+                test.eq(called_method, "DELETE")
             end)
 
             it("should support PUT method with body", function()
@@ -116,15 +116,15 @@ local function define_tests()
                 claude_client._http_client = {
                     put = function(url, options)
                         called_method = "PUT"
-                        expect(options.headers["content-type"]).to_equal("application/json")
-                        expect(options.body).not_to_be_nil()
+                        test.eq(options.headers["content-type"], "application/json")
+                        test.not_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/resource", { data = "value" }, { method = "PUT" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("PUT")
+                test.is_nil(err)
+                test.eq(called_method, "PUT")
             end)
 
             it("should support PATCH method with body", function()
@@ -144,15 +144,15 @@ local function define_tests()
                 claude_client._http_client = {
                     patch = function(url, options)
                         called_method = "PATCH"
-                        expect(options.headers["content-type"]).to_equal("application/json")
-                        expect(options.body).not_to_be_nil()
+                        test.eq(options.headers["content-type"], "application/json")
+                        test.not_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/resource", { update = "value" }, { method = "PATCH" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("PATCH")
+                test.is_nil(err)
+                test.eq(called_method, "PATCH")
             end)
         end)
 
@@ -178,10 +178,10 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_equal("Connection failed")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err.status_code, 0)
+                test.eq(err.message, "Connection failed")
             end)
 
             it("should handle nil response for GET requests", function()
@@ -205,10 +205,10 @@ local function define_tests()
 
                 local response, err = claude_client.request("/status", nil, { method = "GET" })
 
-                expect(response).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_equal("Connection failed")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err.status_code, 0)
+                test.eq(err.message, "Connection failed")
             end)
         end)
 
@@ -228,14 +228,14 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["x-api-key"]).to_equal("context-key")
+                        test.eq(options.headers["x-api-key"], "context-key")
                         return { status_code = 200, body = '{"test": true}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
-                expect(response.test).to_be_true()
+                test.is_nil(err)
+                test.is_true(response.test)
             end)
 
             it("should resolve API key from environment variable", function()
@@ -254,13 +254,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["x-api-key"]).to_equal("env-key")
+                        test.eq(options.headers["x-api-key"], "env-key")
                         return { status_code = 200, body = '{"test": true}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use custom base URL from context", function()
@@ -281,13 +281,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://custom.claude.api/messages")
+                        test.eq(url, "https://custom.claude.api/messages")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use custom API version from context", function()
@@ -308,13 +308,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["anthropic-version"]).to_equal("2024-02-01")
+                        test.eq(options.headers["anthropic-version"], "2024-02-01")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use beta features from context", function()
@@ -335,13 +335,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["anthropic-beta"]).to_equal("computer-use-2024-10-22,prompt-caching-2024-07-31")
+                        test.eq(options.headers["anthropic-beta"], "computer-use-2024-10-22,prompt-caching-2024-07-31")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use timeout from context", function()
@@ -362,13 +362,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.timeout).to_equal(120)
+                        test.eq(options.timeout, 120)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use additional headers from context", function()
@@ -391,13 +391,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["x-custom-header"]).to_equal("custom-value")
+                        test.eq(options.headers["x-custom-header"], "custom-value")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
         end)
 
@@ -419,9 +419,9 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(401)
-                expect(err.message).to_contain("API key is required")
+                test.is_nil(response)
+                test.eq(err.status_code, 401)
+                test.contains(err.message, "API key is required")
             end)
 
             it("should parse Claude error responses with structured format", function()
@@ -455,11 +455,11 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(400)
-                expect(err.message).to_equal("Invalid model specified")
-                expect(err.error.type).to_equal("invalid_request_error")
-                expect(err.request_id).to_equal("req_claude123")
+                test.is_nil(response)
+                test.eq(err.status_code, 400)
+                test.eq(err.message, "Invalid model specified")
+                test.eq(err.error.type, "invalid_request_error")
+                test.eq(err.request_id, "req_claude123")
             end)
 
             it("should handle Claude rate limit error", function()
@@ -497,11 +497,11 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(429)
-                expect(err.message).to_equal("Rate limit exceeded")
-                expect(err.metadata.rate_limits.requests_limit).to_equal(1000)
-                expect(err.metadata.rate_limits.requests_remaining).to_equal(0)
+                test.is_nil(response)
+                test.eq(err.status_code, 429)
+                test.eq(err.message, "Rate limit exceeded")
+                test.eq(err.metadata.rate_limits.requests_limit, 1000)
+                test.eq(err.metadata.rate_limits.requests_remaining, 0)
             end)
 
             it("should handle authentication error", function()
@@ -535,10 +535,10 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(401)
-                expect(err.message).to_equal("Invalid API key")
-                expect(err.error.type).to_equal("authentication_error")
+                test.is_nil(response)
+                test.eq(err.status_code, 401)
+                test.eq(err.message, "Invalid API key")
+                test.eq(err.error.type, "authentication_error")
             end)
 
             it("should handle error responses with nil HTTP response", function()
@@ -562,9 +562,9 @@ local function define_tests()
 
                 local response, err = claude_client.request("/status", nil, { method = "GET" })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_equal("Connection failed")
+                test.is_nil(response)
+                test.eq(err.status_code, 0)
+                test.eq(err.message, "Connection failed")
             end)
 
             it("should extract metadata from error responses", function()
@@ -598,10 +598,11 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.metadata).not_to_be_nil()
-                expect(err.metadata.request_id).to_equal("req_error123")
-                expect(err.metadata.processing_ms).to_equal(350)
+                test.is_nil(response)
+                test.not_nil(err.metadata)
+                local err_meta = assert(err.metadata)
+                test.eq(err_meta.request_id, "req_error123")
+                test.eq(err_meta.processing_ms, 350)
             end)
 
             it("should handle malformed error JSON gracefully", function()
@@ -629,10 +630,10 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(500)
-                expect(err.message).to_contain("Claude API error")
-                expect(err.request_id).to_equal("req_malformed")
+                test.is_nil(response)
+                test.eq(err.status_code, 500)
+                test.contains(err.message, "Claude API error")
+                test.eq(err.request_id, "req_malformed")
             end)
         end)
 
@@ -676,10 +677,9 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, http_options)
-                        expect(http_options.stream).not_to_be_nil()
-                        expect(http_options.stream.buffer_size).to_equal(4096)
-                        local payload = json.decode(http_options.body)
-                        expect(payload.stream).to_be_true()
+                        test.is_true(http_options.stream)
+                        local payload = json.decode(tostring(http_options.body))
+                        test.is_true(payload.stream)
 
                         return {
                             status_code = 200,
@@ -691,8 +691,8 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {}, { stream = true })
 
-                expect(err).to_be_nil()
-                expect(response.stream).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(response.stream)
             end)
 
             it("should process streaming content correctly", function()
@@ -740,12 +740,12 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_be_nil()
-                expect(full_content).to_equal("Hello world")
-                expect(#content_chunks).to_equal(2)
-                expect(content_chunks[1]).to_equal("Hello")
-                expect(content_chunks[2]).to_equal(" world")
-                expect(finish_reason).to_equal("end_turn")
+                test.is_nil(err)
+                test.eq(full_content, "Hello world")
+                test.eq(#content_chunks, 2)
+                test.eq(content_chunks[1], "Hello")
+                test.eq(content_chunks[2], " world")
+                test.eq(finish_reason, "end_turn")
             end)
 
             it("should process streaming tool calls", function()
@@ -789,11 +789,12 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_be_nil()
-                expect(#tool_calls).to_equal(1)
-                expect(tool_calls[1].id).to_equal("call_123")
-                expect(tool_calls[1].name).to_equal("test_tool")
-                expect(tool_calls[1].arguments.param).to_equal("value")
+                test.is_nil(err)
+                test.eq(#tool_calls, 1)
+                local tc = assert(tool_calls[1])
+                test.eq(tc.id, "call_123")
+                test.eq(tc.name, "test_tool")
+                test.eq(tc.arguments.param, "value")
             end)
 
             it("should process streaming thinking content", function()
@@ -843,19 +844,21 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_be_nil()
-                expect(full_content).to_equal("42")
-                expect(#thinking_chunks).to_equal(2)
-                expect(thinking_chunks[1]).to_equal("Let me think...")
-                expect(thinking_chunks[2]).to_equal(" The answer is")
+                test.is_nil(err)
+                test.eq(full_content, "42")
+                test.eq(#thinking_chunks, 2)
+                test.eq(thinking_chunks[1], "Let me think...")
+                test.eq(thinking_chunks[2], " The answer is")
 
                 -- result.thinking is an array of thinking block objects
-                expect(#result.thinking).to_equal(1)
-                expect(result.thinking[1].type).to_equal("thinking")
-                expect(result.thinking[1].thinking).to_equal("Let me think... The answer is")
+                local res = assert(result)
+                test.eq(#res.thinking, 1)
+                local thinking_block = assert(res.thinking[1])
+                test.eq(thinking_block.type, "thinking")
+                test.eq(thinking_block.thinking, "Let me think... The answer is")
 
-                expect(#content_chunks).to_equal(1)
-                expect(content_chunks[1]).to_equal("42")
+                test.eq(#content_chunks, 1)
+                test.eq(content_chunks[1], "42")
             end)
 
             it("should handle streaming errors", function()
@@ -893,10 +896,11 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_equal("API overloaded")
-                expect(#errors).to_equal(1)
-                expect(errors[1].message).to_equal("API overloaded")
-                expect(errors[1].type).to_equal("overloaded_error")
+                test.eq(err, "API overloaded")
+                test.eq(#errors, 1)
+                local err_info = assert(errors[1])
+                test.eq(err_info.message, "API overloaded")
+                test.eq(err_info.type, "overloaded_error")
             end)
         end)
 
@@ -929,10 +933,11 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(err).to_be_nil()
-                expect(response.metadata).not_to_be_nil()
-                expect(response.metadata.request_id).to_equal("req_metadata123")
-                expect(response.metadata.processing_ms).to_equal(250)
+                test.is_nil(err)
+                test.not_nil(response.metadata)
+                local meta = assert(response.metadata)
+                test.eq(meta.request_id, "req_metadata123")
+                test.eq(meta.processing_ms, 250)
             end)
 
             it("should extract rate limit information", function()
@@ -965,12 +970,12 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(err).to_be_nil()
-                expect(response.metadata.rate_limits).not_to_be_nil()
-                expect(response.metadata.rate_limits.requests_limit).to_equal(1000)
-                expect(response.metadata.rate_limits.requests_remaining).to_equal(999)
-                expect(response.metadata.rate_limits.tokens_limit).to_equal(100000)
-                expect(response.metadata.rate_limits.tokens_remaining).to_equal(99500)
+                test.is_nil(err)
+                test.not_nil(response.metadata.rate_limits)
+                test.eq(response.metadata.rate_limits.requests_limit, 1000)
+                test.eq(response.metadata.rate_limits.requests_remaining, 999)
+                test.eq(response.metadata.rate_limits.tokens_limit, 100000)
+                test.eq(response.metadata.rate_limits.tokens_remaining, 99500)
             end)
 
             it("should handle x-request-id header variant", function()
@@ -1000,8 +1005,9 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(err).to_be_nil()
-                expect(response.metadata.request_id).to_equal("req_alt_format123")
+                test.is_nil(err)
+                local meta = assert(response.metadata)
+                test.eq(meta.request_id, "req_alt_format123")
             end)
         end)
 
@@ -1035,12 +1041,13 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(err).to_be_nil()
-                expect(response.content).not_to_be_nil()
-                expect(response.content[1].text).to_equal("Hello!")
-                expect(response.stop_reason).to_equal("end_turn")
-                expect(response.usage.input_tokens).to_equal(10)
-                expect(response.metadata.request_id).to_equal("req_parse123")
+                test.is_nil(err)
+                test.not_nil(response.content)
+                test.eq(response.content[1].text, "Hello!")
+                test.eq(response.stop_reason, "end_turn")
+                test.eq(response.usage.input_tokens, 10)
+                local meta = assert(response.metadata)
+                test.eq(meta.request_id, "req_parse123")
             end)
 
             it("should handle JSON parsing errors", function()
@@ -1068,10 +1075,11 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(200)
-                expect(err.message).to_contain("Failed to parse Claude response")
-                expect(err.metadata.request_id).to_equal("req_parse_fail")
+                test.is_nil(response)
+                test.eq(err.status_code, 200)
+                test.contains(err.message, "Failed to parse Claude response")
+                local err_meta = assert(err.metadata)
+                test.eq(err_meta.request_id, "req_parse_fail")
             end)
         end)
 
@@ -1091,20 +1099,20 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://api.anthropic.com/v1/messages")
-                        expect(options.headers["content-type"]).to_equal("application/json")
-                        expect(options.headers["x-api-key"]).to_equal("test-key")
-                        expect(options.headers["anthropic-version"]).to_equal("2023-06-01")
-                        expect(options.body).not_to_be_nil()
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("claude-3-sonnet-20240229")
+                        test.eq(url, "https://api.anthropic.com/v1/messages")
+                        test.eq(options.headers["content-type"], "application/json")
+                        test.eq(options.headers["x-api-key"], "test-key")
+                        test.eq(options.headers["anthropic-version"], "2023-06-01")
+                        test.not_nil(options.body)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "claude-3-sonnet-20240229")
                         return { status_code = 200, body = '{"test": "success"}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/v1/messages", { model = "claude-3-sonnet-20240229" })
-                expect(err).to_be_nil()
-                expect(response.test).to_equal("success")
+                test.is_nil(err)
+                test.eq(response.test, "success")
             end)
 
             it("should use default configuration values correctly", function()
@@ -1123,16 +1131,16 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://api.anthropic.com/messages")
-                        expect(options.headers["x-api-key"]).to_equal("default-env-key")
-                        expect(options.headers["anthropic-version"]).to_equal("2023-06-01")
-                        expect(options.timeout).to_equal(066)
+                        test.eq(url, "https://api.anthropic.com/messages")
+                        test.eq(options.headers["x-api-key"], "default-env-key")
+                        test.eq(options.headers["anthropic-version"], "2023-06-01")
+                        test.eq(options.timeout, 600)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should handle empty beta_features gracefully", function()
@@ -1153,13 +1161,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["anthropic-beta"]).to_be_nil()
+                        test.is_nil(options.headers["anthropic-beta"])
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
         end)
 
@@ -1184,19 +1192,20 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_equal("Stream read failed")
-                expect(#errors).to_equal(1)
-                expect(errors[1].message).to_equal("Stream read failed")
+                test.eq(err, "Stream read failed")
+                test.eq(#errors, 1)
+                local err_info = assert(errors[1])
+                test.eq(err_info.message, "Stream read failed")
             end)
 
             it("should handle invalid stream response", function()
                 local full_content, err = claude_client.process_stream(nil)
-                expect(full_content).to_be_nil()
-                expect(err).to_equal("Invalid stream response")
+                test.is_nil(full_content)
+                test.eq(err, "Invalid stream response")
 
                 local full_content2, err2 = claude_client.process_stream({})
-                expect(full_content2).to_be_nil()
-                expect(err2).to_equal("Invalid stream response")
+                test.is_nil(full_content2)
+                test.eq(err2, "Invalid stream response")
             end)
 
             it("should skip malformed SSE events", function()
@@ -1236,9 +1245,9 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_be_nil()
-                expect(full_content).to_equal("Hello")
-                expect(#content_chunks).to_equal(1)
+                test.is_nil(err)
+                test.eq(full_content, "Hello")
+                test.eq(#content_chunks, 1)
             end)
         end)
 
@@ -1259,13 +1268,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["x-api-key"]).to_equal("fallback-key")
+                        test.eq(options.headers["x-api-key"], "fallback-key")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should handle complex context resolution priority", function()
@@ -1289,15 +1298,15 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://env.claude.api/messages")  -- From env via context
-                        expect(options.headers["x-api-key"]).to_equal("direct-key")  -- Direct context
-                        expect(options.timeout).to_equal(90)  -- Direct context
+                        test.eq(url, "https://env.claude.api/messages")  -- From env via context
+                        test.eq(options.headers["x-api-key"], "direct-key")  -- Direct context
+                        test.eq(options.timeout, 90)  -- Direct context
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should handle request timeout override", function()
@@ -1318,13 +1327,13 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        expect(options.timeout).to_equal(30)  -- Request option overrides context
+                        test.eq(options.timeout, 30)  -- Request option overrides context
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = claude_client.request("/messages", {}, { timeout = 30 })
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
         end)
 
@@ -1360,9 +1369,9 @@ local function define_tests()
 
                 local response, err = claude_client.request("/messages", {}, { stream = true })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(400)
-                expect(err.request_id).to_equal("req_stream_error")
+                test.is_nil(response)
+                test.eq(err.status_code, 400)
+                test.eq(err.request_id, "req_stream_error")
             end)
         end)
     end)

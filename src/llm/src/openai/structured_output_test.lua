@@ -1,5 +1,6 @@
 local structured_output_handler = require("structured_output_handler")
 local json = require("json")
+local test = require("test")
 
 local function define_tests()
     describe("OpenAI Structured Output Handler", function()
@@ -25,11 +26,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Model is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -43,11 +44,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
 
             it("should require schema parameter", function()
@@ -58,11 +59,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Schema is required")
             end)
 
             it("should reject empty messages array", function()
@@ -77,11 +78,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
         end)
 
@@ -98,11 +99,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema must be an object")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Root schema must be an object")
             end)
 
             it("should require additionalProperties: false", function()
@@ -121,11 +122,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("additionalProperties: false")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "additionalProperties: false")
             end)
 
             it("should require all properties in required array", function()
@@ -145,11 +146,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Properties must be marked as required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Properties must be marked as required")
             end)
 
             it("should require required array when properties exist", function()
@@ -168,11 +169,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema must have a required array")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Schema must have a required array")
             end)
 
             it("should handle non-table schema", function()
@@ -184,11 +185,11 @@ local function define_tests()
                     schema = "not a table"
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema must be a table")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Schema must be a table")
             end)
 
             it("should accept valid schema", function()
@@ -240,9 +241,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
 
@@ -262,14 +263,14 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("chat/completions")
+                        test.contains(url, "chat/completions")
 
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("gpt-4o")
-                        expect(payload.response_format).not_to_be_nil()
-                        expect(payload.response_format.type).to_equal("json_schema")
-                        expect(payload.response_format.json_schema.strict).to_be_true()
-                        expect(payload.response_format.json_schema.schema).not_to_be_nil()
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "gpt-4o")
+                        test.not_nil(payload.response_format)
+                        test.eq(payload.response_format.type, "json_schema")
+                        test.is_true(payload.response_format.json_schema.strict)
+                        test.not_nil(payload.response_format.json_schema.schema)
 
                         return {
                             status_code = 200,
@@ -310,18 +311,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result).not_to_be_nil()
-                expect(response.result.data).not_to_be_nil()
-                expect(response.result.data.name).to_equal("Alice")
-                expect(response.result.data.age).to_equal(25)
-                expect(response.result.data.city).to_equal("New York")
-                expect(response.tokens.prompt_tokens).to_equal(20)
-                expect(response.tokens.completion_tokens).to_equal(15)
-                expect(response.tokens.total_tokens).to_equal(35)
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success)
+                assert(response.result)
+                local data = assert(response.result.data)
+                test.eq(data.name, "Alice")
+                test.eq(data.age, 25)
+                test.eq(data.city, "New York")
+                test.eq(response.tokens.prompt_tokens, 20)
+                test.eq(response.tokens.completion_tokens, 15)
+                test.eq(response.tokens.total_tokens, 35)
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle nested object schemas", function()
@@ -339,9 +340,9 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.response_format.json_schema.schema.properties.address).not_to_be_nil()
-                        expect(payload.response_format.json_schema.schema.properties.address.type).to_equal("object")
+                        local payload = json.decode(tostring(options.body))
+                        test.not_nil(payload.response_format.json_schema.schema.properties.address)
+                        test.eq(payload.response_format.json_schema.schema.properties.address.type, "object")
 
                         return {
                             status_code = 200,
@@ -385,12 +386,14 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.name).to_equal("Bob")
-                expect(response.result.data.address.street).to_equal("123 Main St")
-                expect(response.result.data.address.city).to_equal("Boston")
+                test.is_true(response.success)
+                assert(response.result)
+                local data = assert(response.result.data)
+                test.eq(data.name, "Bob")
+                test.eq(data.address.street, "123 Main St")
+                test.eq(data.address.city, "Boston")
             end)
 
             it("should handle arrays in schemas", function()
@@ -445,15 +448,17 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.name).to_equal("Carol")
-                expect(type(response.result.data.skills)).to_equal("table")
-                expect(#response.result.data.skills).to_equal(3)
-                expect(response.result.data.skills[1]).to_equal("JavaScript")
-                expect(response.result.data.skills[2]).to_equal("Python")
-                expect(response.result.data.skills[3]).to_equal("Go")
+                test.is_true(response.success)
+                assert(response.result)
+                local data = assert(response.result.data)
+                test.eq(data.name, "Carol")
+                test.eq(type(data.skills), "table")
+                test.eq(#data.skills, 3)
+                test.eq(data.skills[1], "JavaScript")
+                test.eq(data.skills[2], "Python")
+                test.eq(data.skills[3], "Go")
             end)
 
             it("should generate schema name automatically", function()
@@ -471,9 +476,9 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.response_format.json_schema.name).to_contain("schema_")
-                        expect(string.len(payload.response_format.json_schema.name)).to_be_greater_than(7)
+                        local payload = json.decode(tostring(options.body))
+                        test.contains(payload.response_format.json_schema.name, "schema_")
+                        test.gt(string.len(payload.response_format.json_schema.name), 7)
 
                         return {
                             status_code = 200,
@@ -499,9 +504,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
 
             it("should handle custom schema name", function()
@@ -519,8 +524,8 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.response_format.json_schema.name).to_equal("custom_schema_name")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.response_format.json_schema.name, "custom_schema_name")
 
                         return {
                             status_code = 200,
@@ -547,9 +552,9 @@ local function define_tests()
                     schema_name = "custom_schema_name"
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
 
@@ -569,10 +574,10 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.temperature).to_equal(0.2)
-                        expect(payload.max_tokens).to_equal(200)
-                        expect(payload.top_p).to_equal(0.8)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.temperature, 0.2)
+                        test.eq(payload.max_tokens, 200)
+                        test.eq(payload.top_p, 0.8)
 
                         return {
                             status_code = 200,
@@ -603,9 +608,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
 
             it("should handle reasoning model options", function()
@@ -623,12 +628,12 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("o1-mini")
-                        expect(payload.reasoning_effort).to_equal("high")
-                        expect(payload.max_completion_tokens).to_equal(150)
-                        expect(payload.max_tokens).to_be_nil()
-                        expect(payload.temperature).to_be_nil()
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "o1-mini")
+                        test.eq(payload.reasoning_effort, "high")
+                        test.eq(payload.max_completion_tokens, 150)
+                        test.is_nil(payload.max_tokens)
+                        test.is_nil(payload.temperature)
 
                         return {
                             status_code = 200,
@@ -670,11 +675,13 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.result).to_equal("structured thinking")
-                expect(response.tokens.thinking_tokens).to_equal(15)
+                test.is_true(response.success)
+                assert(response.result)
+                local data = assert(response.result.data)
+                test.eq(data.result, "structured thinking")
+                test.eq(response.tokens.thinking_tokens, 15)
             end)
         end)
 
@@ -725,11 +732,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("content_filtered")
-                expect(response.error_message).to_contain("I cannot generate that type of content.")
+                test.is_false(response.success)
+                test.eq(response.error, "content_filtered")
+                test.contains(response.error_message, "I cannot generate that type of content.")
             end)
 
             it("should handle invalid JSON in response", function()
@@ -778,11 +785,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("Model failed to return valid JSON")
+                test.is_false(response.success)
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "Model failed to return valid JSON")
             end)
 
             it("should handle missing content in response", function()
@@ -829,11 +836,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("No content")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "No content")
             end)
 
             it("should handle API authentication errors", function()
@@ -877,11 +884,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("Invalid API key")
+                test.is_false(response.success)
+                test.eq(response.error, "authentication_error")
+                test.contains(response.error_message, "Invalid API key")
             end)
 
             it("should handle model not found errors", function()
@@ -925,11 +932,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("does not exist")
+                test.is_false(response.success)
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "does not exist")
             end)
 
             it("should handle invalid response structure", function()
@@ -968,11 +975,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid response structure")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Invalid response structure")
             end)
         end)
 
@@ -997,9 +1004,9 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("https://custom.structured.api/v1/chat/completions")
-                        expect(options.headers["Authorization"]).to_equal("Bearer custom-structured-key")
-                        expect(options.timeout).to_equal(45)
+                        test.contains(url, "https://custom.structured.api/v1/chat/completions")
+                        test.eq(options.headers["Authorization"], "Bearer custom-structured-key")
+                        test.eq(options.timeout, 45)
 
                         return {
                             status_code = 200,
@@ -1025,10 +1032,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.success).to_be_true()
+                test.is_true(response.success)
+                assert(response.result)
+                local data = assert(response.result.data)
+                test.is_true(data.success)
             end)
 
             it("should handle custom timeout", function()
@@ -1046,7 +1055,7 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        expect(options.timeout).to_equal(60)
+                        test.eq(options.timeout, 60)
 
                         return {
                             status_code = 200,
@@ -1073,9 +1082,9 @@ local function define_tests()
                     timeout = 60
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
     end)

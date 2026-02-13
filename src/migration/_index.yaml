@@ -8,6 +8,14 @@ entries:
       title: Migration
       description: Database migration framework
 
+  # Dependencies
+  - name: dep.wippy.test
+    kind: "ns.dependency"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.3.0"
+
   # Requirements
   - name: app_db
     kind: ns.requirement
@@ -16,10 +24,9 @@ entries:
     targets:
       - entry: wippy.migration:migration_bootloader
         path: ".meta.requires +="
-    default: "app:db"
 
   # Dependencies
-  - name: __dependency.wippy.bootloader
+  - name: dep.wippy.bootloader
     kind: "ns.dependency"
     meta:
       description: "Bootloader component for orchestration"
@@ -41,7 +48,6 @@ entries:
     source: file://migration.lua
     modules:
       - time
-      - json
       - sql
     imports:
       core: wippy.migration:core
@@ -53,8 +59,6 @@ entries:
     meta:
       comment: Registry queries for migrations
     source: file://registry.lua
-    modules:
-      - time
     imports:
       base_registry: :registry
 
@@ -66,7 +70,6 @@ entries:
     source: file://repository.lua
     modules:
       - sql
-      - json
 
   # wippy.migration:runner
   - name: runner
@@ -75,6 +78,7 @@ entries:
       comment: Main migration library API
     source: file://runner.lua
     modules:
+      - sql
       - time
       - funcs
     imports:
@@ -99,3 +103,29 @@ entries:
       migration_registry: wippy.migration:registry
       runner: wippy.migration:runner
     method: run
+
+  # wippy.migration:core_test
+  - name: core_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-core
+      comment: Tests for migration core DSL
+    source: file://core_test.lua
+    method: run
+    imports:
+      core: wippy.migration:core
+      test: wippy.test:test
+
+  # wippy.migration:registry_test
+  - name: registry_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-registry
+      comment: Tests for migration registry queries
+    source: file://registry_test.lua
+    method: run
+    imports:
+      migration_registry: wippy.migration:registry
+      test: wippy.test:test

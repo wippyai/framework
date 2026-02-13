@@ -3,6 +3,49 @@ local compiler = require("compiler")
 local agent = require("agent")
 local contract = require("contract")
 
+type ToolSpec = string | { id: string, alias: string?, description: string?, context: table? }
+type DelegateSpec = { id: string, name: string?, rule: string?, schema: table?, context: table? }
+type MemoryContractConfig = { implementation_id: string, context: table? }
+
+type DelegateToolsConfig = {
+    enabled: boolean?,
+    description_suffix: string?,
+    default_schema: table?,
+}
+
+type CompilationDelegatesConfig = {
+    generate_tool_schemas: boolean,
+    description_suffix: string?,
+    tool_schema: table,
+}
+
+type CompilationConfig = {
+    delegates: CompilationDelegatesConfig,
+    context_merger: any?,
+}
+
+type AgentContextConfig = {
+    enable_cache: boolean?,
+    context: {[string]: any}?,
+    delegate_tools: DelegateToolsConfig?,
+    memory_contract: MemoryContractConfig?,
+    context_merger: any?,
+}
+
+type LoadOptions = {
+    model: string?,
+}
+
+type ConfigSummary = {
+    current_agent_id: string?,
+    current_model: string?,
+    additional_tools_count: number,
+    additional_delegates_count: number,
+    has_memory_contract: boolean,
+    cache_enabled: boolean,
+    delegate_tools_enabled: boolean,
+}
+
 local agent_context = {}
 agent_context.__index = agent_context
 
@@ -14,11 +57,11 @@ agent_context._resolver_checked = false
 
 local RESOLVER_CONTRACT = "wippy.agent:resolver"
 
-local function get_agent_registry() return agent_context._agent_registry or agent_registry end
-local function get_compiler() return agent_context._compiler or compiler end
-local function get_agent() return agent_context._agent or agent end
+local function get_agent_registry(): any return agent_context._agent_registry or agent_registry end
+local function get_compiler(): any return agent_context._compiler or compiler end
+local function get_agent(): any return agent_context._agent or agent end
 
-local function get_resolver()
+local function get_resolver(): any?
     if agent_context._resolver_checked then
         return agent_context._resolver
     end
@@ -38,14 +81,9 @@ local function get_resolver()
     return instance
 end
 
-local function resolve_agent_via_contract(agent_id)
+local function resolve_agent_via_contract(agent_id: string): table?
     local resolver = get_resolver()
     if not resolver then
-        return nil
-    end
-
-    local can_resolve, can_err = resolver:can_resolve({ agent_id = agent_id })
-    if not can_resolve or can_err then
         return nil
     end
 
@@ -54,10 +92,10 @@ local function resolve_agent_via_contract(agent_id)
         return nil
     end
 
-    return spec
+    return spec :: {}?
 end
 
-local function merge_contexts(base_context, override_context)
+local function merge_contexts(base_context: {[string]: any}?, override_context: {[string]: any}?): {[string]: any}
     local merged = {}
     if base_context then
         for k, v in pairs(base_context) do
@@ -72,7 +110,7 @@ local function merge_contexts(base_context, override_context)
     return merged
 end
 
-function agent_context.new(config)
+function agent_context.new(config): any
     config = config or {}
 
     local self = setmetatable({}, agent_context)
@@ -109,13 +147,13 @@ function agent_context.new(config)
     return self
 end
 
-local function clear_current_agent(self)
+local function clear_current_agent(self: any)
     self.current_agent = nil
     self.current_agent_id = nil
     self.current_model = nil
 end
 
-function agent_context:add_tools(tool_specs)
+function agent_context:add_tools(tool_specs): any
     if not tool_specs then
         return self
     end
@@ -136,7 +174,7 @@ function agent_context:add_tools(tool_specs)
     return self
 end
 
-function agent_context:add_delegates(delegate_specs)
+function agent_context:add_delegates(delegate_specs): any
     if not delegate_specs then
         return self
     end
@@ -157,7 +195,7 @@ function agent_context:add_delegates(delegate_specs)
     return self
 end
 
-function agent_context:configure_delegate_tools(config)
+function agent_context:configure_delegate_tools(config: DelegateToolsConfig): any
     if config.enabled ~= nil then
         self.compilation_config.delegates.generate_tool_schemas = config.enabled
     end
@@ -172,19 +210,19 @@ function agent_context:configure_delegate_tools(config)
     return self
 end
 
-function agent_context:set_memory_contract(contract)
-    self.memory_contract = contract
+function agent_context:set_memory_contract(memory_contract: MemoryContractConfig): any
+    self.memory_contract = memory_contract
     clear_current_agent(self)
     return self
 end
 
-function agent_context:set_context_merger(merger_fn)
+function agent_context:set_context_merger(merger_fn: any): any
     self.compilation_config.context_merger = merger_fn
     clear_current_agent(self)
     return self
 end
 
-function agent_context:update_context(context_updates)
+function agent_context:update_context(context_updates: {[string]: any}?): any
     if not context_updates or type(context_updates) ~= "table" then
         return self
     end
@@ -197,7 +235,7 @@ function agent_context:update_context(context_updates)
     return self
 end
 
-function agent_context:load_agent(agent_spec_or_id, options)
+function agent_context:load_agent(agent_spec_or_id: string | table, options: LoadOptions?): (any?, string?)
     if not agent_spec_or_id then
         return nil, "Agent spec or identifier is required"
     end
@@ -213,16 +251,14 @@ function agent_context:load_agent(agent_spec_or_id, options)
     else
         agent_identifier = agent_spec_or_id
 
-        -- Try contract-based resolution first
         raw_spec = resolve_agent_via_contract(agent_identifier)
 
-        -- Fallback to legacy registry path
         if not raw_spec then
             local registry = get_agent_registry()
             local err
-            raw_spec, err = registry.get_by_id(agent_identifier)
+            raw_spec, err = registry.get_by_id(tostring(agent_identifier))
             if not raw_spec then
-                raw_spec, err = registry.get_by_name(agent_identifier)
+                raw_spec, err = registry.get_by_name(tostring(agent_identifier))
             end
             if not raw_spec then
                 return nil, "Failed to load agent '" .. agent_identifier .. "': " .. (err or "not found")
@@ -256,7 +292,7 @@ function agent_context:load_agent(agent_spec_or_id, options)
     raw_spec.context = merge_contexts(self.base_context, agent_registry_context)
 
     local compiler_instance = get_compiler()
-    local compiled_spec, compile_err = compiler_instance.compile(raw_spec, self.compilation_config)
+    local compiled_spec, compile_err = (compiler_instance :: any).compile(raw_spec, self.compilation_config)
     if not compiled_spec then
         return nil, "Failed to compile agent '" .. agent_identifier .. "': " .. (compile_err or "compilation error")
     end
@@ -274,14 +310,14 @@ function agent_context:load_agent(agent_spec_or_id, options)
     return agent_instance, nil
 end
 
-function agent_context:get_current_agent()
+function agent_context:get_current_agent(): (any?, string?)
     if not self.current_agent then
         return nil, "No agent loaded"
     end
     return self.current_agent, nil
 end
 
-function agent_context:switch_to_agent(agent_identifier, options)
+function agent_context:switch_to_agent(agent_identifier: string | table, options: LoadOptions?): (boolean, string?)
     if not agent_identifier then
         return false, "Agent spec or identifier is required"
     end
@@ -295,7 +331,7 @@ function agent_context:switch_to_agent(agent_identifier, options)
     return true, nil
 end
 
-function agent_context:switch_to_model(model_name)
+function agent_context:switch_to_model(model_name: string?): (boolean, string?)
     if not model_name or model_name == "" then
         return false, "Model name is required"
     end
@@ -312,7 +348,7 @@ function agent_context:switch_to_model(model_name)
     return true, nil
 end
 
-function agent_context:get_config()
+function agent_context:get_config(): ConfigSummary
     return {
         current_agent_id = self.current_agent_id,
         current_model = self.current_model,
@@ -321,7 +357,7 @@ function agent_context:get_config()
         has_memory_contract = self.memory_contract ~= nil,
         cache_enabled = self.enable_cache,
         delegate_tools_enabled = self.compilation_config.delegates.generate_tool_schemas
-    }
+    } :: ConfigSummary
 end
 
 return agent_context

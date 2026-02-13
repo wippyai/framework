@@ -182,7 +182,7 @@ local function define_tests()
             -- Create mock registry for testing
             mock_registry = {
                 get = function(id)
-                    return trait_entries[id]
+                    return (trait_entries :: any)[id]
                 end,
                 find = function(query)
                     local results = {}
@@ -227,178 +227,178 @@ local function define_tests()
         it("should get a basic trait by ID", function()
             local trait, err = traits.get_by_id("wippy.agents:conversational")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.id).to_equal("wippy.agents:conversational")
-            expect(trait.name).to_equal("Conversational")
-            expect(trait.description).to_equal("Trait that makes agents conversational and friendly.")
-            expect(trait.prompt).to_contain("You are a friendly, conversational assistant")
-            expect(trait.tools).not_to_be_nil()
-            expect(#trait.tools).to_equal(0)
-            expect(trait.build_func_id).to_be_nil() -- No build function
-            expect(trait.prompt_func_id).to_be_nil() -- No prompt function
-            expect(trait.step_func_id).to_be_nil() -- No step function
-            expect(trait.context).not_to_be_nil()
-            expect(next(trait.context)).to_be_nil() -- Empty context
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.id, "wippy.agents:conversational")
+            test.eq(trait.name, "Conversational")
+            test.eq(trait.description, "Trait that makes agents conversational and friendly.")
+            test.contains(trait.prompt, "You are a friendly, conversational assistant")
+            test.not_nil(trait.tools)
+            test.eq(#trait.tools, 0)
+            test.is_nil(trait.build_func_id) -- No build function
+            test.is_nil(trait.prompt_func_id) -- No prompt function
+            test.is_nil(trait.step_func_id) -- No step function
+            test.not_nil(trait.context)
+            test.is_nil(next(trait.context)) -- Empty context
         end)
 
         it("should get trait with old format tools", function()
             local trait, err = traits.get_by_id("wippy.agents:search_trait")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.id).to_equal("wippy.agents:search_trait")
-            expect(#trait.tools).to_equal(2)
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.id, "wippy.agents:search_trait")
+            test.eq(#trait.tools, 2)
 
             -- Check first tool (old format)
-            expect(trait.tools[1].id).to_equal("wippy.tools:search_web")
-            expect(trait.tools[1].context).to_be_nil()
+            test.eq(trait.tools[1].id, "wippy.tools:search_web")
+            test.is_nil(trait.tools[1].context)
 
             -- Check second tool (old format)
-            expect(trait.tools[2].id).to_equal("wippy.tools:browse_url")
-            expect(trait.tools[2].context).to_be_nil()
+            test.eq(trait.tools[2].id, "wippy.tools:browse_url")
+            test.is_nil(trait.tools[2].context)
         end)
 
         it("should get trait with build_func_id and context", function()
             local trait, err = traits.get_by_id("mcp.traits:filesystem")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.id).to_equal("mcp.traits:filesystem")
-            expect(trait.name).to_equal("MCP Filesystem")
-            expect(trait.build_func_id).to_equal("init_filesystem_mcp")
-            expect(trait.prompt_func_id).to_be_nil() -- No prompt function
-            expect(trait.step_func_id).to_be_nil() -- No step function
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.id, "mcp.traits:filesystem")
+            test.eq(trait.name, "MCP Filesystem")
+            test.eq(trait.build_func_id, "init_filesystem_mcp")
+            test.is_nil(trait.prompt_func_id) -- No prompt function
+            test.is_nil(trait.step_func_id) -- No step function
 
             -- Check context
-            expect(trait.context).not_to_be_nil()
-            expect(trait.context.default_timeout).to_equal(30)
-            expect(trait.context.default_encoding).to_equal("utf-8")
-            expect(trait.context.max_file_size).to_equal("10MB")
+            test.not_nil(trait.context)
+            test.eq(trait.context.default_timeout, 30)
+            test.eq(trait.context.default_encoding, "utf-8")
+            test.eq(trait.context.max_file_size, "10MB")
         end)
 
         it("should get trait with new format tools", function()
             local trait, err = traits.get_by_id("wippy.agents:database_trait")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(#trait.tools).to_equal(2)
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(#trait.tools, 2)
 
             -- Check first tool (new format)
-            expect(trait.tools[1].id).to_equal("db.tools:execute_query")
-            expect(trait.tools[1].context).not_to_be_nil()
-            expect(trait.tools[1].context.database_type).to_equal("postgresql")
-            expect(trait.tools[1].context.max_query_time).to_equal(60)
+            test.eq(trait.tools[1].id, "db.tools:execute_query")
+            test.not_nil(trait.tools[1].context)
+            test.eq(trait.tools[1].context.database_type, "postgresql")
+            test.eq(trait.tools[1].context.max_query_time, 60)
 
             -- Check second tool (new format)
-            expect(trait.tools[2].id).to_equal("db.tools:describe_table")
-            expect(trait.tools[2].context).not_to_be_nil()
-            expect(trait.tools[2].context.include_indexes).to_be_true()
+            test.eq(trait.tools[2].id, "db.tools:describe_table")
+            test.not_nil(trait.tools[2].context)
+            test.is_true(trait.tools[2].context.include_indexes)
         end)
 
         it("should handle mixed tool formats and all function types", function()
             local trait, err = traits.get_by_id("wippy.agents:mixed_tools_trait")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(#trait.tools).to_equal(4)
-            expect(trait.build_func_id).to_equal("init_mixed_tools")
-            expect(trait.prompt_func_id).to_equal("generate_context_prompt")
-            expect(trait.step_func_id).to_equal("enhance_tool_results")
-            expect(trait.context.global_timeout).to_equal(45)
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(#trait.tools, 4)
+            test.eq(trait.build_func_id, "init_mixed_tools")
+            test.eq(trait.prompt_func_id, "generate_context_prompt")
+            test.eq(trait.step_func_id, "enhance_tool_results")
+            test.eq(trait.context.global_timeout, 45)
 
             -- Check old format tools
-            expect(trait.tools[1].id).to_equal("wippy.tools:calculator")
-            expect(trait.tools[3].id).to_equal("wippy.tools:translator")
+            test.eq(trait.tools[1].id, "wippy.tools:calculator")
+            test.eq(trait.tools[3].id, "wippy.tools:translator")
 
             -- Check new format tools
-            expect(trait.tools[2].id).to_equal("wippy.tools:weather")
-            expect(trait.tools[2].context.api_key).to_equal("weather_api_key")
-            expect(trait.tools[2].context.units).to_equal("metric")
+            test.eq(trait.tools[2].id, "wippy.tools:weather")
+            test.eq(trait.tools[2].context.api_key, "weather_api_key")
+            test.eq(trait.tools[2].context.units, "metric")
 
-            expect(trait.tools[4].id).to_equal("wippy.tools:code_analyzer")
-            expect(trait.tools[4].context.max_file_size).to_equal("5MB")
-            expect(#trait.tools[4].context.language_support).to_equal(3)
+            test.eq(trait.tools[4].id, "wippy.tools:code_analyzer")
+            test.eq(trait.tools[4].context.max_file_size, "5MB")
+            test.eq(#trait.tools[4].context.language_support, 3)
         end)
 
         it("should handle context-aware trait with runtime functions", function()
             local trait, err = traits.get_by_id("wippy.agents:context_aware_trait")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.id).to_equal("wippy.agents:context_aware_trait")
-            expect(trait.name).to_equal("Context Aware")
-            expect(trait.build_func_id).to_be_nil() -- No build function
-            expect(trait.prompt_func_id).to_equal("generate_context_aware_prompt")
-            expect(trait.step_func_id).to_equal("modify_context_response")
-            expect(trait.context.adaptation_level).to_equal("high")
-            expect(trait.context.context_sensitivity).to_be_true()
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.id, "wippy.agents:context_aware_trait")
+            test.eq(trait.name, "Context Aware")
+            test.is_nil(trait.build_func_id) -- No build function
+            test.eq(trait.prompt_func_id, "generate_context_aware_prompt")
+            test.eq(trait.step_func_id, "modify_context_response")
+            test.eq(trait.context.adaptation_level, "high")
+            test.is_true(trait.context.context_sensitivity)
         end)
 
         it("should handle time-aware trait like the real implementation", function()
             local trait, err = traits.get_by_id("wippy.agent.traits:time_aware")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.id).to_equal("wippy.agent.traits:time_aware")
-            expect(trait.name).to_equal("Time Aware")
-            expect(trait.build_func_id).to_equal("wippy.agent.traits:init_time_aware")
-            expect(trait.prompt_func_id).to_be_nil() -- No runtime prompt function
-            expect(trait.step_func_id).to_be_nil() -- No step function
-            expect(trait.prompt).to_equal("") -- No static prompt
-            expect(trait.context.time_interval).to_equal(15)
-            expect(trait.context.timezone).to_equal("UTC")
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.id, "wippy.agent.traits:time_aware")
+            test.eq(trait.name, "Time Aware")
+            test.eq(trait.build_func_id, "wippy.agent.traits:init_time_aware")
+            test.is_nil(trait.prompt_func_id) -- No runtime prompt function
+            test.is_nil(trait.step_func_id) -- No step function
+            test.eq(trait.prompt, "") -- No static prompt
+            test.eq(trait.context.time_interval, 15)
+            test.eq(trait.context.timezone, "UTC")
         end)
 
         it("should handle trait not found by ID", function()
             local trait, err = traits.get_by_id("nonexistent")
 
-            expect(trait).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("No trait found")).not_to_be_nil()
+            test.is_nil(trait)
+            test.not_nil(err)
+            test.not_nil(err:match("No trait found"))
         end)
 
         it("should validate entry is a trait when getting by ID", function()
             local trait, err = traits.get_by_id("wippy.agents:non_trait_entry")
 
-            expect(trait).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Entry is not a trait")).not_to_be_nil()
+            test.is_nil(trait)
+            test.not_nil(err)
+            test.not_nil(err:match("Entry is not a trait"))
         end)
 
         it("should get trait by name with features", function()
             local trait, err = traits.get_by_name("MCP Filesystem")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.name).to_equal("MCP Filesystem")
-            expect(trait.id).to_equal("mcp.traits:filesystem")
-            expect(trait.build_func_id).to_equal("init_filesystem_mcp")
-            expect(trait.prompt_func_id).to_be_nil()
-            expect(trait.step_func_id).to_be_nil()
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.name, "MCP Filesystem")
+            test.eq(trait.id, "mcp.traits:filesystem")
+            test.eq(trait.build_func_id, "init_filesystem_mcp")
+            test.is_nil(trait.prompt_func_id)
+            test.is_nil(trait.step_func_id)
         end)
 
         it("should get all available traits with processing", function()
             local all_traits = traits.get_all()
 
             -- Should find all valid traits (excluding non-trait entry)
-            expect(#all_traits).to_equal(7)
+            test.eq(#all_traits, 7)
 
             -- Check that all traits have required fields
             for _, trait in ipairs(all_traits) do
-                expect(trait.id).not_to_be_nil()
-                expect(trait.tools).not_to_be_nil()
-                expect(trait.context).not_to_be_nil()
+                test.not_nil(trait.id)
+                test.not_nil(trait.tools)
+                test.not_nil(trait.context)
 
                 -- Function IDs can be nil or string
                 if trait.build_func_id then
-                    expect(type(trait.build_func_id)).to_equal("string")
+                    test.eq(type(trait.build_func_id), "string")
                 end
                 if trait.prompt_func_id then
-                    expect(type(trait.prompt_func_id)).to_equal("string")
+                    test.eq(type(trait.prompt_func_id), "string")
                 end
                 if trait.step_func_id then
-                    expect(type(trait.step_func_id)).to_equal("string")
+                    test.eq(type(trait.step_func_id), "string")
                 end
             end
         end)
@@ -406,24 +406,24 @@ local function define_tests()
         it("should handle empty tools properly", function()
             local trait, err = traits.get_by_id("wippy.agents:conversational")
 
-            expect(err).to_be_nil()
-            expect(trait.tools).not_to_be_nil()
-            expect(#trait.tools).to_equal(0)
-            expect(type(trait.tools)).to_equal("table")
+            test.is_nil(err)
+            test.not_nil(trait.tools)
+            test.eq(#trait.tools, 0)
+            test.eq(type(trait.tools), "table")
         end)
 
         it("should require parameter for get_by_id", function()
-            local trait, err = traits.get_by_id(nil)
+            local trait, err = traits.get_by_id(nil :: string)
 
-            expect(trait).to_be_nil()
-            expect(err).to_equal("Trait ID is required")
+            test.is_nil(trait)
+            test.eq(err, "Trait ID is required")
         end)
 
         it("should require parameter for get_by_name", function()
-            local trait, err = traits.get_by_name(nil)
+            local trait, err = traits.get_by_name(nil :: string)
 
-            expect(trait).to_be_nil()
-            expect(err).to_equal("Trait name is required")
+            test.is_nil(trait)
+            test.eq(err, "Trait name is required")
         end)
 
         it("should handle empty result when getting all traits", function()
@@ -435,7 +435,7 @@ local function define_tests()
             }
 
             local all_traits = traits.get_all()
-            expect(#all_traits).to_equal(0)
+            test.eq(#all_traits, 0)
         end)
 
         it("should handle malformed tool objects", function()
@@ -459,34 +459,34 @@ local function define_tests()
 
             local trait, err = traits.get_by_id("test:malformed")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(#trait.tools).to_equal(2)  -- Only valid tools included
-            expect(trait.tools[1].id).to_equal("valid:tool")
-            expect(trait.tools[2].id).to_equal("valid:new_tool")
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(#trait.tools, 2)  -- Only valid tools included
+            test.eq(trait.tools[1].id, "valid:tool")
+            test.eq(trait.tools[2].id, "valid:new_tool")
         end)
 
         it("should handle trait with only runtime functions", function()
             local trait, err = traits.get_by_id("wippy.agents:context_aware_trait")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
-            expect(trait.build_func_id).to_be_nil() -- No compile-time function
-            expect(trait.prompt_func_id).not_to_be_nil() -- Has runtime prompt function
-            expect(trait.step_func_id).not_to_be_nil() -- Has runtime step function
-            expect(#trait.tools).to_equal(0) -- No tools
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.is_nil(trait.build_func_id) -- No compile-time function
+            test.not_nil(trait.prompt_func_id) -- Has runtime prompt function
+            test.not_nil(trait.step_func_id) -- Has runtime step function
+            test.eq(#trait.tools, 0) -- No tools
         end)
 
         it("should preserve all function IDs in trait specs", function()
             local trait, err = traits.get_by_id("wippy.agents:mixed_tools_trait")
 
-            expect(err).to_be_nil()
-            expect(trait).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(trait)
 
             -- All three function types should be preserved
-            expect(trait.build_func_id).to_equal("init_mixed_tools")
-            expect(trait.prompt_func_id).to_equal("generate_context_prompt")
-            expect(trait.step_func_id).to_equal("enhance_tool_results")
+            test.eq(trait.build_func_id, "init_mixed_tools")
+            test.eq(trait.prompt_func_id, "generate_context_prompt")
+            test.eq(trait.step_func_id, "enhance_tool_results")
         end)
     end)
 end

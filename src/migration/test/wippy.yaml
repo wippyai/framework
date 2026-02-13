@@ -1,0 +1,3 @@
+organization: wippy
+module: migration-test
+description: Test stub for migration module

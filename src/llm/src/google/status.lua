@@ -19,7 +19,7 @@ function status.handler(contract_args)
 
     local client_instance, err = client_contract
         :with_context(status._ctx.all() or {})
-        :open(status._ctx.get("client_id"))
+        :open(tostring(status._ctx.get("client_id")))
     if err then
         return {
             success = false,

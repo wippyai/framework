@@ -5,6 +5,7 @@ local status_handler = require("status_handler")
 local json = require("json")
 local env = require("env")
 local ctx = require("ctx")
+local test = require("test")
 
 local function define_tests()
     -- Toggle to enable/disable real API integration tests
@@ -107,12 +108,13 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("Integration test successful")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.tokens.completion_tokens > 0).to_be_true("No completion tokens reported")
-                expect(response.tokens.total_tokens > 0).to_be_true("No total tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "Integration test successful")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.is_true(response.tokens.completion_tokens > 0, "No completion tokens reported")
+                test.is_true(response.tokens.total_tokens > 0, "No total tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle system messages in text generation", function()
@@ -141,8 +143,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("Absolutely")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "Absolutely")
             end)
 
             it("should generate text with tool calling", function()
@@ -180,13 +183,15 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected at least one tool call")
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.result.tool_calls[1].arguments.expression).to_contain("15")
-                expect(response.result.tool_calls[1].arguments.expression).to_contain("7")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
+                assert(response.result.tool_calls[1])
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.contains(response.result.tool_calls[1].arguments.expression, "15")
+                test.contains(response.result.tool_calls[1].arguments.expression, "7")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle multiple tool calls", function()
@@ -234,9 +239,10 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Multiple tool calls failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected at least one tool call")
+                test.is_true(response.success, "Multiple tool calls failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
             end)
 
             it("should generate text with gpt-5-mini reasoning model", function()
@@ -265,11 +271,12 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("160")  -- 120 + 40 = 160 miles
-                expect(response.tokens.thinking_tokens).not_to_be_nil("No thinking tokens reported")
-                expect(response.tokens.thinking_tokens > 0).to_be_true("Expected non-zero thinking tokens")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "160")  -- 120 + 40 = 160 miles
+                test.not_nil(response.tokens.thinking_tokens, "No thinking tokens reported")
+                test.is_true(response.tokens.thinking_tokens > 0, "Expected non-zero thinking tokens")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle gpt-5-mini with thinking effort", function()
@@ -298,10 +305,11 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("gpt-5-mini request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).not_to_be_nil("No content in response")
-                expect(response.tokens.thinking_tokens).not_to_be_nil("No thinking tokens")
-                expect(response.tokens.thinking_tokens > 0).to_be_true("Expected thinking tokens")
+                test.is_true(response.success, "gpt-5-mini request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in response")
+                test.not_nil(response.tokens.thinking_tokens, "No thinking tokens")
+                test.is_true(response.tokens.thinking_tokens > 0, "Expected thinking tokens")
             end)
 
             it("should handle streaming generation", function()
@@ -344,11 +352,12 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("1")
-                expect(response.result.content).to_contain("5")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "1")
+                test.contains(response.result.content, "5")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
         end)
 
@@ -395,10 +404,11 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Streaming request failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in streaming response")
-                expect(response.result.content).to_contain("1")
-                expect(response.result.content).to_contain("5")
+                test.is_true(response.success, "Streaming request failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in streaming response")
+                test.contains(response.result.content, "1")
+                test.contains(response.result.content, "5")
 
                 -- Verify streaming events occurred
                 local content_events = 0
@@ -407,11 +417,11 @@ local function define_tests()
                         content_events = content_events + 1
                     end
                 end
-                expect(content_events > 0).to_be_true("No content streaming events occurred")
+                test.is_true(content_events > 0, "No content streaming events occurred")
 
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens")
-                expect(response.tokens.completion_tokens > 0).to_be_true("No completion tokens")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens")
+                test.is_true(response.tokens.completion_tokens > 0, "No completion tokens")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle streaming with system prompts", function()
@@ -457,8 +467,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Streaming with system prompt failed")
-                expect(response.result.content:upper():find("BEEP")).not_to_be_nil("Response doesn't follow system prompt: " .. response.result.content)
+                test.is_true(response.success, "Streaming with system prompt failed")
+                assert(response.success)
+                test.not_nil(response.result.content:upper():find("BEEP"), "Response doesn't follow system prompt: " .. response.result.content)
             end)
 
             it("should stream tool calls", function()
@@ -517,13 +528,15 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Streaming tool call failed: " .. (response.error_message or "unknown"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected at least one tool call")
+                test.is_true(response.success, "Streaming tool call failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
 
                 local tool_call = response.result.tool_calls[1]
-                expect(tool_call.name).to_equal("calculate")
-                expect(tool_call.arguments.expression).not_to_be_nil("No expression in tool call")
+                assert(tool_call)
+                test.eq(tool_call.name, "calculate")
+                test.not_nil(tool_call.arguments.expression, "No expression in tool call")
 
                 -- Verify streaming events
                 local tool_call_events = 0
@@ -532,9 +545,9 @@ local function define_tests()
                         tool_call_events = tool_call_events + 1
                     end
                 end
-                expect(tool_call_events > 0).to_be_true("No tool call streaming events occurred")
+                test.is_true(tool_call_events > 0, "No tool call streaming events occurred")
 
-                expect(response.finish_reason).to_equal("tool_call")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle streaming conversation with tool results", function()
@@ -589,11 +602,13 @@ local function define_tests()
 
                 local initial_response = generate_handler.handler(initial_args)
 
-                expect(initial_response.success).to_be_true("Initial streaming request failed")
-                expect(initial_response.result.tool_calls).not_to_be_nil("No tool calls in initial response")
-                expect(#initial_response.result.tool_calls > 0).to_be_true("Expected tool call")
+                test.is_true(initial_response.success, "Initial streaming request failed")
+                assert(initial_response.success)
+                test.not_nil(initial_response.result.tool_calls, "No tool calls in initial response")
+                test.is_true(#initial_response.result.tool_calls > 0, "Expected tool call")
 
                 local tool_call = initial_response.result.tool_calls[1]
+                assert(tool_call)
 
                 -- Step 2: Continue conversation with tool result - using proper contract format
                 local continuation_args = {
@@ -629,9 +644,10 @@ local function define_tests()
 
                 local continuation_response = generate_handler.handler(continuation_args)
 
-                expect(continuation_response.success).to_be_true("Continuation streaming failed: " .. (continuation_response.error_message or "unknown"))
-                expect(continuation_response.result.content).to_contain("12")
-                expect(continuation_response.finish_reason).to_equal("stop")
+                test.is_true(continuation_response.success, "Continuation streaming failed: " .. (continuation_response.error_message or "unknown"))
+                assert(continuation_response.success)
+                test.contains(continuation_response.result.content, "12")
+                test.eq(continuation_response.finish_reason, "stop")
             end)
 
             it("should handle streaming with gpt-5-mini reasoning", function()
@@ -674,14 +690,15 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("gpt-5-mini streaming failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in response")
-                expect(#response.result.content > 0).to_be_true("Response should have content")
+                test.is_true(response.success, "gpt-5-mini streaming failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in response")
+                test.is_true(#response.result.content > 0, "Response should have content")
 
                 -- Verify reasoning tokens
-                expect(response.tokens.thinking_tokens).not_to_be_nil("No thinking tokens")
-                expect(response.tokens.thinking_tokens > 0).to_be_true("Thinking tokens should be non-zero")
-                expect(response.finish_reason).to_equal("stop")
+                test.not_nil(response.tokens.thinking_tokens, "No thinking tokens")
+                test.is_true(response.tokens.thinking_tokens > 0, "Thinking tokens should be non-zero")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle streaming with gpt-5-mini percentage calculation", function()
@@ -724,14 +741,15 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("gpt-5-mini percentage streaming failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in response")
-                expect(#response.result.content > 0).to_be_true("Response should have content")
+                test.is_true(response.success, "gpt-5-mini percentage streaming failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in response")
+                test.is_true(#response.result.content > 0, "Response should have content")
 
                 -- Verify reasoning tokens
-                expect(response.tokens.thinking_tokens).not_to_be_nil("No thinking tokens")
-                expect(response.tokens.thinking_tokens > 0).to_be_true("Thinking tokens should be non-zero")
-                expect(response.finish_reason).to_equal("stop")
+                test.not_nil(response.tokens.thinking_tokens, "No thinking tokens")
+                test.is_true(response.tokens.thinking_tokens > 0, "Thinking tokens should be non-zero")
+                test.eq(response.finish_reason, "stop")
             end)
         end)
 
@@ -749,13 +767,14 @@ local function define_tests()
 
                 local response = embed_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.embeddings).not_to_be_nil("No embeddings in response")
-                expect(#response.result.embeddings).to_equal(1, "Expected 1 embedding")
-                expect(type(response.result.embeddings[1])).to_equal("table", "Embedding should be array")
-                expect(#response.result.embeddings[1] > 100).to_be_true("Embedding should have many dimensions")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.tokens.total_tokens > 0).to_be_true("No total tokens reported")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.embeddings, "No embeddings in response")
+                test.eq(#response.result.embeddings, 1, "Expected 1 embedding")
+                test.eq(type(response.result.embeddings[1]), "table", "Embedding should be array")
+                test.is_true(#response.result.embeddings[1] > 100, "Embedding should have many dimensions")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.is_true(response.tokens.total_tokens > 0, "No total tokens reported")
             end)
 
             it("should generate multiple embeddings", function()
@@ -774,13 +793,14 @@ local function define_tests()
 
                 local response = embed_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.embeddings).not_to_be_nil("No embeddings in response")
-                expect(#response.result.embeddings).to_equal(2, "Expected 2 embeddings")
-                expect(type(response.result.embeddings[1])).to_equal("table", "First embedding should be array")
-                expect(type(response.result.embeddings[2])).to_equal("table", "Second embedding should be array")
-                expect(#response.result.embeddings[1]).to_equal(#response.result.embeddings[2], "Embeddings should have same dimensions")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.embeddings, "No embeddings in response")
+                test.eq(#response.result.embeddings, 2, "Expected 2 embeddings")
+                test.eq(type(response.result.embeddings[1]), "table", "First embedding should be array")
+                test.eq(type(response.result.embeddings[2]), "table", "Second embedding should be array")
+                test.eq(#response.result.embeddings[1], #response.result.embeddings[2], "Embeddings should have same dimensions")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
             end)
 
             it("should respect dimensions parameter", function()
@@ -799,9 +819,10 @@ local function define_tests()
 
                 local response = embed_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.embeddings).not_to_be_nil("No embeddings in response")
-                expect(#response.result.embeddings[1]).to_equal(512, "Expected 512 dimensions")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.embeddings, "No embeddings in response")
+                test.eq(#response.result.embeddings[1], 512, "Expected 512 dimensions")
             end)
         end)
 
@@ -840,16 +861,19 @@ local function define_tests()
 
                 local response = structured_output_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.data).not_to_be_nil("No structured data in response")
-                expect(response.result.data.name).not_to_be_nil("Missing name in structured output")
-                expect(type(response.result.data.name)).to_equal("string", "Name should be string")
-                expect(response.result.data.age).not_to_be_nil("Missing age in structured output")
-                expect(type(response.result.data.age)).to_equal("number", "Age should be number")
-                expect(response.result.data.occupation).not_to_be_nil("Missing occupation in structured output")
-                expect(type(response.result.data.occupation)).to_equal("string", "Occupation should be string")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.data, "No structured data in response")
+                assert(response.result.data)
+                test.not_nil(response.result.data.name, "Missing name in structured output")
+                test.eq(type(response.result.data.name), "string", "Name should be string")
+                test.not_nil(response.result.data.age, "Missing age in structured output")
+                test.eq(type(response.result.data.age), "number", "Age should be number")
+                test.not_nil(response.result.data.occupation, "Missing occupation in structured output")
+                assert(response.result.data)
+                test.eq(type(response.result.data.occupation), "string", "Occupation should be string")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should generate complex nested structured output", function()
@@ -898,17 +922,20 @@ local function define_tests()
 
                 local response = structured_output_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.data).not_to_be_nil("No structured data in response")
-                expect(response.result.data.company_name).not_to_be_nil("Missing company_name")
-                expect(response.result.data.departments).not_to_be_nil("Missing departments")
-                expect(type(response.result.data.departments)).to_equal("table", "Departments should be array")
-                expect(#response.result.data.departments > 0).to_be_true("Should have at least one department")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.data, "No structured data in response")
+                assert(response.result.data)
+                test.not_nil(response.result.data.company_name, "Missing company_name")
+                test.not_nil(response.result.data.departments, "Missing departments")
+                test.eq(type(response.result.data.departments), "table", "Departments should be array")
+                test.is_true(#response.result.data.departments > 0, "Should have at least one department")
 
+                assert(response.result.data)
                 local first_dept = response.result.data.departments[1]
-                expect(first_dept.name).not_to_be_nil("First department missing name")
-                expect(first_dept.employees).not_to_be_nil("First department missing employees")
-                expect(type(first_dept.employees)).to_equal("number", "Employee count should be number")
+                test.not_nil(first_dept.name, "First department missing name")
+                test.not_nil(first_dept.employees, "First department missing employees")
+                test.eq(type(first_dept.employees), "number", "Employee count should be number")
             end)
 
             it("should generate structured output with gpt-5-mini reasoning", function()
@@ -960,14 +987,16 @@ local function define_tests()
 
                 local response = structured_output_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("gpt-5-mini structured output failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.data).not_to_be_nil("No structured data in response")
-                expect(response.result.data.problem_type).not_to_be_nil("Missing problem_type")
-                expect(response.result.data.given_values.apples).to_equal(5)
-                expect(response.result.data.given_values.cost).to_equal(3)
-                expect(response.result.data.final_answer).to_equal(4.8) -- 8 * 3/5 = 4.8
-                expect(response.tokens.thinking_tokens).not_to_be_nil("No thinking tokens reported")
-                expect(response.tokens.thinking_tokens > 0).to_be_true("Expected non-zero thinking tokens")
+                test.is_true(response.success, "gpt-5-mini structured output failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.data, "No structured data in response")
+                assert(response.result.data)
+                test.not_nil(response.result.data.problem_type, "Missing problem_type")
+                test.eq(response.result.data.given_values.apples, 5)
+                test.eq(response.result.data.given_values.cost, 3)
+                test.eq(response.result.data.final_answer, 4.8) -- 8 * 3/5 = 4.8
+                test.not_nil(response.tokens.thinking_tokens, "No thinking tokens reported")
+                test.is_true(response.tokens.thinking_tokens > 0, "Expected non-zero thinking tokens")
             end)
         end)
 
@@ -990,9 +1019,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false("Expected error for nonexistent model")
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("does not exist")
+                test.is_false(response.success, "Expected error for nonexistent model")
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "does not exist")
             end)
 
             it("should handle authentication errors", function()
@@ -1020,8 +1049,8 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false("Expected authentication error")
-                expect(response.error).to_equal("authentication_error")
+                test.is_false(response.success, "Expected authentication error")
+                test.eq(response.error, "authentication_error")
 
                 -- Restore valid key
                 generate_handler._client._ctx = {
@@ -1051,11 +1080,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false("Expected error for invalid schema")
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema must be an object")
+                test.is_false(response.success, "Expected error for invalid schema")
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Root schema must be an object")
             end)
 
             it("should handle rate limit errors gracefully", function()
@@ -1095,9 +1124,10 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Large context request failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in response")
-                expect(response.tokens.prompt_tokens > 1000).to_be_true("Expected many prompt tokens")
+                test.is_true(response.success, "Large context request failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in response")
+                test.is_true(response.tokens.prompt_tokens > 1000, "Expected many prompt tokens")
             end)
 
             it("should preserve metadata across all handler types", function()
@@ -1113,8 +1143,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 5 }
                 })
 
-                expect(gen_response.success).to_be_true("Text generation failed")
-                expect(gen_response.metadata).not_to_be_nil("No metadata in text generation")
+                test.is_true(gen_response.success, "Text generation failed")
+                assert(gen_response.success)
+                test.not_nil(gen_response.metadata, "No metadata in text generation")
 
                 -- Test metadata in embeddings
                 local embed_response = embed_handler.handler({
@@ -1122,8 +1153,9 @@ local function define_tests()
                     input = "Test metadata"
                 })
 
-                expect(embed_response.success).to_be_true("Embeddings failed")
-                expect(embed_response.metadata).not_to_be_nil("No metadata in embeddings")
+                test.is_true(embed_response.success, "Embeddings failed")
+                assert(embed_response.success)
+                test.not_nil(embed_response.metadata, "No metadata in embeddings")
 
                 -- Test metadata in structured output
                 local struct_response = structured_output_handler.handler({
@@ -1137,8 +1169,9 @@ local function define_tests()
                     }
                 })
 
-                expect(struct_response.success).to_be_true("Structured output failed")
-                expect(struct_response.metadata).not_to_be_nil("No metadata in structured output")
+                test.is_true(struct_response.success, "Structured output failed")
+                assert(struct_response.success)
+                test.not_nil(struct_response.metadata, "No metadata in structured output")
             end)
         end)
 
@@ -1180,9 +1213,10 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true("API status check failed")
-                expect(response.status).to_equal("healthy")
-                expect(response.message).to_equal("OpenAI API is responding normally")
+                test.is_true(response.success, "API status check failed")
+                assert(response.success)
+                test.eq(response.status, "healthy")
+                test.eq(response.message, "OpenAI API is responding normally")
             end)
 
             it("should handle invalid API key", function()
@@ -1199,9 +1233,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false("Expected auth failure")
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("Incorrect API")
+                test.is_false(response.success, "Expected auth failure")
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "Incorrect API")
             end)
 
             it("should work with custom base URL", function()
@@ -1221,8 +1255,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true("Custom base URL failed")
-                expect(response.status).to_equal("healthy")
+                test.is_true(response.success, "Custom base URL failed")
+                assert(response.success)
+                test.eq(response.status, "healthy")
             end)
 
             it("should handle organization context", function()
@@ -1244,8 +1279,9 @@ local function define_tests()
 
                     local response = status_handler.handler()
 
-                    expect(response.success).to_be_true("Organization context failed")
-                    expect(response.status).to_equal("healthy")
+                    test.is_true(response.success, "Organization context failed")
+                    assert(response.success)
+                    test.eq(response.status, "healthy")
                 else
                     print("Skipping org test - no OPENAI_ORGANIZATION env var")
                 end
@@ -1269,9 +1305,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false("Expected timeout")
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("Connection failed")
+                test.is_false(response.success, "Expected timeout")
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "Connection failed")
             end)
 
             it("should resolve API key from environment", function()
@@ -1297,8 +1333,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true("Env API key resolution failed")
-                expect(response.status).to_equal("healthy")
+                test.is_true(response.success, "Env API key resolution failed")
+                assert(response.success)
+                test.eq(response.status, "healthy")
             end)
         end)
     end)

@@ -3,6 +3,121 @@ local providers = require("providers")
 local contract = require("contract")
 local security = require("security")
 
+type Message = {
+    role: string,
+    content: any,
+    name: string?,
+    function_call: table?,
+    function_call_id: string?,
+    metadata: table?
+}
+
+type ToolCall = {
+    id: string?,
+    name: string,
+    arguments: any
+}
+
+type TokenUsage = {
+    prompt_tokens: number?,
+    completion_tokens: number?,
+    thinking_tokens: number?,
+    total_tokens: number?,
+    cache_read_input_tokens: number?,
+    cache_read_tokens: number?,
+    cache_creation_input_tokens: number?,
+    cache_write_tokens: number?
+}
+
+type UsageRecord = {
+    usage_id: string
+}
+
+type GenerateResponse = {
+    result: any,
+    tokens: TokenUsage,
+    finish_reason: string?,
+    metadata: table?,
+    tool_calls: {ToolCall}?,
+    usage_record: UsageRecord?
+}
+
+type EmbedResponse = {
+    result: {number} | {{number}},
+    tokens: TokenUsage,
+    finish_reason: string?,
+    metadata: table?,
+    usage_record: UsageRecord?
+}
+
+type StatusResponse = {
+    available: boolean?,
+    latency: number?,
+    model: string?
+}
+
+type ProviderRef = {
+    id: string,
+    provider_model: string?,
+    options: table?,
+    priority: number?
+}
+
+type ModelCard = {
+    id: string,
+    name: string,
+    title: string,
+    description: string,
+    capabilities: {string},
+    class: {string},
+    priority: number,
+    max_tokens: number,
+    output_tokens: number,
+    pricing: table,
+    providers: {ProviderRef},
+    dimensions: number?
+}
+
+type ModelClass = {
+    id: string,
+    name: string?,
+    title: string?,
+    description: string?
+}
+
+
+type GenerateOptions = {
+    model: string,
+    provider_id: string?,
+    user: string?,
+    tools: table?,
+    tool_choice: any?,
+    stream: boolean?,
+    temperature: number?,
+    max_tokens: number?
+}
+
+type EmbedOptions = {
+    model: string,
+    provider_id: string?,
+    user: string?,
+    dimensions: number?
+}
+
+type StatusOptions = {
+    model: string,
+    provider_id: string?,
+    user: string?
+}
+
+type TrackingOptions = {
+    timestamp: number?,
+    metadata: table?
+}
+
+type PromptInput = string | {Message} | table
+
+
 local llm = {}
 
 -- Contract constants
@@ -256,7 +371,7 @@ function llm.generate(prompt_input, options)
         merge_user_options(contract_args, options, {"model", "provider_id"})
 
         -- Call provider contract directly with standard format
-        local raw_result, err = provider_instance:generate(contract_args)
+        local raw_result, err = (provider_instance as any):generate(contract_args)
         if err then
             return nil, err
         end
@@ -276,7 +391,7 @@ function llm.generate(prompt_input, options)
             normalized.usage_record = { usage_id = usage_id }
         end
 
-        return normalized
+        return normalized :: GenerateResponse
     else
         -- Smart model resolution path
         local err
@@ -289,7 +404,7 @@ function llm.generate(prompt_input, options)
         if not model_card.providers or #model_card.providers == 0 then
             return nil, "Model has no configured providers: " .. options.model
         end
-        provider_info = model_card.providers[1]
+        provider_info = model_card.providers[1] as any
 
         -- Open provider instance
         local providers_module = llm._providers or providers
@@ -318,7 +433,7 @@ function llm.generate(prompt_input, options)
         merge_user_options(contract_args, options, {"model"})
 
         -- Call provider contract
-        local raw_result, err = provider_instance:generate(contract_args)
+        local raw_result, err = (provider_instance as any):generate(contract_args)
         if err then
             return nil, err
         end
@@ -338,11 +453,11 @@ function llm.generate(prompt_input, options)
             normalized.usage_record = { usage_id = usage_id }
         end
 
-        return normalized
+        return normalized :: GenerateResponse
     end
 end
 
-function llm.structured_output(schema, prompt_input, options)
+function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, string?)
     if not options or not options.model then
         return nil, "Model is required in options"
     end
@@ -390,7 +505,7 @@ function llm.structured_output(schema, prompt_input, options)
         merge_user_options(contract_args, options, {"model", "provider_id", "schema"})
 
         -- Call provider contract directly with standard format
-        local raw_result, err = provider_instance:structured_output(contract_args)
+        local raw_result, err = (provider_instance as any):structured_output(contract_args)
         if err then
             return nil, err
         end
@@ -410,7 +525,7 @@ function llm.structured_output(schema, prompt_input, options)
             normalized.usage_record = { usage_id = usage_id }
         end
 
-        return normalized
+        return normalized :: GenerateResponse
     else
         -- Smart model resolution path
         local err
@@ -423,7 +538,7 @@ function llm.structured_output(schema, prompt_input, options)
         if not model_card.providers or #model_card.providers == 0 then
             return nil, "Model has no configured providers: " .. options.model
         end
-        provider_info = model_card.providers[1]
+        provider_info = model_card.providers[1] as any
 
         -- Open provider instance
         local providers_module = llm._providers or providers
@@ -453,7 +568,7 @@ function llm.structured_output(schema, prompt_input, options)
         merge_user_options(contract_args, options, {"model", "schema"})
 
         -- Call provider contract
-        local raw_result, err = provider_instance:structured_output(contract_args)
+        local raw_result, err = (provider_instance as any):structured_output(contract_args)
         if err then
             return nil, err
         end
@@ -473,7 +588,7 @@ function llm.structured_output(schema, prompt_input, options)
             normalized.usage_record = { usage_id = usage_id }
         end
 
-        return normalized
+        return normalized :: GenerateResponse
     end
 end
 
@@ -514,7 +629,7 @@ function llm.embed(text, options)
         merge_user_options(contract_args, options, {"model", "provider_id"})
 
         -- Call provider contract directly with standard format
-        local raw_result, err = provider_instance:embed(contract_args)
+        local raw_result, err = (provider_instance as any):embed(contract_args)
         if err then
             return nil, err
         end
@@ -534,7 +649,7 @@ function llm.embed(text, options)
             normalized.usage_record = { usage_id = usage_id }
         end
 
-        return normalized
+        return normalized :: EmbedResponse
     else
         -- Smart model resolution path
         local err
@@ -547,7 +662,7 @@ function llm.embed(text, options)
         if not model_card.providers or #model_card.providers == 0 then
             return nil, "Model has no configured providers: " .. options.model
         end
-        provider_info = model_card.providers[1]
+        provider_info = model_card.providers[1] as any
 
         -- Open provider instance
         local providers_module = llm._providers or providers
@@ -577,13 +692,13 @@ function llm.embed(text, options)
         merge_user_options(contract_args, options, {"model", "dimensions"})
 
         -- Call provider contract
-        local raw_result, err = provider_instance:embed(contract_args)
+        local raw_result, err = (provider_instance as any):embed(contract_args)
         if err then
             return nil, err
         end
 
         -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result, options.model)
+        local normalized, norm_err = normalize_response(raw_result)
         if norm_err then
             return nil, norm_err
         end
@@ -597,7 +712,7 @@ function llm.embed(text, options)
             normalized.usage_record = { usage_id = usage_id }
         end
 
-        return normalized
+        return normalized :: EmbedResponse
     end
 end
 
@@ -626,7 +741,7 @@ function llm.status(options)
         if not model_card.providers or #model_card.providers == 0 then
             return nil, "Model has no configured providers: " .. options.model
         end
-        provider_info = model_card.providers[1]
+        provider_info = model_card.providers[1] as any
         merge_provider_options(contract_args, provider_info)
     end
 
@@ -638,12 +753,12 @@ function llm.status(options)
 
     merge_user_options(contract_args, options, {"model", "provider_id"})
 
-    local result, err = provider_instance:status(contract_args)
+    local result, err = (provider_instance as any):status(contract_args)
 
-    return result, err
+    return result :: StatusResponse, err
 end
 
-function llm.available_models(capability)
+function llm.available_models(capability: string?): ({ModelCard}?, string?)
     local models_module = llm._models or models
     local all_models, err = models_module.get_all()
     if not all_models then
@@ -651,7 +766,7 @@ function llm.available_models(capability)
     end
 
     if not capability then
-        return all_models
+        return all_models :: {ModelCard}
     end
 
     -- Filter by capability
@@ -667,15 +782,19 @@ function llm.available_models(capability)
         end
     end
 
-    return filtered
+    return filtered :: {ModelCard}
 end
 
-function llm.get_classes()
+function llm.get_classes(): ({ModelClass}?, string?)
     local models_module = llm._models or models
-    return models_module.get_all_classes()
+    local result, err = models_module.get_all_classes()
+    if err then
+        return nil, err
+    end
+    return result :: {ModelClass}
 end
 
-function llm.track_usage(response, model_id, options)
+function llm.track_usage(response, model_id, options): (string?, string?)
     local tracker = get_usage_tracker()
     if not tracker then
         -- No usage tracking available
@@ -721,7 +840,7 @@ function llm.track_usage(response, model_id, options)
         tracking_options
     )
 
-    return usage_id, err
+    return usage_id :: string, err
 end
 
 return llm

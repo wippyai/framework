@@ -8,6 +8,14 @@ entries:
       title: Bootloader
       description: Application bootloader and initialization orchestrator
 
+  # Dependencies
+  - name: dep.wippy.test
+    kind: "ns.dependency"
+    meta:
+      description: "Testing component"
+    component: "wippy/test"
+    version: ">=v0.3.0"
+
   # Requirements
   - name: application_host
     kind: ns.requirement
@@ -24,7 +32,6 @@ entries:
     targets:
       - entry: wippy.bootloader.bootloaders:encryption_key_var
         path: ".storage"
-    default: "app.env:file"
 
   # wippy.bootloader:bootloader_registry
   - name: bootloader_registry
@@ -43,7 +50,6 @@ entries:
     source: file://bootloader.lua
     modules:
       - time
-      - json
       - logger
       - funcs
     imports:
@@ -66,3 +72,16 @@ entries:
           - wippy.security:process
     process: bootloader
 
+  # wippy.bootloader:bootloader_test
+  - name: bootloader_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: bootloader
+      comment: Tests for bootloader utilities and registry
+    source: file://bootloader_test.lua
+    method: run
+    imports:
+      bootloader: wippy.bootloader:bootloader
+      bootloader_registry: wippy.bootloader:bootloader_registry
+      test: wippy.test:test

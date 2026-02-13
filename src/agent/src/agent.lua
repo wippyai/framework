@@ -3,51 +3,56 @@ local llm = require("llm")
 local contract = require("contract")
 local funcs = require("funcs")
 
----@class UnifiedTool
----@field name string Canonical tool name
----@field description string Tool description
----@field schema table Tool JSON schema
----@field registry_id string|nil Registry ID (nil for inline tools)
----@field context table Tool context with agent_id
----@field agent_id string|nil Agent ID (present for delegate tools)
+type UnifiedTool = {
+    name: string,
+    description: string,
+    schema: table,
+    registry_id: string?,
+    context: table,
+    agent_id: string?,
+    meta: table?,
+}
 
----@class CompiledAgentSpec
----@field id string Agent unique identifier
----@field name string Agent display name
----@field description string Agent description
----@field model? string LLM model identifier
----@field max_tokens? number Maximum completion tokens
----@field temperature? number Sampling temperature (0-1)
----@field thinking_effort? number Thinking effort (0-100)
----@field prompt string Compiled system prompt
----@field tools table<string, UnifiedTool> Unified tools (keyed by canonical names)
----@field memory string[] Memory items
----@field memory_contract table Memory contract configuration
----@field prompt_funcs table[] Trait prompt functions
----@field step_funcs table[] Trait step functions
+type CompiledAgentSpec = {
+    id: string,
+    name: string,
+    description: string,
+    model: string?,
+    max_tokens: number?,
+    temperature: number?,
+    thinking_effort: number?,
+    prompt: string,
+    tools: {[string]: UnifiedTool},
+    memory: {string},
+    memory_contract: table?,
+    prompt_funcs: {table},
+    step_funcs: {table},
+}
 
----@class TokenUsage
----@field prompt number Prompt tokens used
----@field completion number Completion tokens used
----@field thinking number Thinking tokens used
----@field total number Total tokens used
+type TokenUsage = {
+    prompt: number,
+    completion: number,
+    thinking: number,
+    total: number,
+}
 
----@class AgentRunner
----@field id string Agent ID
----@field name string Agent name
----@field description string Agent description
----@field model string LLM model
----@field max_tokens number Maximum tokens
----@field temperature number Temperature
----@field thinking_effort number Thinking effort
----@field tools table<string, UnifiedTool> Unified tools (keyed by canonical names)
----@field memory string[] Memory items
----@field memory_contract table Memory contract configuration
----@field system_prompt string Compiled prompt
----@field system_message table System message
----@field prompt_funcs table[] Trait prompt functions
----@field step_funcs table[] Trait step functions
----@field total_tokens TokenUsage Token usage statistics
+type AgentRunner = {
+    id: string,
+    name: string,
+    description: string,
+    model: string,
+    max_tokens: number,
+    temperature: number,
+    thinking_effort: number,
+    tools: {[string]: UnifiedTool},
+    memory: {string},
+    memory_contract: table?,
+    system_prompt: string,
+    system_message: table,
+    prompt_funcs: {table},
+    step_funcs: {table},
+    total_tokens: TokenUsage,
+}
 
 local agent = {}
 
@@ -80,23 +85,23 @@ agent._prompt = nil
 agent._contract = nil
 agent._funcs = nil
 
-local function get_llm()
+local function get_llm(): any
     return agent._llm or llm
 end
 
-local function get_prompt()
+local function get_prompt(): any
     return agent._prompt or prompt
 end
 
-local function get_contract()
+local function get_contract(): any
     return agent._contract or contract
 end
 
-local function get_funcs()
+local function get_funcs(): any
     return agent._funcs or funcs
 end
 
-local function merge_agent_and_context(agent_ctx, delegate_ctx)
+local function merge_agent_and_context(agent_ctx: any, delegate_ctx: any): any
     local merged = {}
     for k, v in pairs(agent_ctx or {}) do
         merged[k] = v
@@ -107,7 +112,7 @@ local function merge_agent_and_context(agent_ctx, delegate_ctx)
     return merged
 end
 
-local function execute_prompt_functions(self, runtime_context)
+local function execute_prompt_functions(self: any, runtime_context: any): string
     if not self.prompt_funcs or #self.prompt_funcs == 0 then
         return ""
     end
@@ -126,7 +131,7 @@ local function execute_prompt_functions(self, runtime_context)
         merged_context.agent_id = self.id
 
         local executor = funcs_module.new()
-        local prompt_text, err = executor:with_context(merged_context):call(prompt_func.func_id)
+        local prompt_text, err = executor:with_context(merged_context):call(tostring(prompt_func.func_id))
 
         if not err and prompt_text and prompt_text ~= "" then
             table.insert(prompt_parts, prompt_text)
@@ -140,7 +145,7 @@ local function execute_prompt_functions(self, runtime_context)
     return table.concat(prompt_parts, "\n\n")
 end
 
-local function extract_memory_ids_from_messages(messages, scan_limit)
+local function extract_memory_ids_from_messages(messages: any, scan_limit: any): any
     if not messages or #messages == 0 then
         return {}
     end
@@ -166,7 +171,7 @@ local function extract_memory_ids_from_messages(messages, scan_limit)
     return memory_ids
 end
 
-local function extract_recent_actions(messages, max_actions, message_types)
+local function extract_recent_actions(messages: any, max_actions: any, message_types: any): any
     if not messages or #messages == 0 then
         return {}
     end
@@ -206,7 +211,7 @@ local function extract_recent_actions(messages, max_actions, message_types)
     return actions
 end
 
-local function should_recall_memory(messages, options, runtime_options)
+local function should_recall_memory(messages: any, options: any, runtime_options: table?): boolean
     if runtime_options and runtime_options.disable_memory_recall then
         return false
     end
@@ -234,7 +239,7 @@ local function should_recall_memory(messages, options, runtime_options)
     return messages_since_recall >= cooldown
 end
 
-local function get_memory_options(memory_contract)
+local function get_memory_options(memory_contract: any): any
     local options = {}
 
     for key, value in pairs(AGENT_CONFIG.memory.defaults) do
@@ -250,7 +255,7 @@ local function get_memory_options(memory_contract)
     return options
 end
 
-local function get_memory_contract(self, runtime_context)
+local function get_memory_contract(self: any, runtime_context: any): (any?, string?)
     if not self.memory_contract or not self.memory_contract.implementation_id then
         return nil, "No memory contract configured for this agent"
     end
@@ -277,7 +282,7 @@ local function get_memory_contract(self, runtime_context)
 
     merged_context.agent_id = self.id
 
-    local memory_instance, err = memory_contract_def:open(self.memory_contract.implementation_id, merged_context)
+    local memory_instance, err = memory_contract_def:open(tostring(self.memory_contract.implementation_id), merged_context)
     if err then
         return nil, "Failed to open memory implementation: " .. tostring(err)
     end
@@ -285,7 +290,7 @@ local function get_memory_contract(self, runtime_context)
     return memory_instance
 end
 
-local function perform_memory_recall(self, prompt_builder, runtime_options)
+local function perform_memory_recall(self: any, prompt_builder: any, runtime_options: any): (string?, any)
     if not self.memory_contract or not self.memory_contract.implementation_id then
         return nil, nil
     end
@@ -301,7 +306,8 @@ local function perform_memory_recall(self, prompt_builder, runtime_options)
         return nil, nil
     end
 
-    local context = runtime_options and runtime_options.context or {}
+    local ro = runtime_options :: any
+    local context = ro and ro.context or {}
     local memory_contract, err = get_memory_contract(self, context)
     if err then
         return nil, nil
@@ -347,7 +353,7 @@ local function perform_memory_recall(self, prompt_builder, runtime_options)
     return memory_text, memory_ids
 end
 
-local function extract_tool_schemas_for_llm(tools)
+local function extract_tool_schemas_for_llm(tools: any): {table}
     -- Count tools with schemas first for proper sizing
     local schema_count = 0
     for _, tool_info in pairs(tools) do
@@ -382,7 +388,7 @@ local function extract_tool_schemas_for_llm(tools)
     return tool_schemas
 end
 
-local function has_tools_with_schemas(tools)
+local function has_tools_with_schemas(tools: any): boolean
     for _, tool_info in pairs(tools) do
         if tool_info.schema then
             return true
@@ -391,14 +397,11 @@ local function has_tools_with_schemas(tools)
     return false
 end
 
----@param compiled_spec CompiledAgentSpec
----@return AgentRunner|nil runner, string|nil error
-function agent.new(compiled_spec)
+function agent.new(compiled_spec: any): (any, string?)
     if not compiled_spec then
         return nil, "Compiled spec is required"
     end
 
-    ---@type AgentRunner
     local runner = {
         id = compiled_spec.id,
         name = compiled_spec.name,
@@ -437,11 +440,7 @@ function agent.new(compiled_spec)
     return runner
 end
 
----@param self AgentRunner
----@param prompt_builder PromptBuilder Prompt builder with conversation
----@param runtime_options? table Optional runtime options including stream_target and context
----@return table|nil result, string|nil error
-function agent:step(prompt_builder, runtime_options)
+function agent:step(prompt_builder: any, runtime_options: any): (table?, string?)
     runtime_options = runtime_options or {}
     local llm_instance = get_llm()
 
@@ -455,7 +454,7 @@ function agent:step(prompt_builder, runtime_options)
     local memory_prompt = nil
 
     if memory_text and memory_ids then
-        local formatted_memory = string.format(AGENT_CONFIG.memory.recall_prompt, memory_text)
+        local formatted_memory = string.format(tostring(AGENT_CONFIG.memory.recall_prompt), memory_text)
         memory_prompt = {
             role = prompt.ROLE.DEVELOPER,
             content = { prompt.text(formatted_memory) },
@@ -615,9 +614,7 @@ function agent:step(prompt_builder, runtime_options)
     return response
 end
 
----@param self AgentRunner
----@return table stats
-function agent:get_stats()
+function agent:get_stats(): table
     return {
         id = self.id,
         name = self.name,

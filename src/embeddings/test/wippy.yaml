@@ -1,0 +1,3 @@
+organization: wippy
+module: embeddings-test
+description: Test stub for embeddings module

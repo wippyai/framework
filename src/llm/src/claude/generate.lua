@@ -9,16 +9,19 @@ local generate_handler = {
     _output = output
 }
 
----@param stream_response table streaming response from client
----@param context table request context with tool mappings
----@param stream_config table streaming configuration
----@return table response in contract format
 local function handle_streaming(stream_response, context, stream_config)
-    local streamer = generate_handler._output.streamer(
-        stream_config.reply_to,
-        stream_config.topic,
+    local streamer, streamer_err = generate_handler._output.streamer(
+        tostring(stream_config.reply_to),
+        tostring(stream_config.topic),
         stream_config.buffer_size or 10
     )
+
+    if not streamer then
+        return generate_handler._mapper.map_error_response({
+            message = streamer_err or "Failed to create streamer",
+            status_code = 500
+        })
+    end
 
     local full_content = ""
     local tool_calls = {}
@@ -40,16 +43,16 @@ local function handle_streaming(stream_response, context, stream_config)
             if mapped_calls[1] then
                 table.insert(tool_calls, mapped_calls[1])
                 streamer:send_tool_call(
-                    mapped_calls[1].name,
-                    mapped_calls[1].arguments,
-                    mapped_calls[1].id
+                    tostring(mapped_calls[1].name),
+                    tostring(mapped_calls[1].arguments),
+                    tostring(mapped_calls[1].id)
                 )
             end
         end,
 
         on_error = function(error_info)
             local error_response = generate_handler._mapper.map_error_response(error_info)
-            streamer:send_error(error_response.error, error_response.error_message)
+            streamer:send_error(tostring(error_response.error), tostring(error_response.error_message), nil)
         end,
 
         on_done = function(result)
@@ -75,8 +78,6 @@ local function handle_streaming(stream_response, context, stream_config)
     )
 end
 
----@param contract_args table contract arguments for text generation
----@return table response in contract format
 function generate_handler.handler(contract_args)
     if not contract_args.model then
         return {

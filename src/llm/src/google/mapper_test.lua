@@ -23,13 +23,15 @@ local function define_tests()
 
                 local google_messages, system_instructions = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(2)
-                expect(#system_instructions).to_equal(1)
-                expect(system_instructions[1].text).to_equal("You are a helpful assistant")
-                expect(google_messages[1].role).to_equal("user")
-                expect(google_messages[1].parts[1].text).to_equal("Hello")
-                expect(google_messages[2].role).to_equal("model")
-                expect(google_messages[2].parts.text).to_equal("Hi there!")
+                tests.eq(#google_messages, 2)
+                tests.eq(#system_instructions, 1)
+                tests.eq(system_instructions[1].text, "You are a helpful assistant")
+                tests.eq(google_messages[1].role, "user")
+                local user_parts = google_messages[1].parts :: any
+                tests.eq(user_parts[1].text, "Hello")
+                tests.eq(google_messages[2].role, "model")
+                local model_parts = google_messages[2].parts :: any
+                tests.eq(model_parts.text, "Hi there!")
             end)
 
             it("should convert string content to parts format", function()
@@ -42,9 +44,10 @@ local function define_tests()
 
                 local google_messages, system_instructions = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].role).to_equal("user")
-                expect(google_messages[1].parts[1].text).to_equal("Simple string message")
+                tests.eq(#google_messages, 1)
+                tests.eq(google_messages[1].role, "user")
+                local str_parts = google_messages[1].parts :: any
+                tests.eq(str_parts[1].text, "Simple string message")
             end)
 
             it("should handle developer role as user role", function()
@@ -61,12 +64,14 @@ local function define_tests()
 
                 local google_messages, system_instructions = mapper.map_messages(contract_messages)
 
-                expect(#system_instructions).to_equal(0)
-                expect(#google_messages).to_equal(2)
-                expect(google_messages[1].role).to_equal("user")
-                expect(google_messages[1].parts[1].text).to_equal("Debug mode enabled")
-                expect(google_messages[2].role).to_equal("user")
-                expect(google_messages[2].parts[1].text).to_equal("Test")
+                tests.eq(#system_instructions, 0)
+                tests.eq(#google_messages, 2)
+                tests.eq(google_messages[1].role, "user")
+                local dev_parts = google_messages[1].parts :: any
+                tests.eq(dev_parts[1].text, "Debug mode enabled")
+                tests.eq(google_messages[2].role, "user")
+                local test_parts = google_messages[2].parts :: any
+                tests.eq(test_parts[1].text, "Test")
             end)
 
             it("should convert image content to Google format (URL)", function()
@@ -89,10 +94,11 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts[1].text).to_equal("What's in this image?")
-                expect(google_messages[1].parts[2].fileData).not_to_be_nil()
-                expect(google_messages[1].parts[2].fileData.fileUri).to_equal("https://example.com/image.jpg")
+                tests.eq(#google_messages, 1)
+                local img_parts = google_messages[1].parts :: any
+                tests.eq(img_parts[1].text, "What's in this image?")
+                tests.not_nil(img_parts[2].fileData)
+                tests.eq(img_parts[2].fileData.fileUri, "https://example.com/image.jpg")
             end)
 
             it("should convert image content to Google format (base64)", function()
@@ -114,10 +120,11 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts[1].inlineData).not_to_be_nil()
-                expect(google_messages[1].parts[1].inlineData.mimeType).to_equal("image/jpeg")
-                expect(google_messages[1].parts[1].inlineData.data).to_contain("iVBORw0KGgo")
+                tests.eq(#google_messages, 1)
+                local b64_parts = google_messages[1].parts :: any
+                tests.not_nil(b64_parts[1].inlineData)
+                tests.eq(b64_parts[1].inlineData.mimeType, "image/jpeg")
+                tests.contains(b64_parts[1].inlineData.data, "iVBORw0KGgo")
             end)
 
             it("should convert function_call messages to model with functionCall", function()
@@ -133,11 +140,12 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].role).to_equal("model")
-                expect(google_messages[1].parts.functionCall).not_to_be_nil()
-                expect(google_messages[1].parts.functionCall.name).to_equal("get_weather")
-                expect(google_messages[1].parts.functionCall.args.location).to_equal("New York")
+                tests.eq(#google_messages, 1)
+                tests.eq(google_messages[1].role, "model")
+                local fc_parts = google_messages[1].parts :: any
+                tests.not_nil(fc_parts.functionCall)
+                tests.eq(fc_parts.functionCall.name, "get_weather")
+                tests.eq(fc_parts.functionCall.args.location, "New York")
             end)
 
             it("should exclude empty arguments in function_call", function()
@@ -151,11 +159,12 @@ local function define_tests()
                     }
                 })
 
-                expect(#messages_empty_args).to_equal(1)
-                expect(messages_empty_args[1].role).to_equal("model")
-                expect(messages_empty_args[1].parts.functionCall).not_to_be_nil()
-                expect(messages_empty_args[1].parts.functionCall.name).to_equal("get_weather")
-                expect(messages_empty_args[1].parts.functionCall.arg).to_be_nil()
+                tests.eq(#messages_empty_args, 1)
+                tests.eq(messages_empty_args[1].role, "model")
+                local empty_parts = messages_empty_args[1].parts :: any
+                tests.not_nil(empty_parts.functionCall)
+                tests.eq(empty_parts.functionCall.name, "get_weather")
+                tests.is_nil(empty_parts.functionCall.args)
 
                 local messages_nil_args, _ = mapper.map_messages({
                     {
@@ -166,11 +175,12 @@ local function define_tests()
                     }
                 })
 
-                expect(#messages_nil_args).to_equal(1)
-                expect(messages_nil_args[1].role).to_equal("model")
-                expect(messages_nil_args[1].parts.functionCall).not_to_be_nil()
-                expect(messages_nil_args[1].parts.functionCall.name).to_equal("get_weather")
-                expect(messages_nil_args[1].parts.functionCall.arg).to_be_nil()
+                tests.eq(#messages_nil_args, 1)
+                tests.eq(messages_nil_args[1].role, "model")
+                local nil_parts = messages_nil_args[1].parts :: any
+                tests.not_nil(nil_parts.functionCall)
+                tests.eq(nil_parts.functionCall.name, "get_weather")
+                tests.is_nil(nil_parts.functionCall.args)
             end)
 
             it("should handle string arguments in function_call", function()
@@ -186,8 +196,9 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts.functionCall.args.key).to_equal("value")
+                tests.eq(#google_messages, 1)
+                local str_arg_parts = google_messages[1].parts :: any
+                tests.eq(str_arg_parts.functionCall.args.key, "value")
             end)
 
             it("should convert function_result to user with functionResponse", function()
@@ -201,11 +212,12 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].role).to_equal("user")
-                expect(google_messages[1].parts[1].functionResponse).not_to_be_nil()
-                expect(google_messages[1].parts[1].functionResponse.name).to_equal("get_weather")
-                expect(google_messages[1].parts[1].functionResponse.response.content).to_equal("The weather is sunny")
+                tests.eq(#google_messages, 1)
+                tests.eq(google_messages[1].role, "user")
+                local fr_parts = google_messages[1].parts :: any
+                tests.not_nil(fr_parts[1].functionResponse)
+                tests.eq(fr_parts[1].functionResponse.name, "get_weather")
+                tests.eq(fr_parts[1].functionResponse.response.content, "The weather is sunny")
             end)
 
             it("should handle string content in function_result", function()
@@ -219,8 +231,9 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts[1].functionResponse.response.content).to_equal("Simple string result")
+                tests.eq(#google_messages, 1)
+                local str_fr_parts = google_messages[1].parts :: any
+                tests.eq(str_fr_parts[1].functionResponse.response.content, "Simple string result")
             end)
 
             it("should handle JSON string content in function_result", function()
@@ -234,10 +247,11 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                local response_content = google_messages[1].parts[1].functionResponse.response.content
-                expect(response_content.result).to_equal("success")
-                expect(response_content.value).to_equal(42)
+                tests.eq(#google_messages, 1)
+                local json_fr_parts = google_messages[1].parts :: any
+                local response_content = json_fr_parts[1].functionResponse.response.content
+                tests.eq(response_content.result, "success")
+                tests.eq(response_content.value, 42)
             end)
 
             it("should handle table content in function_result", function()
@@ -251,10 +265,11 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                local response_content = google_messages[1].parts[1].functionResponse.response.content
-                expect(response_content.status).to_equal("ok")
-                expect(response_content.count).to_equal(5)
+                tests.eq(#google_messages, 1)
+                local tbl_fr_parts = google_messages[1].parts :: any
+                local response_content = tbl_fr_parts[1].functionResponse.response.content
+                tests.eq(response_content.status, "ok")
+                tests.eq(response_content.count, 5)
             end)
 
             it("should handle nil content in function_result", function()
@@ -268,8 +283,9 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts[1].functionResponse.response.content).to_equal("")
+                tests.eq(#google_messages, 1)
+                local nil_fr_parts = google_messages[1].parts :: any
+                tests.eq(nil_fr_parts[1].functionResponse.response.content, "")
             end)
 
             it("should handle empty string content", function()
@@ -282,8 +298,9 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts[1].text).to_equal("")
+                tests.eq(#google_messages, 1)
+                local empty_str_parts = google_messages[1].parts :: any
+                tests.eq(empty_str_parts[1].text, "")
             end)
 
             it("should skip assistant messages with empty content", function()
@@ -300,8 +317,8 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].role).to_equal("user")
+                tests.eq(#google_messages, 1)
+                tests.eq(google_messages[1].role, "user")
             end)
 
             it("should skip unknown message roles", function()
@@ -318,9 +335,10 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].role).to_equal("user")
-                expect(google_messages[1].parts[1].text).to_equal("This should be kept")
+                tests.eq(#google_messages, 1)
+                tests.eq(google_messages[1].role, "user")
+                local kept_parts = google_messages[1].parts :: any
+                tests.eq(kept_parts[1].text, "This should be kept")
             end)
 
             it("should handle nested text structures", function()
@@ -338,8 +356,9 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].parts[1].text).to_equal("Deeply nested")
+                tests.eq(#google_messages, 1)
+                local nested_parts = google_messages[1].parts :: any
+                tests.eq(nested_parts[1].text, "Deeply nested")
             end)
 
             it("should clear metadata from messages", function()
@@ -353,8 +372,8 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                expect(#google_messages).to_equal(1)
-                expect(google_messages[1].metadata).to_be_nil()
+                tests.eq(#google_messages, 1)
+                tests.is_nil((google_messages[1] :: any).metadata)
             end)
         end)
 
@@ -388,15 +407,15 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(2)
-                expect(google_tools[1].name).to_equal("get_weather")
-                expect(google_tools[1].description).to_equal("Get weather information")
-                expect(google_tools[1].parameters.type).to_equal("object")
-                expect(google_tools[1].parameters.properties.location.type).to_equal("string")
-                expect(google_tools[1].parameters.required[1]).to_equal("location")
+                tests.eq(#google_tools, 2)
+                tests.eq(google_tools[1].name, "get_weather")
+                tests.eq(google_tools[1].description, "Get weather information")
+                tests.eq(google_tools[1].parameters.type, "object")
+                tests.eq(google_tools[1].parameters.properties.location.type, "string")
+                tests.eq(google_tools[1].parameters.required[1], "location")
 
-                expect(google_tools[2].name).to_equal("calculate")
-                expect(google_tools[2].description).to_equal("Perform calculations")
+                tests.eq(google_tools[2].name, "calculate")
+                tests.eq(google_tools[2].description, "Perform calculations")
             end)
 
             it("should filter out multipleOf from schema", function()
@@ -418,9 +437,9 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(1)
-                expect(google_tools[1].parameters.properties.count.multipleOf).to_be_nil()
-                expect(google_tools[1].parameters.properties.count.type).to_equal("number")
+                tests.eq(#google_tools, 1)
+                tests.is_nil(google_tools[1].parameters.properties.count.multipleOf)
+                tests.eq(google_tools[1].parameters.properties.count.type, "number")
             end)
 
             it("should filter out examples from schema", function()
@@ -440,9 +459,9 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(1)
-                expect(google_tools[1].parameters.examples).to_be_nil()
-                expect(google_tools[1].parameters.properties.value.type).to_equal("string")
+                tests.eq(#google_tools, 1)
+                tests.is_nil(google_tools[1].parameters.examples)
+                tests.eq(google_tools[1].parameters.properties.value.type, "string")
             end)
 
             it("should recursively filter unsupported properties", function()
@@ -470,22 +489,22 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(1)
-                expect(google_tools[1].parameters.properties.nested.multipleOf).to_be_nil()
-                expect(google_tools[1].parameters.properties.nested.properties.inner.multipleOf).to_be_nil()
-                expect(google_tools[1].parameters.properties.nested.properties.inner.type).to_equal("number")
+                tests.eq(#google_tools, 1)
+                tests.is_nil(google_tools[1].parameters.properties.nested.multipleOf)
+                tests.is_nil(google_tools[1].parameters.properties.nested.properties.inner.multipleOf)
+                tests.eq(google_tools[1].parameters.properties.nested.properties.inner.type, "number")
             end)
 
             it("should handle empty tools array", function()
                 local google_tools = mapper.map_tools({})
 
-                expect(google_tools).to_be_nil()
+                tests.is_nil(google_tools)
             end)
 
             it("should handle nil tools", function()
                 local google_tools = mapper.map_tools(nil)
 
-                expect(google_tools).to_be_nil()
+                tests.is_nil(google_tools)
             end)
 
             it("should skip tools with missing required fields", function()
@@ -513,8 +532,8 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(1)
-                expect(google_tools[1].name).to_equal("valid_tool")
+                tests.eq(#google_tools, 1)
+                tests.eq(google_tools[1].name, "valid_tool")
             end)
 
             it("should preserve all supported schema properties", function()
@@ -553,23 +572,23 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(1)
+                tests.eq(#google_tools, 1)
                 local params = google_tools[1].parameters
 
-                expect(params.properties.text.minLength).to_equal(1)
-                expect(params.properties.text.maxLength).to_equal(100)
-                expect(params.properties.text.pattern).to_equal("^[a-z]+$")
+                tests.eq(params.properties.text.minLength, 1)
+                tests.eq(params.properties.text.maxLength, 100)
+                tests.eq(params.properties.text.pattern, "^[a-z]+$")
 
-                expect(params.properties.number.minimum).to_equal(0)
-                expect(params.properties.number.maximum).to_equal(100)
-                expect(params.properties.number.exclusiveMinimum).to_be_true()
+                tests.eq(params.properties.number.minimum, 0)
+                tests.eq(params.properties.number.maximum, 100)
+                tests.is_true(params.properties.number.exclusiveMinimum)
 
-                expect(params.properties.array.minItems).to_equal(1)
-                expect(params.properties.array.maxItems).to_equal(10)
-                expect(params.properties.array.uniqueItems).to_be_true()
+                tests.eq(params.properties.array.minItems, 1)
+                tests.eq(params.properties.array.maxItems, 10)
+                tests.is_true(params.properties.array.uniqueItems)
 
-                expect(params.required[1]).to_equal("text")
-                expect(params.additionalProperties).to_be_nil() -- Google does not support this, so should be filtered out
+                tests.eq(params.required[1], "text")
+                tests.is_nil(params.additionalProperties) -- Google does not support this, so should be filtered out
             end)
 
             it("should handle schema with nested objects", function()
@@ -601,11 +620,11 @@ local function define_tests()
 
                 local google_tools = mapper.map_tools(contract_tools)
 
-                expect(#google_tools).to_equal(1)
+                tests.eq(#google_tools, 1)
                 local address = google_tools[1].parameters.properties.address
-                expect(address.type).to_equal("object")
-                expect(address.properties.street.type).to_equal("string")
-                expect(address.properties.coordinates.properties.lat.type).to_equal("number")
+                tests.eq(address.type, "object")
+                tests.eq(address.properties.street.type, "string")
+                tests.eq(address.properties.coordinates.properties.lat.type, "number")
             end)
         end)
 
@@ -618,72 +637,72 @@ local function define_tests()
             it("should map auto tool choice", function()
                 local config, error = mapper.map_tool_config("auto", test_tools)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("AUTO")
+                tests.is_nil(error)
+                tests.eq(config.mode, "AUTO")
             end)
 
             it("should map nil tool choice to AUTO", function()
                 local config, error = mapper.map_tool_config(nil, test_tools)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("AUTO")
+                tests.is_nil(error)
+                tests.eq(config.mode, "AUTO")
             end)
 
             it("should map none tool choice", function()
                 local config, error = mapper.map_tool_config("none", test_tools)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("NONE")
+                tests.is_nil(error)
+                tests.eq(config.mode, "NONE")
             end)
 
             it("should map any tool choice to AUTO", function()
                 local config, error = mapper.map_tool_config("any", test_tools)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("AUTO")
+                tests.is_nil(error)
+                tests.eq(config.mode, "AUTO")
             end)
 
             it("should map specific tool name", function()
                 local config, error = mapper.map_tool_config("get_weather", test_tools)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("ANY")
-                expect(config.allowedFunctionNames).not_to_be_nil()
-                expect(#config.allowedFunctionNames).to_equal(1)
-                expect(config.allowedFunctionNames[1]).to_equal("get_weather")
+                tests.is_nil(error)
+                tests.eq(config.mode, "ANY")
+                tests.not_nil(config.allowedFunctionNames)
+                tests.eq(#config.allowedFunctionNames, 1)
+                tests.eq(config.allowedFunctionNames[1], "get_weather")
             end)
 
             it("should error on non-existent tool", function()
                 local config, error = mapper.map_tool_config("nonexistent_tool", test_tools)
 
-                expect(config).to_be_nil()
-                expect(error).not_to_be_nil()
-                expect(error).to_contain("not found")
-                expect(error).to_contain("nonexistent_tool")
+                tests.is_nil(config)
+                tests.not_nil(error)
+                tests.contains(error, "not found")
+                tests.contains(error, "nonexistent_tool")
             end)
 
             it("should handle empty tools array with specific tool name", function()
                 local config, error = mapper.map_tool_config("some_tool", {})
 
-                expect(config).to_be_nil()
-                expect(error).not_to_be_nil()
-                expect(error).to_contain("not found")
+                tests.is_nil(config)
+                tests.not_nil(error)
+                tests.contains(error, "not found")
             end)
 
             it("should handle nil tools array with specific tool name", function()
                 local config, error = mapper.map_tool_config("some_tool", nil)
 
-                expect(config).to_be_nil()
-                expect(error).not_to_be_nil()
-                expect(error).to_contain("not found")
+                tests.is_nil(config)
+                tests.not_nil(error)
+                tests.contains(error, "not found")
             end)
 
             it("should be case-sensitive for tool names", function()
                 local config, error = mapper.map_tool_config("Get_Weather", test_tools)
 
-                expect(config).to_be_nil()
-                expect(error).not_to_be_nil()
-                expect(error).to_contain("not found")
+                tests.is_nil(config)
+                tests.not_nil(error)
+                tests.contains(error, "not found")
             end)
 
             it("should handle tool name with exact match", function()
@@ -694,17 +713,17 @@ local function define_tests()
 
                 local config, error = mapper.map_tool_config("get_weather", tools_with_similar_names)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("ANY")
-                expect(#config.allowedFunctionNames).to_equal(1)
-                expect(config.allowedFunctionNames[1]).to_equal("get_weather")
+                tests.is_nil(error)
+                tests.eq(config.mode, "ANY")
+                tests.eq(#config.allowedFunctionNames, 1)
+                tests.eq(config.allowedFunctionNames[1], "get_weather")
             end)
 
             it("should return AUTO for empty string", function()
                 local config, error = mapper.map_tool_config("", test_tools)
 
-                expect(error).to_be_nil()
-                expect(config.mode).to_equal("AUTO")
+                tests.is_nil(error)
+                tests.eq(config.mode, "AUTO")
             end)
         end)
 
@@ -722,28 +741,28 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(0.7)
-                expect(google_options.maxOutputTokens).to_equal(150)
-                expect(google_options.topP).to_equal(0.9)
-                expect(google_options.seed).to_equal(42)
-                expect(google_options.presencePenalty).to_equal(0.3)
-                expect(google_options.frequencyPenalty).to_equal(0.5)
-                expect(google_options.stopSequences).not_to_be_nil()
-                expect(#google_options.stopSequences).to_equal(2)
-                expect(google_options.stopSequences[1]).to_equal("STOP")
-                expect(google_options.stopSequences[2]).to_equal("END")
+                tests.eq(google_options.temperature, 0.7)
+                tests.eq(google_options.maxOutputTokens, 150)
+                tests.eq(google_options.topP, 0.9)
+                tests.eq(google_options.seed, 42)
+                tests.eq(google_options.presencePenalty, 0.3)
+                tests.eq(google_options.frequencyPenalty, 0.5)
+                tests.not_nil(google_options.stopSequences)
+                tests.eq(#google_options.stopSequences, 2)
+                tests.eq(google_options.stopSequences[1], "STOP")
+                tests.eq(google_options.stopSequences[2], "END")
             end)
 
             it("should handle nil options", function()
                 local google_options = mapper.map_options(nil)
 
-                expect(next(google_options)).to_be_nil()
+                tests.is_nil(next(google_options))
             end)
 
             it("should handle empty options", function()
                 local google_options = mapper.map_options({})
 
-                expect(next(google_options)).to_be_nil()
+                tests.is_nil(next(google_options))
             end)
 
             it("should handle partial options", function()
@@ -754,10 +773,10 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(0.5)
-                expect(google_options.maxOutputTokens).to_equal(100)
-                expect(google_options.topP).to_be_nil()
-                expect(google_options.seed).to_be_nil()
+                tests.eq(google_options.temperature, 0.5)
+                tests.eq(google_options.maxOutputTokens, 100)
+                tests.is_nil(google_options.topP)
+                tests.is_nil(google_options.seed)
             end)
 
             it("should handle temperature of 0", function()
@@ -767,7 +786,7 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(0)
+                tests.eq(google_options.temperature, 0)
             end)
 
             it("should handle max temperature", function()
@@ -777,7 +796,7 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(2.0)
+                tests.eq(google_options.temperature, 2.0)
             end)
 
             it("should handle top_p edge values", function()
@@ -790,7 +809,7 @@ local function define_tests()
                 for _, case in ipairs(test_cases) do
                     local contract_options = { top_p = case.top_p }
                     local google_options = mapper.map_options(contract_options)
-                    expect(google_options.topP).to_equal(case.expected)
+                    tests.eq(google_options.topP, case.expected)
                 end
             end)
 
@@ -802,8 +821,8 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.presencePenalty).to_equal(-2.0)
-                expect(google_options.frequencyPenalty).to_equal(2.0)
+                tests.eq(google_options.presencePenalty, -2.0)
+                tests.eq(google_options.frequencyPenalty, 2.0)
             end)
 
             it("should handle empty stop_sequences array", function()
@@ -813,8 +832,8 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.stopSequences).not_to_be_nil()
-                expect(#google_options.stopSequences).to_equal(0)
+                tests.not_nil(google_options.stopSequences)
+                tests.eq(#google_options.stopSequences, 0)
             end)
 
             it("should handle single stop sequence", function()
@@ -824,8 +843,8 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(#google_options.stopSequences).to_equal(1)
-                expect(google_options.stopSequences[1]).to_equal("STOP")
+                tests.eq(#google_options.stopSequences, 1)
+                tests.eq(google_options.stopSequences[1], "STOP")
             end)
 
             it("should preserve nil values for unset options", function()
@@ -836,13 +855,13 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(0.7)
-                expect(google_options.maxOutputTokens).to_be_nil()
-                expect(google_options.topP).to_be_nil()
-                expect(google_options.seed).to_be_nil()
-                expect(google_options.presencePenalty).to_be_nil()
-                expect(google_options.frequencyPenalty).to_be_nil()
-                expect(google_options.stopSequences).to_be_nil()
+                tests.eq(google_options.temperature, 0.7)
+                tests.is_nil(google_options.maxOutputTokens)
+                tests.is_nil(google_options.topP)
+                tests.is_nil(google_options.seed)
+                tests.is_nil(google_options.presencePenalty)
+                tests.is_nil(google_options.frequencyPenalty)
+                tests.is_nil(google_options.stopSequences)
             end)
 
             it("should not include unsupported options", function()
@@ -854,9 +873,9 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(0.7)
-                expect(google_options.unsupported_option).to_be_nil()
-                expect(google_options.another_unsupported).to_be_nil()
+                tests.eq(google_options.temperature, 0.7)
+                tests.is_nil((google_options :: any).unsupported_option)
+                tests.is_nil((google_options :: any).another_unsupported)
             end)
 
             it("should handle all options at once", function()
@@ -872,13 +891,13 @@ local function define_tests()
 
                 local google_options = mapper.map_options(contract_options)
 
-                expect(google_options.temperature).to_equal(0.8)
-                expect(google_options.maxOutputTokens).to_equal(200)
-                expect(google_options.topP).to_equal(0.95)
-                expect(google_options.seed).to_equal(999)
-                expect(google_options.presencePenalty).to_equal(0.1)
-                expect(google_options.frequencyPenalty).to_equal(0.2)
-                expect(#google_options.stopSequences).to_equal(3)
+                tests.eq(google_options.temperature, 0.8)
+                tests.eq(google_options.maxOutputTokens, 200)
+                tests.eq(google_options.topP, 0.95)
+                tests.eq(google_options.seed, 999)
+                tests.eq(google_options.presencePenalty, 0.1)
+                tests.eq(google_options.frequencyPenalty, 0.2)
+                tests.eq(#google_options.stopSequences, 3)
             end)
         end)
 
@@ -897,18 +916,18 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(2)
+                tests.eq(#contract_tool_calls, 2)
 
-                expect(contract_tool_calls[1].name).to_equal("get_weather")
-                expect(contract_tool_calls[1].arguments.location).to_equal("New York")
-                expect(contract_tool_calls[1].arguments.units).to_equal("celsius")
-                expect(contract_tool_calls[1].id).not_to_be_nil()
-                expect(contract_tool_calls[1].id).to_contain("get_weather_")
+                tests.eq(contract_tool_calls[1].name, "get_weather")
+                tests.eq(contract_tool_calls[1].arguments.location, "New York")
+                tests.eq(contract_tool_calls[1].arguments.units, "celsius")
+                tests.not_nil(contract_tool_calls[1].id)
+                tests.contains(contract_tool_calls[1].id, "get_weather_")
 
-                expect(contract_tool_calls[2].name).to_equal("calculate")
-                expect(contract_tool_calls[2].arguments.expression).to_equal("2+2")
-                expect(contract_tool_calls[2].id).not_to_be_nil()
-                expect(contract_tool_calls[2].id).to_contain("calculate_")
+                tests.eq(contract_tool_calls[2].name, "calculate")
+                tests.eq(contract_tool_calls[2].arguments.expression, "2+2")
+                tests.not_nil(contract_tool_calls[2].id)
+                tests.contains(contract_tool_calls[2].id, "calculate_")
             end)
 
             it("should generate unique IDs for each tool call", function()
@@ -920,11 +939,11 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(3)
+                tests.eq(#contract_tool_calls, 3)
 
                 local ids = {}
                 for _, call in ipairs(contract_tool_calls) do
-                    expect(ids[call.id]).to_be_nil() -- ID should be unique
+                    tests.is_nil(ids[call.id]) -- ID should be unique
                     ids[call.id] = true
                 end
             end)
@@ -939,10 +958,10 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].name).to_equal("no_args_tool")
-                expect(contract_tool_calls[1].arguments).not_to_be_nil()
-                expect(next(contract_tool_calls[1].arguments)).to_be_nil()
+                tests.eq(#contract_tool_calls, 1)
+                tests.eq(contract_tool_calls[1].name, "no_args_tool")
+                tests.not_nil(contract_tool_calls[1].arguments)
+                tests.is_nil(next(contract_tool_calls[1].arguments))
             end)
 
             it("should handle nil args", function()
@@ -955,10 +974,10 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].name).to_equal("nil_args_tool")
-                expect(contract_tool_calls[1].arguments).not_to_be_nil()
-                expect(next(contract_tool_calls[1].arguments)).to_be_nil()
+                tests.eq(#contract_tool_calls, 1)
+                tests.eq(contract_tool_calls[1].name, "nil_args_tool")
+                tests.not_nil(contract_tool_calls[1].arguments)
+                tests.is_nil(next(contract_tool_calls[1].arguments))
             end)
 
             it("should handle complex nested arguments", function()
@@ -980,24 +999,24 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].arguments.simple).to_equal("value")
-                expect(contract_tool_calls[1].arguments.nested.key1).to_equal("value1")
-                expect(contract_tool_calls[1].arguments.nested.key2.deep).to_equal("nested")
-                expect(#contract_tool_calls[1].arguments.array).to_equal(3)
-                expect(contract_tool_calls[1].arguments.array[1]).to_equal("item1")
+                tests.eq(#contract_tool_calls, 1)
+                tests.eq(contract_tool_calls[1].arguments.simple, "value")
+                tests.eq(contract_tool_calls[1].arguments.nested.key1, "value1")
+                tests.eq(contract_tool_calls[1].arguments.nested.key2.deep, "nested")
+                tests.eq(#contract_tool_calls[1].arguments.array, 3)
+                tests.eq(contract_tool_calls[1].arguments.array[1], "item1")
             end)
 
             it("should handle nil function calls", function()
                 local contract_tool_calls = mapper.map_tool_calls(nil)
 
-                expect(#contract_tool_calls).to_equal(0)
+                tests.eq(#contract_tool_calls, 0)
             end)
 
             it("should handle empty function calls array", function()
                 local contract_tool_calls = mapper.map_tool_calls({})
 
-                expect(#contract_tool_calls).to_equal(0)
+                tests.eq(#contract_tool_calls, 0)
             end)
 
             it("should handle function call with only name", function()
@@ -1010,10 +1029,10 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].name).to_equal("simple_tool")
-                expect(contract_tool_calls[1].arguments).not_to_be_nil()
-                expect(next(contract_tool_calls[1].arguments)).to_be_nil()
+                tests.eq(#contract_tool_calls, 1)
+                tests.eq(contract_tool_calls[1].name, "simple_tool")
+                tests.not_nil(contract_tool_calls[1].arguments)
+                tests.is_nil(next(contract_tool_calls[1].arguments))
             end)
 
             it("should handle various argument types", function()
@@ -1034,14 +1053,14 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
+                tests.eq(#contract_tool_calls, 1)
                 local args = contract_tool_calls[1].arguments
-                expect(args.string_arg).to_equal("text")
-                expect(args.number_arg).to_equal(42)
-                expect(args.float_arg).to_equal(3.14)
-                expect(args.bool_arg).to_be_true()
-                expect(#args.array_arg).to_equal(3)
-                expect(args.object_arg.key).to_equal("value")
+                tests.eq(args.string_arg, "text")
+                tests.eq(args.number_arg, 42)
+                tests.eq(args.float_arg, 3.14)
+                tests.is_true(args.bool_arg)
+                tests.eq(#args.array_arg, 3)
+                tests.eq(args.object_arg.key, "value")
             end)
 
             it("should generate ID with timestamp component", function()
@@ -1051,10 +1070,10 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
+                tests.eq(#contract_tool_calls, 1)
                 -- ID format: name_timestamp
                 local id = contract_tool_calls[1].id
-                expect(id).to_contain("test_tool_")
+                tests.contains(id, "test_tool_")
             end)
 
             it("should handle function call with missing name gracefully", function()
@@ -1067,86 +1086,86 @@ local function define_tests()
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].id).to_contain("func_")
-                expect(contract_tool_calls[1].arguments.key).to_equal("value")
+                tests.eq(#contract_tool_calls, 1)
+                tests.contains(contract_tool_calls[1].id, "func_")
+                tests.eq(contract_tool_calls[1].arguments.key, "value")
             end)
         end)
 
         describe("Finish Reason Mapping", function()
             it("should map STOP to stop", function()
                 local result = mapper.map_finish_reason("STOP")
-                expect(result).to_equal("stop")
+                tests.eq(result, "stop")
             end)
 
             it("should map MAX_TOKENS to length", function()
                 local result = mapper.map_finish_reason("MAX_TOKENS")
-                expect(result).to_equal("length")
+                tests.eq(result, "length")
             end)
 
             it("should map SAFETY to filtered", function()
                 local result = mapper.map_finish_reason("SAFETY")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map RECITATION to filtered", function()
                 local result = mapper.map_finish_reason("RECITATION")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map LANGUAGE to filtered", function()
                 local result = mapper.map_finish_reason("LANGUAGE")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map BLOCKLIST to filtered", function()
                 local result = mapper.map_finish_reason("BLOCKLIST")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map PROHIBITED_CONTENT to filtered", function()
                 local result = mapper.map_finish_reason("PROHIBITED_CONTENT")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map SPII to filtered", function()
                 local result = mapper.map_finish_reason("SPII")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map IMAGE_SAFETY to filtered", function()
                 local result = mapper.map_finish_reason("IMAGE_SAFETY")
-                expect(result).to_equal("filtered")
+                tests.eq(result, "filtered")
             end)
 
             it("should map MALFORMED_FUNCTION_CALL to error", function()
                 local result = mapper.map_finish_reason("MALFORMED_FUNCTION_CALL")
-                expect(result).to_equal("error")
+                tests.eq(result, "error")
             end)
 
             it("should map OTHER to error", function()
                 local result = mapper.map_finish_reason("OTHER")
-                expect(result).to_equal("error")
+                tests.eq(result, "error")
             end)
 
             it("should map unknown reason to error", function()
                 local result = mapper.map_finish_reason("UNKNOWN_REASON")
-                expect(result).to_equal("error")
+                tests.eq(result, "error")
             end)
 
             it("should map nil to error", function()
                 local result = mapper.map_finish_reason(nil)
-                expect(result).to_equal("error")
+                tests.eq(result, "error")
             end)
 
             it("should map empty string to error", function()
                 local result = mapper.map_finish_reason("")
-                expect(result).to_equal("error")
+                tests.eq(result, "error")
             end)
 
             it("should be case-sensitive", function()
                 local result = mapper.map_finish_reason("stop")
-                expect(result).to_equal("error")
+                tests.eq(result, "error")
             end)
 
             it("should map all content filter reasons consistently", function()
@@ -1162,7 +1181,7 @@ local function define_tests()
 
                 for _, reason in ipairs(filter_reasons) do
                     local result = mapper.map_finish_reason(reason)
-                    expect(result).to_equal("filtered")
+                    tests.eq(result, "filtered")
                 end
             end)
 
@@ -1183,7 +1202,7 @@ local function define_tests()
 
                 for _, case in ipairs(test_cases) do
                     local result = mapper.map_finish_reason(case.google)
-                    expect(result).to_equal(case.expected)
+                    tests.eq(result, case.expected)
                 end
             end)
         end)
@@ -1198,11 +1217,11 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(100)
-                expect(contract_tokens.completion_tokens).to_equal(50)
-                expect(contract_tokens.total_tokens).to_equal(150)
-                expect(contract_tokens.cache_write_tokens).to_equal(0)
-                expect(contract_tokens.cache_read_tokens).to_equal(0)
+                tests.eq(contract_tokens.prompt_tokens, 100)
+                tests.eq(contract_tokens.completion_tokens, 50)
+                tests.eq(contract_tokens.total_tokens, 150)
+                tests.eq(contract_tokens.cache_write_tokens, 0)
+                tests.eq(contract_tokens.cache_read_tokens, 0)
             end)
 
             it("should map thinking tokens", function()
@@ -1215,10 +1234,10 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.thinking_tokens).to_equal(20)
-                expect(contract_tokens.prompt_tokens).to_equal(100)
-                expect(contract_tokens.completion_tokens).to_equal(80)
-                expect(contract_tokens.total_tokens).to_equal(200)
+                tests.eq(contract_tokens.thinking_tokens, 20)
+                tests.eq(contract_tokens.prompt_tokens, 100)
+                tests.eq(contract_tokens.completion_tokens, 80)
+                tests.eq(contract_tokens.total_tokens, 200)
             end)
 
             it("should map cache tokens", function()
@@ -1231,16 +1250,16 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.cache_read_tokens).to_equal(30)
-                expect(contract_tokens.cache_write_tokens).to_equal(70)
-                expect(contract_tokens.prompt_tokens).to_equal(70)
-                expect(contract_tokens.completion_tokens).to_equal(50)
+                tests.eq(contract_tokens.cache_read_tokens, 30)
+                tests.eq(contract_tokens.cache_write_tokens, 70)
+                tests.eq(contract_tokens.prompt_tokens, 70)
+                tests.eq(contract_tokens.completion_tokens, 50)
             end)
 
             it("should handle nil usage", function()
                 local contract_tokens = mapper.map_tokens(nil)
 
-                expect(contract_tokens).to_be_nil()
+                tests.is_nil(contract_tokens)
             end)
 
             it("should handle partial usage data", function()
@@ -1251,10 +1270,10 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(50)
-                expect(contract_tokens.completion_tokens).to_equal(0)
-                expect(contract_tokens.total_tokens).to_equal(0)
-                expect(contract_tokens.thinking_tokens).to_be_nil()
+                tests.eq(contract_tokens.prompt_tokens, 50)
+                tests.eq(contract_tokens.completion_tokens, 0)
+                tests.eq(contract_tokens.total_tokens, 0)
+                tests.is_nil(contract_tokens.thinking_tokens)
             end)
 
             it("should handle zero token counts", function()
@@ -1266,9 +1285,9 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(0)
-                expect(contract_tokens.completion_tokens).to_equal(0)
-                expect(contract_tokens.total_tokens).to_equal(0)
+                tests.eq(contract_tokens.prompt_tokens, 0)
+                tests.eq(contract_tokens.completion_tokens, 0)
+                tests.eq(contract_tokens.total_tokens, 0)
             end)
 
             it("should calculate cache write tokens correctly", function()
@@ -1281,9 +1300,9 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.cache_read_tokens).to_equal(150)
-                expect(contract_tokens.cache_write_tokens).to_equal(50)
-                expect(contract_tokens.prompt_tokens).to_equal(50)
+                tests.eq(contract_tokens.cache_read_tokens, 150)
+                tests.eq(contract_tokens.cache_write_tokens, 50)
+                tests.eq(contract_tokens.prompt_tokens, 50)
             end)
 
             it("should handle cache tokens equal to prompt tokens", function()
@@ -1296,9 +1315,9 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.cache_read_tokens).to_equal(100)
-                expect(contract_tokens.cache_write_tokens).to_equal(0)
-                expect(contract_tokens.prompt_tokens).to_equal(0)
+                tests.eq(contract_tokens.cache_read_tokens, 100)
+                tests.eq(contract_tokens.cache_write_tokens, 0)
+                tests.eq(contract_tokens.prompt_tokens, 0)
             end)
 
             it("should handle all token types together", function()
@@ -1312,12 +1331,12 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(150)
-                expect(contract_tokens.completion_tokens).to_equal(100)
-                expect(contract_tokens.total_tokens).to_equal(350)
-                expect(contract_tokens.cache_read_tokens).to_equal(50)
-                expect(contract_tokens.cache_write_tokens).to_equal(150)
-                expect(contract_tokens.thinking_tokens).to_equal(25)
+                tests.eq(contract_tokens.prompt_tokens, 150)
+                tests.eq(contract_tokens.completion_tokens, 100)
+                tests.eq(contract_tokens.total_tokens, 350)
+                tests.eq(contract_tokens.cache_read_tokens, 50)
+                tests.eq(contract_tokens.cache_write_tokens, 150)
+                tests.eq(contract_tokens.thinking_tokens, 25)
             end)
 
             it("should handle missing optional token fields", function()
@@ -1330,9 +1349,9 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.cache_read_tokens).to_equal(0)
-                expect(contract_tokens.cache_write_tokens).to_equal(0)
-                expect(contract_tokens.thinking_tokens).to_be_nil()
+                tests.eq(contract_tokens.cache_read_tokens, 0)
+                tests.eq(contract_tokens.cache_write_tokens, 0)
+                tests.is_nil(contract_tokens.thinking_tokens)
             end)
 
             it("should default to 0 for missing core token fields", function()
@@ -1340,9 +1359,9 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(0)
-                expect(contract_tokens.completion_tokens).to_equal(0)
-                expect(contract_tokens.total_tokens).to_equal(0)
+                tests.eq(contract_tokens.prompt_tokens, 0)
+                tests.eq(contract_tokens.completion_tokens, 0)
+                tests.eq(contract_tokens.total_tokens, 0)
             end)
 
             it("should handle nil thinking tokens separately", function()
@@ -1355,8 +1374,8 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.thinking_tokens).to_be_nil()
-                expect(contract_tokens.prompt_tokens).to_equal(100)
+                tests.is_nil(contract_tokens.thinking_tokens)
+                tests.eq(contract_tokens.prompt_tokens, 100)
             end)
 
             it("should handle zero thinking tokens", function()
@@ -1369,7 +1388,7 @@ local function define_tests()
 
                 local contract_tokens = mapper.map_tokens(google_usage)
 
-                expect(contract_tokens.thinking_tokens).to_equal(0)
+                tests.eq(contract_tokens.thinking_tokens, 0)
             end)
         end)
 
@@ -1396,13 +1415,13 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("Hello, world!")
-                expect(contract_response.result.tool_calls).not_to_be_nil()
-                expect(#contract_response.result.tool_calls).to_equal(0)
-                expect(contract_response.finish_reason).to_equal("stop")
-                expect(contract_response.tokens.prompt_tokens).to_equal(10)
-                expect(contract_response.metadata.request_id).to_equal("req_test123")
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.result.content, "Hello, world!")
+                tests.not_nil(contract_response.result.tool_calls)
+                tests.eq(#contract_response.result.tool_calls, 0)
+                tests.eq(contract_response.finish_reason, "stop")
+                tests.eq(contract_response.tokens.prompt_tokens, 10)
+                tests.eq(contract_response.metadata.request_id, "req_test123")
             end)
 
             it("should map tool call response", function()
@@ -1430,14 +1449,14 @@ local function define_tests()
                     }
                 }
 
-                local contract_response = mapper.map_success_response(google_response)
+                local contract_response: any = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("I'll help with that.")
-                expect(#contract_response.result.tool_calls).to_equal(1)
-                expect(contract_response.result.tool_calls[1].name).to_equal("calculate")
-                expect(contract_response.result.tool_calls[1].arguments.expression).to_equal("2+2")
-                expect(contract_response.finish_reason).to_equal("tool_call")
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.result.content, "I'll help with that.")
+                tests.eq(#contract_response.result.tool_calls, 1)
+                tests.eq(contract_response.result.tool_calls[1].name, "calculate")
+                tests.eq(contract_response.result.tool_calls[1].arguments.expression, "2+2")
+                tests.eq(contract_response.finish_reason, "tool_call")
             end)
 
             it("should map multiple tool calls", function()
@@ -1470,13 +1489,13 @@ local function define_tests()
                     }
                 }
 
-                local contract_response = mapper.map_success_response(google_response)
+                local contract_response: any = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(#contract_response.result.tool_calls).to_equal(2)
-                expect(contract_response.result.tool_calls[1].name).to_equal("get_weather")
-                expect(contract_response.result.tool_calls[2].name).to_equal("calculate")
-                expect(contract_response.finish_reason).to_equal("tool_call")
+                tests.is_true(contract_response.success)
+                tests.eq(#contract_response.result.tool_calls, 2)
+                tests.eq(contract_response.result.tool_calls[1].name, "get_weather")
+                tests.eq(contract_response.result.tool_calls[2].name, "calculate")
+                tests.eq(contract_response.finish_reason, "tool_call")
             end)
 
             it("should concatenate multiple text parts", function()
@@ -1502,8 +1521,8 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("Hello world!")
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.result.content, "Hello world!")
             end)
 
             it("should handle empty content", function()
@@ -1525,9 +1544,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("")
-                expect(#contract_response.result.tool_calls).to_equal(0)
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.result.content, "")
+                tests.eq(#contract_response.result.tool_calls, 0)
             end)
 
             it("should handle missing content field", function()
@@ -1546,9 +1565,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("")
-                expect(#contract_response.result.tool_calls).to_equal(0)
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.result.content, "")
+                tests.eq(#contract_response.result.tool_calls, 0)
             end)
 
             it("should error on invalid response structure", function()
@@ -1558,8 +1577,8 @@ local function define_tests()
                     mapper.map_success_response(google_response)
                 end)
 
-                expect(success).to_be_false()
-                expect(error).to_contain("Invalid Google response structure")
+                tests.is_false(success)
+                tests.contains(error, "Invalid Google response structure")
             end)
 
             it("should error on empty candidates array", function()
@@ -1571,8 +1590,8 @@ local function define_tests()
                     mapper.map_success_response(google_response)
                 end)
 
-                expect(success).to_be_false()
-                expect(error).to_contain("Invalid Google response structure")
+                tests.is_false(success)
+                tests.contains(error, "Invalid Google response structure")
             end)
 
             it("should error on nil candidates", function()
@@ -1584,7 +1603,7 @@ local function define_tests()
                     mapper.map_success_response(google_response)
                 end)
 
-                expect(success).to_be_false()
+                tests.is_false(success)
             end)
 
             it("should handle missing metadata", function()
@@ -1608,9 +1627,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.metadata).not_to_be_nil()
-                expect(next(contract_response.metadata)).to_be_nil()
+                tests.is_true(contract_response.success)
+                tests.not_nil(contract_response.metadata)
+                tests.is_nil(next(contract_response.metadata))
             end)
 
             it("should handle missing usage metadata", function()
@@ -1629,8 +1648,8 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.tokens).to_be_nil()
+                tests.is_true(contract_response.success)
+                tests.is_nil(contract_response.tokens)
             end)
 
             it("should map different finish reasons correctly", function()
@@ -1662,7 +1681,7 @@ local function define_tests()
 
                     local contract_response = mapper.map_success_response(google_response)
 
-                    expect(contract_response.finish_reason).to_equal(case.expected)
+                    tests.eq(contract_response.finish_reason, case.expected)
                 end
             end)
 
@@ -1694,10 +1713,10 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("Let me calculate that:  Done!")
-                expect(#contract_response.result.tool_calls).to_equal(1)
-                expect(contract_response.finish_reason).to_equal("tool_call")
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.result.content, "Let me calculate that:  Done!")
+                tests.eq(#contract_response.result.tool_calls, 1)
+                tests.eq(contract_response.finish_reason, "tool_call")
             end)
 
             it("should preserve metadata from response", function()
@@ -1719,17 +1738,17 @@ local function define_tests()
                     },
                     metadata = {
                         request_id = "req_123",
-                        model_version = "gemini-1.5-pro-001",
+                        model_version = "gemini-2.5-pro-001",
                         custom_field = "custom_value"
                     }
                 }
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.metadata.request_id).to_equal("req_123")
-                expect(contract_response.metadata.model_version).to_equal("gemini-1.5-pro-001")
-                expect(contract_response.metadata.custom_field).to_equal("custom_value")
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.metadata.request_id, "req_123")
+                tests.eq(contract_response.metadata.model_version, "gemini-2.5-pro-001")
+                tests.eq(contract_response.metadata.custom_field, "custom_value")
             end)
 
             it("should handle missing finishReason", function()
@@ -1753,8 +1772,8 @@ local function define_tests()
 
                 local contract_response = mapper.map_success_response(google_response)
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.finish_reason).to_equal("error")
+                tests.is_true(contract_response.success)
+                tests.eq(contract_response.finish_reason, "error")
             end)
         end)
 
@@ -1778,9 +1797,9 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal(case.error_type)
-                    expect(contract_response.error_message).to_equal(case.message)
+                    tests.is_false(contract_response.success)
+                    tests.eq(contract_response.error, case.error_type)
+                    tests.eq(contract_response.error_message, case.message)
                 end
             end)
 
@@ -1801,8 +1820,8 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal("context_length_exceeded")
+                    tests.is_false(contract_response.success)
+                    tests.eq(contract_response.error, "context_length_exceeded")
                 end
             end)
 
@@ -1822,8 +1841,8 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal("content_filtered")
+                    tests.is_false(contract_response.success)
+                    tests.eq(contract_response.error, "content_filtered")
                 end
             end)
 
@@ -1843,8 +1862,8 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal("timeout_error")
+                    tests.is_false(contract_response.success)
+                    tests.eq(contract_response.error, "timeout_error")
                 end
             end)
 
@@ -1864,18 +1883,18 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal("network_error")
+                    tests.is_false(contract_response.success)
+                    tests.eq(contract_response.error, "network_error")
                 end
             end)
 
             it("should handle nil error", function()
                 local contract_response = mapper.map_error_response(nil)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("server_error")
-                expect(contract_response.error_message).to_equal("Unknown Google error")
-                expect(contract_response.metadata).not_to_be_nil()
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.error, "server_error")
+                tests.eq(contract_response.error_message, "Unknown Google error")
+                tests.not_nil(contract_response.metadata)
             end)
 
             it("should handle error without message", function()
@@ -1885,9 +1904,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("server_error")
-                expect(contract_response.error_message).to_equal("Google API error")
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.error, "server_error")
+                tests.eq(contract_response.error_message, "Google API error")
             end)
 
             it("should handle error without status code", function()
@@ -1897,9 +1916,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("server_error")
-                expect(contract_response.error_message).to_equal("Something went wrong")
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.error, "server_error")
+                tests.eq(contract_response.error_message, "Something went wrong")
             end)
 
             it("should preserve metadata from error", function()
@@ -1914,9 +1933,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.metadata.request_id).to_equal("req_error_123")
-                expect(contract_response.metadata.retry_after).to_equal(60)
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.metadata.request_id, "req_error_123")
+                tests.eq(contract_response.metadata.retry_after, 60)
             end)
 
             it("should handle missing metadata in error", function()
@@ -1927,9 +1946,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.metadata).not_to_be_nil()
-                expect(next(contract_response.metadata)).to_be_nil()
+                tests.is_false(contract_response.success)
+                tests.not_nil(contract_response.metadata)
+                tests.is_nil(next(contract_response.metadata))
             end)
 
             it("should prioritize message patterns over status code", function()
@@ -1940,8 +1959,8 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("context_length_exceeded")
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.error, "context_length_exceeded")
             end)
 
             it("should be case-insensitive for message matching", function()
@@ -1952,8 +1971,8 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("context_length_exceeded")
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.error, "context_length_exceeded")
             end)
 
             it("should handle empty message", function()
@@ -1964,9 +1983,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("invalid_request")
-                expect(contract_response.error_message).to_equal("")
+                tests.is_false(contract_response.success)
+                tests.eq(contract_response.error, "invalid_request")
+                tests.eq(contract_response.error_message, "")
             end)
 
             it("should map 401 and 403 to authentication error", function()
@@ -1980,7 +1999,7 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.error).to_equal("authentication_error")
+                    tests.eq(contract_response.error, "authentication_error")
                 end
             end)
 
@@ -1995,7 +2014,7 @@ local function define_tests()
 
                     local contract_response = mapper.map_error_response(google_error)
 
-                    expect(contract_response.error).to_equal("server_error")
+                    tests.eq(contract_response.error, "server_error")
                 end
             end)
 
@@ -2007,9 +2026,9 @@ local function define_tests()
 
                 local contract_response = mapper.map_error_response(google_error)
 
-                expect(contract_response.success).to_be_false()
+                tests.is_false(contract_response.success)
                 -- Should match first pattern (context length)
-                expect(contract_response.error).to_equal("context_length_exceeded")
+                tests.eq(contract_response.error, "context_length_exceeded")
             end)
         end)
 
@@ -2019,7 +2038,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Simple string content")
+                tests.eq(result, "Simple string content")
             end)
 
             it("should extract text from array content", function()
@@ -2030,7 +2049,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Hello world")
+                tests.eq(result, "Hello world")
             end)
 
             it("should ignore non-text parts", function()
@@ -2042,7 +2061,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Text part continues")
+                tests.eq(result, "Text part continues")
             end)
 
             it("should handle empty string", function()
@@ -2050,7 +2069,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should handle nil content", function()
@@ -2058,7 +2077,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should handle empty array", function()
@@ -2066,7 +2085,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should handle array with only non-text parts", function()
@@ -2077,7 +2096,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should handle array with empty text", function()
@@ -2087,7 +2106,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should concatenate multiple text parts without separator", function()
@@ -2099,7 +2118,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Part1Part2Part3")
+                tests.eq(result, "Part1Part2Part3")
             end)
 
             it("should preserve whitespace in text", function()
@@ -2109,7 +2128,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("  Leading and trailing  ")
+                tests.eq(result, "  Leading and trailing  ")
             end)
 
             it("should handle text with newlines", function()
@@ -2119,7 +2138,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Line 1\nLine 2\nLine 3")
+                tests.eq(result, "Line 1\nLine 2\nLine 3")
             end)
 
             it("should handle special characters", function()
@@ -2129,7 +2148,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Special: @#$%^&*(){}[]<>|\\/")
+                tests.eq(result, "Special: @#$%^&*(){}[]<>|\\/")
             end)
 
             it("should handle unicode characters", function()
@@ -2139,7 +2158,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Unicode: 你好 🌍 مرحبا")
+                tests.eq(result, "Unicode: 你好 🌍 مرحبا")
             end)
 
             it("should handle mixed content types in order", function()
@@ -2153,7 +2172,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Start middle end")
+                tests.eq(result, "Start middle end")
             end)
 
             it("should handle very long text", function()
@@ -2164,8 +2183,8 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal(long_text)
-                expect(#result).to_equal(10000)
+                tests.eq(result, long_text)
+                tests.eq(#result, 10000)
             end)
 
             it("should handle content with nil text field", function()
@@ -2175,7 +2194,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should handle content with missing text field", function()
@@ -2185,7 +2204,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("")
+                tests.eq(result, "")
             end)
 
             it("should handle non-table, non-string content", function()
@@ -2197,7 +2216,7 @@ local function define_tests()
 
                 for _, content in ipairs(test_cases) do
                     local result = mapper.standardize_content(content)
-                    expect(result).to_equal("")
+                    tests.eq(result, "")
                 end
             end)
 
@@ -2211,7 +2230,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Outer text")
+                tests.eq(result, "Outer text")
             end)
 
             it("should handle content parts without type field", function()
@@ -2222,7 +2241,7 @@ local function define_tests()
 
                 local result = mapper.standardize_content(content)
 
-                expect(result).to_equal("Text with type")
+                tests.eq(result, "Text with type")
             end)
         end)
     end)

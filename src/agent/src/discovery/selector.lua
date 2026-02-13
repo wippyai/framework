@@ -1,10 +1,29 @@
 local json = require("json")
 
--- Agent Selector - Selects best agent from class based on user prompt
+type AgentInfo = {
+    id: string,
+    name: string,
+    title: string,
+    comment: string,
+    tags: {string},
+}
+
+type SelectionResult = {
+    success: boolean,
+    agent: string,
+    reason: string,
+}
+
+type SelectInput = {
+    user_prompt: string?,
+    prompt: string?,
+    class_name: string?,
+    class: string?,
+}
+
 local agent_selector = {}
 
--- Constants
-local DEFAULT_LLM_MODEL = "gpt-4.1" -- todo: use class!
+local DEFAULT_LLM_MODEL = "gpt-4.1"
 local ANALYSIS_PROMPT_TEMPLATE = [[
 You are an expert agent selector. Your task is to analyze a user prompt and select the most appropriate agent from the available agents in class "%s".
 
@@ -21,22 +40,18 @@ Select the agent that best matches the user's request based on:
 You MUST select exactly one agent. If no agent seems perfectly suitable, select the closest match and explain why.
 ]]
 
--- Allow for dependency injection in testing
 agent_selector._agent_registry = nil
 agent_selector._llm = nil
 
--- Get agent registry instance
-local function get_agent_registry()
+local function get_agent_registry(): any
     return agent_selector._agent_registry or require("agent_registry")
 end
 
--- Get LLM instance
-local function get_llm()
+local function get_llm(): any
     return agent_selector._llm or require("llm")
 end
 
--- Main selection function - returns (result, error)
-function agent_selector.select_agent(user_prompt, class_name)
+function agent_selector.select_agent(user_prompt, class_name): (SelectionResult?, string?)
     if not user_prompt or user_prompt == "" then
         return nil, "User prompt is required"
     end
@@ -48,26 +63,23 @@ function agent_selector.select_agent(user_prompt, class_name)
     local registry = get_agent_registry()
     local llm = get_llm()
 
-    -- Get all agents in the specified class
-    local agents = registry.list_by_class(class_name)
+    local agents = registry.list_by_class(tostring(class_name))
 
     if not agents or #agents == 0 then
         return nil, "No agents found for class: " .. class_name
     end
 
-    -- Build agent information for LLM analysis
-    local agent_info = {}
+    local agent_info: {AgentInfo} = {}
     for _, agent in ipairs(agents) do
         table.insert(agent_info, {
             id = agent.id,
             name = (agent.meta and agent.meta.name) or agent.id,
             title = (agent.meta and agent.meta.title) or "",
             comment = (agent.meta and agent.meta.comment) or "",
-            tags = (agent.meta and agent.meta.tags) or {}
+            tags = (agent.meta and (agent.meta :: any).tags) or {}
         })
     end
 
-    -- Create analysis prompt using the template
     local analysis_prompt = string.format(
         ANALYSIS_PROMPT_TEMPLATE,
         class_name,
@@ -75,7 +87,6 @@ function agent_selector.select_agent(user_prompt, class_name)
         json.encode(agent_info)
     )
 
-    -- Define response schema
     local response_schema = {
         type = "object",
         properties = {
@@ -96,7 +107,6 @@ function agent_selector.select_agent(user_prompt, class_name)
         additionalProperties = false
     }
 
-    -- Use LLM to make selection
     local response, err = llm.structured_output(response_schema, analysis_prompt, {
         model = DEFAULT_LLM_MODEL,
         temperature = 0
@@ -120,7 +130,6 @@ function agent_selector.select_agent(user_prompt, class_name)
         return nil, "LLM response missing agent field"
     end
 
-    -- Validate the selected agent exists
     local selected_agent_found = false
     for _, agent in ipairs(agents) do
         if agent.id == result.agent then
@@ -133,14 +142,12 @@ function agent_selector.select_agent(user_prompt, class_name)
         return nil, "LLM selected invalid agent ID: " .. tostring(result.agent)
     end
 
-    -- Ensure success is true since we found a valid agent
     result.success = true
 
-    return result, nil
+    return result :: SelectionResult, nil
 end
 
--- Public API function that matches expected interface
-function agent_selector.execute(input)
+function agent_selector.execute(input): (SelectionResult?, string?)
     if not input then
         return nil, "Input is required"
     end
@@ -148,7 +155,7 @@ function agent_selector.execute(input)
     local user_prompt = input.user_prompt or input.prompt
     local class_name = input.class_name or input.class
 
-    return agent_selector.select_agent(user_prompt, class_name)
+    return agent_selector.select_agent(tostring(user_prompt), tostring(class_name))
 end
 
 return agent_selector

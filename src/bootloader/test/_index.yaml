@@ -1,0 +1,17 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: envs
+    kind: env.storage.os
+    meta:
+      comment: OS storage for test environment variables
+
+  - name: dep.wippy.bootloader
+    kind: ns.dependency
+    meta:
+      description: "Bootloader configuration for testing"
+    component: "wippy/bootloader"
+    parameters:
+      - name: env_storage
+        value: app:envs

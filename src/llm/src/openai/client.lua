@@ -3,50 +3,57 @@ local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
 
+type OpenAIConfig = {
+    api_key: string?,
+    base_url: string,
+    organization: string?,
+    timeout: number,
+    headers: {[string]: string}?
+}
+
+type ResponseMetadata = {
+    request_id: string?,
+    organization: string?,
+    processing_ms: number?,
+    version: string?,
+    rate_limits: {[string]: string | number}?
+}
+
 local openai_client = {}
 
--- Allow aliasing for testing
 openai_client._http_client = http_client
 openai_client._env = env
 openai_client._ctx = ctx
 
--- Enhanced batch context resolution with individual context keys
-local function resolve_context_values(value_configs)
+local function resolve_config()
     local ctx_all = openai_client._ctx.all() or {}
-    local results = {}
 
-    for key, value_config in pairs(value_configs) do
-        local result = nil
-
-        -- Check for direct value first
+    local function resolve_string(key: string, default_env: string?): string?
         if ctx_all[key] then
-            result = ctx_all[key]
-        else
-            -- Check for env variable reference
-            local env_key = key .. "_env"
-            if ctx_all[env_key] then
-                local env_value = openai_client._env.get(ctx_all[env_key])
-                if env_value and env_value ~= '' then
-                    result = env_value
-                end
-            end
+            return tostring(ctx_all[key])
         end
-
-        -- Use default env variable if no result
-        if not result and value_config.default_env_var then
-            local env_value = openai_client._env.get(value_config.default_env_var)
-            if env_value and env_value ~= '' then
-                result = env_value
-            end
+        local env_key = key .. "_env"
+        if ctx_all[env_key] then
+            local val = openai_client._env.get(tostring(ctx_all[env_key]))
+            if val and val ~= "" then return val end
         end
-
-        results[key] = result or value_config.default_value
+        if default_env then
+            local val = openai_client._env.get(default_env)
+            if val and val ~= "" then return val end
+        end
+        return nil
     end
 
-    return results
+    local config = {
+        api_key = resolve_string("api_key", "OPENAI_API_KEY"),
+        base_url = resolve_string("base_url", "OPENAI_BASE_URL") or "https://api.openai.com/v1",
+        organization = resolve_string("organization", "OPENAI_ORGANIZATION"),
+        timeout = tonumber(resolve_string("timeout", "OPENAI_TIMEOUT")) or 600,
+        headers = ctx_all.headers
+    }
+    return config
 end
 
--- Extract metadata from HTTP response headers
 local function extract_response_metadata(http_response)
     if not http_response or not http_response.headers then
         return {}
@@ -108,7 +115,7 @@ local function parse_error_response(http_response)
                     error_info.provider_name = parsed.error.metadata.provider_name
 
                     -- Try to parse the nested error for more specific info
-                    local nested_parsed, nested_err = json.decode(parsed.error.metadata.raw)
+                    local nested_parsed, nested_err = json.decode(tostring(parsed.error.metadata.raw))
                     if not nested_err and nested_parsed then
                         if nested_parsed.message then
                             error_info.detailed_message = nested_parsed.message
@@ -120,16 +127,15 @@ local function parse_error_response(http_response)
     end
 
     -- Add metadata from headers
-    error_info.metadata = extract_response_metadata(http_response)
+    error_info.metadata = extract_response_metadata(http_response :: any)
 
     return error_info
 end
 
 -- Prepare HTTP headers for OpenAI request
-local function prepare_headers(api_key, organization, method, additional_headers)
-    local headers = {
-        ["Authorization"] = "Bearer " .. api_key
-    }
+local function prepare_headers(api_key, organization, method, additional_headers): {[string]: string}
+    local headers: {[string]: string} = {}
+    headers["Authorization"] = "Bearer " .. tostring(api_key)
 
     -- Only add Content-Type for methods that have a body
     if method == "POST" or method == "PUT" or method == "PATCH" then
@@ -137,13 +143,13 @@ local function prepare_headers(api_key, organization, method, additional_headers
     end
 
     if organization then
-        headers["OpenAI-Organization"] = organization
+        headers["OpenAI-Organization"] = tostring(organization)
     end
 
     -- Merge additional headers from context
     if additional_headers then
         for header_name, header_value in pairs(additional_headers) do
-            headers[header_name] = header_value
+            headers[tostring(header_name)] = tostring(header_value)
         end
     end
 
@@ -155,29 +161,7 @@ function openai_client.request(endpoint_path, payload, options)
     options = options or {}
     local method = options.method or "POST"
 
-    -- Resolve configuration values
-    local config = resolve_context_values({
-        api_key = {
-            default_value = nil,
-            default_env_var = "OPENAI_API_KEY"
-        },
-        base_url = {
-            default_value = "https://api.openai.com/v1",
-            default_env_var = "OPENAI_BASE_URL"
-        },
-        organization = {
-            default_value = nil,
-            default_env_var = "OPENAI_ORGANIZATION"
-        },
-        timeout = {
-            default_value = 600,
-            default_env_var = "OPENAI_TIMEOUT"
-        },
-        headers = {
-            default_value = nil,
-            default_env_var = nil
-        }
-    })
+    local config = resolve_config()
 
     -- Validate API key
     if not config.api_key then
@@ -190,11 +174,11 @@ function openai_client.request(endpoint_path, payload, options)
 
     -- Prepare request
     local full_url = config.base_url .. endpoint_path
-    local headers = prepare_headers(config.api_key, config.organization, method, config.headers)
+    local headers: {[string]: string} = prepare_headers(config.api_key, config.organization, method, config.headers)
 
     local http_options = {
         headers = headers,
-        timeout = options.timeout or config.timeout
+        timeout = tonumber(options.timeout) or config.timeout,
     }
 
     -- Handle payload and streaming for methods that support body
@@ -222,7 +206,7 @@ function openai_client.request(endpoint_path, payload, options)
     end
 
     -- Make the HTTP request using appropriate method
-    local response
+    local response, err
     if method == "GET" then
         response, err = openai_client._http_client.get(full_url, http_options)
     elseif method == "DELETE" then
@@ -239,7 +223,7 @@ function openai_client.request(endpoint_path, payload, options)
     if not response then
         return nil, {
             status_code = 0,
-            message = "Connection failed: " .. tostring(err)
+            message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
         }
     end
 
@@ -271,7 +255,7 @@ function openai_client.request(endpoint_path, payload, options)
     end
 
     -- Add metadata to the response
-    parsed.metadata = extract_response_metadata(response)
+    parsed.metadata = extract_response_metadata(response :: any)
 
     return parsed
 end
@@ -296,11 +280,11 @@ function openai_client.process_stream(stream_response, callbacks)
 
     -- Default callbacks
     callbacks = callbacks or {}
-    local on_content = callbacks.on_content or function() end
-    local on_tool_call = callbacks.on_tool_call or function() end
-    local on_reasoning = callbacks.on_reasoning or function() end
-    local on_error = callbacks.on_error or function() end
-    local on_done = callbacks.on_done or function() end
+    local on_content = callbacks.on_content or function(...) end
+    local on_tool_call = callbacks.on_tool_call or function(...) end
+    local on_reasoning = callbacks.on_reasoning or function(...) end
+    local on_error = callbacks.on_error or function(...) end
+    local on_done = callbacks.on_done or function(...) end
 
     -- Process each streamed chunk
     while true do
@@ -325,7 +309,7 @@ function openai_client.process_stream(stream_response, callbacks)
         -- Check for errors in the chunk
         local error_json = chunk:match('data:%s*({.-"error":.-)%s*\n')
         if error_json then
-            local parsed_error, parse_err = json.decode(error_json)
+            local parsed_error, parse_err = json.decode(tostring(error_json))
             if not parse_err and parsed_error and parsed_error.error then
                 local error_info = {
                     message = parsed_error.error.message,
@@ -377,7 +361,7 @@ function openai_client.process_stream(stream_response, callbacks)
             end
 
             -- Parse the JSON data
-            local parsed, parse_err = json.decode(data_line)
+            local parsed, parse_err = json.decode(tostring(data_line))
             if parse_err then
                 goto continue_line
             end
@@ -446,8 +430,8 @@ function openai_client.process_stream(stream_response, callbacks)
                             end
 
                             -- Check if tool call is complete
-                            local tool_call = tool_calls_accumulator[id]
-                            local is_complete, _ = json.decode(tool_call.arguments)
+                            local tool_call = tool_calls_accumulator[id] :: any
+                            local is_complete, _ = json.decode(tostring(tool_call.arguments))
                             if tool_call.name and tool_call.arguments and not sent_tool_calls[id] and
                                 (choice.finish_reason == "tool_calls" or is_complete) then
                                 sent_tool_calls[id] = true

@@ -1,0 +1,6 @@
+organization: wippy
+module: llm-test
+description: Test stub for llm module
+exclude_meta:
+  type:
+    - e2e

@@ -9,7 +9,7 @@ entries:
       description: Actor pattern library for message-passing concurrency
 
   # Dependencies
-  - name: __dependency.wippy.test
+  - name: dep.wippy.test
     kind: "ns.dependency"
     meta:
       description: "Testing component"
@@ -23,7 +23,7 @@ entries:
       comment: Actor pattern library for btea processes
     source: file://actor.lua
     modules:
-      - json
+      - time
 
   # wippy.actor:actor_test
   - name: actor_test
@@ -31,6 +31,7 @@ entries:
     meta:
       name: Actor Library Test
       type: test
+      suite: actor
       comment: Tests the actor library's messaging and event handling capabilities
       group: Actor Framework
       tags:
@@ -43,4 +44,7 @@ entries:
     imports:
       actor: wippy.actor:actor
       test: wippy.test:test
-    method: run_tests
+    modules:
+      - time
+      - json
+    method: run

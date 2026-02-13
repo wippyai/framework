@@ -52,11 +52,10 @@ local function define_tests()
 
                 for _, case in ipairs(claude_errors) do
                     local result = mapper.map_error_response(case.input)
-                    expect(result.error).to_equal(case.expected.error)
-                    expect(result.error_message).to_equal(case.expected.error_message)
-                    if case.expected.request_id then
-                        -- The request_id should be in metadata, not at the root level
-                        expect(result.metadata.request_id or case.input.request_id).to_equal(case.expected.request_id)
+                    test.eq(result.error, case.expected.error)
+                    test.eq(result.error_message, case.expected.error_message)
+                    if case.expected.request_id and result.metadata then
+                        test.eq(result.metadata.request_id or case.input.request_id, case.expected.request_id)
                     end
                 end
             end)
@@ -75,14 +74,14 @@ local function define_tests()
                         status_code = case.status_code,
                         message = "Test error"
                     })
-                    expect(result.error).to_equal(case.expected)
+                    test.eq(result.error, case.expected)
                 end
             end)
 
             it("should handle nil and malformed error objects", function()
-                expect(mapper.map_error_response(nil).error).to_equal(output.ERROR_TYPE.SERVER_ERROR)
-                expect(mapper.map_error_response({}).error).to_equal(output.ERROR_TYPE.SERVER_ERROR)
-                expect(mapper.map_error_response({ random_field = "value" }).error).to_equal(output.ERROR_TYPE.SERVER_ERROR)
+                test.eq(mapper.map_error_response(nil).error, output.ERROR_TYPE.SERVER_ERROR)
+                test.eq(mapper.map_error_response({}).error, output.ERROR_TYPE.SERVER_ERROR)
+                test.eq(mapper.map_error_response({ random_field = "value" }).error, output.ERROR_TYPE.SERVER_ERROR)
             end)
         end)
 
@@ -96,25 +95,25 @@ local function define_tests()
                 }
 
                 local result = mapper.map_tokens(claude_usage)
-                expect(result.prompt_tokens).to_equal(100)
-                expect(result.completion_tokens).to_equal(50)
-                expect(result.thinking_tokens).to_equal(0) -- Claude doesn't separate thinking
-                expect(result.cache_write_tokens).to_equal(25)
-                expect(result.cache_read_tokens).to_equal(10)
-                expect(result.total_tokens).to_equal(150)
+                test.eq(result.prompt_tokens, 100)
+                test.eq(result.completion_tokens, 50)
+                test.eq(result.thinking_tokens, 0) -- Claude doesn't separate thinking
+                test.eq(result.cache_write_tokens, 25)
+                test.eq(result.cache_read_tokens, 10)
+                test.eq(result.total_tokens, 150)
 
                 -- Verify Claude-specific fields are preserved
-                expect(result.cache_creation_input_tokens).to_equal(25)
-                expect(result.cache_read_input_tokens).to_equal(10)
+                test.eq(result.cache_creation_input_tokens, 25)
+                test.eq(result.cache_read_input_tokens, 10)
             end)
 
             it("should handle missing usage fields gracefully", function()
                 local result = mapper.map_tokens({})
-                expect(result.prompt_tokens).to_equal(0)
-                expect(result.completion_tokens).to_equal(0)
-                expect(result.total_tokens).to_equal(0)
+                test.eq(result.prompt_tokens, 0)
+                test.eq(result.completion_tokens, 0)
+                test.eq(result.total_tokens, 0)
 
-                expect(mapper.map_tokens(nil)).to_be_nil()
+                test.is_nil(mapper.map_tokens(nil))
             end)
         end)
 
@@ -129,7 +128,7 @@ local function define_tests()
                 }
 
                 for claude_reason, expected in pairs(mappings) do
-                    expect(mapper.map_finish_reason(claude_reason)).to_equal(expected)
+                    test.eq(mapper.map_finish_reason(claude_reason), expected)
                 end
             end)
         end)
@@ -142,12 +141,12 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                expect(result.system).not_to_be_nil()
-                expect(#result.system).to_equal(1)
-                expect(result.system[1].type).to_equal("text")
-                expect(result.system[1].text).to_equal("You are a helpful assistant")
-                expect(#result.messages).to_equal(1)
-                expect(result.messages[1].role).to_equal("user")
+                test.not_nil(result.system)
+                test.eq(#result.system, 1)
+                test.eq(result.system[1].type, "text")
+                test.eq(result.system[1].text, "You are a helpful assistant")
+                test.eq(#result.messages, 1)
+                test.eq(result.messages[1].role, "user")
             end)
 
             it("should append developer messages to previous message", function()
@@ -157,11 +156,12 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                expect(#result.messages).to_equal(1)
+                test.eq(#result.messages, 1)
                 local user_msg = result.messages[1]
-                expect(user_msg.role).to_equal("user")
-                expect(user_msg.content[1].text).to_contain("Hello")
-                expect(user_msg.content[1].text).to_contain("<developer-instruction>Be concise</developer-instruction>")
+                test.eq(user_msg.role, "user")
+                local first_content = user_msg.content[1] :: any
+                test.contains(first_content.text, "Hello")
+                test.contains(first_content.text, "<developer-instruction>Be concise</developer-instruction>")
             end)
 
             it("should convert function calls to assistant tool_use format", function()
@@ -178,13 +178,14 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                expect(#result.messages).to_equal(1)
+                test.eq(#result.messages, 1)
                 local msg = result.messages[1]
-                expect(msg.role).to_equal("assistant")
-                expect(msg.content[1].type).to_equal("tool_use")
-                expect(msg.content[1].id).to_equal("call_123")
-                expect(msg.content[1].name).to_equal("get_weather")
-                expect(msg.content[1].input.location).to_equal("NYC")
+                test.eq(msg.role, "assistant")
+                local first_content = msg.content[1] :: any
+                test.eq(first_content.type, "tool_use")
+                test.eq(first_content.id, "call-123")
+                test.eq(first_content.name, "get_weather")
+                test.eq(first_content.input.location, "NYC")
             end)
 
             it("should convert function results to user tool_result format", function()
@@ -198,12 +199,13 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                expect(#result.messages).to_equal(1)
+                test.eq(#result.messages, 1)
                 local msg = result.messages[1]
-                expect(msg.role).to_equal("user")
-                expect(msg.content[1].type).to_equal("tool_result")
-                expect(msg.content[1].tool_use_id).to_equal("call_123")
-                expect(msg.content[1].content).to_equal("Sunny, 75°F")
+                test.eq(msg.role, "user")
+                local first_content = msg.content[1] :: any
+                test.eq(first_content.type, "tool_result")
+                test.eq(first_content.tool_use_id, "call-123")
+                test.eq(first_content.content, "Sunny, 75°F")
             end)
 
             it("should handle cache markers by adding cache_control", function()
@@ -215,21 +217,22 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                expect(result.system).not_to_be_nil()
-                expect(#result.system).to_equal(2)
+                test.not_nil(result.system)
+                test.eq(#result.system, 2)
 
                 -- First system block should have cache control
-                expect(result.system[1].cache_control).not_to_be_nil()
-                expect(result.system[1].cache_control.type).to_equal("ephemeral")
+                local first_system = result.system[1] :: any
+                test.not_nil(first_system.cache_control)
+                test.eq(first_system.cache_control.type, "ephemeral")
             end)
 
             it("should handle empty messages gracefully", function()
                 local result = mapper.map_messages({})
-                expect(result.messages).not_to_be_nil()
-                expect(#result.messages).to_equal(0)
-                expect(result.system).to_be_nil()
+                test.not_nil(result.messages)
+                test.eq(#result.messages, 0)
+                test.is_nil(result.system)
 
-                expect(mapper.map_messages(nil).messages).not_to_be_nil()
+                test.not_nil(mapper.map_messages(nil).messages)
             end)
         end)
 
@@ -251,12 +254,12 @@ local function define_tests()
                 }
 
                 local claude_tools, name_map = mapper.map_tools(contract_tools)
-                expect(#claude_tools).to_equal(1)
-                expect(claude_tools[1].name).to_equal("get_weather")
-                expect(claude_tools[1].description).to_equal("Get weather info")
-                expect(claude_tools[1].input_schema).not_to_be_nil()
-                expect(claude_tools[1].input_schema.type).to_equal("object")
-                expect(name_map["get_weather"]).to_equal("tool_123")
+                test.eq(#claude_tools, 1)
+                test.eq(claude_tools[1].name, "get_weather")
+                test.eq(claude_tools[1].description, "Get weather info")
+                test.not_nil(claude_tools[1].input_schema)
+                test.eq(claude_tools[1].input_schema.type, "object")
+                test.eq(name_map["get_weather"], "tool_123")
             end)
 
             it("should map Claude built-in tools with type field", function()
@@ -273,21 +276,24 @@ local function define_tests()
                 }
 
                 local claude_tools, name_map = mapper.map_tools(contract_tools)
-                expect(#claude_tools).to_equal(1)
-                expect(claude_tools[1].type).to_equal("computer_20241022")
-                expect(claude_tools[1].name).to_equal("computer")
-                expect(claude_tools[1].display_width_px).to_equal(1024)
-                expect(claude_tools[1].display_height_px).to_equal(768)
-                expect(name_map["computer"]).to_equal("builtin_computer")
+                test.eq(#claude_tools, 1)
+                local builtin_tool = claude_tools[1]
+                assert(type(builtin_tool) == "table")
+                test.eq((builtin_tool :: any).type, "computer_20241022")
+                test.eq(builtin_tool.name, "computer")
+                local tool_entry = claude_tools[1] :: any
+                test.eq(tool_entry.display_width_px, 1024)
+                test.eq(tool_entry.display_height_px, 768)
+                test.eq(name_map["computer"], "builtin_computer")
             end)
 
             it("should handle empty tools", function()
                 local claude_tools, name_map = mapper.map_tools({})
-                expect(#claude_tools).to_equal(0)
-                expect(next(name_map)).to_be_nil()
+                test.eq(#claude_tools, 0)
+                test.is_nil(next(name_map))
 
                 local claude_tools2, name_map2 = mapper.map_tools(nil)
-                expect(#claude_tools2).to_equal(0)
+                test.eq(#claude_tools2, 0)
             end)
         end)
 
@@ -295,26 +301,26 @@ local function define_tests()
             it("should map tool choice values correctly", function()
                 local tools = { { name = "tool1" }, { name = "tool2" } }
 
-                expect(mapper.map_tool_choice(nil, tools).type).to_equal("auto")
-                expect(mapper.map_tool_choice("auto", tools).type).to_equal("auto")
-                expect(mapper.map_tool_choice("none", tools).type).to_equal("none")
-                expect(mapper.map_tool_choice("any", tools).type).to_equal("any")
+                test.eq(mapper.map_tool_choice(nil, tools).type, "auto")
+                test.eq(mapper.map_tool_choice("auto", tools).type, "auto")
+                test.eq(mapper.map_tool_choice("none", tools).type, "none")
+                test.eq(mapper.map_tool_choice("any", tools).type, "any")
 
                 local specific = mapper.map_tool_choice("tool1", tools)
-                expect(specific.type).to_equal("tool")
-                expect(specific.name).to_equal("tool1")
+                test.eq(specific.type, "tool")
+                test.eq(specific.name, "tool1")
             end)
 
             it("should return error for invalid tool names", function()
                 local tools = { { name = "tool1" } }
                 local result, error = mapper.map_tool_choice("invalid_tool", tools)
-                expect(result).to_be_nil()
-                expect(error).to_contain("not found")
+                test.is_nil(result)
+                test.contains(error, "not found")
             end)
 
             it("should return nil when no tools available", function()
-                expect(mapper.map_tool_choice("any", {})).to_be_nil()
-                expect(mapper.map_tool_choice("any", nil)).to_be_nil()
+                test.is_nil(mapper.map_tool_choice("any", {}))
+                test.is_nil(mapper.map_tool_choice("any", nil))
             end)
         end)
 
@@ -328,10 +334,10 @@ local function define_tests()
                 }
 
                 local result = mapper.map_options(contract_options, "claude-3-sonnet")
-                expect(result.temperature).to_equal(0.7)
-                expect(result.max_tokens).to_equal(1000)
-                expect(result.top_p).to_equal(0.9)
-                expect(result.stop_sequences[1]).to_equal("STOP")
+                test.eq(result.temperature, 0.7)
+                test.eq(result.max_tokens, 1000)
+                test.eq(result.top_p, 0.9)
+                test.eq(result.stop_sequences[1], "STOP")
             end)
 
             it("should configure thinking when thinking_effort is provided", function()
@@ -341,17 +347,17 @@ local function define_tests()
                 }
 
                 local result = mapper.map_options(contract_options, "claude-3-7-sonnet")
-                expect(result.thinking).not_to_be_nil()
-                expect(result.thinking.type).to_equal("enabled")
-                expect(result.thinking.budget_tokens).to_be_greater_than(1000)
-                expect(result.temperature).to_equal(1) -- Required for thinking
-                expect(result.max_tokens).to_be_greater_than(contract_options.max_tokens) -- Increased for thinking
+                test.not_nil(result.thinking)
+                test.eq(result.thinking.type, "enabled")
+                test.gt(result.thinking.budget_tokens, 1000)
+                test.eq(result.temperature, 1) -- Required for thinking
+                test.gt(result.max_tokens, contract_options.max_tokens) -- Increased for thinking
             end)
 
             it("should handle nil options", function()
                 local result = mapper.map_options(nil, "claude-3-sonnet")
-                expect(type(result)).to_equal("table")
-                expect(next(result)).to_be_nil() -- Empty table
+                test.eq(type(result), "table")
+                test.is_nil(next(result)) -- Empty table
             end)
         end)
 
@@ -365,9 +371,9 @@ local function define_tests()
                 }
 
                 local result = mapper.extract_response_content(claude_response)
-                expect(result.content).to_equal("Hello, world!")
-                expect(#result.tool_calls).to_equal(0)
-                expect(#result.thinking_blocks).to_equal(0)
+                test.eq(result.content, "Hello, world!")
+                test.eq(#result.tool_calls, 0)
+                test.eq(#result.thinking_blocks, 0)
             end)
 
             it("should extract tool calls", function()
@@ -383,11 +389,12 @@ local function define_tests()
                 }
 
                 local result = mapper.extract_response_content(claude_response)
-                expect(result.content).to_equal("")
-                expect(#result.tool_calls).to_equal(1)
-                expect(result.tool_calls[1].id).to_equal("call_123")
-                expect(result.tool_calls[1].name).to_equal("get_weather")
-                expect(result.tool_calls[1].arguments.location).to_equal("NYC")
+                test.eq(result.content, "")
+                test.eq(#result.tool_calls, 1)
+                local tc = assert(result.tool_calls[1])
+                test.eq(tc.id, "call-123")
+                test.eq(tc.name, "get_weather")
+                test.eq(tc.arguments.location, "NYC")
             end)
 
             it("should extract thinking content", function()
@@ -400,16 +407,18 @@ local function define_tests()
                 }
 
                 local result = mapper.extract_response_content(claude_response)
-                expect(result.content).to_equal("Final response")
-                expect(#result.thinking_blocks).to_equal(2)
-                expect(result.thinking_blocks[1].thinking).to_equal("Let me think... ")
-                expect(result.thinking_blocks[2].thinking).to_equal("The answer is...")
+                test.eq(result.content, "Final response")
+                test.eq(#result.thinking_blocks, 2)
+                local tb1 = assert(result.thinking_blocks[1])
+                local tb2 = assert(result.thinking_blocks[2])
+                test.eq(tb1.thinking, "Let me think... ")
+                test.eq(tb2.thinking, "The answer is...")
             end)
 
             it("should handle empty or malformed responses", function()
-                expect(mapper.extract_response_content(nil).content).to_equal("")
-                expect(mapper.extract_response_content({}).content).to_equal("")
-                expect(mapper.extract_response_content({ content = {} }).content).to_equal("")
+                test.eq(mapper.extract_response_content(nil).content, "")
+                test.eq(mapper.extract_response_content({}).content, "")
+                test.eq(mapper.extract_response_content({ content = {} }).content, "")
             end)
         end)
 
@@ -425,19 +434,19 @@ local function define_tests()
                 }
 
                 local result = mapper.format_success_response(claude_response, "claude-3-sonnet", {})
-                expect(result.success).to_be_true()
-                expect(result.result.content).to_equal("Hello!")
-                expect(#result.result.tool_calls).to_equal(0)
-                expect(result.tokens.prompt_tokens).to_equal(10)
-                expect(result.tokens.completion_tokens).to_equal(5)
-                expect(result.finish_reason).to_equal(output.FINISH_REASON.STOP)
-                expect(result.metadata.request_id).to_equal("req_123")
+                test.is_true(result.success)
+                test.eq(result.result.content, "Hello!")
+                test.eq(#result.result.tool_calls, 0)
+                test.eq(result.tokens.prompt_tokens, 10)
+                test.eq(result.tokens.completion_tokens, 5)
+                test.eq(result.finish_reason, output.FINISH_REASON.STOP)
+                test.eq(result.metadata.request_id, "req_123")
             end)
 
             it("should format structured output response correctly", function()
                 -- Skip this test since format_structured_response doesn't exist in mapper
                 -- This should be a function that formats structured output responses
-                expect(true).to_be_true() -- Placeholder for now
+                test.is_true(true) -- Placeholder for now
             end)
         end)
 
@@ -460,11 +469,11 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                local image_content = result.messages[1].content[1]
-                expect(image_content.type).to_equal("image")
-                expect(image_content.source.type).to_equal("base64")
-                expect(image_content.source.media_type).to_equal("image/jpeg")
-                expect(image_content.source.data).to_equal("iVBORw0KGgoAAAANSUhEUgAA...")
+                local image_content = result.messages[1].content[1] :: any
+                test.eq(image_content.type, "image")
+                test.eq(image_content.source.type, "base64")
+                test.eq(image_content.source.media_type, "image/jpeg")
+                test.eq(image_content.source.data, "iVBORw0KGgoAAAANSUhEUgAA...")
             end)
 
             it("should convert URL images to Claude format", function()
@@ -484,10 +493,10 @@ local function define_tests()
                 }
 
                 local result = mapper.map_messages(contract_messages)
-                local image_content = result.messages[1].content[1]
-                expect(image_content.type).to_equal("image")
-                expect(image_content.source.type).to_equal("url")
-                expect(image_content.source.url).to_equal("https://example.com/image.jpg")
+                local image_content = result.messages[1].content[1] :: any
+                test.eq(image_content.type, "image")
+                test.eq(image_content.source.type, "url")
+                test.eq(image_content.source.url, "https://example.com/image.jpg")
             end)
         end)
     end)

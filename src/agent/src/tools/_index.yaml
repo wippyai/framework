@@ -40,6 +40,27 @@ entries:
       tool_caller: wippy.agent.tools:caller
     method: run_tests
     
+  # wippy.agent.tools:delay_tool_test
+  - name: delay_tool_test
+    kind: function.lua
+    meta:
+      name: Delay Tool Test
+      type: test
+      comment: Tests the delay tool echo and timing behavior
+      group: Agent Framework
+      tags:
+        - tools
+        - delay
+        - tests
+    source: file://delay_tool_test.lua
+    modules:
+      - time
+      - ctx
+    imports:
+      test: wippy.test:test
+      delay_tool: wippy.agent.tools:delay_tool
+    method: run_tests
+
   # wippy.agent.tools:delay_tool
   - name: delay_tool
     kind: function.lua

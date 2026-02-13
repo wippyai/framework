@@ -69,10 +69,7 @@ local function handler()
         local proxy = page.proxy or {}
         local css = proxy.css or {}
 
-        local base_url = page.url or ""
-        if base_url ~= "" and not base_url:match("/$") then
-            base_url = base_url .. "/"
-        end
+        local base_url = page_registry.resolve_base_url(page)
 
         res:set_content_type(http.CONTENT.JSON)
         res:set_status(http.STATUS.OK)

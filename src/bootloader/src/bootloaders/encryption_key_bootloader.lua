@@ -4,8 +4,10 @@ local logger = require("logger")
 
 local log = logger:named("boot.encryption")
 
+type BootloaderResult = { status: string, message: string }
+
 -- Convert binary data to hex format
-local function binary_to_hex(data)
+local function binary_to_hex(data: string): string
     local hex = {}
     for i = 1, #data do
         local byte = string.byte(data, i)
@@ -15,7 +17,7 @@ local function binary_to_hex(data)
 end
 
 -- Generate a cryptographically secure 256-bit encryption key
-local function generate_encryption_key()
+local function generate_encryption_key(): (string?, string?)
     log:info("Generating new 256-bit encryption key")
 
     local random_bytes, err = crypto.random.bytes(32)
@@ -30,7 +32,7 @@ local function generate_encryption_key()
     return hex_key
 end
 
-local function run(options)
+local function run(options: any?): BootloaderResult
     log:info("Starting encryption key bootloader")
 
     -- Check if ENCRYPTION_KEY already exists

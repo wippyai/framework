@@ -1,7 +1,7 @@
 local test = require("test")
 local sql = require("sql")
 local uuid = require("uuid")
-local env = require("env")
+local registry = require("registry")
 local embedding_repo = require("embedding_repo")
 
 local function define_tests()
@@ -26,7 +26,8 @@ local function define_tests()
         end
 
         test.after_all(function()
-            local db_resource = env.get("wippy.embeddings.env:target_db")
+            local entry, _ = registry.get("wippy.embeddings:target_db")
+            local db_resource = entry.data.default
             local db, err = sql.get(db_resource)
             if err then
                 print("Warning: Could not connect to database for cleanup: " .. err)

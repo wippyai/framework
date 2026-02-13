@@ -91,12 +91,13 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("Integration test successful")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.tokens.completion_tokens > 0).to_be_true("No completion tokens reported")
-                expect(response.tokens.total_tokens > 0).to_be_true("No total tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "Integration test successful")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.is_true(response.tokens.completion_tokens > 0, "No completion tokens reported")
+                test.is_true(response.tokens.total_tokens > 0, "No total tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should generate text with claude-3-5-sonnet for complex reasoning", function()
@@ -124,12 +125,13 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Sonnet reasoning request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("160")  -- 120 + 40 = 160 miles
-                expect(response.result.content:lower()).to_contain("step")  -- Should show step-by-step reasoning
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.tokens.completion_tokens > 0).to_be_true("No completion tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "Sonnet reasoning request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "160")  -- 120 + 40 = 160 miles
+                test.contains(response.result.content:lower(), "step")  -- Should show step-by-step reasoning
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.is_true(response.tokens.completion_tokens > 0, "No completion tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle system messages in text generation", function()
@@ -158,8 +160,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("Absolutely")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "Absolutely")
             end)
 
             it("should generate text with tool calling using haiku", function()
@@ -197,13 +200,14 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected at least one tool call")
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.result.tool_calls[1].arguments.expression).to_contain("15")
-                expect(response.result.tool_calls[1].arguments.expression).to_contain("7")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.contains(response.result.tool_calls[1].arguments.expression, "15")
+                test.contains(response.result.tool_calls[1].arguments.expression, "7")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle multiple tool calls with sonnet", function()
@@ -251,9 +255,10 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Multiple tool calls failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected at least one tool call")
+                test.is_true(response.success, "Multiple tool calls failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
             end)
 
             it("should handle streaming generation with haiku", function()
@@ -296,11 +301,12 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("API request failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.content).to_contain("1")
-                expect(response.result.content).to_contain("5")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.contains(response.result.content, "1")
+                test.contains(response.result.content, "5")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle complex reasoning with sonnet", function()
@@ -328,11 +334,12 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Complex reasoning failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).to_contain("10")  -- Answer: 5*4/2 = 10 handshakes
-                expect(response.result.content:lower()).to_contain("step")  -- Should show reasoning steps
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens")
-                expect(response.tokens.completion_tokens > 0).to_be_true("No completion tokens")
+                test.is_true(response.success, "Complex reasoning failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.contains(response.result.content, "10")  -- Answer: 5*4/2 = 10 handshakes
+                test.contains(response.result.content:lower(), "step")  -- Should show reasoning steps
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens")
+                test.is_true(response.tokens.completion_tokens > 0, "No completion tokens")
             end)
         end)
 
@@ -379,10 +386,11 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Streaming request failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in streaming response")
-                expect(response.result.content).to_contain("1")
-                expect(response.result.content).to_contain("5")
+                test.is_true(response.success, "Streaming request failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in streaming response")
+                test.contains(response.result.content, "1")
+                test.contains(response.result.content, "5")
 
                 -- Verify streaming events occurred
                 local content_events = 0
@@ -391,11 +399,11 @@ local function define_tests()
                         content_events = content_events + 1
                     end
                 end
-                expect(content_events > 0).to_be_true("No content streaming events occurred")
+                test.is_true(content_events > 0, "No content streaming events occurred")
 
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens")
-                expect(response.tokens.completion_tokens > 0).to_be_true("No completion tokens")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens")
+                test.is_true(response.tokens.completion_tokens > 0, "No completion tokens")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should stream tool calls with sonnet", function()
@@ -454,13 +462,14 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Streaming tool call failed: " .. (response.error_message or "unknown"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected at least one tool call")
+                test.is_true(response.success, "Streaming tool call failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
 
                 local tool_call = response.result.tool_calls[1]
-                expect(tool_call.name).to_equal("calculate")
-                expect(tool_call.arguments.expression).not_to_be_nil("No expression in tool call")
+                test.eq(tool_call.name, "calculate")
+                test.not_nil(tool_call.arguments.expression, "No expression in tool call")
 
                 -- Verify streaming events
                 local tool_call_events = 0
@@ -469,9 +478,9 @@ local function define_tests()
                         tool_call_events = tool_call_events + 1
                     end
                 end
-                expect(tool_call_events > 0).to_be_true("No tool call streaming events occurred")
+                test.is_true(tool_call_events > 0, "No tool call streaming events occurred")
 
-                expect(response.finish_reason).to_equal("tool_call")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle streaming complex reasoning with sonnet", function()
@@ -513,11 +522,12 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Sonnet streaming reasoning failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in response")
-                expect(response.result.content).to_contain("6")  -- 3 + 5 - 2 = 6
-                expect(response.result.content:lower()).to_contain("step")  -- Should show reasoning
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "Sonnet streaming reasoning failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in response")
+                test.contains(response.result.content, "6")  -- 3 + 5 - 2 = 6
+                test.contains(response.result.content:lower(), "step")  -- Should show reasoning
+                test.eq(response.finish_reason, "stop")
             end)
         end)
 
@@ -556,16 +566,17 @@ local function define_tests()
 
                 local response = structured_output_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Structured output failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.data).not_to_be_nil("No structured data in response")
-                expect(response.result.data.name).not_to_be_nil("Missing name in structured output")
-                expect(type(response.result.data.name)).to_equal("string", "Name should be string")
-                expect(response.result.data.age).not_to_be_nil("Missing age in structured output")
-                expect(type(response.result.data.age)).to_equal("number", "Age should be number")
-                expect(response.result.data.occupation).not_to_be_nil("Missing occupation in structured output")
-                expect(type(response.result.data.occupation)).to_equal("string", "Occupation should be string")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success, "Structured output failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.data, "No structured data in response")
+                test.not_nil(response.result.data.name, "Missing name in structured output")
+                test.eq(type(response.result.data.name), "string", "Name should be string")
+                test.not_nil(response.result.data.age, "Missing age in structured output")
+                test.eq(type(response.result.data.age), "number", "Age should be number")
+                test.not_nil(response.result.data.occupation, "Missing occupation in structured output")
+                test.eq(type(response.result.data.occupation), "string", "Occupation should be string")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should generate complex nested structured output with sonnet", function()
@@ -614,17 +625,18 @@ local function define_tests()
 
                 local response = structured_output_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Complex structured output failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.data).not_to_be_nil("No structured data in response")
-                expect(response.result.data.company_name).not_to_be_nil("Missing company_name")
-                expect(response.result.data.departments).not_to_be_nil("Missing departments")
-                expect(type(response.result.data.departments)).to_equal("table", "Departments should be array")
-                expect(#response.result.data.departments > 0).to_be_true("Should have at least one department")
+                test.is_true(response.success, "Complex structured output failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.data, "No structured data in response")
+                test.not_nil(response.result.data.company_name, "Missing company_name")
+                test.not_nil(response.result.data.departments, "Missing departments")
+                test.eq(type(response.result.data.departments), "table", "Departments should be array")
+                test.is_true(#response.result.data.departments > 0, "Should have at least one department")
 
                 local first_dept = response.result.data.departments[1]
-                expect(first_dept.name).not_to_be_nil("First department missing name")
-                expect(first_dept.employees).not_to_be_nil("First department missing employees")
-                expect(type(first_dept.employees)).to_equal("number", "Employee count should be number")
+                test.not_nil(first_dept.name, "First department missing name")
+                test.not_nil(first_dept.employees, "First department missing employees")
+                test.eq(type(first_dept.employees), "number", "Employee count should be number")
             end)
 
             it("should generate structured output with reasoning using sonnet", function()
@@ -675,15 +687,16 @@ local function define_tests()
 
                 local response = structured_output_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Sonnet structured reasoning failed: " .. (response.error_message or "unknown error"))
-                expect(response.result.data).not_to_be_nil("No structured data in response")
-                expect(response.result.data.problem_type).not_to_be_nil("Missing problem_type")
-                expect(response.result.data.given_values.apples).to_equal(5)
-                expect(response.result.data.given_values.cost).to_equal(3)
-                expect(response.result.data.final_answer).to_equal(4.8) -- 8 * 3/5 = 4.8
-                expect(response.result.data.solution_steps).not_to_be_nil("Missing solution steps")
-                expect(#response.result.data.solution_steps > 0).to_be_true("Should have solution steps")
-                expect(response.tokens.prompt_tokens > 0).to_be_true("No prompt tokens reported")
+                test.is_true(response.success, "Sonnet structured reasoning failed: " .. (response.error_message or "unknown error"))
+                assert(response.success)
+                test.not_nil(response.result.data, "No structured data in response")
+                test.not_nil(response.result.data.problem_type, "Missing problem_type")
+                test.eq(response.result.data.given_values.apples, 5)
+                test.eq(response.result.data.given_values.cost, 3)
+                test.eq(response.result.data.final_answer, 4.8) -- 8 * 3/5 = 4.8
+                test.not_nil(response.result.data.solution_steps, "Missing solution steps")
+                test.is_true(#response.result.data.solution_steps > 0, "Should have solution steps")
+                test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
             end)
         end)
 
@@ -706,9 +719,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false("Expected error for nonexistent model")
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("model")
+                test.is_false(response.success, "Expected error for nonexistent model")
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "model")
             end)
 
             it("should handle authentication errors", function()
@@ -736,8 +749,8 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false("Expected authentication error")
-                expect(response.error).to_equal("authentication_error")
+                test.is_false(response.success, "Expected authentication error")
+                test.eq(response.error, "authentication_error")
 
                 -- Restore valid key
                 generate_handler._client._ctx = {
@@ -767,11 +780,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false("Expected error for invalid schema")
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema must be type 'object'")
+                test.is_false(response.success, "Expected error for invalid schema")
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Root schema must be type 'object'")
             end)
         end)
 
@@ -801,9 +814,10 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Large context request failed: " .. (response.error_message or "unknown"))
-                expect(response.result.content).not_to_be_nil("No content in response")
-                expect(response.tokens.prompt_tokens > 1000).to_be_true("Expected many prompt tokens")
+                test.is_true(response.success, "Large context request failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.content, "No content in response")
+                test.is_true(response.tokens.prompt_tokens > 1000, "Expected many prompt tokens")
             end)
 
             it("should preserve metadata across all handler types", function()
@@ -819,8 +833,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 5 }
                 })
 
-                expect(gen_response.success).to_be_true("Text generation failed")
-                expect(gen_response.metadata).not_to_be_nil("No metadata in text generation")
+                test.is_true(gen_response.success, "Text generation failed")
+                assert(gen_response.success)
+                test.not_nil(gen_response.metadata, "No metadata in text generation")
 
                 -- Test metadata in structured output
                 local struct_response = structured_output_handler.handler({
@@ -834,8 +849,9 @@ local function define_tests()
                     }
                 })
 
-                expect(struct_response.success).to_be_true("Structured output failed")
-                expect(struct_response.metadata).not_to_be_nil("No metadata in structured output")
+                test.is_true(struct_response.success, "Structured output failed")
+                assert(struct_response.success)
+                test.not_nil(struct_response.metadata, "No metadata in structured output")
             end)
 
             it("should handle model switching from haiku to sonnet for complex tasks", function()
@@ -851,8 +867,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 10 }
                 })
 
-                expect(simple_response.success).to_be_true("Haiku simple task failed")
-                expect(simple_response.result.content).to_contain("4")
+                test.is_true(simple_response.success, "Haiku simple task failed")
+                assert(simple_response.success)
+                test.contains(simple_response.result.content, "4")
 
                 -- Test complex task with sonnet
                 local complex_response = generate_handler.handler({
@@ -867,10 +884,11 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 200 }
                 })
 
-                expect(complex_response.success).to_be_true("Sonnet complex task failed")
-                expect(#complex_response.result.content > #simple_response.result.content).to_be_true("Sonnet should provide more detailed response")
-                expect(complex_response.result.content:lower()).to_contain("artificial")
-                expect(complex_response.result.content:lower()).to_contain("consciousness")
+                test.is_true(complex_response.success, "Sonnet complex task failed")
+                assert(complex_response.success)
+                test.is_true(#complex_response.result.content > #simple_response.result.content, "Sonnet should provide more detailed response")
+                test.contains(complex_response.result.content:lower(), "artificial")
+                test.contains(complex_response.result.content:lower(), "consciousness")
             end)
         end)
 
@@ -912,9 +930,10 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true("Claude API status check failed")
-                expect(response.status).to_equal("healthy")
-                expect(response.message).to_equal("Claude API is responding normally")
+                test.is_true(response.success, "Claude API status check failed")
+                assert(response.success)
+                test.eq(response.status, "healthy")
+                test.eq(response.message, "Claude API is responding normally")
             end)
 
             it("should handle invalid API key", function()
@@ -931,9 +950,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false("Expected auth failure")
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("invalid")
+                test.is_false(response.success, "Expected auth failure")
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "invalid")
             end)
 
             it("should work with custom base URL", function()
@@ -953,8 +972,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true("Custom base URL failed")
-                expect(response.status).to_equal("healthy")
+                test.is_true(response.success, "Custom base URL failed")
+                assert(response.success)
+                test.eq(response.status, "healthy")
             end)
 
             it("should resolve API key from environment", function()
@@ -980,8 +1000,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true("Env API key resolution failed")
-                expect(response.status).to_equal("healthy")
+                test.is_true(response.success, "Env API key resolution failed")
+                assert(response.success)
+                test.eq(response.status, "healthy")
             end)
         end)
 
@@ -1017,16 +1038,17 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true("Claude 4 text editor failed: " .. (response.error_message or "unknown"))
-                expect(response.result.tool_calls).not_to_be_nil("No tool calls in response")
-                expect(#response.result.tool_calls > 0).to_be_true("Expected text editor tool call")
+                test.is_true(response.success, "Claude 4 text editor failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.not_nil(response.result.tool_calls, "No tool calls in response")
+                test.is_true(#response.result.tool_calls > 0, "Expected text editor tool call")
 
                 local tool_call = response.result.tool_calls[1]
-                expect(tool_call.name).to_equal("str_replace_based_edit_tool")
-                expect(tool_call.arguments.command).to_equal("create")
-                expect(tool_call.arguments.path).to_contain("hello.py")
-                expect(tool_call.arguments.file_text).to_contain("print")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.eq(tool_call.name, "str_replace_based_edit_tool")
+                test.eq(tool_call.arguments.command, "create")
+                test.contains(tool_call.arguments.path, "hello.py")
+                test.contains(tool_call.arguments.file_text, "print")
+                test.eq(response.finish_reason, "tool_call")
             end)
         end)
     end)

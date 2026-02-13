@@ -44,6 +44,7 @@ entries:
         path: ".storage"
       - entry: wippy.llm.google.env:google_credentials
         path: ".storage"
+    default: "wippy.llm.env:envs"
 
   - name: process_host
     kind: ns.requirement
@@ -54,15 +55,14 @@ entries:
         path: ".meta.default_host"
       - entry: wippy.llm.google.oauth2:token_refresher.service
         path: ".host"
-    default: "app:processes"
 
   # Dependencies
-  - name: __dependency.wippy.test
+  - name: dep.wippy.test
     kind: "ns.dependency"
     meta:
       description: "Testing component"
     component: "wippy/test"
-    version: ">=v0.2.0"
+    version: ">=v0.4.0"
 
   # wippy.llm:embedder
   - name: embedder
@@ -180,7 +180,7 @@ entries:
                   },
                   "model": {
                     "type": "string",
-                    "description": "Driver-specific model identifier (e.g. 'gpt-4o', 'claude-3-sonnet-20240229', 'gemini-pro')"
+                    "description": "Driver-specific model identifier (e.g. 'gpt-4o', 'claude-sonnet-4-20250514', 'gemini-2.5-flash')"
                   },
                   "tools": {
                     "type": "array",
@@ -254,25 +254,6 @@ entries:
         output_schemas:
           - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful generation response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Generation response\",\n          \"properties\": {\n            \"content\": {\"type\": \"string\", \"description\": \"Generated text content\"},\n            \"tool_calls\": {\n              \"type\": \"array\",\n              \"description\": \"Tool calls made by the model (empty array if none)\",\n              \"items\": {\n                \"type\": \"object\",\n                \"properties\": {\n                  \"id\": {\"type\": \"string\"},\n                  \"name\": {\"type\": \"string\"},\n                  \"arguments\": {\"type\": \"object\"}\n                },\n                \"required\": [\"id\", \"name\", \"arguments\"]\n              }\n            }\n          },\n          \"required\": [\"content\", \"tool_calls\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"description\": \"Token usage information\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"completion_tokens\": {\"type\": \"integer\"},\n            \"thinking_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"},\n            \"cache_creation_input_tokens\": {\"type\": \"integer\"},\n            \"cache_read_input_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"finish_reason\": {\n          \"type\": \"string\",\n          \"enum\": [\"stop\", \"length\", \"filtered\", \"tool_call\", \"error\"]\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata including usage tracking\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"context_length_exceeded\", \n            \"content_filtered\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context (request_id, status_code, etc.)\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
             format: application/schema+json
-
-  # wippy.llm:integration_test
-  - name: integration_test
-    kind: function.lua
-    meta:
-      name: LLM Integrations Test
-      type: test
-      comment: Integration test for LLM provider calls without model discovery
-      group: LLM / General
-      tags:
-        - llm
-        - integration
-        - providers
-        - test
-    source: file://integration_test.lua
-    imports:
-      llm: wippy.llm:llm
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm:llm
   - name: llm

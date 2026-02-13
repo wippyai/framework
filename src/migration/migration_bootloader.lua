@@ -6,7 +6,9 @@ local runner = require("runner")
 
 local log = logger:named("boot.migrations")
 
-local function wait_for_database(db_id, max_attempts, sleep_ms)
+type BootloaderResult = { status: string, message: string, details: any? }
+
+local function wait_for_database(db_id: string, max_attempts: number, sleep_ms: number): (boolean, string?)
     for attempt = 1, max_attempts do
         local db, err = sql.get(db_id)
         if not err then
@@ -34,14 +36,14 @@ local function wait_for_database(db_id, max_attempts, sleep_ms)
                 attempts = max_attempts,
                 error = err
             })
-            return false, err
+            return false, tostring(err)
         end
     end
 
     return false, "Max retry attempts reached"
 end
 
-local function run(options)
+local function run(options: any?): BootloaderResult
     log:info("Starting migration bootloader")
 
     -- Find target databases
@@ -50,7 +52,7 @@ local function run(options)
         return {
             status = "error",
             message = "Failed to discover target databases: " .. tostring(err)
-        }
+        } :: BootloaderResult
     end
 
     if not target_dbs or #target_dbs == 0 then
@@ -58,7 +60,7 @@ local function run(options)
         return {
             status = "skipped",
             message = "No migrations to apply"
-        }
+        } :: BootloaderResult
     end
 
     log:info("Discovered target databases", {

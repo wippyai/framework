@@ -1,0 +1,228 @@
+version: "1.0"
+namespace: wippy.facade
+
+entries:
+  - name: definition
+    kind: ns.definition
+    readme: file://README.md
+    meta:
+      title: Frontend Facade
+      description: Portable iframe facade for Wippy frontend
+
+  # Infrastructure requirements
+  - name: server
+    kind: ns.requirement
+    meta:
+      description: HTTP server for static and iframe serving
+    targets:
+      - entry: wippy.facade:static
+        path: .meta.server
+
+  - name: router
+    kind: ns.requirement
+    meta:
+      description: Public API router for config endpoint
+    targets:
+      - entry: wippy.facade:config_endpoint
+        path: .meta.router
+
+  # Core configuration
+  - name: domain
+    kind: ns.requirement
+    meta:
+      description: Canonical app domain (e.g. localhost:8085, app.wippy.ai)
+    targets:
+      - entry: wippy.facade:domain
+        path: .default
+
+  - name: fe_facade_url
+    kind: ns.requirement
+    meta:
+      description: CDN base URL for iframe frontend bundle
+    targets:
+      - entry: wippy.facade:fe_facade_url
+        path: .default
+    default: https://web-host.wippy.ai/webcomponents-2026.01.14-010
+
+  - name: fe_entry_path
+    kind: ns.requirement
+    meta:
+      description: Iframe HTML entry point path
+    targets:
+      - entry: wippy.facade:fe_entry_path
+        path: .default
+    default: /iframe.html
+
+  # App identity
+  - name: app_title
+    kind: ns.requirement
+    meta:
+      description: App title shown in sidebar
+    targets:
+      - entry: wippy.facade:app_title
+        path: .default
+    default: Wippy
+
+  - name: app_name
+    kind: ns.requirement
+    meta:
+      description: Full application name
+    targets:
+      - entry: wippy.facade:app_name
+        path: .default
+    default: Wippy AI
+
+  - name: app_icon
+    kind: ns.requirement
+    meta:
+      description: Iconify icon reference
+    targets:
+      - entry: wippy.facade:app_icon
+        path: .default
+    default: "wippy:logo"
+
+  # Feature flags
+  - name: show_admin
+    kind: ns.requirement
+    meta:
+      description: Show admin panel toggle
+    targets:
+      - entry: wippy.facade:show_admin
+        path: .default
+    default: "true"
+
+  - name: start_nav_open
+    kind: ns.requirement
+    meta:
+      description: Navigation drawer open by default
+    targets:
+      - entry: wippy.facade:start_nav_open
+        path: .default
+    default: "false"
+
+  - name: allow_select_model
+    kind: ns.requirement
+    meta:
+      description: Allow user to select LLM model
+    targets:
+      - entry: wippy.facade:allow_select_model
+        path: .default
+    default: "false"
+
+  - name: hide_nav_bar
+    kind: ns.requirement
+    meta:
+      description: Completely hide the left navigation sidebar
+    targets:
+      - entry: wippy.facade:hide_nav_bar
+        path: .default
+    default: "false"
+
+  - name: disable_right_panel
+    kind: ns.requirement
+    meta:
+      description: Disable the right sidebar panel
+    targets:
+      - entry: wippy.facade:disable_right_panel
+        path: .default
+    default: "false"
+
+  - name: session_type
+    kind: ns.requirement
+    meta:
+      description: Chat session persistence type
+    targets:
+      - entry: wippy.facade:session_type
+        path: .default
+    default: non-persistent
+
+  - name: history_mode
+    kind: ns.requirement
+    meta:
+      description: Browser history mode (hash or history)
+    targets:
+      - entry: wippy.facade:history_mode
+        path: .default
+    default: hash
+
+  # Auth
+  - name: login_path
+    kind: ns.requirement
+    meta:
+      description: Path to redirect unauthenticated users
+    targets:
+      - entry: wippy.facade:login_path
+        path: .default
+    default: /login.html
+
+  # Theming
+  - name: custom_css
+    kind: ns.requirement
+    meta:
+      description: Custom CSS injected into iframe config
+    targets:
+      - entry: wippy.facade:custom_css
+        path: .default
+    default: "@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');"
+
+  # Static files
+  - name: public_files
+    kind: fs.directory
+    meta:
+      comment: Facade static files (index.html)
+    directory: ./public/
+    mode: "0755"
+
+  - name: static
+    kind: http.static
+    meta:
+      comment: Serves facade index.html
+      server: server
+    fs: public_files
+    directory: /
+    path: /
+    options:
+      index: index.html
+      spa: true
+
+  # Config endpoint
+  - name: config_handler
+    kind: function.lua
+    meta:
+      comment: Returns facade configuration as JSON
+    source: file://config_handler.lua
+    method: handler
+    modules:
+      - http
+      - registry
+      - json
+
+  - name: config_endpoint
+    kind: http.endpoint
+    meta:
+      router: router
+    method: GET
+    path: /facade/config
+    func: config_handler
+
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      scope: dev
+    component: wippy/test
+    version: "*"
+
+  # Tests
+  - name: config_handler_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Config handler tests
+    source: file://config_handler_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - json
+      - registry

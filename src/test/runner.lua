@@ -25,7 +25,7 @@ type SuiteGroup = {
 }
 
 -- Wait for a value on a channel with timeout
-local function wait_for(ch: any, timeout: string | number): any
+local function wait_for(ch: any, timeout: any): any
     local result = channel.select {
         ch:case_receive(),
         time.after(timeout):case_receive(),
@@ -48,29 +48,33 @@ local function record_failure(
     local failure: Failure = { suite = suite, test = test_name, error = error_msg }
     table.insert(all_failures, failure)
 
-    if not case_stats[ref_id] then
-        case_stats[ref_id] = { passed = 0, failed = 0, skipped = 0 }
+    local cs = case_stats[ref_id]
+    if not cs then
+        cs = { passed = 0, failed = 0, skipped = 0 }
+        case_stats[ref_id] = cs
     end
-    case_stats[ref_id].failed = case_stats[ref_id].failed + 1
+    cs.failed = cs.failed + 1
 end
 
 -- Main test runner logic
 local function run_tests(): number
-    local args = io.args()
+    local args: {string}? = io.args()
 
     display.begin()
 
     -- Discover test functions from registry
-    local entries, err = registry.find({["meta.type"] = "test"})
+    local raw_entries, err = registry.find({["meta.type"] = "test"})
     if err then
         display.error("Error: " .. tostring(err))
         return 1
     end
 
-    if not entries or #entries == 0 then
+    if not raw_entries or #raw_entries == 0 then
         display.info("No tests found")
         return 0
     end
+
+    local entries: {discovery.TestEntry} = raw_entries
 
     -- Apply CLI filter patterns
     if args and #args > 0 then
@@ -84,7 +88,7 @@ local function run_tests(): number
 
     -- Group and sort tests by suite
     local suites, no_suite = discovery.group_by_suite(entries)
-    local suite_names = discovery.sorted_keys(suites)
+    local suite_names = discovery.sorted_keys(suites :: {[string]: any})
 
     local total_tests: number = #entries
     local total_suites: number = #suite_names + (#no_suite > 0 and 1 or 0)
@@ -116,32 +120,34 @@ local function run_tests(): number
                 break
             end
 
-            local msg = result.value
-            local msg_type: string = msg.type
-            local data = msg.data or {}
-            local ref_id: string? = data.ref_id
+            local msg: any = result.value
+            local msg_type = tostring(msg.type)
+            local data: any = msg.data or {}
+            local ref_id = tostring(data.ref_id or "")
 
-            if ref_id and not case_stats[ref_id] then
+            if ref_id ~= "" and not case_stats[ref_id] then
                 case_stats[ref_id] = { passed = 0, failed = 0, skipped = 0 }
             end
 
             if msg_type == "test:case:pass" then
-                if ref_id and case_stats[ref_id] then
-                    case_stats[ref_id].passed = case_stats[ref_id].passed + 1
+                if ref_id ~= "" then
+                    local cs = case_stats[ref_id]
+                    if cs then cs.passed = cs.passed + 1 end
                 end
-                display.case_pass(data.suite or "", data.test or "", data.duration or 0)
+                display.case_pass(tostring(data.suite or ""), tostring(data.test or ""), tonumber(data.duration) or 0)
 
             elseif msg_type == "test:case:fail" then
-                if ref_id then
-                    record_failure(all_failures, case_stats, ref_id, data.suite or "", data.test or "", data.error or "unknown error")
+                if ref_id ~= "" then
+                    record_failure(all_failures, case_stats, ref_id, tostring(data.suite or ""), tostring(data.test or ""), tostring(data.error or "unknown error"))
                 end
-                display.case_fail(data.suite or "", data.test or "", data.error or "", data.duration or 0)
+                display.case_fail(tostring(data.suite or ""), tostring(data.test or ""), tostring(data.error or ""), tonumber(data.duration) or 0)
 
             elseif msg_type == "test:case:skip" then
-                if ref_id and case_stats[ref_id] then
-                    case_stats[ref_id].skipped = case_stats[ref_id].skipped + 1
+                if ref_id ~= "" then
+                    local cs = case_stats[ref_id]
+                    if cs then cs.skipped = cs.skipped + 1 end
                 end
-                display.case_skip(data.suite or "", data.test or "")
+                display.case_skip(tostring(data.suite or ""), tostring(data.test or ""))
 
             elseif msg_type == "test:complete" then
                 test_done_ch:send(msg)
@@ -175,50 +181,52 @@ local function run_tests(): number
         local suite_start = time.now()
 
         for i, entry in ipairs(suite.tests) do
-            local test_name = discovery.short_name(entry.id)
+            local entry_id = tostring((entry :: any).id)
+            local test_name = discovery.short_name(entry_id)
             display.test_progress(test_name, suite.name, i, #suite.tests, completed_tests, total_tests)
 
-            local cmd, cmd_err = executor:async(entry.id, {
+            local cmd: any, cmd_err: any = executor:async(entry_id, {
                 pid = process.pid(),
                 topic = "test:update",
-                ref_id = entry.id,
+                ref_id = entry_id,
             })
 
             if cmd_err then
-                -- Failed to start the test function
-                record_failure(all_failures, case_stats, entry.id, suite.name, test_name, tostring(cmd_err))
+                record_failure(all_failures, case_stats, entry_id, suite.name, test_name, tostring(cmd_err))
                 display.case_fail(suite.name, test_name, tostring(cmd_err), 0)
             else
                 local response = wait_for(cmd:response(), "30s")
 
                 if not response then
-                    -- Timed out waiting for function to complete
                     local _, result_err = cmd:result()
                     local error_msg = result_err and tostring(result_err) or "test timed out"
 
-                    record_failure(all_failures, case_stats, entry.id, suite.name, test_name, error_msg)
+                    record_failure(all_failures, case_stats, entry_id, suite.name, test_name, error_msg)
                     display.case_fail(suite.name, test_name, error_msg, 0)
                 else
                     -- Function completed, drain any pending test:complete event
                     wait_for(test_done_ch, "1s")
 
-                    local cs = case_stats[entry.id]
-                    local has_case_events = cs and (cs.passed + cs.failed + cs.skipped) > 0
+                    local cs = case_stats[entry_id]
+                    local case_count = cs and ((cs.passed or 0) + (cs.failed or 0) + (cs.skipped or 0)) or 0
+                    local has_case_events = case_count > 0
 
                     if not has_case_events then
                         -- Simple test without BDD case events, check function result
-                        local payload, result_err = cmd:result()
+                        local payload: any, result_err: any = cmd:result()
                         if result_err then
-                            record_failure(all_failures, case_stats, entry.id, suite.name, test_name, tostring(result_err))
+                            record_failure(all_failures, case_stats, entry_id, suite.name, test_name, tostring(result_err))
                             display.case_fail(suite.name, test_name, tostring(result_err), 0)
                         elseif payload and payload:data() == false then
-                            record_failure(all_failures, case_stats, entry.id, suite.name, test_name, "test returned false")
+                            record_failure(all_failures, case_stats, entry_id, suite.name, test_name, "test returned false")
                             display.case_fail(suite.name, test_name, "test returned false", 0)
                         else
-                            if not case_stats[entry.id] then
-                                case_stats[entry.id] = { passed = 0, failed = 0, skipped = 0 }
+                            local pcs = case_stats[entry_id]
+                            if not pcs then
+                                pcs = { passed = 0, failed = 0, skipped = 0 }
+                                case_stats[entry_id] = pcs
                             end
-                            case_stats[entry.id].passed = case_stats[entry.id].passed + 1
+                            pcs.passed = pcs.passed + 1
                             display.case_pass(suite.name, test_name, 0)
                         end
                     end
@@ -231,7 +239,7 @@ local function run_tests(): number
         -- Aggregate suite stats from case_stats
         local suite_stats: CaseStats = { passed = 0, failed = 0, skipped = 0 }
         for _, entry in ipairs(suite.tests) do
-            local cs = case_stats[entry.id]
+            local cs = case_stats[(entry :: any).id]
             if cs then
                 suite_stats.passed = suite_stats.passed + cs.passed
                 suite_stats.failed = suite_stats.failed + cs.failed
@@ -278,7 +286,7 @@ local function main(): number
         return 1
     end
 
-    return result
+    return result :: number
 end
 
 return { main = main }

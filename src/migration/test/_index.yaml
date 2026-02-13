@@ -1,0 +1,12 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: dep.wippy.migration
+    kind: ns.dependency
+    meta:
+      description: "Migration module configuration for testing"
+    component: "wippy/migration"
+    parameters:
+      - name: app_db
+        value: app:db

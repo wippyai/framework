@@ -1,6 +1,12 @@
-local migrations = {}
 local sql = require("sql")
-local json = require("json")
+
+type MigrationRecord = {
+    id: string,
+    applied_at: any,
+    description: string?,
+}
+
+local migrations = {}
 
 --[[
 Migration Ledger Interface
@@ -9,13 +15,6 @@ Migration Ledger Interface
 This module manages the database ledger for tracking applied migrations.
 It handles table creation, record management, and status queries
 to maintain a history of all successful migrations.
-
-Expected data structures:
-- Migration Record: {
-    id: string           -- Unique identifier for the migration (up to 512 chars)
-    applied_at: timestamp -- When the migration was applied
-    description: string   -- Human-readable description
-}
 ]]
 
 -- Schema definitions for tracking table by database type
@@ -71,22 +70,23 @@ migrations.table_exists_queries = {
 }
 
 -- Check if migration tracking table exists
-function migrations.table_exists(db)
+function migrations.table_exists(db: any): (any, string?)
     local db_type, err = db:type()
     if err then
         return nil, "Failed to determine database type: " .. tostring(err)
     end
 
-    local check_query = migrations.table_exists_queries[db_type]
+    local check_query = (migrations.table_exists_queries :: any)[db_type]
     if not check_query then
         return nil, "Unsupported database type: " .. db_type
     end
 
-    local result, err = db:query(check_query)
-    if err then
-        return nil, "Failed to check if table exists: " .. tostring(err)
+    local query_result, query_err = db:query(check_query)
+    if query_err then
+        return nil, "Failed to check if table exists: " .. tostring(query_err)
     end
 
+    local result: any = query_result
     -- Handle different result formats from different database types
     if db_type == sql.type.POSTGRES then
         return result[1] and result[1].exists, nil
@@ -96,7 +96,7 @@ function migrations.table_exists(db)
 end
 
 -- Initialize migration tracking table
-function migrations.init_tracking_table(db)
+function migrations.init_tracking_table(db: any): (any, string?)
     -- First check if table already exists
     local exists, err = migrations.table_exists(db)
     if err then
@@ -112,7 +112,7 @@ function migrations.init_tracking_table(db)
     if err then
         return nil, "Failed to determine database type: " .. tostring(err)
     end
-    local schema = migrations.schemas[db_type]
+    local schema = (migrations.schemas :: any)[db_type]
     if not schema then
         return nil, "Unsupported database type: " .. db_type
     end
@@ -121,7 +121,7 @@ function migrations.init_tracking_table(db)
 end
 
 -- Record a migration execution
-function migrations.record_migration(db, id, description)
+function migrations.record_migration(db: any, id: string, description: string?): (any, string?)
     if not id or id == "" then
         return nil, "Migration ID is required"
     end
@@ -141,7 +141,7 @@ function migrations.record_migration(db, id, description)
 end
 
 -- Remove a migration record (for rollbacks)
-function migrations.remove_migration(db, id)
+function migrations.remove_migration(db: any, id: string): (any, string?)
     if not id or id == "" then
         return nil, "Migration ID is required"
     end
@@ -156,7 +156,7 @@ function migrations.remove_migration(db, id)
 end
 
 -- Get migrations by filter
-function migrations.get_migrations(db, filter)
+function migrations.get_migrations(db: any, filter: any?): (any, string?)
     filter = filter or {}
 
     local query = "SELECT id, applied_at, description FROM _migrations"
@@ -183,7 +183,7 @@ function migrations.get_migrations(db, filter)
 end
 
 -- Check if a specific migration has been applied
-function migrations.is_applied(db, id)
+function migrations.is_applied(db: any, id: string): (any, string?)
     if not id or id == "" then
         return nil, "Migration ID is required"
     end

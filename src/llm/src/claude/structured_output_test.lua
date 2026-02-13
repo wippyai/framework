@@ -28,16 +28,16 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Model is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Model is required")
             end)
 
             it("should require messages parameter", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     schema = {
                         type = "object",
                         properties = { name = { type = "string" } },
@@ -46,31 +46,31 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
 
             it("should require schema parameter", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Schema is required")
             end)
 
             it("should reject empty messages array", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {},
                     schema = {
                         type = "object",
@@ -80,18 +80,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
         end)
 
         describe("Schema Validation", function()
             it("should validate schema structure requirements", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -101,16 +101,16 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema must be type 'object'")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Root schema must be type 'object'")
             end)
 
             it("should require additionalProperties: false", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -124,16 +124,16 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("additionalProperties: false")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "additionalProperties: false")
             end)
 
             it("should require all properties in required array", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -148,16 +148,16 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("All properties must be marked as required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "All properties must be marked as required")
             end)
 
             it("should require required array when properties exist", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -171,27 +171,27 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema must have 'required' array")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Schema must have 'required' array")
             end)
 
             it("should handle non-table schema", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
                     schema = "not a table"
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema must be a table")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Schema must be a table")
             end)
 
             it("should accept valid schema", function()
@@ -229,7 +229,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -244,9 +244,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
 
@@ -266,16 +266,16 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("/v1/messages")
+                        test.contains(url, "/v1/messages")
 
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("claude-3-5-sonnet-20241022")
-                        expect(payload.tools).not_to_be_nil()
-                        expect(#payload.tools).to_equal(1)
-                        expect(payload.tools[1].name).to_equal("structured_output")
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("tool")
-                        expect(payload.tool_choice.name).to_equal("structured_output")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "claude-sonnet-4-20250514")
+                        test.not_nil(payload.tools)
+                        test.eq(#payload.tools, 1)
+                        test.eq(payload.tools[1].name, "structured_output")
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "tool")
+                        test.eq(payload.tool_choice.name, "structured_output")
 
                         return {
                             status_code = 200,
@@ -305,7 +305,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person data" }} }
                     },
@@ -321,18 +321,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result).not_to_be_nil()
-                expect(response.result.data).not_to_be_nil()
-                expect(response.result.data.name).to_equal("Bob")
-                expect(response.result.data.age).to_equal(25)
-                expect(response.result.data.city).to_equal("Boston")
-                expect(response.tokens.prompt_tokens).to_equal(20)
-                expect(response.tokens.completion_tokens).to_equal(15)
-                expect(response.tokens.total_tokens).to_equal(35)
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success)
+                test.not_nil(response.result)
+                test.not_nil(response.result.data)
+                test.eq(response.result.data.name, "Bob")
+                test.eq(response.result.data.age, 25)
+                test.eq(response.result.data.city, "Boston")
+                test.eq(response.tokens.prompt_tokens, 20)
+                test.eq(response.tokens.completion_tokens, 15)
+                test.eq(response.tokens.total_tokens, 35)
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle nested object schemas", function()
@@ -350,9 +350,9 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.tools[1].input_schema.properties.address).not_to_be_nil()
-                        expect(payload.tools[1].input_schema.properties.address.type).to_equal("object")
+                        local payload = json.decode(tostring(options.body))
+                        test.not_nil(payload.tools[1].input_schema.properties.address)
+                        test.eq(payload.tools[1].input_schema.properties.address.type, "object")
 
                         return {
                             status_code = 200,
@@ -380,7 +380,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person with address" }} }
                     },
@@ -403,12 +403,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.name).to_equal("Carol")
-                expect(response.result.data.address.street).to_equal("456 Oak Ave")
-                expect(response.result.data.address.city).to_equal("Chicago")
+                test.is_true(response.success)
+                test.eq(response.result.data.name, "Carol")
+                test.eq(response.result.data.address.street, "456 Oak Ave")
+                test.eq(response.result.data.address.city, "Chicago")
             end)
 
             it("should handle arrays in schemas", function()
@@ -449,7 +449,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person with skills" }} }
                     },
@@ -467,15 +467,15 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.name).to_equal("David")
-                expect(type(response.result.data.skills)).to_equal("table")
-                expect(#response.result.data.skills).to_equal(3)
-                expect(response.result.data.skills[1]).to_equal("JavaScript")
-                expect(response.result.data.skills[2]).to_equal("Python")
-                expect(response.result.data.skills[3]).to_equal("Lua")
+                test.is_true(response.success)
+                test.eq(response.result.data.name, "David")
+                test.eq(type(response.result.data.skills), "table")
+                test.eq(#response.result.data.skills, 3)
+                test.eq(response.result.data.skills[1], "JavaScript")
+                test.eq(response.result.data.skills[2], "Python")
+                test.eq(response.result.data.skills[3], "Lua")
             end)
 
             it("should handle system messages in mapper", function()
@@ -493,11 +493,11 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.system).not_to_be_nil()
-                        expect(#payload.system).to_equal(1)
-                        expect(payload.system[1].type).to_equal("text")
-                        expect(payload.system[1].text).to_equal("Be precise and accurate")
+                        local payload = json.decode(tostring(options.body))
+                        test.not_nil(payload.system)
+                        test.eq(#payload.system, 1)
+                        test.eq(payload.system[1].type, "text")
+                        test.eq(payload.system[1].text, "Be precise and accurate")
 
                         return {
                             status_code = 200,
@@ -519,7 +519,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "system", content = "Be precise and accurate" },
                         { role = "user", content = {{ type = "text", text = "Generate status" }} }
@@ -532,10 +532,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.status).to_equal("success")
+                test.is_true(response.success)
+                test.eq(response.result.data.status, "success")
             end)
         end)
 
@@ -555,10 +555,10 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.temperature).to_equal(0.2)
-                        expect(payload.max_tokens).to_equal(200)
-                        expect(payload.top_p).to_equal(0.8)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.temperature, 0.2)
+                        test.eq(payload.max_tokens, 200)
+                        test.eq(payload.top_p, 0.8)
 
                         return {
                             status_code = 200,
@@ -580,7 +580,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -597,9 +597,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
 
             it("should handle thinking configuration for Claude 3.7", function()
@@ -617,13 +617,13 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("claude-3-7-sonnet-20250219")
-                        expect(payload.thinking).not_to_be_nil()
-                        expect(payload.thinking.type).to_equal("enabled")
-                        expect(payload.thinking.budget_tokens).to_be_greater_than(1024)
-                        expect(payload.temperature).to_equal(1) -- Required for thinking
-                        expect(payload.max_tokens).to_be_greater_than(payload.thinking.budget_tokens)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "claude-3-7-sonnet-20250219")
+                        test.not_nil(payload.thinking)
+                        test.eq(payload.thinking.type, "enabled")
+                        test.gt(payload.thinking.budget_tokens, 1024)
+                        test.eq(payload.temperature, 1) -- Required for thinking
+                        test.gt(payload.max_tokens, payload.thinking.budget_tokens)
 
                         return {
                             status_code = 200,
@@ -669,10 +669,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.result).to_equal("structured thinking")
+                test.is_true(response.success)
+                test.eq(response.result.data.result, "structured thinking")
             end)
         end)
 
@@ -719,10 +719,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Invalid model specified")
+                test.eq(response.error, "invalid_request")
+                test.eq(response.error_message, "Invalid model specified")
             end)
 
             it("should handle missing tool_use block", function()
@@ -758,7 +758,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -770,11 +770,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Claude failed to use the structured_output tool")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Claude failed to use the structured_output tool")
             end)
 
             it("should handle tool_use block without input", function()
@@ -812,7 +812,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -824,11 +824,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Tool use block does not contain input")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Tool use block does not contain input")
             end)
 
             it("should handle invalid response structure", function()
@@ -855,7 +855,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -867,11 +867,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid response structure")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Invalid response structure")
             end)
 
             it("should handle authentication errors", function()
@@ -904,7 +904,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -916,10 +916,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_equal("Invalid API key")
+                test.eq(response.error, "authentication_error")
+                test.eq(response.error_message, "Invalid API key")
             end)
 
             it("should handle rate limit errors", function()
@@ -954,7 +954,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -966,10 +966,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.error).to_equal("rate_limit_exceeded")
-                expect(response.error_message).to_equal("Rate limit exceeded")
+                test.eq(response.error, "rate_limit_exceeded")
+                test.eq(response.error_message, "Rate limit exceeded")
             end)
         end)
 
@@ -993,8 +993,8 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://custom.claude.api/v1/messages")
-                        expect(options.headers["x-api-key"]).to_equal("custom-structured-key")
+                        test.eq(url, "https://custom.claude.api/v1/messages")
+                        test.eq(options.headers["x-api-key"], "custom-structured-key")
 
                         return {
                             status_code = 200,
@@ -1016,7 +1016,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1028,10 +1028,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.success).to_be_true()
+                test.is_true(response.success)
+                test.is_true(response.result.data.success)
             end)
 
             it("should handle custom timeout", function()
@@ -1049,7 +1049,7 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        expect(options.timeout).to_equal(60)
+                        test.eq(options.timeout, 60)
 
                         return {
                             status_code = 200,
@@ -1071,7 +1071,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1084,9 +1084,9 @@ local function define_tests()
                     timeout = 60
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
 
@@ -1107,21 +1107,21 @@ local function define_tests()
                 local tool_validated = false
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
+                        local payload = json.decode(tostring(options.body))
 
-                        expect(payload.tools).not_to_be_nil()
-                        expect(#payload.tools).to_equal(1)
+                        test.not_nil(payload.tools)
+                        test.eq(#payload.tools, 1)
 
                         local tool = payload.tools[1]
-                        expect(tool.name).to_equal("structured_output")
-                        expect(tool.description).to_contain("Generate structured output")
-                        expect(tool.input_schema).not_to_be_nil()
-                        expect(tool.input_schema.type).to_equal("object")
-                        expect(tool.input_schema.additionalProperties).to_equal(false)
+                        test.eq(tool.name, "structured_output")
+                        test.contains(tool.description, "Generate structured output")
+                        test.not_nil(tool.input_schema)
+                        test.eq(tool.input_schema.type, "object")
+                        test.eq(tool.input_schema.additionalProperties, false)
 
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("tool")
-                        expect(payload.tool_choice.name).to_equal("structured_output")
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "tool")
+                        test.eq(payload.tool_choice.name, "structured_output")
 
                         tool_validated = true
 
@@ -1145,7 +1145,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Test tool configuration" }} }
                     },
@@ -1157,11 +1157,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(tool_validated).to_be_true()
-                expect(response.success).to_be_true()
-                expect(response.result.data.configured).to_be_true()
+                test.is_true(tool_validated)
+                test.is_true(response.success)
+                test.is_true(response.result.data.configured)
             end)
         end)
 
@@ -1181,16 +1181,16 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
+                        local payload = json.decode(tostring(options.body))
 
                         -- Verify system content is mapped correctly
-                        expect(payload.system).not_to_be_nil()
-                        expect(#payload.system).to_equal(1)
-                        expect(payload.system[1].text).to_equal("Extract structured data accurately")
+                        test.not_nil(payload.system)
+                        test.eq(#payload.system, 1)
+                        test.eq(payload.system[1].text, "Extract structured data accurately")
 
                         -- Verify messages are mapped
-                        expect(#payload.messages).to_equal(1)
-                        expect(payload.messages[1].role).to_equal("user")
+                        test.eq(#payload.messages, 1)
+                        test.eq(payload.messages[1].role, "user")
 
                         return {
                             status_code = 200,
@@ -1215,7 +1215,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "system", content = "Extract structured data accurately" },
                         { role = "user", content = {{ type = "text", text = "Process this data" }} }
@@ -1236,11 +1236,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.extracted).to_be_true()
-                expect(response.result.data.data.field).to_equal("value")
+                test.is_true(response.success)
+                test.is_true(response.result.data.extracted)
+                test.eq(response.result.data.data.field, "value")
             end)
         end)
 
@@ -1291,7 +1291,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate status" }} }
                     },
@@ -1306,26 +1306,26 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
                 -- Verify contract compliance
-                expect(response.success).to_be_true()
-                expect(response.result).not_to_be_nil()
-                expect(response.result.data).not_to_be_nil()
-                expect(response.tokens).not_to_be_nil()
-                expect(response.finish_reason).not_to_be_nil()
-                expect(response.metadata).not_to_be_nil()
+                test.is_true(response.success)
+                test.not_nil(response.result)
+                test.not_nil(response.result.data)
+                test.not_nil(response.tokens)
+                test.not_nil(response.finish_reason)
+                test.not_nil(response.metadata)
 
                 -- Verify specific values
-                expect(response.result.data.status).to_equal("completed")
-                expect(response.result.data.count).to_equal(42)
-                expect(response.tokens.prompt_tokens).to_equal(15)
-                expect(response.tokens.completion_tokens).to_equal(8)
-                expect(response.tokens.total_tokens).to_equal(23)
-                expect(response.tokens.cache_write_tokens).to_equal(5)
-                expect(response.tokens.cache_read_tokens).to_equal(2)
-                expect(response.finish_reason).to_equal("stop")
-                expect(response.metadata.request_id).to_equal("req_compliance123")
+                test.eq(response.result.data.status, "completed")
+                test.eq(response.result.data.count, 42)
+                test.eq(response.tokens.prompt_tokens, 15)
+                test.eq(response.tokens.completion_tokens, 8)
+                test.eq(response.tokens.total_tokens, 23)
+                test.eq(response.tokens.cache_write_tokens, 5)
+                test.eq(response.tokens.cache_read_tokens, 2)
+                test.eq(response.finish_reason, "stop")
+                test.eq(response.metadata.request_id, "req_compliance123")
             end)
         end)
 
@@ -1346,7 +1346,7 @@ local function define_tests()
                 structured_output_handler._client._http_client = nil
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1358,10 +1358,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("API key is required")
+                test.eq(response.error, "authentication_error")
+                test.contains(response.error_message, "API key is required")
             end)
 
             it("should handle connection failures", function()
@@ -1384,7 +1384,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1396,10 +1396,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_equal("Connection failed")
+                test.eq(response.error, "server_error")
+                test.eq(response.error_message, "Connection failed")
             end)
 
             it("should handle JSON parsing errors gracefully", function()
@@ -1426,7 +1426,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1438,10 +1438,10 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Failed to parse Claude response")
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Failed to parse Claude response")
             end)
 
             it("should handle wrong tool name in response", function()
@@ -1479,7 +1479,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1491,18 +1491,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Claude failed to use the structured_output tool")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Claude failed to use the structured_output tool")
             end)
         end)
 
         describe("Complex Schema Validation", function()
             it("should validate deeply nested schemas", function()
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1569,10 +1569,10 @@ local function define_tests()
                     end
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.user.profile.name).to_equal("Deep Nester")
+                test.is_true(response.success)
+                test.eq(response.result.data.user.profile.name, "Deep Nester")
             end)
 
             it("should handle array schemas with object items", function()
@@ -1615,7 +1615,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate user list" }} }
                     },
@@ -1640,12 +1640,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(#response.result.data.users).to_equal(2)
-                expect(response.result.data.users[1].name).to_equal("Alice")
-                expect(response.result.data.users[2].age).to_equal(25)
+                test.is_true(response.success)
+                test.eq(#response.result.data.users, 2)
+                test.eq(response.result.data.users[1].name, "Alice")
+                test.eq(response.result.data.users[2].age, 25)
             end)
         end)
 
@@ -1694,7 +1694,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Test metadata" }} }
                     },
@@ -1706,14 +1706,16 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.metadata.request_id).to_equal("req_metadata456")
-                expect(response.metadata.processing_ms).to_equal(250)
-                expect(response.metadata.rate_limits.requests_remaining).to_equal(999)
-                expect(response.tokens.cache_write_tokens).to_equal(3)
-                expect(response.tokens.cache_read_tokens).to_equal(1)
+                test.is_true(response.success)
+                local meta = assert(response.metadata)
+                test.eq(meta.request_id, "req_metadata456")
+                test.eq(meta.processing_ms, 250)
+                local rate_limits = assert(meta.rate_limits)
+                test.eq(rate_limits.requests_remaining, 999)
+                test.eq(response.tokens.cache_write_tokens, 3)
+                test.eq(response.tokens.cache_read_tokens, 1)
             end)
         end)
 
@@ -1734,16 +1736,16 @@ local function define_tests()
                 local tool_choice_validated = false
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
+                        local payload = json.decode(tostring(options.body))
 
                         -- Verify tool choice is set to force our tool
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("tool")
-                        expect(payload.tool_choice.name).to_equal("structured_output")
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "tool")
+                        test.eq(payload.tool_choice.name, "structured_output")
 
                         -- Verify only one tool is provided
-                        expect(#payload.tools).to_equal(1)
-                        expect(payload.tools[1].name).to_equal("structured_output")
+                        test.eq(#payload.tools, 1)
+                        test.eq(payload.tools[1].name, "structured_output")
 
                         tool_choice_validated = true
 
@@ -1767,7 +1769,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "claude-3-5-sonnet-20241022",
+                    model = "claude-sonnet-4-20250514",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1779,11 +1781,11 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response = structured_output_handler.handler(contract_args) :: any
 
-                expect(tool_choice_validated).to_be_true()
-                expect(response.success).to_be_true()
-                expect(response.result.data.forced).to_be_true()
+                test.is_true(tool_choice_validated)
+                test.is_true(response.success)
+                test.is_true(response.result.data.forced)
             end)
         end)
     end)

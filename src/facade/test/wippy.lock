@@ -1,0 +1,16 @@
+directories:
+    modules: .wippy
+    src: .
+modules:
+    - name: wippy/facade
+      version: 0.4.0
+      hash: 785ed3a61578d0afb527e14c4cbf268135326e3015892d411065f8abd931c782
+    - name: wippy/terminal
+      version: 0.4.2
+      hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
+    - name: wippy/test
+      version: 0.4.8
+      hash: 6e139b8a6ed7bc5f5c01a5e0b611bcdf0d223613ceb531cf80bec218a0ea19e9
+replacements:
+    - from: wippy/facade
+      to: ..

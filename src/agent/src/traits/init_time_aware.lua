@@ -1,15 +1,18 @@
 local time = require("time")
 local ctx = require("ctx")
 
-local function execute(base_prompt)
+type TimeAwareResult = {
+    prompt: string,
+}
+
+local function execute(base_prompt: string?): TimeAwareResult
     local timezone = ctx.get("timezone") or "UTC"
     local interval_minutes = ctx.get("time_interval") or 15
 
     local current_time = time.now()
 
-    -- Convert to specified timezone if not UTC
     if timezone ~= "UTC" then
-        local loc, err = time.load_location(timezone)
+        local loc, err = time.load_location(tostring(timezone))
         if not err and loc then
             current_time = current_time:in_location(loc)
         end
@@ -22,14 +25,11 @@ local function execute(base_prompt)
     local minute = current_time:minute()
     local weekday = current_time:weekday()
 
-    -- Round minute to nearest interval for cache stability
     local rounded_minute = math.floor(minute / interval_minutes) * interval_minutes
 
-    -- Weekday names
     local weekdays = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" }
-    local weekday_name = weekdays[weekday + 1] -- Lua arrays are 1-indexed, weekday is 0-indexed
+    local weekday_name = weekdays[weekday + 1]
 
-    -- Month names
     local months = { "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December" }
     local month_name = months[month]

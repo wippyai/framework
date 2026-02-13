@@ -1,18 +1,25 @@
 local sql = require("sql")
 local json = require("json")
 local uuid = require("uuid")
-local env = require("env")
+local registry = require("registry")
 
--- Constants
+local NS = "wippy.embeddings:"
 local DEFAULT_SEARCH_LIMIT = 10
 
 local embedding_repo = {}
 
--- Helper function to get database connection
 local function get_db()
-    local DB_RESOURCE, _ = env.get("wippy.embeddings.env:target_db")
+    local entry, entry_err = registry.get(NS .. "target_db")
+    if entry_err or not entry then
+        return nil, "target_db requirement is not configured"
+    end
 
-    local db, err = sql.get(DB_RESOURCE)
+    local db_resource = entry.data and entry.data.default
+    if not db_resource or db_resource == "" then
+        return nil, "target_db requirement value is empty"
+    end
+
+    local db, err = sql.get(db_resource)
     if err then
         return nil, "Failed to connect to database: " .. err
     end

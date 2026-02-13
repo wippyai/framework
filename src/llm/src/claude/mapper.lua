@@ -4,36 +4,33 @@ local json = require("json")
 
 local mapper = {}
 
-mapper.FINISH_REASON_MAP = {
-    ["end_turn"] = output.FINISH_REASON.STOP,
-    ["max_tokens"] = output.FINISH_REASON.LENGTH,
-    ["stop_sequence"] = output.FINISH_REASON.STOP,
-    ["tool_use"] = output.FINISH_REASON.TOOL_CALL
-}
+mapper.FINISH_REASON_MAP = {} :: {[string]: string}
+mapper.FINISH_REASON_MAP["end_turn"] = output.FINISH_REASON.STOP
+mapper.FINISH_REASON_MAP["max_tokens"] = output.FINISH_REASON.LENGTH
+mapper.FINISH_REASON_MAP["stop_sequence"] = output.FINISH_REASON.STOP
+mapper.FINISH_REASON_MAP["tool_use"] = output.FINISH_REASON.TOOL_CALL
 
-mapper.CLAUDE_ERROR_TYPE_MAP = {
-    ["invalid_request_error"] = output.ERROR_TYPE.INVALID_REQUEST,
-    ["authentication_error"] = output.ERROR_TYPE.AUTHENTICATION,
-    ["permission_error"] = output.ERROR_TYPE.AUTHENTICATION,
-    ["not_found_error"] = output.ERROR_TYPE.MODEL_ERROR,
-    ["request_too_large"] = output.ERROR_TYPE.INVALID_REQUEST,
-    ["rate_limit_error"] = output.ERROR_TYPE.RATE_LIMIT,
-    ["api_error"] = output.ERROR_TYPE.SERVER_ERROR,
-    ["overloaded_error"] = output.ERROR_TYPE.SERVER_ERROR
-}
+mapper.CLAUDE_ERROR_TYPE_MAP = {} :: {[string]: string}
+mapper.CLAUDE_ERROR_TYPE_MAP["invalid_request_error"] = output.ERROR_TYPE.INVALID_REQUEST
+mapper.CLAUDE_ERROR_TYPE_MAP["authentication_error"] = output.ERROR_TYPE.AUTHENTICATION
+mapper.CLAUDE_ERROR_TYPE_MAP["permission_error"] = output.ERROR_TYPE.AUTHENTICATION
+mapper.CLAUDE_ERROR_TYPE_MAP["not_found_error"] = output.ERROR_TYPE.MODEL_ERROR
+mapper.CLAUDE_ERROR_TYPE_MAP["request_too_large"] = output.ERROR_TYPE.INVALID_REQUEST
+mapper.CLAUDE_ERROR_TYPE_MAP["rate_limit_error"] = output.ERROR_TYPE.RATE_LIMIT
+mapper.CLAUDE_ERROR_TYPE_MAP["api_error"] = output.ERROR_TYPE.SERVER_ERROR
+mapper.CLAUDE_ERROR_TYPE_MAP["overloaded_error"] = output.ERROR_TYPE.SERVER_ERROR
 
-mapper.HTTP_STATUS_MAP = {
-    [400] = output.ERROR_TYPE.INVALID_REQUEST,
-    [401] = output.ERROR_TYPE.AUTHENTICATION,
-    [403] = output.ERROR_TYPE.AUTHENTICATION,
-    [404] = output.ERROR_TYPE.MODEL_ERROR,
-    [413] = output.ERROR_TYPE.INVALID_REQUEST,
-    [429] = output.ERROR_TYPE.RATE_LIMIT,
-    [500] = output.ERROR_TYPE.SERVER_ERROR,
-    [502] = output.ERROR_TYPE.SERVER_ERROR,
-    [503] = output.ERROR_TYPE.SERVER_ERROR,
-    [529] = output.ERROR_TYPE.SERVER_ERROR
-}
+mapper.HTTP_STATUS_MAP = {} :: {[number]: string}
+mapper.HTTP_STATUS_MAP[400] = output.ERROR_TYPE.INVALID_REQUEST
+mapper.HTTP_STATUS_MAP[401] = output.ERROR_TYPE.AUTHENTICATION
+mapper.HTTP_STATUS_MAP[403] = output.ERROR_TYPE.AUTHENTICATION
+mapper.HTTP_STATUS_MAP[404] = output.ERROR_TYPE.MODEL_ERROR
+mapper.HTTP_STATUS_MAP[413] = output.ERROR_TYPE.INVALID_REQUEST
+mapper.HTTP_STATUS_MAP[429] = output.ERROR_TYPE.RATE_LIMIT
+mapper.HTTP_STATUS_MAP[500] = output.ERROR_TYPE.SERVER_ERROR
+mapper.HTTP_STATUS_MAP[502] = output.ERROR_TYPE.SERVER_ERROR
+mapper.HTTP_STATUS_MAP[503] = output.ERROR_TYPE.SERVER_ERROR
+mapper.HTTP_STATUS_MAP[529] = output.ERROR_TYPE.SERVER_ERROR
 
 -- Claude API cache control limit
 local MAX_CACHE_BREAKPOINTS = 4
@@ -148,9 +145,13 @@ function mapper.map_tokens(claude_usage)
         claude_usage.cache_read_input_tokens or 0
     )
 
-    -- Use clean names for consistency
+    -- Contract-standard names
     tokens.cache_write_tokens = claude_usage.cache_creation_input_tokens or 0
     tokens.cache_read_tokens = claude_usage.cache_read_input_tokens or 0
+
+    -- Preserve Claude-specific field names
+    tokens.cache_creation_input_tokens = claude_usage.cache_creation_input_tokens or 0
+    tokens.cache_read_input_tokens = claude_usage.cache_read_input_tokens or 0
 
     return tokens
 end
@@ -329,8 +330,9 @@ function mapper.map_messages(contract_messages)
                     -- Try to merge into previous message (existing logic)
                     local last_msg = claude_messages[#claude_messages]
                     for j = #last_msg.content, 1, -1 do
-                        if last_msg.content[j].type == "text" then
-                            last_msg.content[j].text = last_msg.content[j].text ..
+                        local part = last_msg.content[j] :: any
+                        if part.type == "text" then
+                            part.text = part.text ..
                                 "\n<developer-instruction>" .. dev_text .. "</developer-instruction>"
                             break
                         end
@@ -467,36 +469,41 @@ function mapper.map_tools(contract_tools)
     local claude_tools = {}
     local name_to_id_map = {}
 
+    if not contract_tools then
+        return claude_tools, name_to_id_map
+    end
+
     for _, tool in ipairs(contract_tools) do
-        if tool.schema then
-            local claude_meta = tool.meta and tool.meta.claude
+        local claude_meta = (tool :: any).meta and (tool :: any).meta.claude or nil
+        local native_type = (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
 
-            -- Check if this is a Claude native tool
-            if claude_meta and claude_meta.type then
-                -- Native tool format - only include type and tool-specific params
-                local claude_tool = {
-                    type = claude_meta.type,
-                    name = tool.name
-                }
+        if native_type then
+            -- Native Claude tool (computer_use, etc.)
+            local claude_tool = {
+                type = native_type,
+                name = tool.name
+            }
 
-                -- Copy other Claude parameters (excluding type)
-                for key, value in pairs(claude_meta) do
+            -- Copy parameters from meta.claude or tool.parameters
+            local params = claude_meta or tool.parameters
+            if params then
+                for key, value in pairs(params) do
                     if key ~= "type" then
                         claude_tool[key] = value
                     end
                 end
-
-                table.insert(claude_tools, claude_tool)
-            else
-                -- Custom tool format - include description and schema
-                local claude_tool = {
-                    name = tool.name,
-                    description = tool.description,
-                    input_schema = tool.schema
-                }
-                table.insert(claude_tools, claude_tool)
             end
 
+            table.insert(claude_tools, claude_tool)
+            name_to_id_map[tool.name] = tool.id or tool.registry_id
+        elseif tool.schema then
+            -- Custom tool with schema
+            local claude_tool = {
+                name = tool.name,
+                description = tool.description,
+                input_schema = tool.schema
+            }
+            table.insert(claude_tools, claude_tool)
             name_to_id_map[tool.name] = tool.id or tool.registry_id
         end
     end
@@ -617,10 +624,11 @@ function mapper.map_tool_calls(claude_tool_calls, name_to_id_map)
 end
 
 function mapper.format_success_response(claude_response, model, name_to_id_map)
-    local extracted = mapper.extract_response_content(claude_response)
-    local tokens = mapper.map_tokens(claude_response.usage)
-    local finish_reason = mapper.map_finish_reason(claude_response.stop_reason)
-    local thinking_content = extract_thinking_content_from_blocks(extracted.thinking_blocks)
+    local resp = claude_response :: any
+    local extracted = mapper.extract_response_content(resp)
+    local tokens = mapper.map_tokens(resp.usage)
+    local finish_reason = mapper.map_finish_reason(resp.stop_reason)
+    local thinking_content = extract_thinking_content_from_blocks(extracted.thinking_blocks :: any)
 
     -- Calculate approximate thinking tokens from thinking string
     if tokens and thinking_content and thinking_content ~= "" then
@@ -635,7 +643,7 @@ function mapper.format_success_response(claude_response, model, name_to_id_map)
         },
         tokens = tokens,
         finish_reason = finish_reason,
-        metadata = claude_response.metadata or {}
+        metadata = resp.metadata or {}
     }
 
     result.metadata.thinking = thinking_content
@@ -646,7 +654,7 @@ end
 
 function mapper.format_streaming_response(client_result, name_to_id_map, usage, finish_reason, response_metadata)
     local thinking_blocks = client_result.thinking or {}
-    local thinking_content = extract_thinking_content_from_blocks(thinking_blocks)
+    local thinking_content = extract_thinking_content_from_blocks(thinking_blocks :: any)
     local mapped_tool_calls = mapper.map_tool_calls(client_result.tool_calls or {}, name_to_id_map or {})
 
     local tokens = mapper.map_tokens(usage)

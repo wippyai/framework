@@ -1,0 +1,28 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: env_storage
+    kind: env.storage.os
+    meta:
+      type: envstorage
+
+  - name: dep.wippy.usage
+    kind: ns.dependency
+    meta:
+      description: "Usage module configuration for testing"
+    component: "wippy/usage"
+    parameters:
+      - name: target_db
+        value: app:db
+
+  - name: dep.wippy.bootloader
+    kind: ns.dependency
+    meta:
+      description: "Bootloader configuration for testing"
+    component: "wippy/bootloader"
+    parameters:
+      - name: application_host
+        value: wippy.terminal:host
+      - name: env_storage
+        value: app:env_storage

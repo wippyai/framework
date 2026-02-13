@@ -2,7 +2,6 @@ local text = require("text")
 local models = require("models")
 local llm = require("llm")
 
----@class compress
 local compress = {
     _models = models,
     _llm = llm,
@@ -69,7 +68,6 @@ ADJUSTED TEXT:]]
 -- CONFIGURATION
 ---------------------------
 
----@class CompressConfig
 local CONFIG = {
     -- Token estimation: roughly how many characters equal one token for size calculations
     chars_per_token = 4,
@@ -107,21 +105,14 @@ local CONFIG = {
 -- UTILITY FUNCTIONS
 ---------------------------
 
----@param tokens number
----@return number
 local function tokens_to_chars(tokens)
     return math.floor(tokens * CONFIG.chars_per_token)
 end
 
----@param chars number
----@return number
 local function chars_to_tokens(chars)
-    return math.floor(chars / CONFIG.chars_per_token)
+    return math.floor((tonumber(chars) or 0) / CONFIG.chars_per_token)
 end
 
----@param model_name string
----@param mock_model_info table|nil
----@return table|nil, string|nil
 local function get_model_info(model_name, mock_model_info)
     if mock_model_info then
         return mock_model_info, nil
@@ -149,17 +140,11 @@ local function get_model_info(model_name, mock_model_info)
     }, nil
 end
 
----@param target_chars number
----@param model_info table
----@return number
 local function calculate_safe_max_tokens(target_chars, model_info)
     local needed_tokens = chars_to_tokens(target_chars) + CONFIG.output_buffer_tokens
-    return math.min(needed_tokens, model_info.max_output_tokens)
+    return math.min(needed_tokens, tonumber(model_info.max_output_tokens) or 1000)
 end
 
----@param target_chars number
----@param model_info table
----@return boolean|nil, string|nil
 local function validate_target_size(target_chars, model_info)
     if not target_chars or target_chars <= 0 then
         return nil, "Target size must be a positive number"
@@ -172,7 +157,7 @@ local function validate_target_size(target_chars, model_info)
         )
     end
 
-    local max_reasonable = math.floor(model_info.max_output_chars * CONFIG.max_context_usage_ratio)
+    local max_reasonable = math.floor((tonumber(model_info.max_output_chars) or 0) * CONFIG.max_context_usage_ratio)
     if target_chars > max_reasonable then
         return nil, string.format(
             "Target size %d is too large for model (max reasonable: %d characters)",
@@ -187,12 +172,6 @@ end
 -- CORE COMPRESSION FUNCTIONS
 ---------------------------
 
----@param content string
----@param target_chars number
----@param model_name string
----@param model_info table
----@param options table
----@return string|nil, string|nil
 local function compress_direct(content, target_chars, model_name, model_info, options)
     local prompt = string.format(PROMPTS.DIRECT_COMPRESS, target_chars, target_chars, content)
     local safe_max_tokens = calculate_safe_max_tokens(target_chars, model_info)
@@ -214,14 +193,8 @@ local function compress_direct(content, target_chars, model_name, model_info, op
     return response.result, nil
 end
 
----@param content string
----@param target_chars number
----@param model_name string
----@param model_info table
----@param options table
----@return string|nil, string|nil
 local function compress_map_reduce(content, target_chars, model_name, model_info, options)
-    local chunk_size = math.floor(model_info.usable_input_chars * CONFIG.chunk_context_ratio)
+    local chunk_size = math.floor((tonumber(model_info.usable_input_chars) or 0) * CONFIG.chunk_context_ratio)
     local chunk_overlap = options.chunk_overlap or CONFIG.chunk_overlap_chars
 
     local splitter, err = compress._text.splitter.recursive({
@@ -233,7 +206,7 @@ local function compress_map_reduce(content, target_chars, model_name, model_info
         return nil, "Failed to create text splitter: " .. tostring(err)
     end
 
-    local chunks, err = splitter:split_text(content)
+    local chunks, err = splitter:split_text(tostring(content))
     if err then
         return nil, "Failed to split content: " .. tostring(err)
     end
@@ -291,15 +264,8 @@ local function compress_map_reduce(content, target_chars, model_name, model_info
     return final_response.result, nil
 end
 
----@param result string
----@param target_chars number
----@param model_name string
----@param model_info table
----@param options table
----@param attempts number|nil
----@return string|nil, string|nil
 local function refine_length(result, target_chars, model_name, model_info, options, attempts)
-    attempts = attempts or 1
+    attempts = tonumber(attempts) or 1
     local max_attempts = options.max_attempts or CONFIG.max_refinement_attempts
 
     if attempts > max_attempts then
@@ -344,12 +310,6 @@ end
 -- PUBLIC API
 ---------------------------
 
----@param model_name string
----@param content string
----@param target_chars number
----@param options table|nil
----@param mock_model_info table|nil
----@return string|nil, string|nil
 function compress.to_size(model_name, content, target_chars, options, mock_model_info)
     options = options or {}
 
@@ -371,6 +331,7 @@ function compress.to_size(model_name, content, target_chars, options, mock_model
     if err then
         return nil, err
     end
+    model_info = assert(model_info)
 
     -- Validate target size is reasonable for this model
     local valid, err = validate_target_size(target_chars, model_info)
@@ -410,11 +371,6 @@ function compress.to_size(model_name, content, target_chars, options, mock_model
     return result, nil
 end
 
----@param model_name string
----@param content string
----@param target_chars number
----@param mock_model_info table|nil
----@return table|nil, string|nil
 function compress.get_stats(model_name, content, target_chars, mock_model_info)
     local model_info, err = get_model_info(model_name, mock_model_info)
     if err then
@@ -440,11 +396,6 @@ function compress.get_stats(model_name, content, target_chars, mock_model_info)
     }, nil
 end
 
----@param model_name string
----@param content string
----@param target_chars number
----@param mock_model_info table|nil
----@return boolean, string|nil
 function compress.can_compress(model_name, content, target_chars, mock_model_info)
     local stats, err = compress.get_stats(model_name, content, target_chars, mock_model_info)
     if err then
@@ -470,8 +421,6 @@ function compress.can_compress(model_name, content, target_chars, mock_model_inf
     return true, nil
 end
 
----@param new_config table
----@return compress
 function compress.configure(new_config)
     for key, value in pairs(new_config) do
         if CONFIG[key] ~= nil then
@@ -481,7 +430,6 @@ function compress.configure(new_config)
     return compress
 end
 
----@return table
 function compress.get_config()
     local config_copy = {}
     for key, value in pairs(CONFIG) do

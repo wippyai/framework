@@ -1,24 +1,29 @@
 local registry = require("registry")
 local consts = require("consts")
 
+type PluginConfig = {
+    prefix: string,
+    process_id: string,
+    host: string?,
+    auto_start: boolean,
+}
+
 local discovery = {}
 
--- Extract plugin configuration from registry entry
-local function extract_plugin_config(entry)
+local function extract_plugin_config(entry: any): PluginConfig?
     if not entry.meta or not entry.meta.command_prefix then
         return nil
     end
 
     return {
-        prefix = entry.meta.command_prefix,
-        process_id = entry.id,
+        prefix = string(entry.meta.command_prefix),
+        process_id = string(entry.id),
         host = entry.meta.default_host or consts.get_config().user_hub_host,
         auto_start = entry.meta.auto_start or false
-    }
+    } :: PluginConfig
 end
 
--- Get all relay plugins from registry
-function discovery.get_plugins()
+function discovery.get_plugins(): ({[string]: PluginConfig}?, string?)
     local entries, err = registry.find({
         [".kind"] = "process.lua",
         ["meta.type"] = consts.PLUGIN_META_TYPE
@@ -32,7 +37,7 @@ function discovery.get_plugins()
         return {}, nil
     end
 
-    local plugins = {}
+    local plugins: {[string]: PluginConfig} = {}
 
     for _, entry in ipairs(entries) do
         local plugin_config = extract_plugin_config(entry)

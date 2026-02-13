@@ -108,7 +108,7 @@ function structured_output.handler(contract_args)
 
     local client_instance, err = client_contract
         :with_context(structured_output._ctx.all() or {})
-        :open(structured_output._ctx.get("client_id"))
+        :open(tostring(structured_output._ctx.get("client_id")))
     if err then
         return structured_output._mapper.map_error_response({
             message = "Failed to open client binding: " .. tostring(err),
@@ -138,7 +138,8 @@ function structured_output.handler(contract_args)
         })
     end
 
-    local structured_data, decode_err = json.decode(mapped_response.result.content)
+    local result_table = mapped_response.result or {}
+    local structured_data, decode_err = json.decode(tostring(result_table.content or ""))
     if decode_err then
         return structured_output._mapper.map_error_response({
             message = "Model failed to return valid JSON: " .. decode_err,

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wippy</title>
+    <style>
+        html, body { padding: 0; margin: 0; }
+        iframe {
+            position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+            width: 100%; height: 100%; background: white; border: none; z-index: 100;
+        }
+    </style>
+</head>
+<body>
+<script type="module">
+    const STORAGE_KEY = '@wippy_token_info';
+    const MSG_TYPE = '@gen2-chat';
+
+    const res = await fetch('/api/public/facade/config');
+    if (!res.ok) { document.body.textContent = 'Failed to load config'; throw new Error('config fetch failed'); }
+    const cfg = await res.json();
+
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) { window.location.href = cfg.login_path || '/login.html'; throw new Error('no token'); }
+
+    let token;
+    try { token = JSON.parse(stored).token; }
+    catch { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
+
+    const apiUrl = cfg.api_url || window.location.origin;
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = cfg.ws_url || (wsProto + '//' + window.location.host);
+
+    function currentPath() {
+        return window.location.pathname + window.location.search + window.location.hash;
+    }
+
+    const config = {
+        path: currentPath(),
+        auth: { token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
+        feature: {
+            session: { type: cfg.feature.session_type },
+            history: cfg.feature.history_mode,
+            env: { APP_API_URL: apiUrl, APP_WEBSOCKET_URL: wsUrl },
+            routePrefix: apiUrl,
+            showAdmin: cfg.feature.show_admin,
+            allowSelectModel: cfg.feature.allow_select_model,
+            startNavOpen: cfg.feature.start_nav_open,
+            hideNavBar: cfg.feature.hide_nav_bar,
+            disableRightPanel: cfg.feature.disable_right_panel,
+        },
+        customization: cfg.customization,
+    };
+
+    const iframe = document.createElement('iframe');
+    iframe.src = cfg.iframe_url;
+    iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-presentation');
+    iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
+    let routingActive = false;
+
+    window.addEventListener('message', (e) => {
+        if (e.origin !== cfg.iframe_origin) return;
+        try {
+            const p = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if (p.type !== MSG_TYPE) return;
+            if (p.action === 'get-config') {
+                e.source.postMessage(JSON.stringify({ type: MSG_TYPE, action: 'set-config', ...config }), '*');
+            } else if (p.action === 'cmd-handle-error' && p.code === 'auth-expired') {
+                window.location.href = cfg.login_path || '/login.html';
+            } else if (p.action === 'history') {
+                routingActive = true;
+                window.history.pushState({}, '', p.path);
+                requestAnimationFrame(() => { routingActive = false; });
+            }
+        } catch {}
+    });
+
+    window.addEventListener('popstate', () => {
+        if (routingActive) return;
+        iframe.contentWindow.postMessage(JSON.stringify({
+            type: MSG_TYPE, action: 'history', path: currentPath()
+        }), '*');
+    });
+
+    document.body.appendChild(iframe);
+</script>
+</body>
+</html>

@@ -5,18 +5,16 @@ type TestEntry = {
     id: string,
     name: string,
     group: string,
-    meta: {
-        type: string?,
-        suite: string?,
-        order: number?,
-    }
+    meta: {[string]: any},
 }
+
+discovery.TestEntry = TestEntry
 
 -- Sort tests by meta.order, then by id
 function discovery.sort_tests(tests: {TestEntry}): {TestEntry}
     table.sort(tests, function(a: TestEntry, b: TestEntry): boolean
-        local order_a = (a.meta and a.meta.order) or 0
-        local order_b = (b.meta and b.meta.order) or 0
+        local order_a = tonumber(a.meta and a.meta.order) or 0
+        local order_b = tonumber(b.meta and b.meta.order) or 0
         if order_a ~= order_b then
             return order_a < order_b
         end
@@ -31,7 +29,7 @@ function discovery.group_by_suite(entries: {TestEntry}): ({[string]: {TestEntry}
     local no_suite: {TestEntry} = {}
 
     for _, entry in ipairs(entries) do
-        local suite = entry.meta and entry.meta.suite
+        local suite = entry.meta and tostring(entry.meta.suite) or nil
         if suite then
             suites[suite] = suites[suite] or {}
             table.insert(suites[suite], entry)

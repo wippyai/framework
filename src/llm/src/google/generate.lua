@@ -76,7 +76,7 @@ function generate.handler(contract_args)
 
     local client_instance, err = client_contract
         :with_context(generate._ctx.all() or {})
-        :open(generate._ctx.get("client_id"))
+        :open(tostring(generate._ctx.get("client_id")))
     if err then
         return generate._mapper.map_error_response({
             message = "Failed to open client binding: " .. tostring(err),

@@ -2,6 +2,12 @@ version: "1.0"
 namespace: wippy.relay.env
 
 entries:
+  - name: envs
+    kind: env.storage.os
+    meta:
+      type: envstorage
+      comment: OS storage for relay environment variables
+
   # wippy.relay.env:host
   - name: host
     kind: env.variable

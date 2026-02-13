@@ -3,6 +3,51 @@
 
 local json = require("json")
 
+type ImageSource = {
+    type: string,
+    url: string?,
+    mime_type: string?,
+    data: string?,
+}
+
+type ContentPart = {
+    type: string,
+    text: string?,
+    source: ImageSource?,
+}
+
+type FunctionCall = {
+    name: string,
+    arguments: string,
+    id: string?,
+}
+
+type Message = {
+    role: string,
+    content: {ContentPart}?,
+    name: string?,
+    metadata: table?,
+    function_call: FunctionCall?,
+    function_call_id: string?,
+    marker_id: string?,
+}
+
+type PromptBuilder = {
+    messages: {Message},
+    add_system: (self: any, content: string, meta: table?) -> PromptBuilder,
+    add_user: (self: any, content: string, meta: table?) -> PromptBuilder,
+    add_assistant: (self: any, content: string, meta: table?) -> PromptBuilder,
+    add_developer: (self: any, content: string, meta: table?) -> PromptBuilder,
+    add_message: (self: any, role: string, content_parts: {ContentPart}, name: string?, metadata: table?) -> PromptBuilder,
+    add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?) -> PromptBuilder,
+    add_function_result: (self: any, name: string, content: any, function_call_id: string?) -> PromptBuilder,
+    add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
+    get_messages: (self: any) -> {Message},
+    build: (self: any) -> {messages: {Message}},
+    clone: (self: any) -> PromptBuilder,
+    clear: (self: any) -> PromptBuilder,
+}
+
 -- Main module
 local prompt = {}
 
@@ -32,7 +77,7 @@ prompt.CONTENT_TYPE = {
 ---------------------------
 
 -- Create a text content part
-function prompt.text(content)
+function prompt.text(content: string): ContentPart
     return {
         type = prompt.CONTENT_TYPE.TEXT,
         text = content
@@ -40,7 +85,7 @@ function prompt.text(content)
 end
 
 -- Create an image content part from URL
-function prompt.image(url, mime_type)
+function prompt.image(url: string, mime_type: string?): ContentPart
     return {
         type = prompt.CONTENT_TYPE.IMAGE,
         source = {
@@ -52,7 +97,7 @@ function prompt.image(url, mime_type)
 end
 
 -- Create an image content part from base64 data
-function prompt.image_base64(mime_type, data)
+function prompt.image_base64(mime_type: string, data: string): ContentPart
     return {
         type = prompt.CONTENT_TYPE.IMAGE,
         source = {
@@ -68,7 +113,7 @@ end
 ---------------------------
 
 -- Process function result content to extract images and clean text
-local function process_function_result_content(content)
+local function process_function_result_content(content: any): (any, {ContentPart}?)
     local parsed
     local was_string = false
 
@@ -140,13 +185,13 @@ end
 ---------------------------
 
 -- Create a new prompt builder instance, optionally with starting messages
-function prompt.new(messages)
+function prompt.new(messages: {Message}?)
     local builder = {
         messages = messages or {}
     }
 
     -- Add a developer message with contextual tips and optional meta
-    builder.add_developer = function(self, content, meta)
+    builder.add_developer = function(self: any, content: string, meta: table?)
         if content and #content > 0 then
             return self:add_message(
                 prompt.ROLE.DEVELOPER,
@@ -159,7 +204,7 @@ function prompt.new(messages)
     end
 
     -- Add a message with specified role and content parts
-    builder.add_message = function(self, role, content_parts, name, metadata)
+    builder.add_message = function(self: any, role: string, content_parts: {ContentPart}, name: string?, metadata: table?)
         if role and content_parts and #content_parts > 0 then
             local mergeable_roles = {
                 [prompt.ROLE.USER] = true,
@@ -206,7 +251,7 @@ function prompt.new(messages)
     end
 
     -- Add a system message with text content and optional meta
-    builder.add_system = function(self, content, meta)
+    builder.add_system = function(self: any, content: string, meta: table?)
         if content and #content > 0 then
             return self:add_message(
                 prompt.ROLE.SYSTEM,
@@ -219,7 +264,7 @@ function prompt.new(messages)
     end
 
     -- Add a user message with text content and optional meta
-    builder.add_user = function(self, content, meta)
+    builder.add_user = function(self: any, content: string, meta: table?)
         return self:add_message(
             prompt.ROLE.USER,
             { prompt.text(content) },
@@ -229,7 +274,7 @@ function prompt.new(messages)
     end
 
     -- Add an assistant message with text content and optional meta
-    builder.add_assistant = function(self, content, meta)
+    builder.add_assistant = function(self: any, content: string, meta: table?)
         return self:add_message(
             prompt.ROLE.ASSISTANT,
             { prompt.text(content) },
@@ -239,7 +284,7 @@ function prompt.new(messages)
     end
 
     -- Add a function call by assistant
-    builder.add_function_call = function(self, function_name, arguments, function_call_id)
+    builder.add_function_call = function(self: any, function_name: string, arguments: string, function_call_id: string?)
         if function_name and arguments then
             local message = {
                 role = prompt.ROLE.FUNCTION_CALL,
@@ -260,7 +305,7 @@ function prompt.new(messages)
     end
 
     -- Add a function result message
-    builder.add_function_result = function(self, name, content, function_call_id)
+    builder.add_function_result = function(self: any, name: string, content: any, function_call_id: string?)
         if name and content then
             local message = {
                 role = prompt.ROLE.FUNCTION_RESULT,
@@ -278,7 +323,7 @@ function prompt.new(messages)
     end
 
     -- Add a cache marker message (special message that can be interpreted by provider adapters)
-    builder.add_cache_marker = function(self, marker_id)
+    builder.add_cache_marker = function(self: any, marker_id: string?)
         -- Add a simple marker message that can be recognized by adapter layers
         table.insert(self.messages, {
             role = prompt.ROLE.CACHE_MARKER,
@@ -288,7 +333,7 @@ function prompt.new(messages)
     end
 
     -- Get all messages in the current builder (with image processing)
-    builder.get_messages = function(self)
+    builder.get_messages = function(self: any)
         local processed_messages = {}
         local collected_images = {}
 
@@ -352,20 +397,20 @@ function prompt.new(messages)
     end
 
     -- Clear all messages
-    builder.clear = function(self)
+    builder.clear = function(self: any)
         self.messages = {}
         return self
     end
 
     -- Build the prompt in universal format
-    builder.build = function(self)
+    builder.build = function(self: any)
         return {
             messages = self:get_messages()
         }
     end
 
     -- Clone this builder (for creating variations)
-    builder.clone = function(self)
+    builder.clone = function(self: any)
         local new_builder = prompt.new()
 
         -- Deep copy all messages
@@ -437,10 +482,10 @@ function prompt.new(messages)
 end
 
 -- Helper to create a prompt builder with an initial system message
-function prompt.with_system(system_content)
+function prompt.with_system(system_content: string)
     local builder = prompt.new()
     if system_content and #system_content > 0 then
-        builder:add_system(system_content)
+        (builder :: any):add_system(system_content)
     end
     return builder
 end

@@ -101,7 +101,7 @@ function providers.open(provider_id, context_overrides)
     -- Open the binding with merged context
     local instance, err = provider_contract
         :with_context(final_context)
-        :open(binding_id)
+        :open(tostring(binding_id))
 
     if err then
         return nil, "Failed to open provider binding: " .. tostring(err)

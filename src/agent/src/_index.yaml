@@ -9,19 +9,19 @@ entries:
       description: LLM agent framework with tool support and conversation management
 
   # Dependencies
-  - name: __dependency.wippy.test
+  - name: dep.wippy.test
     kind: "ns.dependency"
     meta:
       description: "Testing component"
     component: "wippy/test"
-    version: ">=v0.3.0"
+    version: ">=v0.4.0"
 
-  - name: __dependency.wippy.llm
+  - name: dep.wippy.llm
     kind: "ns.dependency"
     meta:
       description: "LLM component"
     component: "wippy/llm"
-    version: ">=v0.3.0"
+    version: ">=v0.4.0"
 
   # wippy.agent:agent
   - name: agent
@@ -313,20 +313,4 @@ entries:
                 "type": "object",
                 "description": "Agent specification for compilation"
               }
-            format: application/schema+json
-      - name: can_resolve
-        description: Check if this resolver can handle the given agent ID
-        input_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "agent_id": {"type": "string"}
-                },
-                "required": ["agent_id"]
-              }
-            format: application/schema+json
-        output_schemas:
-          - definition: |
-              {"type": "boolean"}
             format: application/schema+json

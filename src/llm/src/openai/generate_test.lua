@@ -1,5 +1,6 @@
 local generate_handler = require("generate_handler")
 local json = require("json")
+local test = require("test")
 
 local function define_tests()
     describe("OpenAI Generate Handler", function()
@@ -22,9 +23,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Model is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -34,9 +35,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
 
             it("should reject empty messages array", function()
@@ -47,9 +48,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
         end)
 
@@ -69,11 +70,11 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("chat/completions")
+                        test.contains(url, "chat/completions")
 
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("gpt-4o-mini")
-                        expect(payload.messages).not_to_be_nil()
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "gpt-4o-mini")
+                        test.not_nil(payload.messages)
 
                         return {
                             status_code = 200,
@@ -106,12 +107,13 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Hello! How can I help you today!")
-                expect(response.tokens.prompt_tokens).to_equal(12)
-                expect(response.tokens.completion_tokens).to_equal(8)
-                expect(response.tokens.total_tokens).to_equal(20)
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Hello! How can I help you today!")
+                test.eq(response.tokens.prompt_tokens, 12)
+                test.eq(response.tokens.completion_tokens, 8)
+                test.eq(response.tokens.total_tokens, 20)
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle options mapping", function()
@@ -129,14 +131,14 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.temperature).to_equal(0.3)
-                        expect(payload.max_tokens).to_equal(50)
-                        expect(payload.top_p).to_equal(0.9)
-                        expect(payload.frequency_penalty).to_equal(0.5)
-                        expect(payload.presence_penalty).to_equal(0.2)
-                        expect(payload.stop).not_to_be_nil()
-                        expect(payload.stop[1]).to_equal("STOP")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.temperature, 0.3)
+                        test.eq(payload.max_tokens, 50)
+                        test.eq(payload.top_p, 0.9)
+                        test.eq(payload.frequency_penalty, 0.5)
+                        test.eq(payload.presence_penalty, 0.2)
+                        test.not_nil(payload.stop)
+                        test.eq(payload.stop[1], "STOP")
 
                         return {
                             status_code = 200,
@@ -166,8 +168,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Response")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Response")
             end)
 
             it("should handle reasoning models (o-series)", function()
@@ -185,12 +188,12 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("o1-mini")
-                        expect(payload.reasoning_effort).to_equal("medium")
-                        expect(payload.max_completion_tokens).to_equal(100)
-                        expect(payload.max_tokens).to_be_nil()
-                        expect(payload.temperature).to_be_nil()
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "o1-mini")
+                        test.eq(payload.reasoning_effort, "medium")
+                        test.eq(payload.max_completion_tokens, 100)
+                        test.is_nil(payload.max_tokens)
+                        test.is_nil(payload.temperature)
 
                         return {
                             status_code = 200,
@@ -228,9 +231,10 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.tokens.thinking_tokens).to_equal(10)
-                expect(response.tokens.total_tokens).to_equal(50)
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.tokens.thinking_tokens, 10)
+                test.eq(response.tokens.total_tokens, 50)
             end)
         end)
 
@@ -250,11 +254,11 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.tools).not_to_be_nil()
-                        expect(#payload.tools).to_equal(1)
-                        expect(payload.tools[1].type).to_equal("function")
-                        expect(payload.tools[1]["function"].name).to_equal("calculate")
+                        local payload = json.decode(tostring(options.body))
+                        test.not_nil(payload.tools)
+                        test.eq(#payload.tools, 1)
+                        test.eq(payload.tools[1].type, "function")
+                        test.eq(payload.tools[1]["function"].name, "calculate")
 
                         return {
                             status_code = 200,
@@ -310,13 +314,15 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I'll help with that calculation.")
-                expect(response.result.tool_calls).not_to_be_nil()
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.result.tool_calls[1].arguments.expression).to_equal("2+2")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I'll help with that calculation.")
+                test.not_nil(response.result.tool_calls)
+                test.eq(#response.result.tool_calls, 1)
+                assert(response.result.tool_calls[1])
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.eq(response.result.tool_calls[1].arguments.expression, "2+2")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle tool_choice parameter", function()
@@ -334,10 +340,10 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("function")
-                        expect(payload.tool_choice["function"].name).to_equal("calculate")
+                        local payload = json.decode(tostring(options.body))
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "function")
+                        test.eq(payload.tool_choice["function"].name, "calculate")
 
                         return {
                             status_code = 200,
@@ -383,8 +389,10 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
+                test.is_true(response.success)
+                assert(response.success)
+                assert(response.result.tool_calls[1])
+                test.eq(response.result.tool_calls[1].name, "calculate")
             end)
         end)
 
@@ -428,7 +436,7 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        expect(options.stream).to_be_true()
+                        test.is_true(options.stream)
 
                         return {
                             status_code = 200,
@@ -465,8 +473,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Hello world")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Hello world")
             end)
 
             it("should handle streaming tool calls", function()
@@ -552,11 +561,13 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.tool_calls).not_to_be_nil()
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success)
+                assert(response.success)
+                test.not_nil(response.result.tool_calls)
+                test.eq(#response.result.tool_calls, 1)
+                assert(response.result.tool_calls[1])
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.eq(response.finish_reason, "tool_call")
             end)
         end)
 
@@ -598,9 +609,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("Invalid API key")
+                test.is_false(response.success)
+                test.eq(response.error, "authentication_error")
+                test.contains(response.error_message, "Invalid API key")
             end)
 
             it("should handle model not found errors", function()
@@ -640,9 +651,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("does not exist")
+                test.is_false(response.success)
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "does not exist")
             end)
 
             it("should handle context length errors", function()
@@ -682,9 +693,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("context_length_exceeded")
-                expect(response.error_message).to_contain("context length")
+                test.is_false(response.success)
+                test.eq(response.error, "context_length_exceeded")
+                test.contains(response.error_message, "context length")
             end)
 
             it("should handle rate limit errors", function()
@@ -724,9 +735,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("rate_limit_exceeded")
-                expect(response.error_message).to_contain("Rate limit")
+                test.is_false(response.success)
+                test.eq(response.error, "rate_limit_exceeded")
+                test.contains(response.error_message, "Rate limit")
             end)
 
             it("should handle invalid response structure", function()
@@ -761,9 +772,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid OpenAI response structure")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Invalid OpenAI response structure")
             end)
         end)
 
@@ -789,9 +800,9 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("https://custom.openai.proxy/v1/chat/completions")
-                        expect(options.headers["Authorization"]).to_equal("Bearer custom-key")
-                        expect(options.headers["OpenAI-Organization"]).to_equal("org-custom")
+                        test.contains(url, "https://custom.openai.proxy/v1/chat/completions")
+                        test.eq(options.headers["Authorization"], "Bearer custom-key")
+                        test.eq(options.headers["OpenAI-Organization"], "org-custom")
 
                         return {
                             status_code = 200,
@@ -813,8 +824,9 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Response")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Response")
             end)
         end)
     end)

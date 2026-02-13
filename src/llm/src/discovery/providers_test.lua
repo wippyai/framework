@@ -1,4 +1,5 @@
 local providers = require("providers")
+local test = require("test")
 
 local function define_tests()
     describe("Providers Discovery Library", function()
@@ -137,27 +138,27 @@ local function define_tests()
             it("should get all providers", function()
                 local all_providers, err = providers.get_all()
 
-                expect(err).to_be_nil()
-                expect(all_providers).not_to_be_nil()
-                expect(#all_providers).to_equal(2)
+                test.is_nil(err)
+                test.not_nil(all_providers)
+                test.eq(#all_providers, 2)
 
                 -- Check if providers are sorted by name (anthropic comes before openai)
-                expect(all_providers[1].name).to_equal("anthropic")
-                expect(all_providers[2].name).to_equal("openai")
+                test.eq(all_providers[1].name, "anthropic")
+                test.eq(all_providers[2].name, "openai")
 
                 -- Check first provider details
                 local anthropic = all_providers[1]
-                expect(anthropic.id).to_equal("wippy.llm.provider:anthropic")
-                expect(anthropic.title).to_equal("Anthropic")
-                expect(anthropic.description).to_equal("Anthropic API provider for Claude models")
-                expect(anthropic.driver_id).to_equal("wippy.llm.binding:anthropic_driver")
+                test.eq(anthropic.id, "wippy.llm.provider:anthropic")
+                test.eq(anthropic.title, "Anthropic")
+                test.eq(anthropic.description, "Anthropic API provider for Claude models")
+                test.eq(anthropic.driver_id, "wippy.llm.binding:anthropic_driver")
 
                 -- Check second provider details
                 local openai = all_providers[2]
-                expect(openai.id).to_equal("wippy.llm.provider:openai")
-                expect(openai.title).to_equal("OpenAI")
-                expect(openai.description).to_equal("OpenAI API provider for GPT models")
-                expect(openai.driver_id).to_equal("wippy.llm.binding:openai_driver")
+                test.eq(openai.id, "wippy.llm.provider:openai")
+                test.eq(openai.title, "OpenAI")
+                test.eq(openai.description, "OpenAI API provider for GPT models")
+                test.eq(openai.driver_id, "wippy.llm.binding:openai_driver")
             end)
 
             it("should handle registry error", function()
@@ -170,9 +171,9 @@ local function define_tests()
 
                 local all_providers, err = providers.get_all()
 
-                expect(all_providers).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err:match("Registry error")).not_to_be_nil()
+                test.is_nil(all_providers)
+                test.not_nil(err)
+                test.not_nil(err:match("Registry error"))
             end)
 
             it("should return empty array when no providers exist", function()
@@ -185,9 +186,9 @@ local function define_tests()
 
                 local all_providers, err = providers.get_all()
 
-                expect(err).to_be_nil()
-                expect(all_providers).not_to_be_nil()
-                expect(#all_providers).to_equal(0)
+                test.is_nil(err)
+                test.not_nil(all_providers)
+                test.eq(#all_providers, 0)
             end)
         end)
 
@@ -195,14 +196,14 @@ local function define_tests()
             it("should open a provider by ID", function()
                 local instance, err = providers.open("wippy.llm.provider:openai")
 
-                expect(err).to_be_nil()
-                expect(instance).not_to_be_nil()
-                expect(instance._binding_id).to_equal("wippy.llm.binding:openai_driver")
+                test.is_nil(err)
+                assert(instance)
+                test.eq(instance._binding_id, "wippy.llm.binding:openai_driver")
 
                 -- Test that the provider instance has the status method
-                local status_result = instance:status()
-                expect(status_result.success).to_be_true()
-                expect(status_result.status).to_equal("healthy")
+                local status_result = (instance :: any):status()
+                test.is_true(status_result.success)
+                test.eq(status_result.status, "healthy")
             end)
 
             it("should open provider with context overrides", function()
@@ -213,32 +214,32 @@ local function define_tests()
 
                 local instance, err = providers.open("wippy.llm.provider:anthropic", context_overrides)
 
-                expect(err).to_be_nil()
-                expect(instance).not_to_be_nil()
-                expect(instance._binding_id).to_equal("wippy.llm.binding:anthropic_driver")
+                test.is_nil(err)
+                assert(instance)
+                test.eq(instance._binding_id, "wippy.llm.binding:anthropic_driver")
 
                 -- Verify context was merged
-                expect(instance._context).not_to_be_nil()
-                expect(instance._context.custom_option).to_equal("test_value")
-                expect(instance._context.timeout).to_equal(60)
-                expect(instance._context.api_key_env).to_equal("ANTHROPIC_API_KEY")
-                expect(instance._context.base_url).to_equal("https://api.anthropic.com/v1")
+                assert(instance._context)
+                test.eq(instance._context.custom_option, "test_value")
+                test.eq(instance._context.timeout, 60)
+                test.eq(instance._context.api_key_env, "ANTHROPIC_API_KEY")
+                test.eq(instance._context.base_url, "https://api.anthropic.com/v1")
             end)
 
             it("should return error when provider ID is nil", function()
                 local instance, err = providers.open(nil)
 
-                expect(instance).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err).to_equal("Provider ID is required")
+                test.is_nil(instance)
+                test.not_nil(err)
+                test.eq(err, "Provider ID is required")
             end)
 
             it("should return error when provider not found", function()
                 local instance, err = providers.open("wippy.llm.provider:nonexistent")
 
-                expect(instance).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err:match("Entry not found")).not_to_be_nil()
+                test.is_nil(instance)
+                test.not_nil(err)
+                test.not_nil(err:match("Entry not found"))
             end)
 
             it("should return error for non-provider entry", function()
@@ -265,9 +266,9 @@ local function define_tests()
 
                 local instance, err = providers.open("wippy.llm.model:test")
 
-                expect(instance).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err:match("Entry is not a provider")).not_to_be_nil()
+                test.is_nil(instance)
+                test.not_nil(err)
+                test.not_nil(err:match("Entry is not a provider"))
             end)
 
             it("should return error when provider missing driver config", function()
@@ -293,9 +294,9 @@ local function define_tests()
 
                 local instance, err = providers.open("wippy.llm.provider:broken")
 
-                expect(instance).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err:match("Provider missing driver configuration")).not_to_be_nil()
+                test.is_nil(instance)
+                test.not_nil(err)
+                test.not_nil(err:match("Provider missing driver configuration"))
             end)
 
             it("should handle contract get failure", function()
@@ -307,9 +308,9 @@ local function define_tests()
 
                 local instance, err = providers.open("wippy.llm.provider:openai")
 
-                expect(instance).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err:match("Failed to get provider contract")).not_to_be_nil()
+                test.is_nil(instance)
+                test.not_nil(err)
+                test.not_nil(err:match("Failed to get provider contract"))
             end)
 
             it("should handle binding open failure", function()
@@ -328,9 +329,9 @@ local function define_tests()
 
                 local instance, err = providers.open("wippy.llm.provider:openai")
 
-                expect(instance).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err:match("Failed to open provider binding")).not_to_be_nil()
+                test.is_nil(instance)
+                test.not_nil(err)
+                test.not_nil(err:match("Failed to open provider binding"))
             end)
         end)
     end)

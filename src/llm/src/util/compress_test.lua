@@ -1,5 +1,6 @@
 local compress = require("compress")
 local env = require("env")
+local test = require("test")
 
 local function define_tests()
     local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS")
@@ -16,20 +17,20 @@ local function define_tests()
         describe("Input Validation", function()
             it("should require model name", function()
                 local result, err = compress.to_size(nil, "content", 100)
-                expect(result).to_be_nil()
-                expect(err).to_equal("Model name is required")
+                test.is_nil(result)
+                test.eq(err, "Model name is required")
             end)
 
             it("should require content", function()
                 local result, err = compress.to_size("gpt-4o-mini", nil, 100)
-                expect(result).to_be_nil()
-                expect(err).to_equal("Content is required")
+                test.is_nil(result)
+                test.eq(err, "Content is required")
             end)
 
             it("should require positive target size", function()
                 local result, err = compress.to_size("gpt-4o-mini", "content", 0)
-                expect(result).to_be_nil()
-                expect(err).to_equal("Target size must be a positive number")
+                test.is_nil(result)
+                test.eq(err, "Target size must be a positive number")
             end)
 
             it("should reject target size too small", function()
@@ -43,8 +44,8 @@ local function define_tests()
                 }
 
                 local result, err = compress.to_size("gpt-4o-mini", "content", 10)
-                expect(result).to_be_nil()
-                expect(err).to_contain("too small")
+                test.is_nil(result)
+                test.contains(err, "too small")
             end)
 
             it("should reject target size too large", function()
@@ -58,8 +59,8 @@ local function define_tests()
                 }
 
                 local result, err = compress.to_size("small-model", "content", 5000)
-                expect(result).to_be_nil()
-                expect(err).to_contain("too large")
+                test.is_nil(result)
+                test.contains(err, "too large")
             end)
         end)
 
@@ -77,8 +78,8 @@ local function define_tests()
                 local content = "Short"
                 local result, err = compress.to_size("gpt-4o-mini", content, 100)
 
-                expect(err).to_be_nil()
-                expect(result).to_equal(content)
+                test.is_nil(err)
+                test.eq(result, content)
             end)
         end)
 
@@ -97,16 +98,16 @@ local function define_tests()
                 compress._llm = {
                     generate = function(prompt, options)
                         generate_called = true
-                        expect(prompt).to_contain("exactly 100 characters")
-                        expect(options.model).to_equal("gpt-4o-mini")
+                        test.contains(prompt, "exactly 100 characters")
+                        test.eq(options.model, "gpt-4o-mini")
 
                         -- Check for direct compression (not synthesis)
                         if prompt:match("TARGET LENGTH: Exactly") then
-                            expect(options.temperature).to_equal(0.2)  -- default_temperature
+                            test.eq(options.temperature, 0.2)  -- default_temperature
                         end
 
                         return {
-                            content = string.rep("x", 98)  -- Close to target to avoid refinement
+                            result = string.rep("x", 98)  -- Close to target to avoid refinement
                         }, nil
                     end
                 }
@@ -114,9 +115,9 @@ local function define_tests()
                 local long_content = string.rep("This is some content that needs compression. ", 10)
                 local result, err = compress.to_size("gpt-4o-mini", long_content, 100)
 
-                expect(err).to_be_nil()
-                expect(result).not_to_be_nil()
-                expect(generate_called).to_be_true()
+                test.is_nil(err)
+                test.not_nil(result)
+                test.is_true(generate_called)
             end)
 
             it("should handle LLM errors", function()
@@ -138,8 +139,8 @@ local function define_tests()
                 local long_content = string.rep("Content ", 50)
                 local result, err = compress.to_size("gpt-4o-mini", long_content, 100)
 
-                expect(result).to_be_nil()
-                expect(err).to_contain("Direct compression failed")
+                test.is_nil(result)
+                test.contains(err, "Direct compression failed")
             end)
 
             it("should handle empty response", function()
@@ -154,15 +155,15 @@ local function define_tests()
 
                 compress._llm = {
                     generate = function(prompt, options)
-                        return { content = "" }, nil
+                        return { result = "" }, nil
                     end
                 }
 
                 local long_content = string.rep("Content ", 50)
                 local result, err = compress.to_size("gpt-4o-mini", long_content, 100)
 
-                expect(result).to_be_nil()
-                expect(err).to_equal("Model returned empty response")
+                test.is_nil(result)
+                test.eq(err, "Model returned empty response")
             end)
         end)
 
@@ -184,13 +185,13 @@ local function define_tests()
 
                         if prompt:match("approximately") then
                             -- Chunk compression - return exact target to avoid refinement
-                            return { content = string.rep("x", 50) }, nil  -- Close to target per chunk
+                            return { result = string.rep("x", 50) }, nil  -- Close to target per chunk
                         elseif prompt:match("final comprehensive summary") then
                             -- Synthesis - return close to final target to avoid refinement
-                            return { content = string.rep("y", 198) }, nil  -- Close to 200 target
+                            return { result = string.rep("y", 198) }, nil  -- Close to 200 target
                         end
 
-                        return { content = "Fallback" }, nil
+                        return { result = "Fallback" }, nil
                     end
                 }
 
@@ -212,9 +213,9 @@ local function define_tests()
                 local huge_content = string.rep("This is a very long document. ", 200)
                 local result, err = compress.to_size("small-model", huge_content, 200)
 
-                expect(err).to_be_nil()
-                expect(result).not_to_be_nil()
-                expect(generate_calls).to_equal(3)  -- 2 chunks + 1 synthesis (no refinement)
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(generate_calls, 3)  -- 2 chunks + 1 synthesis (no refinement)
             end)
 
             it("should handle text splitter errors", function()
@@ -238,8 +239,8 @@ local function define_tests()
                 local huge_content = string.rep("Content ", 500)
                 local result, err = compress.to_size("small-model", huge_content, 200)
 
-                expect(result).to_be_nil()
-                expect(err).to_contain("Failed to create text splitter")
+                test.is_nil(result)
+                test.contains(err, "Failed to create text splitter")
             end)
         end)
 
@@ -260,10 +261,10 @@ local function define_tests()
                         generate_calls = generate_calls + 1
 
                         if generate_calls == 1 then
-                            return { content = string.rep("x", 150) }, nil  -- Too long
+                            return { result = string.rep("x", 150) }, nil  -- Too long
                         else
-                            expect(prompt).to_contain("shorten")
-                            return { content = string.rep("y", 98) }, nil   -- Close to target
+                            test.contains(prompt, "shorten")
+                            return { result = string.rep("y", 98) }, nil   -- Close to target
                         end
                     end
                 }
@@ -271,9 +272,9 @@ local function define_tests()
                 local long_content = string.rep("Content ", 50)
                 local result, err = compress.to_size("gpt-4o-mini", long_content, 100)
 
-                expect(err).to_be_nil()
-                expect(generate_calls).to_equal(2)
-                expect(#result).to_equal(98)
+                test.is_nil(err)
+                test.eq(generate_calls, 2)
+                test.eq(#result, 98)
             end)
 
             it("should skip refinement when close enough", function()
@@ -290,15 +291,15 @@ local function define_tests()
                 compress._llm = {
                     generate = function(prompt, options)
                         generate_calls = generate_calls + 1
-                        return { content = string.rep("x", 102) }, nil  -- Close to 100, within tolerance
+                        return { result = string.rep("x", 102) }, nil  -- Close to 100, within tolerance
                     end
                 }
 
                 local long_content = string.rep("Content ", 50)
                 local result, err = compress.to_size("gpt-4o-mini", long_content, 100)
 
-                expect(err).to_be_nil()
-                expect(generate_calls).to_equal(1)  -- No refinement needed
+                test.is_nil(err)
+                test.eq(generate_calls, 1)  -- No refinement needed
             end)
 
             it("should skip refinement when requested", function()
@@ -313,7 +314,7 @@ local function define_tests()
 
                 compress._llm = {
                     generate = function(prompt, options)
-                        return { content = string.rep("x", 150) }, nil
+                        return { result = string.rep("x", 150) }, nil
                     end
                 }
 
@@ -322,8 +323,8 @@ local function define_tests()
                     skip_refinement = true
                 })
 
-                expect(err).to_be_nil()
-                expect(#result).to_equal(150)
+                test.is_nil(err)
+                test.eq(#result, 150)
             end)
         end)
 
@@ -341,12 +342,12 @@ local function define_tests()
                 local content = string.rep("x", 500)
                 local stats, err = compress.get_stats("gpt-4o-mini", content, 200)
 
-                expect(err).to_be_nil()
-                expect(stats.content_chars).to_equal(500)
-                expect(stats.target_chars).to_equal(200)
-                expect(stats.compression_ratio).to_equal(2.5)
-                expect(stats.strategy).to_equal("direct")
-                expect(stats.needs_compression).to_be_true()
+                test.is_nil(err)
+                test.eq(stats.content_chars, 500)
+                test.eq(stats.target_chars, 200)
+                test.eq(stats.compression_ratio, 2.5)
+                test.eq(stats.strategy, "direct")
+                test.is_true(stats.needs_compression)
             end)
 
             it("should detect map-reduce strategy for large content", function()
@@ -362,9 +363,9 @@ local function define_tests()
                 local large_content = string.rep("x", 5000)  -- Very large content
                 local stats, err = compress.get_stats("small-model", large_content, 500)
 
-                expect(err).to_be_nil()
-                expect(stats.strategy).to_equal("map_reduce")
-                expect(stats.fits_in_context).to_be_false()
+                test.is_nil(err)
+                test.eq(stats.strategy, "map_reduce")
+                test.is_false(stats.fits_in_context)
             end)
         end)
 
@@ -380,8 +381,8 @@ local function define_tests()
                 }
 
                 local feasible, err = compress.can_compress("gpt-4o-mini", "Some content", 100)
-                expect(feasible).to_be_true()
-                expect(err).to_be_nil()
+                test.is_true(feasible)
+                test.is_nil(err)
             end)
 
             it("should reject target size exceeding model output limit", function()
@@ -399,8 +400,8 @@ local function define_tests()
                 local large_content = string.rep("x", 6000)  -- 6000 chars content
                 local feasible, err = compress.can_compress("small-model", large_content, 5000)  -- 5000 chars target
 
-                expect(feasible).to_be_false()
-                expect(err).to_contain("exceeds model output limit")
+                test.is_false(feasible)
+                test.contains(err, "exceeds model output limit")
             end)
         end)
 
@@ -413,8 +414,8 @@ local function define_tests()
                 }
 
                 local result, err = compress.to_size("unknown-model", "content", 100)
-                expect(result).to_be_nil()
-                expect(err).to_contain("Model not found")
+                test.is_nil(result)
+                test.contains(err, "Model not found")
             end)
         end)
 
@@ -423,7 +424,7 @@ local function define_tests()
                 local original = compress.get_config().default_temperature
 
                 compress.configure({ default_temperature = 0.8 })
-                expect(compress.get_config().default_temperature).to_equal(0.8)
+                test.eq(compress.get_config().default_temperature, 0.8)
 
                 -- Reset
                 compress.configure({ default_temperature = original })
@@ -431,7 +432,7 @@ local function define_tests()
 
             it("should ignore unknown config keys", function()
                 compress.configure({ unknown_key = "value" })
-                expect(compress.get_config().unknown_key).to_be_nil()
+                test.is_nil(compress.get_config().unknown_key)
             end)
         end)
 
@@ -455,9 +456,9 @@ The field has evolved significantly since its inception in the 1950s, with major
                 local result, err = compress.to_size("gpt-4o-mini", content, 200)
 
                 if not err and result and type(result) == "string" and #result > 0 then
-                    expect(result).not_to_be_nil()
-                    expect(type(result)).to_equal("string")
-                    expect(#result).to_be_less_than(500)
+                    test.not_nil(result)
+                    test.eq(type(result), "string")
+                    test.lt(#result, 500)
                 end
             end)
         end)

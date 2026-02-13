@@ -1,0 +1,25 @@
+directories:
+    modules: .wippy
+    src: .
+modules:
+    - name: wippy/embeddings
+      version: 0.3.8
+      hash:
+    - name: wippy/bootloader
+      version: 0.3.10
+      hash:
+    - name: wippy/llm
+      version: 0.4.3
+      hash:
+    - name: wippy/migration
+      version: 0.3.13
+      hash:
+    - name: wippy/terminal
+      version: 0.4.2
+      hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
+    - name: wippy/test
+      version: 0.4.9
+      hash: 31fb7486fae9e47ce33a89782969bfec0a754d13143d2af24ddc46c406717476
+replacements:
+    - from: wippy/embeddings
+      to: ..

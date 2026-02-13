@@ -4,7 +4,7 @@ local uuid = require("uuid")
 local json = require("json")
 local token_usage_repo = require("token_usage_repo")
 local time = require("time")
-local env = require("env")
+local registry = require("registry")
 
 local function define_tests()
     describe("Token Usage Repository", function()
@@ -71,8 +71,9 @@ local function define_tests()
         -- Clean up test data after all tests
         after_all(function()
             -- Get a database connection for cleanup
-            local db_resource, _ = env.get("wippy.usage.env:target_db")
-            local db, err = sql.get(db_resource)
+            local entry, _ = registry.get("wippy.usage:target_db")
+            local db_resource = entry.data.default
+            local db, err = sql.get(tostring(db_resource))
             if err then
                 error("Failed to connect to database: " .. tostring(err))
             end
@@ -100,14 +101,14 @@ local function define_tests()
                 }
             )
 
-            expect(err).to_be_nil()
-            expect(record).not_to_be_nil()
-            expect(record.user_id).to_equal(test_data.user_id)
-            expect(record.context_id).to_equal(test_data.context_id)
-            expect(record.model_id).to_equal(test_data.model_id)
-            expect(record.prompt_tokens).to_equal(100)
-            expect(record.completion_tokens).to_equal(50)
-            expect(record.timestamp).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(record)
+            test.eq(record.user_id, test_data.user_id)
+            test.eq(record.context_id, test_data.context_id)
+            test.eq(record.model_id, test_data.model_id)
+            test.eq(record.prompt_tokens, 100)
+            test.eq(record.completion_tokens, 50)
+            test.not_nil(record.timestamp)
 
             -- Store the new record for cleanup
             if record then
@@ -120,8 +121,9 @@ local function define_tests()
             local end_time = test_data.base_time + 3600   -- 1 hour from now
 
             -- Query only for our test users to isolate the data
-            local db_resource, _ = env.get("wippy.usage.env:target_db")
-            local db, db_err = sql.get(db_resource)
+            local entry, _ = registry.get("wippy.usage:target_db")
+            local db_resource = entry.data.default
+            local db, db_err = sql.get(tostring(db_resource))
             if db_err then error(db_err) end
 
             -- First check what records we actually have in our time range
@@ -140,13 +142,13 @@ local function define_tests()
 
             local summary, err = token_usage_repo.get_summary(start_time, end_time)
 
-            expect(err).to_be_nil()
-            expect(summary).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(summary)
 
             -- Check that the overall count in our database contains at least our records
-            expect(summary.total_prompt_tokens >= 450).to_be_true()
-            expect(summary.total_completion_tokens >= 225).to_be_true()
-            expect(summary.total_tokens >= 675).to_be_true()
+            test.is_true(summary.total_prompt_tokens >= 450)
+            test.is_true(summary.total_completion_tokens >= 225)
+            test.is_true(summary.total_tokens >= 675)
         end)
 
         it("should get usage by time with daily interval", function()
@@ -155,11 +157,11 @@ local function define_tests()
 
             local time_usage, err = token_usage_repo.get_usage_by_time(start_time, end_time, token_usage_repo.INTERVAL.DAY)
 
-            expect(err).to_be_nil()
-            expect(time_usage).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(time_usage)
 
             -- We know our test data is all in a short time period, so there should be at least one entry
-            expect(#time_usage >= 1).to_be_true()
+            test.is_true(#time_usage >= 1)
         end)
 
         it("should get usage by model", function()
@@ -168,8 +170,8 @@ local function define_tests()
 
             local model_usage, err = token_usage_repo.get_usage_by_model(start_time, end_time)
 
-            expect(err).to_be_nil()
-            expect(model_usage).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(model_usage)
 
             -- There should be at least our two test models
             local found_test_models = 0
@@ -178,33 +180,33 @@ local function define_tests()
                     found_test_models = found_test_models + 1
                 end
             end
-            expect(found_test_models >= 2).to_be_true()
+            test.is_true(found_test_models >= 2)
         end)
 
         it("should handle validation errors", function()
             -- Missing user_id
             local record, err = token_usage_repo.create(nil, test_data.model_id, 100, 50)
-            expect(record).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("User ID is required")).not_to_be_nil()
+            test.is_nil(record)
+            test.not_nil(err)
+            test.not_nil(err:match("User ID is required"))
 
             -- Missing model_id
             record, err = token_usage_repo.create(test_data.user_id, "", 100, 50)
-            expect(record).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Model ID is required")).not_to_be_nil()
+            test.is_nil(record)
+            test.not_nil(err)
+            test.not_nil(err:match("Model ID is required"))
 
             -- Invalid prompt_tokens
             record, err = token_usage_repo.create(test_data.user_id, test_data.model_id, "100", 50)
-            expect(record).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Prompt tokens must be a number")).not_to_be_nil()
+            test.is_nil(record)
+            test.not_nil(err)
+            test.not_nil(err:match("Prompt tokens must be a number"))
 
             -- Invalid completion_tokens
             record, err = token_usage_repo.create(test_data.user_id, test_data.model_id, 100, "50")
-            expect(record).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Completion tokens must be a number")).not_to_be_nil()
+            test.is_nil(record)
+            test.not_nil(err)
+            test.not_nil(err:match("Completion tokens must be a number"))
         end)
     end)
 end

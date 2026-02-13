@@ -35,9 +35,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Model is required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -53,7 +53,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     schema = {
                         type = "object",
                         properties = { name = { type = "string" } }
@@ -62,9 +62,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Messages are required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Messages are required")
             end)
 
             it("should require schema parameter", function()
@@ -80,7 +80,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     }
@@ -88,9 +88,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Schema is required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Schema is required")
             end)
 
             it("should reject empty messages array", function()
@@ -106,7 +106,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {},
                     schema = {
                         type = "object",
@@ -116,9 +116,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Messages are required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Messages are required")
             end)
         end)
 
@@ -136,7 +136,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -145,9 +145,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Schema must be a table")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.contains(response.error_message, "Schema must be a table")
             end)
 
             it("should require root schema type to be object", function()
@@ -163,7 +163,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -175,9 +175,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema type must be `object`")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.contains(response.error_message, "Root schema type must be `object`")
             end)
 
             it("should accept valid object schema", function()
@@ -247,7 +247,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -261,7 +261,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
 
             it("should handle nil schema", function()
@@ -277,7 +277,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -286,9 +286,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Schema is required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Schema is required")
             end)
 
             it("should handle empty schema table", function()
@@ -304,7 +304,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -313,9 +313,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema type must be `object`")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.contains(response.error_message, "Root schema type must be `object`")
             end)
 
             it("should handle schema with missing type field", function()
@@ -331,7 +331,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -344,9 +344,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Root schema type must be `object`")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.contains(response.error_message, "Root schema type must be `object`")
             end)
 
             it("should accept schema with nested objects", function()
@@ -381,8 +381,8 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.generationConfig.responseSchema.type).to_equal("object")
-                        expect(args.payload.generationConfig.responseSchema.properties.person.type).to_equal("object")
+                        tests.eq(args.payload.generationConfig.responseSchema.type, "object")
+                        tests.eq(args.payload.generationConfig.responseSchema.properties.person.type, "object")
 
                         return {
                             status_code = 200,
@@ -419,7 +419,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person data" }} }
                     },
@@ -439,7 +439,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
         end)
 
@@ -476,10 +476,10 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.endpoint_path).to_equal("generateContent")
-                        expect(args.model).to_equal("gemini-1.5-pro")
-                        expect(args.payload.generationConfig.response_mime_type).to_equal("application/json")
-                        expect(args.payload.generationConfig.responseSchema).not_to_be_nil()
+                        tests.eq(args.endpoint_path, "generateContent")
+                        tests.eq(args.model, "gemini-2.5-pro")
+                        tests.eq(args.payload.generationConfig.response_mime_type, "application/json")
+                        tests.not_nil(args.payload.generationConfig.responseSchema)
 
                         return {
                             status_code = 200,
@@ -516,7 +516,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person data" }} }
                     },
@@ -532,15 +532,15 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result).not_to_be_nil()
-                expect(response.result.data).not_to_be_nil()
-                expect(response.result.data.name).to_equal("Alice")
-                expect(response.result.data.age).to_equal(25)
-                expect(response.result.data.city).to_equal("New York")
-                expect(response.tokens.prompt_tokens).to_equal(20)
-                expect(response.tokens.completion_tokens).to_equal(15)
-                expect(response.finish_reason).to_equal("stop")
+                tests.is_true(response.success)
+                tests.not_nil(response.result)
+                tests.not_nil(response.result.data)
+                tests.eq(response.result.data.name, "Alice")
+                tests.eq(response.result.data.age, 25)
+                tests.eq(response.result.data.city, "New York")
+                tests.eq(response.tokens.prompt_tokens, 20)
+                tests.eq(response.tokens.completion_tokens, 15)
+                tests.eq(response.finish_reason, "stop")
             end)
 
             it("should handle nested object schemas", function()
@@ -610,7 +610,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person with address" }} }
                     },
@@ -631,10 +631,10 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.name).to_equal("Bob")
-                expect(response.result.data.address.street).to_equal("123 Main St")
-                expect(response.result.data.address.city).to_equal("Boston")
+                tests.is_true(response.success)
+                tests.eq(response.result.data.name, "Bob")
+                tests.eq(response.result.data.address.street, "123 Main St")
+                tests.eq(response.result.data.address.city, "Boston")
             end)
 
             it("should handle arrays in schemas", function()
@@ -704,7 +704,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate person with skills" }} }
                     },
@@ -722,13 +722,13 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.name).to_equal("Carol")
-                expect(type(response.result.data.skills)).to_equal("table")
-                expect(#response.result.data.skills).to_equal(3)
-                expect(response.result.data.skills[1]).to_equal("JavaScript")
-                expect(response.result.data.skills[2]).to_equal("Python")
-                expect(response.result.data.skills[3]).to_equal("Go")
+                tests.is_true(response.success)
+                tests.eq(response.result.data.name, "Carol")
+                tests.eq(type(response.result.data.skills), "table")
+                tests.eq(#response.result.data.skills, 3)
+                tests.eq(response.result.data.skills[1], "JavaScript")
+                tests.eq(response.result.data.skills[2], "Python")
+                tests.eq(response.result.data.skills[3], "Go")
             end)
 
             it("should handle system instructions", function()
@@ -765,8 +765,8 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.systemInstruction).not_to_be_nil()
-                        expect(args.payload.systemInstruction.parts[1].text).to_equal("You are a data generator")
+                        tests.not_nil(args.payload.systemInstruction)
+                        tests.eq(args.payload.systemInstruction.parts[1].text, "You are a data generator")
 
                         return {
                             status_code = 200,
@@ -803,7 +803,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "system", content = {{ type = "text", text = "You are a data generator" }} },
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
@@ -818,8 +818,8 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.value).to_equal(42)
+                tests.is_true(response.success)
+                tests.eq(response.result.data.value, 42)
             end)
         end)
 
@@ -893,7 +893,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -906,8 +906,8 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.test).to_be_true()
+                tests.is_true(response.success)
+                tests.is_true(response.result.data.test)
             end)
 
             it("should use custom schema name when provided", function()
@@ -977,7 +977,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -990,8 +990,8 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.value).to_equal(42)
+                tests.is_true(response.success)
+                tests.eq(response.result.data.value, 42)
             end)
 
             it("should generate different names for different schemas", function()
@@ -1064,7 +1064,7 @@ local function define_tests()
 
                 -- First schema
                 local contract_args1 = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1075,11 +1075,11 @@ local function define_tests()
                 }
 
                 local response1 = structured_output.handler(contract_args1)
-                expect(response1.success).to_be_true()
+                tests.is_true(response1.success)
 
                 -- Second schema (different structure)
                 local contract_args2 = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1093,7 +1093,7 @@ local function define_tests()
                 }
 
                 local response2 = structured_output.handler(contract_args2)
-                expect(response2.success).to_be_true()
+                tests.is_true(response2.success)
             end)
         end)
 
@@ -1134,9 +1134,9 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.generationConfig.temperature).to_equal(0.2)
-                        expect(args.payload.generationConfig.maxOutputTokens).to_equal(200)
-                        expect(args.payload.generationConfig.topP).to_equal(0.8)
+                        tests.eq(args.payload.generationConfig.temperature, 0.2)
+                        tests.eq(args.payload.generationConfig.maxOutputTokens, 200)
+                        tests.eq(args.payload.generationConfig.topP, 0.8)
 
                         return {
                             status_code = 200,
@@ -1173,7 +1173,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1190,7 +1190,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
 
             it("should handle nil options", function()
@@ -1260,7 +1260,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1273,7 +1273,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
 
             it("should pass timeout to client request", function()
@@ -1308,7 +1308,7 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.options.timeout).to_equal(120)
+                        tests.eq(args.options.timeout, 120)
 
                         return {
                             status_code = 200,
@@ -1345,7 +1345,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1358,7 +1358,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
 
             it("should merge options with response_mime_type and responseSchema", function()
@@ -1397,10 +1397,10 @@ local function define_tests()
                 local mock_client_instance = {
                     request = function(self, args)
                         -- Verify all generationConfig fields are present
-                        expect(args.payload.generationConfig.response_mime_type).to_equal("application/json")
-                        expect(args.payload.generationConfig.responseSchema).not_to_be_nil()
-                        expect(args.payload.generationConfig.temperature).to_equal(0.5)
-                        expect(args.payload.generationConfig.topK).to_equal(40)
+                        tests.eq(args.payload.generationConfig.response_mime_type, "application/json")
+                        tests.not_nil(args.payload.generationConfig.responseSchema)
+                        tests.eq(args.payload.generationConfig.temperature, 0.5)
+                        tests.eq(args.payload.generationConfig.topK, 40)
 
                         return {
                             status_code = 200,
@@ -1437,7 +1437,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1453,8 +1453,8 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.result).to_equal("merged")
+                tests.is_true(response.success)
+                tests.eq(response.result.data.result, "merged")
             end)
         end)
 
@@ -1534,7 +1534,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1546,9 +1546,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("Model failed to return valid JSON")
+                tests.is_false(response.success)
+                tests.eq(response.error, "model_error")
+                tests.contains(response.error_message, "Model failed to return valid JSON")
             end)
 
             it("should handle API authentication errors", function()
@@ -1605,7 +1605,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1617,9 +1617,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("API key is invalid")
+                tests.is_false(response.success)
+                tests.eq(response.error, "authentication_error")
+                tests.contains(response.error_message, "API key is invalid")
             end)
 
             it("should handle contract retrieval errors", function()
@@ -1658,7 +1658,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1670,9 +1670,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Failed to get client contract")
+                tests.is_false(response.success)
+                tests.eq(response.error, "server_error")
+                tests.contains(response.error_message, "Failed to get client contract")
             end)
 
             it("should handle client binding errors", function()
@@ -1720,7 +1720,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1732,9 +1732,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Failed to open client binding")
+                tests.is_false(response.success)
+                tests.eq(response.error, "server_error")
+                tests.contains(response.error_message, "Failed to open client binding")
             end)
 
             it("should handle response mapping errors", function()
@@ -1794,7 +1794,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1806,9 +1806,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid response structure")
+                tests.is_false(response.success)
+                tests.eq(response.error, "server_error")
+                tests.contains(response.error_message, "Invalid response structure")
             end)
 
             it("should handle rate limit errors", function()
@@ -1865,7 +1865,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1877,9 +1877,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("rate_limit_exceeded")
-                expect(response.error_message).to_contain("Rate limit")
+                tests.is_false(response.success)
+                tests.eq(response.error, "rate_limit_exceeded")
+                tests.contains(response.error_message, "Rate limit")
             end)
         end)
 
@@ -1941,13 +1941,13 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context).not_to_be_nil()
-                        expect(context.custom_key).to_equal("custom_value")
-                        expect(context.region).to_equal("us-west1")
+                        tests.not_nil(context)
+                        tests.eq(context.custom_key, "custom_value")
+                        tests.eq(context.region, "us-west1")
                         return self
                     end,
                     open = function(self, client_id)
-                        expect(client_id).to_equal("custom-client-id")
+                        tests.eq(client_id, "custom-client-id")
                         return mock_client_instance, nil
                     end
                 }
@@ -1959,7 +1959,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -1971,8 +1971,8 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.data.success).to_be_true()
+                tests.is_true(response.success)
+                tests.is_true(response.result.data.success)
             end)
 
             it("should handle empty context", function()
@@ -2028,7 +2028,7 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(type(context)).to_equal("table")
+                        tests.eq(type(context), "table")
                         return self
                     end,
                     open = function(self, client_id)
@@ -2043,7 +2043,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -2055,7 +2055,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
 
             it("should pass context through contract chain", function()
@@ -2118,8 +2118,8 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context.api_key).to_equal("test-key")
-                        expect(context.project_id).to_equal("test-project")
+                        tests.eq(context.api_key, "test-key")
+                        tests.eq(context.project_id, "test-project")
                         context_passed_to_contract = true
                         return self
                     end,
@@ -2135,7 +2135,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -2147,9 +2147,9 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(context_passed_to_contract).to_be_true()
-                expect(context_passed_to_client).to_be_true()
+                tests.is_true(response.success)
+                tests.is_true(context_passed_to_contract)
+                tests.is_true(context_passed_to_client)
             end)
 
             it("should handle context with metadata", function()
@@ -2213,14 +2213,14 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context.user_id).to_equal("user-123")
-                        expect(context.session_id).to_equal("session-456")
-                        expect(context.metadata).not_to_be_nil()
-                        expect(context.metadata.trace_id).to_equal("trace-789")
+                        tests.eq(context.user_id, "user-123")
+                        tests.eq(context.session_id, "session-456")
+                        tests.not_nil(context.metadata)
+                        tests.eq(context.metadata.trace_id, "trace-789")
                         return self
                     end,
                     open = function(self, client_id)
-                        expect(client_id).to_equal("metadata-client-id")
+                        tests.eq(client_id, "metadata-client-id")
                         return mock_client_instance, nil
                     end
                 }
@@ -2232,7 +2232,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -2244,8 +2244,8 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.metadata.request_id).to_equal("req-123")
+                tests.is_true(response.success)
+                tests.eq(response.metadata.request_id, "req-123")
             end)
 
             it("should handle nil context gracefully", function()
@@ -2302,7 +2302,7 @@ local function define_tests()
                 local mock_contract = {
                     with_context = function(self, context)
                         -- Should receive empty table if nil is returned from ctx.all()
-                        expect(type(context)).to_equal("table")
+                        tests.eq(type(context), "table")
                         return self
                     end,
                     open = function(self, client_id)
@@ -2317,7 +2317,7 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Generate data" }} }
                     },
@@ -2329,7 +2329,7 @@ local function define_tests()
 
                 local response = structured_output.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
             end)
         end)
     end)

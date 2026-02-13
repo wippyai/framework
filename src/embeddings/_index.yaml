@@ -15,11 +15,10 @@ entries:
     meta:
       description: "Application database ID"
     targets:
+      - entry: wippy.embeddings:target_db
+        path: .default
       - entry: wippy.embeddings.migrations:01_create_embeddings_table
         path: ".meta.target_db"
-      - entry: wippy.embeddings.env:target_db
-        path: ".default"
-    default: "app:db"
 
   # Dependencies
   - name: llm
@@ -54,7 +53,7 @@ entries:
       - json
       - uuid
       - time
-      - env
+      - registry
 
   # wippy.embeddings:embedding_repo_test
   - name: embedding_repo_test
@@ -73,7 +72,7 @@ entries:
       - sql
       - uuid
       - json
-      - env
+      - registry
     imports:
       embedding_repo: wippy.embeddings:embedding_repo
       test: wippy.test:test

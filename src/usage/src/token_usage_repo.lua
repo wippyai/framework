@@ -2,13 +2,12 @@ local sql = require("sql")
 local json = require("json")
 local uuid = require("uuid")
 local time = require("time")
+local registry = require("registry")
 
--- Hardcoded database resource name
-local DB_RESOURCE = "app:db"
+local NS = "wippy.usage:"
 
 local token_usage_repo = {}
 
--- Constants for time intervals
 token_usage_repo.INTERVAL = {
     HOUR = "hour",
     DAY = "day",
@@ -16,9 +15,18 @@ token_usage_repo.INTERVAL = {
     MONTH = "month"
 }
 
--- Get a database connection
 local function get_db()
-    local db, err = sql.get(DB_RESOURCE)
+    local entry, entry_err = registry.get(NS .. "target_db")
+    if entry_err or not entry then
+        return nil, "target_db requirement is not configured"
+    end
+
+    local db_resource = entry.data and entry.data.default
+    if not db_resource or db_resource == "" then
+        return nil, "target_db requirement value is empty"
+    end
+
+    local db, err = sql.get(tostring(db_resource))
     if err then
         return nil, "Failed to connect to database: " .. tostring(err)
     end

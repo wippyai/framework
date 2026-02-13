@@ -1,5 +1,15 @@
-local time = require("time")
 local registry = require("base_registry")
+
+type MigrationEntry = {
+    id: string,
+    kind: string,
+    meta: {[string]: any},
+}
+
+type FindOptions = {
+    target_db: string?,
+    tags: {string}?,
+}
 
 -- Base criteria for identifying migration entries in the registry
 local BASE_MIGRATION_CRITERIA = {
@@ -9,9 +19,11 @@ local BASE_MIGRATION_CRITERIA = {
 
 local migrations = {}
 
+migrations._registry = registry
+
 -- Find migrations in registry based on provided options
-function migrations.find(options)
-    options = options or {}
+function migrations.find(options: any?): ({MigrationEntry}?, string?)
+    local opts = options or {}
 
     -- Start with base criteria
     local criteria = {}
@@ -20,16 +32,16 @@ function migrations.find(options)
     end
 
     -- Apply filtering options
-    if options.target_db then
-        criteria["meta.target_db"] = options.target_db
+    if opts.target_db then
+        criteria["meta.target_db"] = opts.target_db
     end
 
-    if options.tags and #options.tags > 0 then
-        criteria["meta.tags"] = options.tags
+    if opts.tags and #opts.tags > 0 then
+        criteria["meta.tags"] = opts.tags
     end
 
     -- Query the registry
-    local entries, err = registry.find(criteria)
+    local entries, err = migrations._registry.find(criteria)
     if err then
         return nil, "Failed to find migrations: " .. tostring(err)
     end
@@ -39,7 +51,7 @@ function migrations.find(options)
     end
 
     -- Sort entries by timestamp (ascending)
-    table.sort(entries, function(a, b)
+    table.sort(entries, function(a: MigrationEntry, b: MigrationEntry): boolean
         local a_time = a.meta and a.meta.timestamp or ""
         local b_time = b.meta and b.meta.timestamp or ""
         return a_time < b_time
@@ -49,12 +61,12 @@ function migrations.find(options)
 end
 
 -- Get specific migration by ID
-function migrations.get(id)
+function migrations.get(id: string): (MigrationEntry?, string?)
     if not id or id == "" then
         return nil, "Migration ID is required"
     end
 
-    local entry, err = registry.get(id)
+    local entry, err = migrations._registry.get(id)
     if err then
         return nil, "Failed to get migration: " .. tostring(err)
     end
@@ -63,9 +75,9 @@ function migrations.get(id)
 end
 
 -- Get all target databases used in migrations
-function migrations.get_target_dbs()
+function migrations.get_target_dbs(): ({string}?, string?)
     -- Find all migration entries using the base criteria
-    local entries, err = registry.find(BASE_MIGRATION_CRITERIA)
+    local entries, err = migrations._registry.find(BASE_MIGRATION_CRITERIA)
 
     if err then
         return nil, "Failed to query registry: " .. tostring(err)
@@ -94,9 +106,9 @@ function migrations.get_target_dbs()
 end
 
 -- Get all tags used in migrations
-function migrations.get_tags()
+function migrations.get_tags(): ({string}?, string?)
     -- Find all migration entries using the base criteria
-    local entries, err = registry.find(BASE_MIGRATION_CRITERIA)
+    local entries, err = migrations._registry.find(BASE_MIGRATION_CRITERIA)
 
     if err then
         return nil, "Failed to query registry: " .. tostring(err)

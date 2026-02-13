@@ -1,0 +1,2 @@
+test:
+	wippy run test

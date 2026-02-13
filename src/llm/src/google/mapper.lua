@@ -272,22 +272,21 @@ function mapper.map_tool_calls(function_calls)
     return contract_tool_calls
 end
 
-function mapper.map_finish_reason(openai_finish_reason)
-    local FINISH_REASON_MAP = {
-        ["STOP"] = output.FINISH_REASON.STOP,
-        ["MAX_TOKENS"] = output.FINISH_REASON.LENGTH,
-        ["SAFETY"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["RECITATION"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["LANGUAGE"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["BLOCKLIST"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["PROHIBITED_CONTENT"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["SPII"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["IMAGE_SAFETY"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["MALFORMED_FUNCTION_CALL"] = output.FINISH_REASON.ERROR,
-        ["OTHER"] = output.FINISH_REASON.ERROR
-    }
+local FINISH_REASON_MAP = {}
+FINISH_REASON_MAP["STOP"] = output.FINISH_REASON.STOP
+FINISH_REASON_MAP["MAX_TOKENS"] = output.FINISH_REASON.LENGTH
+FINISH_REASON_MAP["SAFETY"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["RECITATION"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["LANGUAGE"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["BLOCKLIST"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["PROHIBITED_CONTENT"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["SPII"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["IMAGE_SAFETY"] = output.FINISH_REASON.CONTENT_FILTER
+FINISH_REASON_MAP["MALFORMED_FUNCTION_CALL"] = output.FINISH_REASON.ERROR
+FINISH_REASON_MAP["OTHER"] = output.FINISH_REASON.ERROR
 
-    return FINISH_REASON_MAP[openai_finish_reason] or output.FINISH_REASON.ERROR
+function mapper.map_finish_reason(openai_finish_reason)
+    return FINISH_REASON_MAP[tostring(openai_finish_reason)] or output.FINISH_REASON.ERROR
 end
 
 function mapper.map_tokens(google_usage)
@@ -305,9 +304,10 @@ function mapper.map_tokens(google_usage)
     }
 
     if google_usage.cachedContentTokenCount then
-        tokens.cache_read_tokens = google_usage.cachedContentTokenCount
-        tokens.cache_write_tokens = math.max(0, tokens.prompt_tokens - tokens.cache_read_tokens)
-        tokens.prompt_tokens = tokens.prompt_tokens - tokens.cache_read_tokens
+        local cached = tonumber(google_usage.cachedContentTokenCount) or 0
+        tokens.cache_read_tokens = cached
+        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
+        tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 
     return tokens

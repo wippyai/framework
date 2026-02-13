@@ -421,7 +421,7 @@ local function define_tests()
         before_each(function()
             mock_traits = {
                 get_by_id = function(trait_id)
-                    local trait_def = trait_definitions[trait_id]
+                    local trait_def = (trait_definitions :: any)[trait_id]
                     if trait_def then
                         return trait_def
                     else
@@ -429,7 +429,7 @@ local function define_tests()
                     end
                 end,
                 get_by_name = function(trait_name)
-                    local trait_def = trait_names[trait_name]
+                    local trait_def = (trait_names :: any)[trait_name]
                     if trait_def then
                         return trait_def
                     else
@@ -445,7 +445,7 @@ local function define_tests()
                         local target_namespace = query.namespace
                         for id, entry in pairs(tool_registry) do
                             if entry.meta.type == "tool" then
-                                local ns = id:match("^([^:]+):")
+                                local ns = (id :: any):match("^([^:]+):")
                                 if ns == target_namespace then
                                     table.insert(results, entry)
                                 end
@@ -456,7 +456,7 @@ local function define_tests()
                 end,
 
                 get_tool_schema = function(tool_id)
-                    local entry = tool_registry[tool_id]
+                    local entry = (tool_registry :: any)[tool_id]
                     if not entry then
                         return nil, "Tool not found: " .. tool_id
                     end
@@ -485,6 +485,10 @@ local function define_tests()
                             required = {"input"}
                         }
                     }
+                end,
+
+                run_input_schema_processors = function(schema, tool_id, tool_name)
+                    return schema
                 end
             }
 
@@ -639,106 +643,106 @@ local function define_tests()
         it("should compile minimal agent spec", function()
             local compiled_spec, err = compiler.compile(minimal_spec)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
-            expect(compiled_spec.id).to_equal("test:minimal")
-            expect(compiled_spec.name).to_equal("Minimal Agent")
-            expect(compiled_spec.prompt).to_equal("You are a test agent.")
-            expect(compiled_spec.tools).not_to_be_nil()
-            expect(count_tools(compiled_spec.tools)).to_equal(0)
-            expect(compiled_spec.prompt_funcs).not_to_be_nil()
-            expect(compiled_spec.step_funcs).not_to_be_nil()
-            expect(#compiled_spec.prompt_funcs).to_equal(0)
-            expect(#compiled_spec.step_funcs).to_equal(0)
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
+            test.eq(compiled_spec.id, "test:minimal")
+            test.eq(compiled_spec.name, "Minimal Agent")
+            test.eq(compiled_spec.prompt, "You are a test agent.")
+            test.not_nil(compiled_spec.tools)
+            test.eq(count_tools(compiled_spec.tools), 0)
+            test.not_nil(compiled_spec.prompt_funcs)
+            test.not_nil(compiled_spec.step_funcs)
+            test.eq(#compiled_spec.prompt_funcs, 0)
+            test.eq(#compiled_spec.step_funcs, 0)
         end)
 
         it("should handle nil spec", function()
             local compiled_spec, err = compiler.compile(nil)
 
-            expect(compiled_spec).to_be_nil()
-            expect(err).to_equal("Raw spec is required")
+            test.is_nil(compiled_spec)
+            test.eq(err, "Raw spec is required")
         end)
 
         describe("Runtime Trait Function Collection", function()
             it("should collect traits with prompt functions", function()
                 local compiled_spec, err = compiler.compile(spec_with_runtime_traits)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(#compiled_spec.prompt_funcs).to_equal(1)
+                test.eq(#compiled_spec.prompt_funcs, 1)
                 local prompt_trait = compiled_spec.prompt_funcs[1]
-                expect(prompt_trait.trait_id).to_equal("context_aware_trait")
-                expect(prompt_trait.func_id).to_equal("generate_context_prompt")
-                expect(prompt_trait.context.adaptation_level).to_equal("high")
+                test.eq(prompt_trait.trait_id, "context_aware_trait")
+                test.eq(prompt_trait.func_id, "generate_context_prompt")
+                test.eq(prompt_trait.context.adaptation_level, "high")
             end)
 
             it("should collect traits with step functions", function()
                 local compiled_spec, err = compiler.compile(spec_with_runtime_traits)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(#compiled_spec.step_funcs).to_equal(2)
+                test.eq(#compiled_spec.step_funcs, 2)
 
                 local trait_map = {}
                 for _, trait in ipairs(compiled_spec.step_funcs) do
                     trait_map[trait.trait_id] = trait
                 end
 
-                expect(trait_map["context_aware_trait"]).not_to_be_nil()
-                expect(trait_map["context_aware_trait"].func_id).to_equal("modify_context_response")
-                expect(trait_map["context_aware_trait"].context.adaptation_level).to_equal("high")
+                test.not_nil(trait_map["context_aware_trait"])
+                test.eq(trait_map["context_aware_trait"].func_id, "modify_context_response")
+                test.eq(trait_map["context_aware_trait"].context.adaptation_level, "high")
 
-                expect(trait_map["step_modifying_trait"]).not_to_be_nil()
-                expect(trait_map["step_modifying_trait"].func_id).to_equal("enhance_step_results")
-                expect(trait_map["step_modifying_trait"].context.enhance_results).to_be_true()
+                test.not_nil(trait_map["step_modifying_trait"])
+                test.eq(trait_map["step_modifying_trait"].func_id, "enhance_step_results")
+                test.is_true(trait_map["step_modifying_trait"].context.enhance_results)
             end)
 
             it("should handle mixed trait function combinations", function()
                 local compiled_spec, err = compiler.compile(spec_with_mixed_trait_functions)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(#compiled_spec.prompt_funcs).to_equal(2)
-                expect(#compiled_spec.step_funcs).to_equal(1)
+                test.eq(#compiled_spec.prompt_funcs, 2)
+                test.eq(#compiled_spec.step_funcs, 1)
 
                 local prompt_trait_map = {}
                 for _, trait in ipairs(compiled_spec.prompt_funcs) do
                     prompt_trait_map[trait.trait_id] = trait
                 end
 
-                expect(prompt_trait_map["context_aware_trait"]).not_to_be_nil()
-                expect(prompt_trait_map["prompt_only_trait"]).not_to_be_nil()
-                expect(prompt_trait_map["prompt_only_trait"].func_id).to_equal("generate_dynamic_prompt")
+                test.not_nil(prompt_trait_map["context_aware_trait"])
+                test.not_nil(prompt_trait_map["prompt_only_trait"])
+                test.eq(prompt_trait_map["prompt_only_trait"].func_id, "generate_dynamic_prompt")
 
                 local step_trait_map = {}
                 for _, trait in ipairs(compiled_spec.step_funcs) do
                     step_trait_map[trait.trait_id] = trait
                 end
 
-                expect(step_trait_map["context_aware_trait"]).not_to_be_nil()
-                expect(step_trait_map["context_aware_trait"].func_id).to_equal("modify_context_response")
+                test.not_nil(step_trait_map["context_aware_trait"])
+                test.eq(step_trait_map["context_aware_trait"].func_id, "modify_context_response")
             end)
 
             it("should preserve trait contexts in runtime function collections", function()
                 local compiled_spec, err = compiler.compile(spec_with_runtime_traits)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
                 for _, trait in ipairs(compiled_spec.prompt_funcs) do
-                    expect(trait.context).not_to_be_nil()
+                    test.not_nil(trait.context)
                     if trait.trait_id == "context_aware_trait" then
-                        expect(trait.context.adaptation_level).to_equal("high")
+                        test.eq(trait.context.adaptation_level, "high")
                     end
                 end
 
                 for _, trait in ipairs(compiled_spec.step_funcs) do
-                    expect(trait.context).not_to_be_nil()
+                    test.not_nil(trait.context)
                     if trait.trait_id == "step_modifying_trait" then
-                        expect(trait.context.enhance_results).to_be_true()
+                        test.is_true(trait.context.enhance_results)
                     end
                 end
             end)
@@ -746,12 +750,12 @@ local function define_tests()
             it("should handle empty runtime function lists for agents without runtime traits", function()
                 local compiled_spec, err = compiler.compile(minimal_spec)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
-                expect(compiled_spec.prompt_funcs).not_to_be_nil()
-                expect(compiled_spec.step_funcs).not_to_be_nil()
-                expect(#compiled_spec.prompt_funcs).to_equal(0)
-                expect(#compiled_spec.step_funcs).to_equal(0)
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+                test.not_nil(compiled_spec.prompt_funcs)
+                test.not_nil(compiled_spec.step_funcs)
+                test.eq(#compiled_spec.prompt_funcs, 0)
+                test.eq(#compiled_spec.step_funcs, 0)
             end)
 
             it("should not include traits without runtime functions in runtime collections", function()
@@ -768,10 +772,10 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_with_static_traits)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
-                expect(#compiled_spec.prompt_funcs).to_equal(0)
-                expect(#compiled_spec.step_funcs).to_equal(0)
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+                test.eq(#compiled_spec.prompt_funcs, 0)
+                test.eq(#compiled_spec.step_funcs, 0)
             end)
         end)
 
@@ -779,93 +783,93 @@ local function define_tests()
             it("should handle basic inline tool schemas in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_inline_tools)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(tool_exists(compiled_spec.tools, "finish")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "custom_calculator")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "finish"))
+                test.is_true(tool_exists(compiled_spec.tools, "custom_calculator"))
 
-                local finish_tool = compiled_spec.tools["finish"]
-                expect(finish_tool.name).to_equal("finish")
-                expect(finish_tool.description).to_equal("Complete the task with final answer")
-                expect(finish_tool.schema.type).to_equal("object")
-                expect(finish_tool.schema.properties.final_answer).not_to_be_nil()
-                expect(finish_tool.schema.properties.reasoning).not_to_be_nil()
-                expect(finish_tool.schema.properties.tools_used).not_to_be_nil()
-                expect(#finish_tool.schema.required).to_equal(1)
-                expect(finish_tool.schema.required[1]).to_equal("final_answer")
-                expect(finish_tool.registry_id).to_be_nil()
+                local finish_tool = assert(compiled_spec.tools["finish"])
+                test.eq(finish_tool.name, "finish")
+                test.eq(finish_tool.description, "Complete the task with final answer")
+                test.eq(finish_tool.schema.type, "object")
+                test.not_nil(finish_tool.schema.properties.final_answer)
+                test.not_nil(finish_tool.schema.properties.reasoning)
+                test.not_nil(finish_tool.schema.properties.tools_used)
+                test.eq(#finish_tool.schema.required, 1)
+                test.eq(finish_tool.schema.required[1], "final_answer")
+                test.eq(finish_tool.registry_id, "finish")
 
-                local calc_tool = compiled_spec.tools["custom_calculator"]
-                expect(calc_tool.name).to_equal("custom_calculator")
-                expect(calc_tool.description).to_equal("Custom inline calculator tool")
-                expect(calc_tool.schema.properties.operation).not_to_be_nil()
-                expect(calc_tool.schema.properties.operands).not_to_be_nil()
-                expect(calc_tool.registry_id).to_be_nil()
+                local calc_tool = assert(compiled_spec.tools["custom_calculator"])
+                test.eq(calc_tool.name, "custom_calculator")
+                test.eq(calc_tool.description, "Custom inline calculator tool")
+                test.not_nil(calc_tool.schema.properties.operation)
+                test.not_nil(calc_tool.schema.properties.operands)
+                test.eq(calc_tool.registry_id, "custom_calculator")
 
-                expect(finish_tool.context).not_to_be_nil()
-                expect(finish_tool.context.is_exit_tool).to_be_true()
-                expect(finish_tool.context.priority).to_equal("high")
-                expect(finish_tool.context.agent_id).to_equal("test:inline_tools")
+                test.not_nil(finish_tool.context)
+                test.is_true(finish_tool.context.is_exit_tool)
+                test.eq(finish_tool.context.priority, "high")
+                test.eq(finish_tool.context.agent_id, "test:inline_tools")
             end)
 
             it("should handle mixed registry and inline tools in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_mixed_tools)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "exit_tool")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "tool"))
+                test.is_true(tool_exists(compiled_spec.tools, "exit_tool"))
 
-                local registry_tool = compiled_spec.tools["tool"]
-                expect(registry_tool.registry_id).not_to_be_nil()
+                local registry_tool = assert(compiled_spec.tools["tool"])
+                test.not_nil(registry_tool.registry_id)
 
-                local inline_tool = compiled_spec.tools["exit_tool"]
-                expect(inline_tool.registry_id).to_be_nil()
-                expect(inline_tool.schema.properties.result).not_to_be_nil()
-                expect(inline_tool.schema.properties.success).not_to_be_nil()
+                local inline_tool = assert(compiled_spec.tools["exit_tool"])
+                test.eq(inline_tool.registry_id, "exit_tool")
+                test.not_nil(inline_tool.schema.properties.result)
+                test.not_nil(inline_tool.schema.properties.success)
 
-                expect(inline_tool.context.exit_context).to_equal("value")
-                expect(inline_tool.context.agent_id).to_equal("test:mixed_tools")
+                test.eq(inline_tool.context.exit_context, "value")
+                test.eq(inline_tool.context.agent_id, "test:mixed_tools")
             end)
 
             it("should handle aliased inline tools in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_alias_and_inline)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(tool_exists(compiled_spec.tools, "simple_name")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "simple_name"))
 
-                local aliased_tool = compiled_spec.tools["simple_name"]
-                expect(aliased_tool.name).to_equal("simple_name")
-                expect(aliased_tool.description).to_equal("Complex tool with simple alias")
-                expect(aliased_tool.schema.properties.input).not_to_be_nil()
-                expect(aliased_tool.schema.properties.config).not_to_be_nil()
+                local aliased_tool = assert(compiled_spec.tools["simple_name"])
+                test.eq(aliased_tool.name, "simple_name")
+                test.eq(aliased_tool.description, "Complex tool with simple alias")
+                test.not_nil(aliased_tool.schema.properties.input)
+                test.not_nil(aliased_tool.schema.properties.config)
 
-                expect(aliased_tool.context).not_to_be_nil()
-                expect(aliased_tool.context.aliased).to_be_true()
-                expect(aliased_tool.context.agent_id).to_equal("test:alias_inline")
+                test.not_nil(aliased_tool.context)
+                test.is_true(aliased_tool.context.aliased)
+                test.eq(aliased_tool.context.agent_id, "test:alias_inline")
             end)
 
             it("should handle inline tools without schemas gracefully in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_incomplete_inline)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(tool_exists(compiled_spec.tools, "missing_schema")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "with_schema")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "missing_schema"))
+                test.is_true(tool_exists(compiled_spec.tools, "with_schema"))
 
-                local with_schema_tool = compiled_spec.tools["with_schema"]
-                expect(with_schema_tool.schema).not_to_be_nil()
-                expect(with_schema_tool.schema.properties.input).not_to_be_nil()
+                local with_schema_tool = assert(compiled_spec.tools["with_schema"])
+                test.not_nil(with_schema_tool.schema)
+                test.not_nil(with_schema_tool.schema.properties.input)
 
-                local missing_schema_tool = compiled_spec.tools["missing_schema"]
-                expect(missing_schema_tool.schema).to_be_nil()
-                expect(missing_schema_tool.context).not_to_be_nil()
-                expect(missing_schema_tool.context.agent_id).to_equal("test:incomplete_inline")
+                local missing_schema_tool = assert(compiled_spec.tools["missing_schema"])
+                test.is_nil(missing_schema_tool.schema)
+                test.not_nil(missing_schema_tool.context)
+                test.eq(missing_schema_tool.context.agent_id, "test:incomplete_inline")
             end)
 
             it("should prioritize inline schemas over registry lookups in unified structure", function()
@@ -890,15 +894,15 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_with_override)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                local tool = compiled_spec.tools["tool"]
-                expect(tool).not_to_be_nil()
-                expect(tool.description).to_equal("Overridden description")
-                expect(tool.schema.properties.custom_prop).not_to_be_nil()
-                expect(tool.schema.properties.input).to_be_nil()
-                expect(tool.registry_id).to_be_nil()
+                local tool = assert(compiled_spec.tools["tool"])
+                test.not_nil(tool)
+                test.eq(tool.description, "Overridden description")
+                test.not_nil(tool.schema.properties.custom_prop)
+                test.is_nil(tool.schema.properties.input)
+                test.eq(tool.registry_id, "basic:tool")
             end)
 
             it("should handle complex inline schemas with nested objects in unified structure", function()
@@ -948,96 +952,96 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_with_complex_schema)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                local tool = compiled_spec.tools["complex_tool"]
-                expect(tool).not_to_be_nil()
-                expect(tool.schema.properties.config).not_to_be_nil()
-                expect(tool.schema.properties.config.properties.mode).not_to_be_nil()
-                expect(tool.schema.properties.config.properties.options).not_to_be_nil()
-                expect(tool.schema.properties.data).not_to_be_nil()
-                expect(tool.schema.properties.data.items.properties.id).not_to_be_nil()
-                expect(#tool.schema.required).to_equal(2)
+                local tool = assert(compiled_spec.tools["complex_tool"])
+                test.not_nil(tool)
+                test.not_nil(tool.schema.properties.config)
+                test.not_nil(tool.schema.properties.config.properties.mode)
+                test.not_nil(tool.schema.properties.config.properties.options)
+                test.not_nil(tool.schema.properties.data)
+                test.not_nil(tool.schema.properties.data.items.properties.id)
+                test.eq(#tool.schema.required, 2)
             end)
 
             it("should preserve agent_id in inline tool contexts in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_inline_tools)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
                 for tool_name, tool_data in pairs(compiled_spec.tools) do
-                    expect(tool_data.context.agent_id).to_equal("test:inline_tools")
+                    test.eq(tool_data.context.agent_id, "test:inline_tools")
                 end
 
-                expect(compiled_spec.tools["finish"].context.agent_id).to_equal("test:inline_tools")
-                expect(compiled_spec.tools["custom_calculator"].context.agent_id).to_equal("test:inline_tools")
+                test.eq(compiled_spec.tools["finish"].context.agent_id, "test:inline_tools")
+                test.eq(compiled_spec.tools["custom_calculator"].context.agent_id, "test:inline_tools")
             end)
         end)
 
         it("should compile agent with trait names (get_by_name fallback)", function()
             local compiled_spec, err = compiler.compile(spec_with_trait_names)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(compiled_spec.prompt).to_contain("You are a test agent with trait names.")
-            expect(compiled_spec.prompt).to_contain("You have static capabilities.")
-            expect(compiled_spec.prompt).to_contain("You have dynamic capabilities.")
+            test.contains(compiled_spec.prompt, "You are a test agent with trait names.")
+            test.contains(compiled_spec.prompt, "You have static capabilities.")
+            test.contains(compiled_spec.prompt, "You have dynamic capabilities.")
 
-            expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "generated_tool")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "tool"))
+            test.is_true(tool_exists(compiled_spec.tools, "generated_tool"))
         end)
 
         it("should compile agent with static traits", function()
             local compiled_spec, err = compiler.compile(spec_with_traits)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(compiled_spec.prompt).to_contain("You are a test agent with traits.")
-            expect(compiled_spec.prompt).to_contain("You have static capabilities.")
-            expect(compiled_spec.prompt).to_contain("You have dynamic capabilities.")
-            expect(compiled_spec.prompt).to_contain("Dynamic prompt for agent test:with_traits: instance_value")
+            test.contains(compiled_spec.prompt, "You are a test agent with traits.")
+            test.contains(compiled_spec.prompt, "You have static capabilities.")
+            test.contains(compiled_spec.prompt, "You have dynamic capabilities.")
+            test.contains(compiled_spec.prompt, "Dynamic prompt for agent test:with_traits: instance_value")
 
-            expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "generated_tool")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "tool"))
+            test.is_true(tool_exists(compiled_spec.tools, "generated_tool"))
 
             local tool_data = compiled_spec.tools["tool"]
-            expect(tool_data).not_to_be_nil()
-            expect(tool_data.context.agent_setting).to_equal("agent_value")
-            expect(tool_data.context.shared_setting).to_equal("agent_overrides_trait")
+            test.not_nil(tool_data)
+            test.eq(tool_data.context.agent_setting, "agent_value")
+            test.eq(tool_data.context.shared_setting, "agent_overrides_trait")
 
             local generated_tool_data = compiled_spec.tools["generated_tool"]
-            expect(generated_tool_data).not_to_be_nil()
-            expect(generated_tool_data.context.generated).to_be_true()
-            expect(generated_tool_data.context.agent_id).to_equal("test:with_traits")
+            test.not_nil(generated_tool_data)
+            test.is_true(generated_tool_data.context.generated)
+            test.eq(generated_tool_data.context.agent_id, "test:with_traits")
         end)
 
         it("should collect tool schemas from trait build methods in unified structure", function()
             local compiled_spec, err = compiler.compile(spec_with_tool_schemas)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(tool_exists(compiled_spec.tools, "api_client")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "data_processor")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "api_client"))
+            test.is_true(tool_exists(compiled_spec.tools, "data_processor"))
 
             local api_tool = compiled_spec.tools["api_client"]
-            expect(api_tool.name).to_equal("api_client")
-            expect(api_tool.description).to_equal("Call external API with dynamic configuration")
-            expect(api_tool.schema.type).to_equal("object")
-            expect(api_tool.schema.properties.endpoint).not_to_be_nil()
-            expect(api_tool.schema.properties.data).not_to_be_nil()
-            expect(#api_tool.schema.required).to_equal(1)
-            expect(api_tool.schema.required[1]).to_equal("endpoint")
+            test.eq(api_tool.name, "api_client")
+            test.eq(api_tool.description, "Call external API with dynamic configuration")
+            test.eq(api_tool.schema.type, "object")
+            test.not_nil(api_tool.schema.properties.endpoint)
+            test.not_nil(api_tool.schema.properties.data)
+            test.eq(#api_tool.schema.required, 1)
+            test.eq(api_tool.schema.required[1], "endpoint")
 
-            expect(api_tool.context).not_to_be_nil()
-            expect(api_tool.context.api_endpoint).to_equal("https://api.example.com")
-            expect(api_tool.context.agent_id).to_equal("test:with_tool_schemas")
+            test.not_nil(api_tool.context)
+            test.eq(api_tool.context.api_endpoint, "https://api.example.com")
+            test.eq(api_tool.context.agent_id, "test:with_tool_schemas")
 
-            expect(compiled_spec.prompt).to_contain("You can call external APIs and process data dynamically.")
+            test.contains(compiled_spec.prompt, "You can call external APIs and process data dynamically.")
         end)
 
         it("should compile agent with delegates in unified tool structure", function()
@@ -1050,23 +1054,23 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_delegates, config)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(tool_exists(compiled_spec.tools, "to_specialist")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "to_helper")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "to_specialist"))
+            test.is_true(tool_exists(compiled_spec.tools, "to_helper"))
 
-            expect(has_delegate_tool(compiled_spec.tools, "to_specialist")).to_be_true()
-            expect(has_delegate_tool(compiled_spec.tools, "to_helper")).to_be_true()
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_specialist"))
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_helper"))
 
             local specialist_tool = compiled_spec.tools["to_specialist"]
-            expect(specialist_tool.agent_id).to_equal("specialist:agent")
-            expect(specialist_tool.description).to_contain("Forward complex questions to specialist")
-            expect(specialist_tool.description).to_contain(", this will end your response")
+            test.eq(specialist_tool.agent_id, "specialist:agent")
+            test.contains(specialist_tool.description, "Forward complex questions to specialist")
+            test.contains(specialist_tool.description, ", this will end your response")
 
             local helper_tool = compiled_spec.tools["to_helper"]
-            expect(helper_tool.agent_id).to_equal("helper:agent")
-            expect(helper_tool.description).to_contain("Forward simple questions to helper")
+            test.eq(helper_tool.agent_id, "helper:agent")
+            test.contains(helper_tool.description, "Forward simple questions to helper")
         end)
 
         it("should not generate delegate tool schemas when disabled", function()
@@ -1078,23 +1082,23 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_delegates, config)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(tool_exists(compiled_spec.tools, "to_specialist")).to_be_false()
-            expect(tool_exists(compiled_spec.tools, "to_helper")).to_be_false()
+            test.is_false(tool_exists(compiled_spec.tools, "to_specialist"))
+            test.is_false(tool_exists(compiled_spec.tools, "to_helper"))
         end)
 
         it("should resolve wildcard tools in unified structure", function()
             local compiled_spec, err = compiler.compile(spec_with_wildcards)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "calculator")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "validator")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "tool1")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "tool"))
+            test.is_true(tool_exists(compiled_spec.tools, "calculator"))
+            test.is_true(tool_exists(compiled_spec.tools, "validator"))
+            test.is_true(tool_exists(compiled_spec.tools, "tool1"))
         end)
 
         it("should create dynamic delegates based on context", function()
@@ -1120,23 +1124,23 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_enabled_features, config)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(tool_exists(compiled_spec.tools, "to_data_analyst")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "to_coder")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "to_data_analyst"))
+            test.is_true(tool_exists(compiled_spec.tools, "to_coder"))
 
-            expect(has_delegate_tool(compiled_spec.tools, "to_data_analyst")).to_be_true()
-            expect(has_delegate_tool(compiled_spec.tools, "to_coder")).to_be_true()
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_data_analyst"))
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_coder"))
 
             local data_analyst_tool = compiled_spec.tools["to_data_analyst"]
-            expect(data_analyst_tool.agent_id).to_equal("specialist:data_analyst")
-            expect(data_analyst_tool.description).to_contain("test:enabled_features")
+            test.eq(data_analyst_tool.agent_id, "specialist:data_analyst")
+            test.contains(data_analyst_tool.description, "test:enabled_features")
 
             local coder_tool = compiled_spec.tools["to_coder"]
-            expect(coder_tool.agent_id).to_equal("specialist:coder")
+            test.eq(coder_tool.agent_id, "specialist:coder")
 
-            expect(tool_exists(compiled_spec.tools, "tracker")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "tracker"))
         end)
 
         it("should handle complex agent with multiple dynamic traits", function()
@@ -1149,31 +1153,31 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_complex_traits, config)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(compiled_spec.prompt).to_contain("You are a complex agent.")
-            expect(compiled_spec.prompt).to_contain("You have dynamic capabilities.")
-            expect(compiled_spec.prompt).to_contain("You can delegate tasks to specialists based on context.")
-            expect(compiled_spec.prompt).to_contain("You can call external APIs and process data dynamically.")
-            expect(compiled_spec.prompt).to_contain("Dynamic prompt for agent test:complex")
+            test.contains(compiled_spec.prompt, "You are a complex agent.")
+            test.contains(compiled_spec.prompt, "You have dynamic capabilities.")
+            test.contains(compiled_spec.prompt, "You can delegate tasks to specialists based on context.")
+            test.contains(compiled_spec.prompt, "You can call external APIs and process data dynamically.")
+            test.contains(compiled_spec.prompt, "Dynamic prompt for agent test:complex")
 
-            expect(tool_exists(compiled_spec.tools, "generated_tool")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "tracker")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "api_client")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "data_processor")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "generated_tool"))
+            test.is_true(tool_exists(compiled_spec.tools, "tracker"))
+            test.is_true(tool_exists(compiled_spec.tools, "api_client"))
+            test.is_true(tool_exists(compiled_spec.tools, "data_processor"))
 
-            expect(tool_exists(compiled_spec.tools, "to_static")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "to_data_analyst")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "to_coder")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "to_static"))
+            test.is_true(tool_exists(compiled_spec.tools, "to_data_analyst"))
+            test.is_true(tool_exists(compiled_spec.tools, "to_coder"))
 
-            expect(has_delegate_tool(compiled_spec.tools, "to_static")).to_be_true()
-            expect(has_delegate_tool(compiled_spec.tools, "to_data_analyst")).to_be_true()
-            expect(has_delegate_tool(compiled_spec.tools, "to_coder")).to_be_true()
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_static"))
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_data_analyst"))
+            test.is_true(has_delegate_tool(compiled_spec.tools, "to_coder"))
 
-            expect(compiled_spec.tools["generated_tool"].context.agent_id).to_equal("test:complex")
-            expect(compiled_spec.tools["tracker"].context.agent_id).to_equal("test:complex")
-            expect(compiled_spec.tools["api_client"].context.agent_id).to_equal("test:complex")
+            test.eq(compiled_spec.tools["generated_tool"].context.agent_id, "test:complex")
+            test.eq(compiled_spec.tools["tracker"].context.agent_id, "test:complex")
+            test.eq(compiled_spec.tools["api_client"].context.agent_id, "test:complex")
         end)
 
         it("should pass agent_id to trait build methods", function()
@@ -1189,55 +1193,55 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_context_sensitive_trait)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(compiled_spec.prompt).to_contain("Dynamic prompt for agent test:context_agent")
-            expect(compiled_spec.tools["generated_tool"].context.agent_id).to_equal("test:context_agent")
+            test.contains(compiled_spec.prompt, "Dynamic prompt for agent test:context_agent")
+            test.eq(compiled_spec.tools["generated_tool"].context.agent_id, "test:context_agent")
         end)
 
         describe("Agent ID Propagation", function()
             it("should add agent_id to all tool contexts during compilation in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_for_agent_id_tests)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
                 for tool_name, tool_data in pairs(compiled_spec.tools) do
-                    expect(tool_data.context.agent_id).to_equal("test:agent_id_verification")
+                    test.eq(tool_data.context.agent_id, "test:agent_id_verification")
                 end
 
-                expect(compiled_spec.tools["tool"].context.agent_id).to_equal("test:agent_id_verification")
-                expect(compiled_spec.tools["generated_tool"].context.agent_id).to_equal("test:agent_id_verification")
+                test.eq(compiled_spec.tools["tool"].context.agent_id, "test:agent_id_verification")
+                test.eq(compiled_spec.tools["generated_tool"].context.agent_id, "test:agent_id_verification")
 
-                expect(compiled_spec.tools["calculator"].context.agent_id).to_equal("test:agent_id_verification")
-                expect(compiled_spec.tools["validator"].context.agent_id).to_equal("test:agent_id_verification")
+                test.eq(compiled_spec.tools["calculator"].context.agent_id, "test:agent_id_verification")
+                test.eq(compiled_spec.tools["validator"].context.agent_id, "test:agent_id_verification")
             end)
 
             it("should preserve existing context while adding agent_id in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_for_agent_id_tests)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
                 local tool_data = compiled_spec.tools["tool"]
-                expect(tool_data.context.test_setting).to_equal("test_value")
-                expect(tool_data.context.agent_id).to_equal("test:agent_id_verification")
+                test.eq(tool_data.context.test_setting, "test_value")
+                test.eq(tool_data.context.agent_id, "test:agent_id_verification")
 
                 local generated_data = compiled_spec.tools["generated_tool"]
-                expect(generated_data.context.generated).to_be_true()
-                expect(generated_data.context.workspace).to_equal("/default")
-                expect(generated_data.context.agent_id).to_equal("test:agent_id_verification")
+                test.is_true(generated_data.context.generated)
+                test.eq(generated_data.context.workspace, "/default")
+                test.eq(generated_data.context.agent_id, "test:agent_id_verification")
             end)
 
             it("should add agent_id to minimal spec with no tools", function()
                 local compiled_spec, err = compiler.compile(minimal_spec)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(compiled_spec.tools).not_to_be_nil()
-                expect(next(compiled_spec.tools)).to_be_nil()
+                test.not_nil(compiled_spec.tools)
+                test.is_nil(next(compiled_spec.tools))
             end)
 
             it("should handle agent_id with custom context merger in unified structure", function()
@@ -1254,37 +1258,37 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_for_agent_id_tests, custom_config)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
                 for tool_name, tool_data in pairs(compiled_spec.tools) do
-                    expect(tool_data.context.custom_merger_called).to_be_true()
-                    expect(tool_data.context.agent_id).to_equal("test:agent_id_verification")
+                    test.is_true(tool_data.context.custom_merger_called)
+                    test.eq(tool_data.context.agent_id, "test:agent_id_verification")
                 end
             end)
 
             it("should add agent_id to tool contexts from trait-contributed tools in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_complex_traits)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(compiled_spec.tools["generated_tool"].context.agent_id).to_equal("test:complex")
-                expect(compiled_spec.tools["tracker"].context.agent_id).to_equal("test:complex")
-                expect(compiled_spec.tools["api_client"].context.agent_id).to_equal("test:complex")
-                expect(compiled_spec.tools["data_processor"].context.agent_id).to_equal("test:complex")
+                test.eq(compiled_spec.tools["generated_tool"].context.agent_id, "test:complex")
+                test.eq(compiled_spec.tools["tracker"].context.agent_id, "test:complex")
+                test.eq(compiled_spec.tools["api_client"].context.agent_id, "test:complex")
+                test.eq(compiled_spec.tools["data_processor"].context.agent_id, "test:complex")
             end)
 
             it("should add agent_id to wildcard-resolved tools in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_wildcards)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(compiled_spec.tools["tool"].context.agent_id).to_equal("test:wildcards")
-                expect(compiled_spec.tools["calculator"].context.agent_id).to_equal("test:wildcards")
-                expect(compiled_spec.tools["validator"].context.agent_id).to_equal("test:wildcards")
-                expect(compiled_spec.tools["tool1"].context.agent_id).to_equal("test:wildcards")
+                test.eq(compiled_spec.tools["tool"].context.agent_id, "test:wildcards")
+                test.eq(compiled_spec.tools["calculator"].context.agent_id, "test:wildcards")
+                test.eq(compiled_spec.tools["validator"].context.agent_id, "test:wildcards")
+                test.eq(compiled_spec.tools["tool1"].context.agent_id, "test:wildcards")
             end)
 
             it("should ensure agent_id matches the raw spec id exactly", function()
@@ -1307,23 +1311,23 @@ local function define_tests()
 
                     local compiled_spec, err = compiler.compile(spec)
 
-                    expect(err).to_be_nil()
-                    expect(compiled_spec).not_to_be_nil()
-                    expect(compiled_spec.tools["tool"].context.agent_id).to_equal(test_case.expected)
+                    test.is_nil(err)
+                    test.not_nil(compiled_spec)
+                    test.eq(compiled_spec.tools["tool"].context.agent_id, test_case.expected)
                 end
             end)
 
             it("should add agent_id to inline tool contexts in unified structure", function()
                 local compiled_spec, err = compiler.compile(spec_with_inline_tools)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(compiled_spec.tools["finish"].context.agent_id).to_equal("test:inline_tools")
-                expect(compiled_spec.tools["custom_calculator"].context.agent_id).to_equal("test:inline_tools")
+                test.eq(compiled_spec.tools["finish"].context.agent_id, "test:inline_tools")
+                test.eq(compiled_spec.tools["custom_calculator"].context.agent_id, "test:inline_tools")
 
-                expect(compiled_spec.tools["finish"].context.is_exit_tool).to_be_true()
-                expect(compiled_spec.tools["finish"].context.priority).to_equal("high")
+                test.is_true(compiled_spec.tools["finish"].context.is_exit_tool)
+                test.eq(compiled_spec.tools["finish"].context.priority, "high")
             end)
         end)
 
@@ -1340,9 +1344,9 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_missing_trait)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
-            expect(compiled_spec.prompt).to_equal("Test prompt")
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
+            test.eq(compiled_spec.prompt, "Test prompt")
         end)
 
         it("should handle trait ID vs name lookup properly", function()
@@ -1361,14 +1365,14 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_mixed_trait_references)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(compiled_spec.prompt).to_contain("You have static capabilities.")
-            expect(compiled_spec.prompt).to_contain("You have dynamic capabilities.")
+            test.contains(compiled_spec.prompt, "You have static capabilities.")
+            test.contains(compiled_spec.prompt, "You have dynamic capabilities.")
 
-            expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-            expect(tool_exists(compiled_spec.tools, "generated_tool")).to_be_true()
+            test.is_true(tool_exists(compiled_spec.tools, "tool"))
+            test.is_true(tool_exists(compiled_spec.tools, "generated_tool"))
         end)
 
         it("should handle delegate without name gracefully", function()
@@ -1393,8 +1397,8 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_bad_delegate, config)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
             local has_delegate_tools = false
             for tool_name, tool_data in pairs(compiled_spec.tools) do
@@ -1403,7 +1407,7 @@ local function define_tests()
                     break
                 end
             end
-            expect(has_delegate_tools).to_be_false()
+            test.is_false(has_delegate_tools)
         end)
 
         it("should handle failing trait build methods gracefully", function()
@@ -1431,10 +1435,10 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_failing_trait)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
-            expect(compiled_spec.prompt).to_contain("Test prompt")
-            expect(compiled_spec.prompt).to_contain("Base prompt")
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
+            test.contains(compiled_spec.prompt, "Test prompt")
+            test.contains(compiled_spec.prompt, "Base prompt")
         end)
 
         it("should use custom context merger in unified structure", function()
@@ -1451,10 +1455,10 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_traits, custom_config)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
 
-            expect(compiled_spec.tools["tool"].context.custom_merger).to_be_true()
+            test.is_true(compiled_spec.tools["tool"].context.custom_merger)
         end)
 
         it("should preserve all original spec fields", function()
@@ -1478,21 +1482,21 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(full_spec)
 
-            expect(err).to_be_nil()
-            expect(compiled_spec).not_to_be_nil()
-            expect(compiled_spec.id).to_equal("test:full")
-            expect(compiled_spec.name).to_equal("Full Agent")
-            expect(compiled_spec.description).to_equal("A complete agent spec")
-            expect(compiled_spec.model).to_equal("gpt-4o-mini")
-            expect(compiled_spec.max_tokens).to_equal(8192)
-            expect(compiled_spec.temperature).to_equal(0.8)
-            expect(compiled_spec.thinking_effort).to_equal(50)
-            expect(#compiled_spec.memory).to_equal(2)
-            expect(compiled_spec.memory[1]).to_equal("memory:item1")
-            expect(compiled_spec.memory_contract).not_to_be_nil()
-            expect(compiled_spec.memory_contract.implementation_id).to_equal("memory:impl")
+            test.is_nil(err)
+            test.not_nil(compiled_spec)
+            test.eq(compiled_spec.id, "test:full")
+            test.eq(compiled_spec.name, "Full Agent")
+            test.eq(compiled_spec.description, "A complete agent spec")
+            test.eq(compiled_spec.model, "gpt-4o-mini")
+            test.eq(compiled_spec.max_tokens, 8192)
+            test.eq(compiled_spec.temperature, 0.8)
+            test.eq(compiled_spec.thinking_effort, 50)
+            test.eq(#compiled_spec.memory, 2)
+            test.eq(compiled_spec.memory[1], "memory:item1")
+            test.not_nil(compiled_spec.memory_contract)
+            test.eq(compiled_spec.memory_contract.implementation_id, "memory:impl")
 
-            expect(compiled_spec.tools["tool"].context.agent_id).to_equal("test:full")
+            test.eq(compiled_spec.tools["tool"].context.agent_id, "test:full")
         end)
 
         describe("Delegate Tool Integration", function()
@@ -1505,22 +1509,22 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_with_delegates, config)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(tool_exists(compiled_spec.tools, "to_specialist")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "to_helper")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "to_specialist"))
+                test.is_true(tool_exists(compiled_spec.tools, "to_helper"))
 
                 local specialist_tool = compiled_spec.tools["to_specialist"]
-                expect(specialist_tool.agent_id).to_equal("specialist:agent")
-                expect(specialist_tool.name).to_equal("to_specialist")
-                expect(specialist_tool.schema).not_to_be_nil()
-                expect(specialist_tool.schema.type).to_equal("object")
-                expect(specialist_tool.schema.properties.message).not_to_be_nil()
+                test.eq(specialist_tool.agent_id, "specialist:agent")
+                test.eq(specialist_tool.name, "to_specialist")
+                test.not_nil(specialist_tool.schema)
+                test.eq(specialist_tool.schema.type, "object")
+                test.not_nil(specialist_tool.schema.properties.message)
 
                 local helper_tool = compiled_spec.tools["to_helper"]
-                expect(helper_tool.agent_id).to_equal("helper:agent")
-                expect(helper_tool.name).to_equal("to_helper")
+                test.eq(helper_tool.agent_id, "helper:agent")
+                test.eq(helper_tool.name, "to_helper")
             end)
 
             it("should distinguish delegate tools from regular tools", function()
@@ -1549,17 +1553,17 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_mixed, config)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "to_specialist")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "tool"))
+                test.is_true(tool_exists(compiled_spec.tools, "to_specialist"))
 
-                expect(has_delegate_tool(compiled_spec.tools, "tool")).to_be_false()
-                expect(has_delegate_tool(compiled_spec.tools, "to_specialist")).to_be_true()
+                test.is_false(has_delegate_tool(compiled_spec.tools, "tool"))
+                test.is_true(has_delegate_tool(compiled_spec.tools, "to_specialist"))
 
-                expect(compiled_spec.tools["tool"].agent_id).to_be_nil()
-                expect(compiled_spec.tools["to_specialist"].agent_id).to_equal("specialist:agent")
+                test.is_nil(compiled_spec.tools["tool"].agent_id)
+                test.eq(compiled_spec.tools["to_specialist"].agent_id, "specialist:agent")
             end)
 
             it("should handle delegate context merging", function()
@@ -1591,12 +1595,12 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(spec_with_delegate_context, config)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
                 local delegate_tool = compiled_spec.tools["to_specialist"]
-                expect(delegate_tool.context.agent_setting).to_equal("agent_value")
-                expect(delegate_tool.context.delegate_setting).to_equal("delegate_value")
+                test.eq(delegate_tool.context.agent_setting, "agent_value")
+                test.eq(delegate_tool.context.delegate_setting, "delegate_value")
             end)
         end)
 
@@ -1657,37 +1661,37 @@ local function define_tests()
 
                 local compiled_spec, err = compiler.compile(comprehensive_spec, config)
 
-                expect(err).to_be_nil()
-                expect(compiled_spec).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
 
-                expect(compiled_spec.id).to_equal("test:comprehensive")
-                expect(compiled_spec.max_tokens).to_equal(4096)
-                expect(compiled_spec.temperature).to_equal(0.7)
-                expect(compiled_spec.thinking_effort).to_equal(25)
+                test.eq(compiled_spec.id, "test:comprehensive")
+                test.eq(compiled_spec.max_tokens, 4096)
+                test.eq(compiled_spec.temperature, 0.7)
+                test.eq(compiled_spec.thinking_effort, 25)
 
-                expect(compiled_spec.prompt).to_contain("You are a comprehensive agent.")
-                expect(compiled_spec.prompt).to_contain("You have static capabilities.")
-                expect(compiled_spec.prompt).to_contain("You have dynamic capabilities.")
+                test.contains(compiled_spec.prompt, "You are a comprehensive agent.")
+                test.contains(compiled_spec.prompt, "You have static capabilities.")
+                test.contains(compiled_spec.prompt, "You have dynamic capabilities.")
 
-                expect(tool_exists(compiled_spec.tools, "tool")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "calculator")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "validator")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "generated_tool")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "inline_finish")).to_be_true()
-                expect(tool_exists(compiled_spec.tools, "to_helper")).to_be_true()
+                test.is_true(tool_exists(compiled_spec.tools, "tool"))
+                test.is_true(tool_exists(compiled_spec.tools, "calculator"))
+                test.is_true(tool_exists(compiled_spec.tools, "validator"))
+                test.is_true(tool_exists(compiled_spec.tools, "generated_tool"))
+                test.is_true(tool_exists(compiled_spec.tools, "inline_finish"))
+                test.is_true(tool_exists(compiled_spec.tools, "to_helper"))
 
-                expect(has_delegate_tool(compiled_spec.tools, "to_helper")).to_be_true()
-                expect(has_delegate_tool(compiled_spec.tools, "tool")).to_be_false()
+                test.is_true(has_delegate_tool(compiled_spec.tools, "to_helper"))
+                test.is_false(has_delegate_tool(compiled_spec.tools, "tool"))
 
-                expect(#compiled_spec.memory).to_equal(1)
-                expect(compiled_spec.memory_contract.implementation_id).to_equal("mem:impl")
+                test.eq(#compiled_spec.memory, 1)
+                test.eq(compiled_spec.memory_contract.implementation_id, "mem:impl")
 
-                expect(#compiled_spec.prompt_funcs).to_equal(1)
-                expect(#compiled_spec.step_funcs).to_equal(1)
+                test.eq(#compiled_spec.prompt_funcs, 1)
+                test.eq(#compiled_spec.step_funcs, 1)
 
                 for tool_name, tool_data in pairs(compiled_spec.tools) do
                     if not tool_data.agent_id then
-                        expect(tool_data.context.agent_id).to_equal("test:comprehensive")
+                        test.eq(tool_data.context.agent_id, "test:comprehensive")
                     end
                 end
             end)

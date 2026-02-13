@@ -162,6 +162,14 @@ function models._build_model_card(entry)
         return nil
     end
 
+    local dimensions: number? = nil
+    if type(entry.data) == "table" then
+        local parsed_dimensions = tonumber(entry.data.dimensions)
+        if type(parsed_dimensions) == "number" then
+            dimensions = parsed_dimensions
+        end
+    end
+
     -- Build model card from registry entry structure
     local model_card = {
         id = entry.id or "",
@@ -174,13 +182,9 @@ function models._build_model_card(entry)
         max_tokens = entry.data and entry.data.max_tokens or 0,
         output_tokens = entry.data and entry.data.output_tokens or 0,
         pricing = entry.data and entry.data.pricing or {},
-        providers = entry.data and entry.data.providers or {}
+        providers = entry.data and entry.data.providers or {},
+        dimensions = dimensions
     }
-
-    -- Add any additional fields that might be directly in entry.data
-    if entry.data and entry.data.dimensions then
-        model_card.dimensions = entry.data.dimensions
-    end
 
     return model_card
 end

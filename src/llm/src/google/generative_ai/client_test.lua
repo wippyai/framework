@@ -20,8 +20,8 @@ local function define_tests()
 
                 local response = client.request({})
 
-                expect(response.status_code).to_equal(401)
-                expect(response.message).to_equal("Google Gemini API key is missing")
+                tests.eq(response.status_code, 401)
+                tests.eq(response.message, "Google Gemini API key is missing")
             end)
 
             it("should use API key from config", function()
@@ -41,13 +41,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.headers["x-goog-api-key"]).to_equal("test-gemini-api-key")
+                        tests.eq(options.headers["x-goog-api-key"], "test-gemini-api-key")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     payload = { contents = {} }
                 })
@@ -72,13 +72,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(method).to_equal("POST")
+                        tests.eq(method, "POST")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -100,14 +100,14 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(method).to_equal("GET")
-                        expect(options.body).to_be_nil()
+                        tests.eq(method, "GET")
+                        tests.is_nil(options.body)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     options = { method = "GET" }
                 })
             end)
@@ -141,17 +141,17 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        local body = json.decode(options.body)
-                        expect(body.contents[1].role).to_equal("user")
-                        expect(body.contents[1].parts[1].text).to_equal("Hello")
-                        expect(body.generationConfig.temperature).to_equal(0.7)
-                        expect(body.generationConfig.maxOutputTokens).to_equal(100)
+                        local body = json.decode(tostring(options.body))
+                        tests.eq(body.contents[1].role, "user")
+                        tests.eq(body.contents[1].parts[1].text, "Hello")
+                        tests.eq(body.generationConfig.temperature, 0.7)
+                        tests.eq(body.generationConfig.maxOutputTokens, 100)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     payload = test_payload
                 })
@@ -174,13 +174,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.body).to_equal(json.encode({}))
+                        tests.eq(options.body, json.encode({}))
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -202,13 +202,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.body).to_be_nil()
+                        tests.is_nil(options.body)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     options = { method = "GET" },
                     payload = { should = "be_ignored" }
                 })
@@ -233,13 +233,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent")
+                        tests.eq(url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -261,13 +261,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro")
+                        tests.eq(url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 })
             end)
 
@@ -288,7 +288,7 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://generativelanguage.googleapis.com/v1beta/models")
+                        tests.eq(url, "https://generativelanguage.googleapis.com/v1beta/models")
                         return nil
                     end
                 }
@@ -313,13 +313,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://custom.api.com/v2/models/gemini-pro:generateContent")
+                        tests.eq(url, "https://custom.api.com/v2/models/gemini-2.5-flash:generateContent")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     options = {
                         base_url = "https://custom.api.com/v2/models"
@@ -346,13 +346,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.timeout).to_equal(120)
+                        tests.eq(options.timeout, 120)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -374,13 +374,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.timeout).to_equal(180)
+                        tests.eq(options.timeout, 180)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     options = {
                         timeout = 180
@@ -424,13 +424,13 @@ local function define_tests()
                 }
 
                 local response = client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
-                })
+                }) :: any
 
-                expect(response.status_code).to_equal(test_response.status_code)
-                expect(response.candidates[1].content.parts[1].text).to_equal("Hello, world!")
-                expect(response.candidates[1].finishReason).to_equal("STOP")
+                tests.eq(response.status_code, test_response.status_code)
+                tests.eq(response.candidates[1].content.parts[1].text, "Hello, world!")
+                tests.eq(response.candidates[1].finishReason, "STOP")
             end)
 
             it("should return error response", function()
@@ -464,14 +464,14 @@ local function define_tests()
                 }
 
                 local response = client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
-                })
+                }) :: any
 
-                expect(response.status_code).to_equal(test_response.status_code)
-                expect(response.error.code).to_equal(test_response.error.code)
-                expect(response.error.message).to_equal(test_response.error.message)
-                expect(response.error.status).to_equal(test_response.error.status)
+                tests.eq(response.status_code, test_response.status_code)
+                tests.eq(response.error.code, test_response.error.code)
+                tests.eq(response.error.message, test_response.error.message)
+                tests.eq(response.error.status, test_response.error.status)
             end)
         end)
     end)

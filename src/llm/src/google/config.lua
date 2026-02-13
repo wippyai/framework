@@ -30,7 +30,7 @@ local function get_value(key, default_env_var)
     -- Check for env variable reference
     local env_key_value = safe_ctx_get(key .. "_env")
     if env_key_value and env_key_value ~= "" then
-        local env_value = config._env.get(env_key_value)
+        local env_value = config._env.get(tostring(env_key_value))
         if env_value and env_value ~= "" then
             return env_value
         end
@@ -105,7 +105,7 @@ function config.get_vertex_base_url(location)
 
     local prefix_location = location == "global" and "" or location .. "-"
 
-    return string.format(get_value("base_url", "VERTEX_AI_BASE_URL"), prefix_location)
+    return string.format(get_value("base_url", "VERTEX_AI_BASE_URL") or "%saiplatform.googleapis.com", prefix_location)
 end
 
 function config.get_vertex_location()

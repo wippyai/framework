@@ -14,18 +14,18 @@ local function define_tests()
                 local response = generate_handler.handler({
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } }
                 })
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Model is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Model is required")
             end)
 
             it("should require messages parameter", function()
                 local response = generate_handler.handler({
                     model = "claude-3-5-sonnet-20241022"
                 })
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
 
             it("should reject empty messages array", function()
@@ -33,9 +33,9 @@ local function define_tests()
                     model = "claude-3-5-sonnet-20241022",
                     messages = {}
                 })
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Messages are required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Messages are required")
             end)
         end)
 
@@ -44,10 +44,10 @@ local function define_tests()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(endpoint).to_equal("/v1/messages")
-                        expect(payload.model).to_equal("claude-3-5-sonnet-20241022")
-                        expect(payload.messages).not_to_be_nil()
-                        expect(payload.max_tokens).to_equal(2000)
+                        test.eq(endpoint, "/v1/messages")
+                        test.eq(payload.model, "claude-3-5-sonnet-20241022")
+                        test.not_nil(payload.messages)
+                        test.eq(payload.max_tokens, 2000)
 
                         return {
                             content = {
@@ -72,15 +72,16 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Hello! How can I help you today?")
-                expect(response.result.tool_calls).not_to_be_nil()
-                expect(#response.result.tool_calls).to_equal(0)
-                expect(response.tokens.prompt_tokens).to_equal(12)
-                expect(response.tokens.completion_tokens).to_equal(8)
-                expect(response.tokens.total_tokens).to_equal(20)
-                expect(response.finish_reason).to_equal("stop")
-                expect(response.metadata.request_id).to_equal("req_123")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Hello! How can I help you today?")
+                test.not_nil(response.result.tool_calls)
+                test.eq(#response.result.tool_calls, 0)
+                test.eq(response.tokens.prompt_tokens, 12)
+                test.eq(response.tokens.completion_tokens, 8)
+                test.eq(response.tokens.total_tokens, 20)
+                test.eq(response.finish_reason, "stop")
+                test.eq(response.metadata.request_id, "req_123")
             end)
 
             it("should handle multiple content blocks", function()
@@ -107,8 +108,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("First part. Second part.")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "First part. Second part.")
             end)
 
             it("should handle max_tokens finish reason", function()
@@ -135,8 +137,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.finish_reason).to_equal("length")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.finish_reason, "length")
             end)
         end)
 
@@ -145,12 +148,12 @@ local function define_tests()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.temperature).to_equal(0.7)
-                        expect(payload.max_tokens).to_equal(100)
-                        expect(payload.top_p).to_equal(0.9)
-                        expect(payload.stop_sequences).not_to_be_nil()
-                        expect(payload.stop_sequences[1]).to_equal("STOP")
-                        expect(options.timeout).to_equal(60)
+                        test.eq(payload.temperature, 0.7)
+                        test.eq(payload.max_tokens, 100)
+                        test.eq(payload.top_p, 0.9)
+                        test.not_nil(payload.stop_sequences)
+                        test.eq(payload.stop_sequences[1], "STOP")
+                        test.eq(options.timeout, 60)
 
                         return {
                             content = { { type = "text", text = "Response with custom options" } },
@@ -176,19 +179,20 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Response with custom options")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Response with custom options")
             end)
 
             it("should handle thinking models with effort configuration", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.model).to_equal("claude-3-7-sonnet-20250219")
-                        expect(payload.thinking).not_to_be_nil()
-                        expect(payload.thinking.type).to_equal("enabled")
-                        expect(payload.thinking.budget_tokens).to_be_greater_than(1000)
-                        expect(payload.temperature).to_equal(1) -- Required for thinking
+                        test.eq(payload.model, "claude-3-7-sonnet-20250219")
+                        test.not_nil(payload.thinking)
+                        test.eq(payload.thinking.type, "enabled")
+                        test.gt(payload.thinking.budget_tokens, 1000)
+                        test.eq(payload.temperature, 1) -- Required for thinking
 
                         return {
                             content = {
@@ -214,16 +218,17 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("After thinking, here's my answer.")
-                expect(response.metadata.thinking).to_equal("Let me think about this...")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "After thinking, here's my answer.")
+                test.eq(response.metadata.thinking, "Let me think about this...")
             end)
 
             it("should use default timeout when not specified", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(options.timeout).to_equal(600) -- Default timeout
+                        test.eq(options.timeout, 600) -- Default timeout
                         return {
                             content = { { type = "text", text = "Default timeout" } },
                             stop_reason = "end_turn",
@@ -241,7 +246,8 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
+                assert(response.success)
             end)
         end)
 
@@ -250,10 +256,10 @@ local function define_tests()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.system).not_to_be_nil()
-                        expect(#payload.system).to_equal(1)
-                        expect(payload.system[1].type).to_equal("text")
-                        expect(payload.system[1].text).to_equal("You are a helpful assistant")
+                        test.not_nil(payload.system)
+                        test.eq(#payload.system, 1)
+                        test.eq(payload.system[1].type, "text")
+                        test.eq(payload.system[1].text, "You are a helpful assistant")
 
                         return {
                             content = { { type = "text", text = "I'll be helpful!" } },
@@ -273,8 +279,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I'll be helpful!")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I'll be helpful!")
             end)
 
             it("should handle function call and result messages", function()
@@ -288,17 +295,18 @@ local function define_tests()
                         for _, msg in ipairs(payload.messages) do
                             if msg.role == "assistant" and msg.content and #msg.content > 0 and msg.content[1].type == "tool_use" then
                                 found_assistant = true
-                                expect(msg.content[1].name).to_equal("get_weather")
-                                expect(msg.content[1].input.location).to_equal("NYC")
+                                test.eq(msg.content[1].name, "get_weather")
+                                test.eq(msg.content[1].input.location, "NYC")
                             elseif msg.role == "user" and msg.content and #msg.content > 0 and msg.content[1].type == "tool_result" then
                                 found_tool_result = true
-                                expect(msg.content[1].tool_use_id).to_equal("call_456")
-                                expect(msg.content[1].content).to_equal("Sunny, 75°F")
+                                local first = (msg :: any).content[1]
+                                test.eq(first.tool_use_id, "call-456")
+                                test.eq(first.content, "Sunny, 75°F")
                             end
                         end
 
-                        expect(found_assistant).to_be_true()
-                        expect(found_tool_result).to_be_true()
+                        test.is_true(found_assistant)
+                        test.is_true(found_tool_result)
 
                         return {
                             content = { { type = "text", text = "Based on the weather, it's nice!" } },
@@ -332,8 +340,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Based on the weather, it's nice!")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Based on the weather, it's nice!")
             end)
 
             it("should handle developer messages", function()
@@ -341,11 +350,11 @@ local function define_tests()
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
                         -- Verify developer message is appended to previous user message
-                        expect(#payload.messages).to_equal(1)
+                        test.eq(#payload.messages, 1)
                         local user_msg = payload.messages[1]
-                        expect(user_msg.role).to_equal("user")
-                        expect(user_msg.content[1].text).to_contain("Hello")
-                        expect(user_msg.content[1].text).to_contain(
+                        test.eq(user_msg.role, "user")
+                        test.contains(user_msg.content[1].text, "Hello")
+                        test.contains(user_msg.content[1].text, 
                             "<developer-instruction>Be concise</developer-instruction>")
 
                         return {
@@ -366,8 +375,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Hi!")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Hi!")
             end)
 
             it("should handle cache markers", function()
@@ -375,10 +385,10 @@ local function define_tests()
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
                         -- Verify cache control was added
-                        expect(payload.system).not_to_be_nil()
-                        expect(#payload.system).to_equal(2)
-                        expect(payload.system[1].cache_control).not_to_be_nil()
-                        expect(payload.system[1].cache_control.type).to_equal("ephemeral")
+                        test.not_nil(payload.system)
+                        test.eq(#payload.system, 2)
+                        test.not_nil(payload.system[1].cache_control)
+                        test.eq(payload.system[1].cache_control.type, "ephemeral")
 
                         return {
                             content = { { type = "text", text = "Cache enabled response" } },
@@ -405,9 +415,10 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.tokens.cache_write_tokens).to_equal(20)
-                expect(response.tokens.cache_read_tokens).to_equal(0)
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.tokens.cache_write_tokens, 20)
+                test.eq(response.tokens.cache_read_tokens, 0)
             end)
         end)
 
@@ -418,12 +429,12 @@ local function define_tests()
                     request = function(endpoint, payload, options)
                         -- Verify image content is processed correctly
                         local user_msg = payload.messages[1]
-                        expect(user_msg.content).not_to_be_nil()
-                        expect(#user_msg.content).to_equal(2)
-                        expect(user_msg.content[1].type).to_equal("text")
-                        expect(user_msg.content[2].type).to_equal("image")
-                        expect(user_msg.content[2].source.type).to_equal("base64")
-                        expect(user_msg.content[2].source.media_type).to_equal("image/jpeg")
+                        test.not_nil(user_msg.content)
+                        test.eq(#user_msg.content, 2)
+                        test.eq(user_msg.content[1].type, "text")
+                        test.eq(user_msg.content[2].type, "image")
+                        test.eq(user_msg.content[2].source.type, "base64")
+                        test.eq(user_msg.content[2].source.media_type, "image/jpeg")
 
                         return {
                             content = { { type = "text", text = "I can see the image." } },
@@ -455,8 +466,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I can see the image.")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I can see the image.")
             end)
 
             it("should handle URL images", function()
@@ -464,9 +476,9 @@ local function define_tests()
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
                         local user_msg = payload.messages[1]
-                        expect(user_msg.content[2].type).to_equal("image")
-                        expect(user_msg.content[2].source.type).to_equal("url")
-                        expect(user_msg.content[2].source.url).to_equal("https://example.com/image.jpg")
+                        test.eq(user_msg.content[2].type, "image")
+                        test.eq(user_msg.content[2].source.type, "url")
+                        test.eq(user_msg.content[2].source.url, "https://example.com/image.jpg")
 
                         return {
                             content = { { type = "text", text = "I can see the URL image." } },
@@ -497,8 +509,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I can see the URL image.")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I can see the URL image.")
             end)
         end)
 
@@ -507,9 +520,9 @@ local function define_tests()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.tools).not_to_be_nil()
-                        expect(#payload.tools).to_equal(1)
-                        expect(payload.tools[1].name).to_equal("get_weather")
+                        test.not_nil(payload.tools)
+                        test.eq(#payload.tools, 1)
+                        test.eq(payload.tools[1].name, "get_weather")
 
                         return {
                             content = {
@@ -551,14 +564,15 @@ local function define_tests()
 
                 local response = generate_handler.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I'll check the weather for you.")
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].id).to_equal("call_123")
-                expect(response.result.tool_calls[1].name).to_equal("get_weather")
-                expect(response.result.tool_calls[1].arguments.location).to_equal("NYC")
-                expect(response.result.tool_calls[1].registry_id).to_equal("weather_tool_123")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I'll check the weather for you.")
+                test.eq(#response.result.tool_calls, 1)
+                test.eq(response.result.tool_calls[1].id, "call-123")
+                test.eq(response.result.tool_calls[1].name, "get_weather")
+                test.eq(response.result.tool_calls[1].arguments.location, "NYC")
+                test.eq(response.result.tool_calls[1].registry_id, "weather_tool_123")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle multiple tool calls", function()
@@ -610,18 +624,19 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(#response.result.tool_calls).to_equal(2)
-                expect(response.result.tool_calls[1].name).to_equal("get_weather")
-                expect(response.result.tool_calls[2].name).to_equal("calculate")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(#response.result.tool_calls, 2)
+                test.eq(response.result.tool_calls[1].name, "get_weather")
+                test.eq(response.result.tool_calls[2].name, "calculate")
             end)
 
             it("should handle tool_choice auto", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("auto")
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "auto")
 
                         return {
                             content = { { type = "text", text = "I can help without tools." } },
@@ -644,17 +659,18 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(#response.result.tool_calls).to_equal(0)
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(#response.result.tool_calls, 0)
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should handle tool_choice none", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("none")
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "none")
 
                         return {
                             content = { { type = "text", text = "No tools used" } },
@@ -677,17 +693,18 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(#response.result.tool_calls).to_equal(0)
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(#response.result.tool_calls, 0)
             end)
 
             it("should handle specific tool choice", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(payload.tool_choice).not_to_be_nil()
-                        expect(payload.tool_choice.type).to_equal("tool")
-                        expect(payload.tool_choice.name).to_equal("calculate")
+                        test.not_nil(payload.tool_choice)
+                        test.eq(payload.tool_choice.type, "tool")
+                        test.eq(payload.tool_choice.name, "calculate")
 
                         return {
                             content = {
@@ -717,9 +734,10 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.result.tool_calls[1].registry_id).to_equal("calc_id")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.eq(response.result.tool_calls[1].registry_id, "calc_id")
             end)
 
             it("should handle invalid tool choice", function()
@@ -735,9 +753,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("not found")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "not found")
             end)
 
             it("should handle mixed content and tool use blocks", function()
@@ -773,11 +791,12 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I'll calculate that.  Calculation complete.")
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I'll calculate that.  Calculation complete.")
+                test.eq(#response.result.tool_calls, 1)
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.eq(response.finish_reason, "tool_call")
             end)
         end)
 
@@ -799,7 +818,7 @@ local function define_tests()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        expect(options.stream).to_be_true()
+                        test.is_true(options.stream)
                         return {
                             stream = {},
                             metadata = { request_id = "req_stream" }
@@ -832,8 +851,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Hello world")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "Hello world")
             end)
 
             it("should handle streaming tool calls", function()
@@ -893,11 +913,12 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("I will help.")
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.finish_reason).to_equal("tool_call")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "I will help.")
+                test.eq(#response.result.tool_calls, 1)
+                test.eq(response.result.tool_calls[1].name, "calculate")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle streaming thinking content", function()
@@ -951,12 +972,14 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("The answer is 42.")
-                expect(response.metadata.thinking).to_equal("Let me think... The answer is 42.")
-                expect(#response.metadata.thinking_blocks).to_equal(1)
-                expect(response.metadata.thinking_blocks[1].type).to_equal("thinking")
-                expect(response.metadata.thinking_blocks[1].thinking).to_equal("Let me think... The answer is 42.")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "The answer is 42.")
+                test.eq(response.metadata.thinking, "Let me think... The answer is 42.")
+                local blocks = response.metadata.thinking_blocks :: any
+                test.eq(#blocks, 1)
+                test.eq(blocks[1].type, "thinking")
+                test.eq(blocks[1].thinking, "Let me think... The answer is 42.")
             end)
 
             it("should handle streaming errors", function()
@@ -999,8 +1022,8 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error_message).to_contain("Stream error occurred")
+                test.is_false(response.success)
+                test.contains(response.error_message, "Stream error occurred")
             end)
         end)
 
@@ -1027,9 +1050,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_equal("Invalid API key")
+                test.is_false(response.success)
+                test.eq(response.error, "authentication_error")
+                test.eq(response.error_message, "Invalid API key")
             end)
 
             it("should handle rate limit errors", function()
@@ -1054,9 +1077,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("rate_limit_exceeded")
-                expect(response.error_message).to_equal("Rate limit exceeded")
+                test.is_false(response.success)
+                test.eq(response.error, "rate_limit_exceeded")
+                test.eq(response.error_message, "Rate limit exceeded")
             end)
 
             it("should handle model not found errors", function()
@@ -1081,9 +1104,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("not found")
+                test.is_false(response.success)
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "not found")
             end)
 
             it("should handle server errors", function()
@@ -1105,9 +1128,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("server error")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "server error")
             end)
 
             it("should handle connection failures", function()
@@ -1129,9 +1152,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_equal("Connection failed")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.eq(response.error_message, "Connection failed")
             end)
 
             it("should handle API key missing", function()
@@ -1153,9 +1176,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("API key")
+                test.is_false(response.success)
+                test.eq(response.error, "authentication_error")
+                test.contains(response.error_message, "API key")
             end)
 
             it("should handle JSON parsing errors", function()
@@ -1177,8 +1200,8 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_false()
-                expect(response.error_message).to_contain("Failed to parse Claude response")
+                test.is_false(response.success)
+                test.contains(response.error_message, "Failed to parse Claude response")
             end)
         end)
 
@@ -1211,24 +1234,25 @@ local function define_tests()
                 local response = generate_handler.handler(contract_args)
 
                 -- Verify contract compliance
-                expect(response.success).to_be_true()
-                expect(response.result).not_to_be_nil()
-                expect(response.result.content).not_to_be_nil()
-                expect(response.result.tool_calls).not_to_be_nil()
-                expect(type(response.result.tool_calls)).to_equal("table")
-                expect(response.tokens).not_to_be_nil()
-                expect(response.finish_reason).not_to_be_nil()
-                expect(response.metadata).not_to_be_nil()
+                test.is_true(response.success)
+                assert(response.success)
+                test.not_nil(response.result)
+                test.not_nil(response.result.content)
+                test.not_nil(response.result.tool_calls)
+                test.eq(type(response.result.tool_calls), "table")
+                test.not_nil(response.tokens)
+                test.not_nil(response.finish_reason)
+                test.not_nil(response.metadata)
 
                 -- Verify specific values
-                expect(response.result.content).to_equal("Test response")
-                expect(response.tokens.prompt_tokens).to_equal(5)
-                expect(response.tokens.completion_tokens).to_equal(3)
-                expect(response.tokens.total_tokens).to_equal(8)
-                expect(response.tokens.cache_write_tokens).to_equal(10)
-                expect(response.tokens.cache_read_tokens).to_equal(5)
-                expect(response.finish_reason).to_equal("stop")
-                expect(response.metadata.request_id).to_equal("req_format")
+                test.eq(response.result.content, "Test response")
+                test.eq(response.tokens.prompt_tokens, 5)
+                test.eq(response.tokens.completion_tokens, 3)
+                test.eq(response.tokens.total_tokens, 8)
+                test.eq(response.tokens.cache_write_tokens, 10)
+                test.eq(response.tokens.cache_read_tokens, 5)
+                test.eq(response.finish_reason, "stop")
+                test.eq(response.metadata.request_id, "req_format")
             end)
 
             it("should handle empty tool_calls array properly", function()
@@ -1252,10 +1276,11 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.tool_calls).not_to_be_nil()
-                expect(#response.result.tool_calls).to_equal(0)
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success)
+                assert(response.success)
+                test.not_nil(response.result.tool_calls)
+                test.eq(#response.result.tool_calls, 0)
+                test.eq(response.finish_reason, "stop")
             end)
 
             it("should preserve metadata from Claude responses", function()
@@ -1283,10 +1308,11 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.metadata.request_id).to_equal("req_meta123")
-                expect(response.metadata.processing_ms).to_equal(250)
-                expect(response.metadata.custom_field).to_equal("custom_value")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.metadata.request_id, "req_meta123")
+                test.eq(response.metadata.processing_ms, 250)
+                test.eq(response.metadata.custom_field, "custom_value")
             end)
         end)
 
@@ -1314,8 +1340,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.result.content, "")
             end)
 
             it("should handle missing usage information", function()
@@ -1338,8 +1365,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.tokens).to_be_nil()
+                test.is_true(response.success)
+                assert(response.success)
+                test.is_nil(response.tokens)
             end)
 
             it("should handle malformed tool call arguments", function()
@@ -1373,9 +1401,10 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].arguments).to_equal("not an object")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(#response.result.tool_calls, 1)
+                test.eq(response.result.tool_calls[1].arguments, "not an object")
             end)
 
             it("should handle stop_sequence finish reason", function()
@@ -1402,8 +1431,9 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_args)
-                expect(response.success).to_be_true()
-                expect(response.finish_reason).to_equal("stop")
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(response.finish_reason, "stop")
             end)
         end)
     end)

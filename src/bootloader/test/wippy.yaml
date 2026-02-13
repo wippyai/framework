@@ -1,0 +1,3 @@
+organization: wippy
+module: bootloader-test
+description: Test stub for bootloader module

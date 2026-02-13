@@ -173,7 +173,7 @@ local function define_tests()
             -- Create a mock registry object
             local mock_registry = {
                 get = function(id)
-                    local entry = registry_entries[id]
+                    local entry = (registry_entries :: any)[id]
                     if entry then
                         return entry
                     else
@@ -184,7 +184,7 @@ local function define_tests()
                 find = function(query)
                     local results = {}
 
-                    for id, entry in pairs(registry_entries) do
+                    for id, entry in pairs(registry_entries :: any) do
                         local matches = true
 
                         -- Check kind
@@ -199,7 +199,7 @@ local function define_tests()
 
                         -- Check namespace
                         if query[".ns"] then
-                            local ns = id:match("^([^:]+):")
+                            local ns = tostring(id):match("^([^:]+):")
                             if not ns or not ns:match(query[".ns"]) then
                                 matches = false
                             end
@@ -224,96 +224,96 @@ local function define_tests()
         end)
 
         it("should sanitize tool names", function()
-            expect(tool_resolver.sanitize_name("GetWeather")).to_equal("get_weather")
-            expect(tool_resolver.sanitize_name("system:weather")).to_equal("weather")
-            expect(tool_resolver.sanitize_name("Math-Calculator")).to_equal("math_calculator")
-            expect(tool_resolver.sanitize_name("Text Formatter")).to_equal("text_formatter")
-            expect(tool_resolver.sanitize_name("__testName")).to_equal("test_name")
-            expect(tool_resolver.sanitize_name("_leadingUnderscore")).to_equal("leading_underscore")
+            test.eq(tool_resolver.sanitize_name("GetWeather"), "get_weather")
+            test.eq(tool_resolver.sanitize_name("system:weather"), "weather")
+            test.eq(tool_resolver.sanitize_name("Math-Calculator"), "math_calculator")
+            test.eq(tool_resolver.sanitize_name("Text Formatter"), "text_formatter")
+            test.eq(tool_resolver.sanitize_name("__testName"), "test_name")
+            test.eq(tool_resolver.sanitize_name("_leadingUnderscore"), "leading_underscore")
         end)
 
         it("should handle composite namespaces correctly", function()
-            expect(tool_resolver.sanitize_name("app.tools:read")).to_equal("read")
-            expect(tool_resolver.sanitize_name("app.tools:read_multi")).to_equal("read_multi")
-            expect(tool_resolver.sanitize_name("deep.nested.ns:someFunction")).to_equal("some_function")
+            test.eq(tool_resolver.sanitize_name("app.tools:read"), "read")
+            test.eq(tool_resolver.sanitize_name("app.tools:read_multi"), "read_multi")
+            test.eq(tool_resolver.sanitize_name("deep.nested.ns:someFunction"), "some_function")
 
             -- Get the tool schema and check the name
             local tool, err = tool_resolver.get_tool_schema("app.tools:read")
-            expect(err).to_be_nil()
-            expect(tool.name).to_equal("read")
+            test.is_nil(err)
+            test.eq(tool.name, "read")
 
             tool, err = tool_resolver.get_tool_schema("app.tools:read_multi")
-            expect(err).to_be_nil()
-            expect(tool.name).to_equal("read_multi")
+            test.is_nil(err)
+            test.eq(tool.name, "read_multi")
         end)
 
         it("should get tool schema", function()
             local tool, err = tool_resolver.get_tool_schema("system:weather")
 
-            expect(err).to_be_nil()
-            expect(tool).not_to_be_nil()
-            expect(tool.id).to_equal("system:weather")
-            expect(tool.name).to_equal("get_weather") -- Uses llm_alias
-            expect(tool.description).to_equal("Get weather information by location")
-            expect(tool.schema).not_to_be_nil()
-            expect(tool.schema.properties.location).not_to_be_nil()
-            expect(tool.schema.properties.units).not_to_be_nil()
-            expect(tool.schema.required[1]).to_equal("location")
+            test.is_nil(err)
+            test.not_nil(tool)
+            test.eq(tool.id, "system:weather")
+            test.eq(tool.name, "get_weather") -- Uses llm_alias
+            test.eq(tool.description, "Get weather information by location")
+            test.not_nil(tool.schema)
+            test.not_nil(tool.schema.properties.location)
+            test.not_nil(tool.schema.properties.units)
+            test.eq(tool.schema.required[1], "location")
         end)
 
         it("should handle missing tools", function()
             local tool, err = tool_resolver.get_tool_schema("nonexistent:tool")
 
-            expect(tool).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Tool not found")).not_to_be_nil()
+            test.is_nil(tool)
+            test.not_nil(err)
+            test.not_nil(err:match("Tool not found"))
         end)
 
         it("should reject non-tool entries", function()
             local tool, err = tool_resolver.get_tool_schema("notool:example")
 
-            expect(tool).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Invalid tool type")).not_to_be_nil()
+            test.is_nil(tool)
+            test.not_nil(err)
+            test.not_nil(err:match("Invalid tool type"))
         end)
 
         it("should handle invalid schemas", function()
             local tool, err = tool_resolver.get_tool_schema("badschema:tool")
 
-            expect(tool).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Invalid schema format")).not_to_be_nil()
+            test.is_nil(tool)
+            test.not_nil(err)
+            test.not_nil(err:match("Invalid schema format"))
         end)
 
         it("should handle empty schemas", function()
             local tool, err = tool_resolver.get_tool_schema("empty:tool")
 
-            expect(err).to_be_nil()
-            expect(tool).not_to_be_nil()
-            expect(tool.schema.properties.placeholder).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(tool)
+            test.not_nil(tool.schema.properties.placeholder)
         end)
 
         it("should create default schema for tools without schema", function()
             local tool, err = tool_resolver.get_tool_schema("noschema:tool")
 
-            expect(err).to_be_nil()
-            expect(tool).not_to_be_nil()
-            expect(tool.schema).not_to_be_nil()
-            expect(tool.schema.properties.placeholder).not_to_be_nil()
+            test.is_nil(err)
+            test.not_nil(tool)
+            test.not_nil(tool.schema)
+            test.not_nil(tool.schema.properties.placeholder)
         end)
 
         it("should handle description priority correctly", function()
             -- Regular description
             local tool, _ = tool_resolver.get_tool_schema("tools:calculator")
-            expect(tool.description).to_equal("Perform calculations")
+            test.eq(tool.description, "Perform calculations")
 
             -- Comment as fallback
             tool, _ = tool_resolver.get_tool_schema("utils:formatter")
-            expect(tool.description).to_equal("Format text with various options")
+            test.eq(tool.description, "Format text with various options")
 
             -- Typo in description field
             tool, _ = tool_resolver.get_tool_schema("typo:tool")
-            expect(tool.description).to_equal("Tool with typo in description field")
+            test.eq(tool.description, "Tool with typo in description field")
         end)
 
         it("should get multiple tool schemas", function()
@@ -323,10 +323,10 @@ local function define_tests()
                 "nonexistent:tool"
             })
 
-            expect(tools["system:weather"]).not_to_be_nil()
-            expect(tools["tools:calculator"]).not_to_be_nil()
-            expect(tools["nonexistent:tool"]).to_be_nil()
-            expect(errors["nonexistent:tool"]).not_to_be_nil()
+            test.not_nil(tools["system:weather"])
+            test.not_nil(tools["tools:calculator"])
+            test.is_nil(tools["nonexistent:tool"])
+            test.not_nil(errors["nonexistent:tool"])
         end)
 
         it("should resolve tool name to ID", function()
@@ -335,48 +335,48 @@ local function define_tests()
                 "system:weather",
                 "tools:calculator"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("system:weather")
+            test.is_nil(err)
+            test.eq(id, "system:weather")
 
             -- Exact ID match
             id, err = tool_resolver.resolve_name_to_id("system:weather", {
                 "system:weather",
                 "tools:calculator"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("system:weather")
+            test.is_nil(err)
+            test.eq(id, "system:weather")
 
             -- Exact name match
             id, err = tool_resolver.resolve_name_to_id("math calculator", {
                 "system:weather",
                 "tools:calculator"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("tools:calculator")
+            test.is_nil(err)
+            test.eq(id, "tools:calculator")
 
             -- Sanitized name match
             id, err = tool_resolver.resolve_name_to_id("math_calculator", {
                 "system:weather",
                 "tools:calculator"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("tools:calculator")
+            test.is_nil(err)
+            test.eq(id, "tools:calculator")
 
             -- Partial match
             id, err = tool_resolver.resolve_name_to_id("calculator", {
                 "system:weather",
                 "tools:calculator"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("tools:calculator")
+            test.is_nil(err)
+            test.eq(id, "tools:calculator")
 
             -- No match
             id, err = tool_resolver.resolve_name_to_id("nonexistent", {
                 "system:weather",
                 "tools:calculator"
             })
-            expect(id).to_be_nil()
-            expect(err).not_to_be_nil()
+            test.is_nil(id)
+            test.not_nil(err)
         end)
 
         it("should enforce stable sort order for tools by name", function()
@@ -415,7 +415,7 @@ local function define_tests()
             local old_registry = tool_resolver._registry
             tool_resolver._registry = {
                 get = function(id)
-                    return registry_entries[id]
+                    return (registry_entries :: any)[id]
                 end,
                 find = function(query)
                     local results = {}
@@ -430,13 +430,13 @@ local function define_tests()
 
             -- Find all tools
             local tools, err = tool_resolver.find_tools()
-            expect(err).to_be_nil()
-            expect(#tools).to_equal(3)
+            test.is_nil(err)
+            test.eq(#tools, 3)
 
             -- Verify sort order
-            expect(tools[1].name).to_equal("a_tool")
-            expect(tools[2].name).to_equal("m_tool")
-            expect(tools[3].name).to_equal("z_tool")
+            test.eq(tools[1].name, "a_tool")
+            test.eq(tools[2].name, "m_tool")
+            test.eq(tools[3].name, "z_tool")
 
             -- Reset registry
             tool_resolver._registry = old_registry
@@ -468,7 +468,7 @@ local function define_tests()
             local old_registry = tool_resolver._registry
             tool_resolver._registry = {
                 get = function(id)
-                    return registry_entries[id]
+                    return (registry_entries :: any)[id]
                 end,
                 find = function(query)
                     local results = {}
@@ -489,13 +489,13 @@ local function define_tests()
             -- Find all tools - should fail with error
             -- Looks like empty criteria should returns all tools
             local tools, err = tool_resolver.find_tools()
-            expect(tools).not_to_be_nil()
-            expect(err).to_be_nil()
+            test.not_nil(tools)
+            test.is_nil(err)
 
             -- local tools, err = tool_resolver.find_tools()
-            -- expect(tools).to_be_nil()
-            -- expect(err).not_to_be_nil()
-            -- expect(err:match("Duplicate tool name")).not_to_be_nil()
+            -- test.is_nil(tools)
+            -- test.not_nil(err)
+            -- test.not_nil(err:match("Duplicate tool name"))
 
             -- Reset registry
             tool_resolver._registry = old_registry
@@ -550,17 +550,17 @@ local function define_tests()
             local old_registry = tool_resolver._registry
             tool_resolver._registry = {
                 get = function(id)
-                    return registry_entries[id]
+                    return (registry_entries :: any)[id]
                 end,
                 find = function(query)
                     local results = {}
-                    for id, entry in pairs(registry_entries) do
+                    for id, entry in pairs(registry_entries :: any) do
                         if entry.meta and entry.meta.type == "tool" then
                             local matches = true
 
                             -- Check namespace if specified
                             if query[".ns"] then
-                                local ns = id:match("^([^:]+):")
+                                local ns = tostring(id):match("^([^:]+):")
                                 if not ns or not ns:match(query[".ns"]) then
                                     matches = false
                                 end
@@ -577,12 +577,12 @@ local function define_tests()
 
             -- Find all tools
             local tools, err = tool_resolver.find_tools()
-            expect(err).to_be_nil()
-            expect(#tools > 0).to_be_true()
+            test.is_nil(err)
+            test.is_true(#tools > 0)
 
             -- Find by namespace
             tools, err = tool_resolver.find_tools({ namespace = "^system" })
-            expect(err).to_be_nil()
+            test.is_nil(err)
 
             local found_weather = false
             for _, tool in ipairs(tools) do
@@ -591,12 +591,12 @@ local function define_tests()
                     break
                 end
             end
-            expect(found_weather).to_be_true()
+            test.is_true(found_weather)
 
             -- Empty result
             tools, err = tool_resolver.find_tools({ namespace = "nonexistent" })
-            expect(err).to_be_nil()
-            expect(#tools).to_equal(0)
+            test.is_nil(err)
+            test.eq(#tools, 0)
 
             -- Reset registry
             tool_resolver._registry = old_registry
@@ -608,15 +608,15 @@ local function define_tests()
                 "app.tools:read",
                 "app.tools:read_multi"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("app.tools:read")
+            test.is_nil(err)
+            test.eq(id, "app.tools:read")
 
             id, err = tool_resolver.resolve_name_to_id("read_multi", {
                 "app.tools:read",
                 "app.tools:read_multi"
             })
-            expect(err).to_be_nil()
-            expect(id).to_equal("app.tools:read_multi")
+            test.is_nil(err)
+            test.eq(id, "app.tools:read_multi")
         end)
 
 
@@ -628,28 +628,28 @@ local function define_tests()
                 "utils:formatter"
             })
 
-            expect(errors).not_to_be_nil()
-            expect(metas).not_to_be_nil()
+            test.not_nil(errors)
+            test.not_nil(metas)
 
             -- Check that we got the raw metadata
-            expect(metas["system:weather"]).not_to_be_nil()
-            expect(metas["system:weather"].type).to_equal("tool")
-            expect(metas["system:weather"].name).to_equal("Weather Service")
-            expect(metas["system:weather"].llm_alias).to_equal("get_weather")
-            expect(metas["system:weather"].description).to_equal("Get weather information by location")
+            test.not_nil(metas["system:weather"])
+            test.eq(metas["system:weather"].type, "tool")
+            test.eq(metas["system:weather"].name, "Weather Service")
+            test.eq(metas["system:weather"].llm_alias, "get_weather")
+            test.eq(metas["system:weather"].description, "Get weather information by location")
 
-            expect(metas["tools:calculator"]).not_to_be_nil()
-            expect(metas["tools:calculator"].type).to_equal("tool")
-            expect(metas["tools:calculator"].name).to_equal("Math Calculator")
+            test.not_nil(metas["tools:calculator"])
+            test.eq(metas["tools:calculator"].type, "tool")
+            test.eq(metas["tools:calculator"].name, "Math Calculator")
 
-            expect(metas["utils:formatter"]).not_to_be_nil()
-            expect(metas["utils:formatter"].type).to_equal("tool")
-            expect(metas["utils:formatter"].name).to_equal("Text Formatter")
+            test.not_nil(metas["utils:formatter"])
+            test.eq(metas["utils:formatter"].type, "tool")
+            test.eq(metas["utils:formatter"].name, "Text Formatter")
 
             -- No errors for valid tools
-            expect(errors["system:weather"]).to_be_nil()
-            expect(errors["tools:calculator"]).to_be_nil()
-            expect(errors["utils:formatter"]).to_be_nil()
+            test.is_nil(errors["system:weather"])
+            test.is_nil(errors["tools:calculator"])
+            test.is_nil(errors["utils:formatter"])
         end)
 
         it("should handle errors in get_tools_meta", function()
@@ -661,27 +661,27 @@ local function define_tests()
             })
 
             -- Valid tool should be present
-            expect(metas["system:weather"]).not_to_be_nil()
-            expect(errors["system:weather"]).to_be_nil()
+            test.not_nil(metas["system:weather"])
+            test.is_nil(errors["system:weather"])
 
             -- Missing tool should have error
-            expect(metas["nonexistent:tool"]).to_be_nil()
-            expect(errors["nonexistent:tool"]).not_to_be_nil()
+            test.is_nil(metas["nonexistent:tool"])
+            test.not_nil(errors["nonexistent:tool"])
 
             -- Non-tool entry should have error
-            expect(metas["notool:example"]).to_be_nil()
-            expect(errors["notool:example"]).not_to_be_nil()
-            expect(errors["notool:example"]:match("Invalid tool type")).not_to_be_nil()
+            test.is_nil(metas["notool:example"])
+            test.not_nil(errors["notool:example"])
+            test.not_nil(errors["notool:example"]:match("Invalid tool type"))
         end)
 
         it("should return empty table for empty input in get_tools_meta", function()
             local metas, errors = tool_resolver.get_tools_meta({})
-            expect(metas).not_to_be_nil()
-            expect(next(metas)).to_be_nil() -- Empty table
+            test.not_nil(metas)
+            test.is_nil(next(metas)) -- Empty table
 
-            metas, errors = tool_resolver.get_tools_meta(nil)
-            expect(metas).not_to_be_nil()
-            expect(next(metas)).to_be_nil() -- Empty table
+            metas, errors = tool_resolver.get_tools_meta(nil :: {string})
+            test.not_nil(metas)
+            test.is_nil(next(metas)) -- Empty table
         end)
     end)
 end

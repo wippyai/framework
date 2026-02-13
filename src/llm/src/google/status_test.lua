@@ -25,8 +25,8 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.model).not_to_be_nil()
-                        expect(args.options.method).to_equal("GET")
+                        tests.not_nil(args.model)
+                        tests.eq(args.options.method, "GET")
 
                         return {
                             status_code = 200,
@@ -44,11 +44,11 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context).not_to_be_nil()
+                        tests.not_nil(context)
                         return self
                     end,
                     open = function(self, client_id)
-                        expect(client_id).to_equal("test-client-id")
+                        tests.eq(client_id, "test-client-id")
                         return mock_client_instance, nil
                     end
                 }
@@ -60,14 +60,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
-                expect(response.message).to_equal("Google API is responding normally")
+                tests.is_true(response.success)
+                tests.eq(response.status, "healthy")
+                tests.eq(response.message, "Google API is responding normally")
             end)
 
             it("should resolve API configuration from context", function()
@@ -101,13 +101,13 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context.api_key).to_equal("custom-api-key")
-                        expect(context.location).to_equal("us-central1")
-                        expect(context.project_id).to_equal("test-project")
+                        tests.eq(context.api_key, "custom-api-key")
+                        tests.eq(context.location, "us-central1")
+                        tests.eq(context.project_id, "test-project")
                         return self
                     end,
                     open = function(self, client_id)
-                        expect(client_id).to_equal("custom-client-id")
+                        tests.eq(client_id, "custom-client-id")
                         return mock_client_instance, nil
                     end
                 }
@@ -119,13 +119,13 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
+                tests.is_true(response.success)
+                tests.eq(response.status, "healthy")
             end)
         end)
 
@@ -165,14 +165,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_equal("Invalid API key provided")
+                tests.is_false(response.success)
+                tests.eq(response.status, "unhealthy")
+                tests.eq(response.message, "Invalid API key provided")
             end)
 
             it("should return unhealthy for network errors", function()
@@ -210,14 +210,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_equal("Connection failed")
+                tests.is_false(response.success)
+                tests.eq(response.status, "unhealthy")
+                tests.eq(response.message, "Connection failed")
             end)
 
             it("should return unhealthy for forbidden errors", function()
@@ -255,14 +255,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_equal("Forbidden - insufficient permissions")
+                tests.is_false(response.success)
+                tests.eq(response.status, "unhealthy")
+                tests.eq(response.message, "Forbidden - insufficient permissions")
             end)
 
             it("should return unhealthy for not found errors", function()
@@ -300,14 +300,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_equal("Model not found")
+                tests.is_false(response.success)
+                tests.eq(response.status, "unhealthy")
+                tests.eq(response.message, "Model not found")
             end)
         end)
 
@@ -347,14 +347,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Rate limited but service is available")
+                tests.is_false(response.success)
+                tests.eq(response.status, "degraded")
+                tests.eq(response.message, "Rate limited but service is available")
             end)
 
             it("should return degraded for internal server error (500)", function()
@@ -392,14 +392,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                tests.is_false(response.success)
+                tests.eq(response.status, "degraded")
+                tests.eq(response.message, "Service experiencing issues")
             end)
 
             it("should return degraded for service unavailable (503)", function()
@@ -437,14 +437,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                tests.is_false(response.success)
+                tests.eq(response.status, "degraded")
+                tests.eq(response.message, "Service experiencing issues")
             end)
 
             it("should return degraded for bad gateway (502)", function()
@@ -482,14 +482,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                tests.is_false(response.success)
+                tests.eq(response.status, "degraded")
+                tests.eq(response.message, "Service experiencing issues")
             end)
 
             it("should return degraded for gateway timeout (504)", function()
@@ -527,14 +527,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                tests.is_false(response.success)
+                tests.eq(response.status, "degraded")
+                tests.eq(response.message, "Service experiencing issues")
             end)
         end)
 
@@ -556,14 +556,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal(500)
-                expect(response.message).to_contain("Failed to get client contract")
+                tests.is_false(response.success)
+                tests.eq(response.status, 500)
+                tests.contains(response.message, "Failed to get client contract")
             end)
 
             it("should handle client binding error", function()
@@ -592,14 +592,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal(500)
-                expect(response.message).to_contain("Failed to open client binding")
+                tests.is_false(response.success)
+                tests.eq(response.status, 500)
+                tests.contains(response.message, "Failed to open client binding")
             end)
         end)
 
@@ -639,14 +639,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_equal("Bad request")
+                tests.is_false(response.success)
+                tests.eq(response.status, "unhealthy")
+                tests.eq(response.message, "Bad request")
             end)
 
             it("should handle response without message field", function()
@@ -683,14 +683,14 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                tests.is_false(response.success)
+                tests.eq(response.status, "degraded")
+                tests.eq(response.message, "Service experiencing issues")
             end)
 
             it("should handle empty context", function()
@@ -720,7 +720,7 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(type(context)).to_equal("table")
+                        tests.eq(type(context), "table")
                         return self
                     end,
                     open = function(self, client_id)
@@ -735,13 +735,13 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
+                tests.is_true(response.success)
+                tests.eq(response.status, "healthy")
             end)
 
             it("should handle nil context gracefully", function()
@@ -771,7 +771,7 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(type(context)).to_equal("table")
+                        tests.eq(type(context), "table")
                         return self
                     end,
                     open = function(self, client_id)
@@ -786,13 +786,13 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 local response = status.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
+                tests.is_true(response.success)
+                tests.eq(response.status, "healthy")
             end)
 
             it("should use GET method for health check request", function()
@@ -809,7 +809,7 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.options.method).to_equal("GET")
+                        tests.eq(args.options.method, "GET")
                         method_verified = true
 
                         return {
@@ -838,12 +838,12 @@ local function define_tests()
                 }
 
                 local contract_args = {
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 }
 
                 status.handler(contract_args)
 
-                expect(method_verified).to_be_true()
+                tests.is_true(method_verified)
             end)
 
             it("should handle all 5xx status codes as degraded", function()
@@ -884,13 +884,13 @@ local function define_tests()
                     }
 
                     local contract_args = {
-                        model = "gemini-1.5-pro"
+                        model = "gemini-2.5-pro"
                     }
 
                     local response = status.handler(contract_args)
 
-                    expect(response.status).to_equal("degraded")
-                    expect(response.message).to_equal("Service experiencing issues")
+                    tests.eq(response.status, "degraded")
+                    tests.eq(response.message, "Service experiencing issues")
                 end
             end)
 
@@ -932,12 +932,12 @@ local function define_tests()
                     }
 
                     local contract_args = {
-                        model = "gemini-1.5-pro"
+                        model = "gemini-2.5-pro"
                     }
 
                     local response = status.handler(contract_args)
 
-                    expect(response.status).to_equal("unhealthy")
+                    tests.eq(response.status, "unhealthy")
                 end
             end)
         end)

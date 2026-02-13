@@ -273,6 +273,24 @@ function pages.get(page_id)
     return page
 end
 
+-- Resolve a page URL to an absolute base URL with trailing slash
+function pages.resolve_base_url(page)
+    local base_url = page.url or ""
+
+    local entry = registry.get("wippy.views:page_registry")
+    local origin = entry and entry.meta and entry.meta.public_origin or ""
+
+    if origin ~= "" and base_url ~= "" and not base_url:match("^https?://") then
+        base_url = origin .. base_url
+    end
+
+    if base_url ~= "" and not base_url:match("/$") then
+        base_url = base_url .. "/"
+    end
+
+    return base_url
+end
+
 -- Check if the current actor can access a page
 function pages.can_access(page)
     if not page.secure then

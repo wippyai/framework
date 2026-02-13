@@ -7,25 +7,53 @@ actor._process = nil
 
 -- Internal constants
 local INTERNAL_CHANNEL_BUFFER = 100
-local INITIAL_WAIT_CAPACITY = 10
+
+type ExitSignal = {
+    _actor_exit: boolean,
+    result: any,
+}
+
+type NextSignal = {
+    _actor_next: boolean,
+    topic: string?,
+    payload: any?,
+}
+
+type InternalMessage = {
+    type: string,
+    topic: string?,
+    payload: any?,
+    from: string?,
+}
+
+type ChannelInfo = {
+    chan: any,
+    handler: (any, any, any, any) -> any,
+}
+
+type SelectResult = {
+    ok: boolean,
+    channel: any?,
+    value: any?,
+}
 
 -- Actor control flow helpers
-local function is_exit(result)
+local function is_exit(result: any): boolean
     return type(result) == "table" and result._actor_exit == true
 end
 
-local function is_next(result)
+local function is_next(result: any): boolean
     return type(result) == "table" and result._actor_next == true
 end
 
-function actor.exit(result)
+function actor.exit(result: any): ExitSignal
     return {
         _actor_exit = true,
         result = result
     }
 end
 
-function actor.next(topic, payload)
+function actor.next(topic: string?, payload: any?): NextSignal
     return {
         _actor_next = true,
         topic = topic,
@@ -33,7 +61,7 @@ function actor.next(topic, payload)
     }
 end
 
-local function get_process()
+local function get_process(): any
     if actor._process then
         return actor._process
     end
@@ -47,31 +75,31 @@ local function get_process()
     }
 end
 
-function actor.new(initial_state, handlers)
+function actor.new(initial_state: any, handlers: any): any
     if type(handlers) ~= "table" then
         error("handlers must be a table")
     end
 
-    local function run_loop(state)
+    local function run_loop(state: any): any
         local proc = get_process()
         local inbox = proc.inbox()
         local events = proc.events()
         local internal_channel = channel.new(INTERNAL_CHANNEL_BUFFER)
 
         -- Extract topic handlers from main handlers
-        local topic_handlers = {}
+        local topic_handlers: {[string]: (any, any, any, any) -> any} = {}
         for name, handler in pairs(handlers) do
             if type(handler) == "function" and not name:match("^__") then
                 topic_handlers[name] = handler
             end
         end
 
-        -- Channel management - pre-allocate for efficiency
-        local registered_channels = {}
-        local channel_to_id = {}
+        -- Channel management
+        local registered_channels: {[string]: ChannelInfo} = {}
+        local channel_to_id: {[any]: string} = {}
 
-        -- Wait functionality state - efficient allocation
-        local topic_listeners = {} -- topic -> process.listen() channel
+        -- Wait functionality state
+        local topic_listeners: {[string]: any} = {}
 
         -- Initial select cases
         local select_cases = {
@@ -81,7 +109,6 @@ function actor.new(initial_state, handlers)
         }
 
         local function rebuild_select_cases()
-            -- Rebuild select cases efficiently
             select_cases = {
                 inbox:case_receive(),
                 events:case_receive(),
@@ -93,7 +120,7 @@ function actor.new(initial_state, handlers)
             end
         end
 
-        local function register_channel(chan, handler)
+        local function register_channel(chan: any, handler: (any, any, any, any) -> any): boolean
             if not chan or type(handler) ~= "function" then
                 error("Channel and handler function must be provided")
             end
@@ -105,7 +132,7 @@ function actor.new(initial_state, handlers)
             return true
         end
 
-        local function unregister_channel(chan)
+        local function unregister_channel(chan: any): boolean
             if not chan then return false end
 
             local channel_id = tostring(chan)
@@ -118,7 +145,7 @@ function actor.new(initial_state, handlers)
             return false
         end
 
-        local function add_handler(topic, handler)
+        local function add_handler(topic: string, handler: (any, any, any, any) -> any): boolean
             if not topic or type(handler) ~= "function" then
                 error("Topic name and handler function must be provided")
             end
@@ -126,7 +153,7 @@ function actor.new(initial_state, handlers)
             return true
         end
 
-        local function remove_handler(topic)
+        local function remove_handler(topic: string): boolean
             if topic_handlers[topic] then
                 topic_handlers[topic] = nil
                 return true
@@ -134,7 +161,7 @@ function actor.new(initial_state, handlers)
             return false
         end
 
-        local function async(fn)
+        local function async(fn: () -> any): boolean
             coroutine.spawn(function()
                 local result = fn()
 
@@ -152,7 +179,7 @@ function actor.new(initial_state, handlers)
         end
 
         -- Ensure shared listener exists for topic
-        local function ensure_topic_listener(topic)
+        local function ensure_topic_listener(topic: string)
             if not topic_listeners[topic] then
                 local listener = process.listen(topic)
                 topic_listeners[topic] = listener
@@ -160,23 +187,20 @@ function actor.new(initial_state, handlers)
         end
 
         -- Wait for message on topic with timeout
-        local function wait(topic, timeout)
+        local function wait(topic: string, timeout: number): (any, string?)
             if not topic then
                 return nil, "Invalid topic"
             end
 
-            -- Get or create shared listener for topic
             ensure_topic_listener(topic)
 
             local timer = time.timer(timeout)
 
-            -- Direct select on shared listener - first caller wins
             local result = channel.select({
                 topic_listeners[topic]:case_receive(),
                 timer:channel():case_receive()
             })
 
-            -- Cleanup
             timer:stop()
 
             if result.channel == timer:channel() then
@@ -224,12 +248,12 @@ function actor.new(initial_state, handlers)
             end
         end
 
-        -- Expose state methods - efficient assignment
+        -- Expose state methods
         state.register_channel = register_channel
         state.unregister_channel = unregister_channel
         state.add_handler = add_handler
         state.remove_handler = remove_handler
-        state.next = next_topic
+        state.next = actor.next
         state.async = async
         state.wait = wait
 
@@ -252,7 +276,7 @@ function actor.new(initial_state, handlers)
 
         -- Main actor loop
         while true do
-            local result = channel.select(select_cases)
+            local result: SelectResult = channel.select(select_cases)
             if not result.ok then
                 break
             end

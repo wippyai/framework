@@ -1,5 +1,18 @@
 local registry = require("registry")
 
+type BootloaderMeta = {
+    type: string,
+    order: number?,
+    description: string?,
+    requires: any?,
+}
+
+type BootloaderEntry = {
+    id: string,
+    kind: string,
+    meta: BootloaderMeta,
+}
+
 -- Base criteria for finding bootloaders
 local BASE_BOOTLOADER_CRITERIA = {
     [".kind"] = "function.lua",
@@ -9,7 +22,7 @@ local BASE_BOOTLOADER_CRITERIA = {
 local bootloaders = {}
 
 -- Find all bootloaders with optional filtering
-function bootloaders.find(options)
+function bootloaders.find(options: {[string]: any}?): ({BootloaderEntry}?, string?)
     options = options or {}
 
     local criteria = {}
@@ -38,11 +51,11 @@ function bootloaders.find(options)
         return a.id < b.id
     end)
 
-    return entries
+    return entries :: {BootloaderEntry}
 end
 
 -- Get specific bootloader by ID
-function bootloaders.get(id)
+function bootloaders.get(id: string): (BootloaderEntry?, string?)
     if not id or id == "" then
         return nil, "Bootloader ID is required"
     end
@@ -52,7 +65,7 @@ function bootloaders.get(id)
         return nil, "Failed to get bootloader: " .. tostring(err)
     end
 
-    return entry
+    return entry :: BootloaderEntry
 end
 
 return bootloaders

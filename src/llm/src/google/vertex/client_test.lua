@@ -20,8 +20,8 @@ local function define_tests()
 
                 local response = client.request({})
 
-                expect(response.status_code).to_equal(401)
-                expect(response.message).to_equal("Google OAuth2 token is missing")
+                tests.eq(response.status_code, 401)
+                tests.eq(response.message, "Google OAuth2 token is missing")
             end)
 
             it("should use OAuth2 token from config", function()
@@ -49,13 +49,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer test-oauth2-token")
+                        tests.eq(options.headers["Authorization"], "Bearer test-oauth2-token")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -87,13 +87,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(method).to_equal("POST")
+                        tests.eq(method, "POST")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -123,14 +123,14 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(method).to_equal("GET")
-                        expect(options.body).to_be_nil()
+                        tests.eq(method, "GET")
+                        tests.is_nil(options.body)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     options = { method = "GET" }
                 })
             end)
@@ -172,17 +172,17 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        local body = json.decode(options.body)
-                        expect(body.contents[1].role).to_equal("user")
-                        expect(body.contents[1].parts[1].text).to_equal("Hello")
-                        expect(body.generationConfig.temperature).to_equal(0.7)
-                        expect(body.generationConfig.maxOutputTokens).to_equal(100)
+                        local body = json.decode(tostring(options.body))
+                        tests.eq(body.contents[1].role, "user")
+                        tests.eq(body.contents[1].parts[1].text, "Hello")
+                        tests.eq(body.generationConfig.temperature, 0.7)
+                        tests.eq(body.generationConfig.maxOutputTokens, 100)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     payload = test_payload
                 })
@@ -213,13 +213,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.body).to_equal(json.encode({}))
+                        tests.eq(options.body, json.encode({}))
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -249,13 +249,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.body).to_be_nil()
+                        tests.is_nil(options.body)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     options = { method = "GET" },
                     payload = { should = "be_ignored" }
                 })
@@ -288,13 +288,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models/gemini-1.5-pro:generateContent")
+                        tests.eq(url, "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-1.5-pro",
+                    model = "gemini-2.5-pro",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -324,13 +324,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models/gemini-1.5-pro")
+                        tests.eq(url, "https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-1.5-pro"
+                    model = "gemini-2.5-pro"
                 })
             end)
 
@@ -359,7 +359,7 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models")
+                        tests.eq(url, "https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models")
                         return nil
                     end
                 }
@@ -392,13 +392,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://europe-west1-aiplatform.googleapis.com/v1/projects/custom-project/locations/europe-west1/publishers/google/models/gemini-pro:generateContent")
+                        tests.eq(url, "https://europe-west1-aiplatform.googleapis.com/v1/projects/custom-project/locations/europe-west1/publishers/google/models/gemini-2.5-flash:generateContent")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     options = {
                         project = "custom-project",
@@ -428,13 +428,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://custom.api.com/v2/projects/test-project/locations/us-central1/publishers/google/models/gemini-pro:generateContent")
+                        tests.eq(url, "https://custom.api.com/v2/projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     options = {
                         base_url = "https://custom.api.com/v2"
@@ -467,13 +467,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(url).to_equal("https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models/gemini-pro:otherEndpoint")
+                        tests.eq(url, "https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:otherEndpoint")
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "otherEndpoint"
                 })
             end)
@@ -505,13 +505,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.timeout).to_equal(120)
+                        tests.eq(options.timeout, 120)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
             end)
@@ -541,13 +541,13 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        expect(options.timeout).to_equal(180)
+                        tests.eq(options.timeout, 180)
                         return nil
                     end
                 }
 
                 client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent",
                     options = {
                         timeout = 180
@@ -581,12 +581,12 @@ local function define_tests()
                 }
 
                 local response = client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
 
-                expect(response.status_code).to_equal(401)
-                expect(response.message).to_equal("Failed to get base URL")
+                tests.eq(response.status_code, 401)
+                tests.eq(response.message, "Failed to get base URL")
             end)
 
             it("should return error from HTTP client", function()
@@ -624,11 +624,11 @@ local function define_tests()
                 }
 
                 local response = client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
                 })
 
-                expect(response).to_equal(test_error)
+                tests.eq(response, test_error)
             end)
         end)
 
@@ -675,13 +675,13 @@ local function define_tests()
                 }
 
                 local response = client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
-                })
+                }) :: any
 
-                expect(response.status_code).to_equal(test_response.status_code)
-                expect(response.candidates[1].content.parts[1].text).to_equal("Hello, world!")
-                expect(response.candidates[1].finishReason).to_equal("STOP")
+                tests.eq(response.status_code, test_response.status_code)
+                tests.eq(response.candidates[1].content.parts[1].text, "Hello, world!")
+                tests.eq(response.candidates[1].finishReason, "STOP")
             end)
 
             it("should return error response", function()
@@ -723,14 +723,14 @@ local function define_tests()
                 }
 
                 local response = client.request({
-                    model = "gemini-pro",
+                    model = "gemini-2.5-flash",
                     endpoint_path = "generateContent"
-                })
+                }) :: any
 
-                expect(response.status_code).to_equal(test_response.status_code)
-                expect(response.error.code).to_equal(400)
-                expect(response.error.message).to_equal("Invalid request")
-                expect(response.error.status).to_equal("INVALID_ARGUMENT")
+                tests.eq(response.status_code, test_response.status_code)
+                tests.eq(response.error.code, 400)
+                tests.eq(response.error.message, "Invalid request")
+                tests.eq(response.error.status, "INVALID_ARGUMENT")
             end)
         end)
     end)

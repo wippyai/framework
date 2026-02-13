@@ -5,7 +5,26 @@ local time = require("time")
 local migration_core = require("core")
 local repository = require("repository")
 
-local function execute_migration(migration_item, options)
+type RunOptions = {
+    database_id: string?,
+    db: any?,
+    db_type: string?,
+    direction: string?,
+    force: boolean?,
+    id: string?,
+}
+
+type RunResult = {
+    status: string,
+    migrations: {any},
+    total: number,
+    applied: number,
+    skipped: number,
+    failed: number,
+    duration: number?,
+}
+
+local function execute_migration(migration_item: any, options: any): any
     if not migration_item or not options or not options.db or not options.db_type then
         return {
             status = "error",
@@ -17,9 +36,9 @@ local function execute_migration(migration_item, options)
     local db_type = options.db_type
     local direction = options.direction or "up"
 
-    local migration_id
+    local migration_id: string
     if options.id then
-        migration_id = options.id
+        migration_id = tostring(options.id)
     else
         return {
             status = "error",
@@ -121,7 +140,7 @@ local function execute_migration(migration_item, options)
         local record_ok, record_err = repository.record_migration(
             tx,
             migration_id,
-            migration_item.description
+            tostring(migration_item.description)
         )
 
         if not record_ok then
@@ -178,31 +197,32 @@ local function execute_migration(migration_item, options)
     }
 end
 
-function migration.run(fn, options)
-    options = options or {}
+function migration.run(fn: () -> (), options: RunOptions?): any
+    local opts: RunOptions = options or {} :: RunOptions
 
-    if not options.database_id and not options.db then
+    if not opts.database_id and not opts.db then
         return {
             status = "error",
             error = "Database ID or connection is required"
         }
     end
 
-    options.direction = options.direction or "up"
-    if options.direction ~= "up" and options.direction ~= "down" then
+    opts.direction = opts.direction or "up"
+    if opts.direction ~= "up" and opts.direction ~= "down" then
         return {
             status = "error",
             error = "Invalid direction: must be 'up' or 'down'"
         }
     end
 
-    local db, db_err
+    local db: any
+    local db_err: string?
     local need_release = false
 
-    if options.db then
-        db = options.db
+    if opts.db then
+        db = opts.db
     else
-        db, db_err = sql.get(options.database_id)
+        db, db_err = sql.get(tostring(opts.database_id))
         if db_err then
             return {
                 status = "error",
@@ -210,6 +230,13 @@ function migration.run(fn, options)
             }
         end
         need_release = true
+    end
+
+    if not db then
+        return {
+            status = "error",
+            error = "Failed to obtain database connection"
+        }
     end
 
     local init_ok, init_err = repository.init_tracking_table(db)
@@ -261,9 +288,9 @@ function migration.run(fn, options)
             local result = execute_migration(m, {
                 db = db,
                 db_type = db_type,
-                direction = options.direction,
-                force = options.force,
-                id = options.id,
+                direction = opts.direction,
+                force = opts.force,
+                id = opts.id,
             })
 
             table.insert(results.migrations, result)
@@ -280,7 +307,7 @@ function migration.run(fn, options)
             elseif result.status == "error" then
                 results.failed = results.failed + 1
 
-                if not options.force then
+                if not opts.force then
                     results.status = "error"
                     results.error = tostring(result.error)
                     break
@@ -310,12 +337,12 @@ function migration.run(fn, options)
     return results
 end
 
-function migration.define(fn)
+function migration.define(fn: () -> ()): (RunOptions?) -> any
     if not fn or type(fn) ~= "function" then
         error("Migration definition must be a function")
     end
 
-    return function(options)
+    return function(options: RunOptions?): any
         return migration.run(fn, options)
     end
 end

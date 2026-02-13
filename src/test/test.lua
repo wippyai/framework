@@ -4,7 +4,7 @@ local json = require("json")
 local ctx = require("ctx")
 
 -- Store original process.send for communication
-local _original_process_send = nil
+local _original_process_send: any = nil
 if process and process.send then
     _original_process_send = process.send
 end
@@ -32,6 +32,7 @@ local _default_context = {
         passed = 0,
         failed = 0,
         skipped = 0,
+        duration = 0,
         tests = {}
     },
     message_topic = "test:update",
@@ -456,7 +457,7 @@ local function format_value(val: any): string
         return string.format("%q", val)
     elseif type(val) == "table" then
         if val._tostring then
-            return val:_tostring()
+            return tostring(val:_tostring())
         else
             local str = "{"
             for k, v in pairs(val) do
@@ -533,7 +534,7 @@ function test.is_number(val: any, msg: string?): number
     return val
 end
 
-function test.is_table(val: any, msg: string?): {any}
+function test.is_table(val: any, msg: string?): any
     if type(val) ~= "table" then
         error((msg or "assertion failed") .. ": expected table, got " .. type(val), 2)
     end
@@ -554,21 +555,21 @@ function test.is_boolean(val: any, msg: string?): boolean
     return val
 end
 
-function test.contains(str: string, substr: string, msg: string?): string
+function test.contains(str: any, substr: string, msg: string?): string
     if type(str) ~= "string" or not string.find(str, substr, 1, true) then
         error((msg or "assertion failed") .. ": expected string to contain '" .. tostring(substr) .. "'", 2)
     end
     return str
 end
 
-function test.matches(str: string, pattern: string, msg: string?): string
+function test.matches(str: any, pattern: string, msg: string?): string
     if type(str) ~= "string" or not string.match(str, pattern) then
         error((msg or "assertion failed") .. ": expected string to match pattern '" .. tostring(pattern) .. "'", 2)
     end
     return str
 end
 
-function test.has_key(tbl: {any}, key: any, msg: string?): any
+function test.has_key(tbl: any, key: any, msg: string?): any
     if type(tbl) ~= "table" then
         error((msg or "assertion failed") .. ": expected table, got " .. type(tbl), 2)
     end
@@ -585,25 +586,25 @@ function test.len(val: any, expected: number, msg: string?)
     end
 end
 
-function test.gt(a: number, b: number, msg: string?)
+function test.gt(a: any, b: number, msg: string?)
     if not (a > b) then
         error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " > " .. format_value(b), 2)
     end
 end
 
-function test.gte(a: number, b: number, msg: string?)
+function test.gte(a: any, b: number, msg: string?)
     if not (a >= b) then
         error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " >= " .. format_value(b), 2)
     end
 end
 
-function test.lt(a: number, b: number, msg: string?)
+function test.lt(a: any, b: number, msg: string?)
     if not (a < b) then
         error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " < " .. format_value(b), 2)
     end
 end
 
-function test.lte(a: number, b: number, msg: string?)
+function test.lte(a: any, b: number, msg: string?)
     if not (a <= b) then
         error((msg or "assertion failed") .. ": expected " .. format_value(a) .. " <= " .. format_value(b), 2)
     end
@@ -631,6 +632,7 @@ function test.no_error(val: any, err: any, msg: string?)
         error((msg or "no_error failed") .. ": unexpected error: " .. tostring(err), 2)
     end
 end
+
 
 -- Format error with stack trace into a structured object
 local function format_error_message(err)
@@ -870,6 +872,7 @@ function test.run()
         passed = 0,
         failed = 0,
         skipped = 0,
+        duration = 0,
         tests = {}
     }
 
@@ -991,6 +994,7 @@ local function cleanup_test_resources()
         passed = 0,
         failed = 0,
         skipped = 0,
+        duration = 0,
         tests = {}
     }
 end

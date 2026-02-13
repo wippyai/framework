@@ -221,15 +221,15 @@ local function define_tests()
 
                 -- Inspect what was passed to memory contract
                 local call_log = memory_contract:get_call_log()
-                expect(#call_log).to_equal(1)
+                test.eq(#call_log, 1)
 
-                local recent_actions = call_log[1].recent_actions
-                expect(#recent_actions).to_equal(3) -- Limited by max_actions
+                local recent_actions = (call_log[1] :: any).recent_actions
+                test.eq(#recent_actions, 3) -- Limited by max_actions
 
                 -- Check action formatting in chronological order (oldest to newest of recent actions)
-                expect(recent_actions[1]).to_equal("assistant: I'll calculate that for you")  -- oldest of recent
-                expect(recent_actions[2]).to_equal("tool: calculator -> Result: 4")
-                expect(recent_actions[3]).to_equal("user: What about 3 + 3?")  -- newest
+                test.eq(recent_actions[1], "assistant: I'll calculate that for you")  -- oldest of recent
+                test.eq(recent_actions[2], "tool: calculator -> Result: 4")
+                test.eq(recent_actions[3], "user: What about 3 + 3?")  -- newest
             end)
 
             it("should respect max_actions limit", function()
@@ -260,12 +260,12 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 local call_log = memory_contract:get_call_log()
-                local recent_actions = call_log[1].recent_actions
+                local recent_actions = (call_log[1] :: any).recent_actions
 
-                expect(#recent_actions).to_equal(2) -- Should be limited
+                test.eq(#recent_actions, 2) -- Should be limited
                 -- Should be the 2 most recent actions in chronological order
-                expect(recent_actions[1]).to_equal("assistant: Response 2")  -- older of the recent 2
-                expect(recent_actions[2]).to_equal("user: Message 3")       -- newer of the recent 2
+                test.eq(recent_actions[1], "assistant: Response 2")  -- older of the recent 2
+                test.eq(recent_actions[2], "user: Message 3")       -- newer of the recent 2
             end)
 
             it("should filter messages by type", function()
@@ -297,12 +297,12 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 local call_log = memory_contract:get_call_log()
-                local recent_actions = call_log[1].recent_actions
+                local recent_actions = (call_log[1] :: any).recent_actions
 
-                expect(#recent_actions).to_equal(2) -- Only user messages
+                test.eq(#recent_actions, 2) -- Only user messages
                 -- Should be in chronological order
-                expect(recent_actions[1]).to_equal("user: User message 1")  -- older
-                expect(recent_actions[2]).to_equal("user: User message 2")  -- newer
+                test.eq(recent_actions[1], "user: User message 1")  -- older
+                test.eq(recent_actions[2], "user: User message 2")  -- newer
             end)
 
             it("should handle empty and malformed messages gracefully", function()
@@ -334,10 +334,10 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 local call_log = memory_contract:get_call_log()
-                local recent_actions = call_log[1].recent_actions
+                local recent_actions = (call_log[1] :: any).recent_actions
 
                 -- Should handle gracefully, extracting what it can
-                expect(#recent_actions).to_be_greater_than(0)
+                test.gt(#recent_actions, 0)
                 -- The normal message should be there, but empty messages might result in empty strings
                 local found_normal = false
                 for _, action in ipairs(recent_actions) do
@@ -346,7 +346,7 @@ local function define_tests()
                         break
                     end
                 end
-                expect(found_normal).to_be_true()
+                test.is_true(found_normal)
             end)
         end)
 
@@ -387,15 +387,15 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 local call_log = memory_contract:get_call_log()
-                local previous_memories = call_log[1].previous_memories
+                local previous_memories = (call_log[1] :: any).previous_memories
 
                 -- Should find all memory IDs from metadata
-                expect(#previous_memories).to_equal(3)
+                test.eq(#previous_memories, 3)
                 local memory_set = {}
                 for _, id in ipairs(previous_memories) do memory_set[id] = true end
-                expect(memory_set["mem_1"]).to_be_true()
-                expect(memory_set["mem_2"]).to_be_true()
-                expect(memory_set["mem_3"]).to_be_true()
+                test.is_true(memory_set["mem_1"])
+                test.is_true(memory_set["mem_2"])
+                test.is_true(memory_set["mem_3"])
             end)
 
             it("should respect scan limit when extracting memory IDs", function()
@@ -430,12 +430,12 @@ local function define_tests()
 
                 -- Verify memory was called (might not be due to scan limit affecting other triggers)
                 if #call_log > 0 then
-                    local previous_memories = call_log[1].previous_memories
+                    local previous_memories = (call_log[1] :: any).previous_memories
                     -- Should only scan the last 2 messages due to scan_limit
-                    expect(#previous_memories).to_be_less_than(5)
+                    test.lt(#previous_memories, 5)
                 else
                     -- Memory recall was skipped, which is also valid behavior with scan limits
-                    expect(#call_log).to_equal(0)
+                    test.eq(#call_log, 0)
                 end
             end)
 
@@ -472,15 +472,15 @@ local function define_tests()
                 test_agent:step(prompt_builder, runtime_options)
 
                 local call_log = memory_contract:get_call_log()
-                local previous_memories = call_log[1].previous_memories
+                local previous_memories = (call_log[1] :: any).previous_memories
 
                 -- Should combine both sources
-                expect(#previous_memories).to_equal(3)
+                test.eq(#previous_memories, 3)
                 local memory_set = {}
                 for _, id in ipairs(previous_memories) do memory_set[id] = true end
-                expect(memory_set["mem_from_prompt"]).to_be_true()
-                expect(memory_set["mem_from_runtime_1"]).to_be_true()
-                expect(memory_set["mem_from_runtime_2"]).to_be_true()
+                test.is_true(memory_set["mem_from_prompt"])
+                test.is_true(memory_set["mem_from_runtime_1"])
+                test.is_true(memory_set["mem_from_runtime_2"])
             end)
         end)
 
@@ -516,13 +516,13 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 local call_log = memory_contract:get_call_log()
-                local constraints = call_log[1].constraints
+                local constraints = (call_log[1] :: any).constraints
 
                 -- Should use agent-specific max_items
-                expect(constraints.max_items).to_equal(10)
+                test.eq(constraints.max_items, 10)
 
                 -- Should use default max_length (since not specified)
-                expect(constraints.max_length).to_equal(1000)
+                test.eq(constraints.max_length, 1000)
             end)
 
             it("should handle all memory option types", function()
@@ -554,9 +554,9 @@ local function define_tests()
                 }
 
                 local test_agent, err = agent.new(spec)
-                expect(err).to_be_nil()
-                expect(test_agent).not_to_be_nil()
-                expect(test_agent.step).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(test_agent)
+                test.not_nil(test_agent.step)
 
                 local prompt_builder = mock_prompt.new()
 
@@ -566,18 +566,18 @@ local function define_tests()
                 end
 
                 local result = test_agent:step(prompt_builder)
-                expect(result).not_to_be_nil()
+                test.not_nil(result)
 
                 local call_log = memory_contract:get_call_log()
-                expect(#call_log).to_equal(1)
+                test.eq(#call_log, 1)
 
-                local constraints = call_log[1].constraints
-                local recent_actions = call_log[1].recent_actions
+                local constraints = (call_log[1] :: any).constraints
+                local recent_actions = (call_log[1] :: any).recent_actions
 
-                expect(constraints.max_items).to_equal(7)
-                expect(constraints.max_length).to_equal(2500)
-                expect(recent_actions).not_to_be_nil()
-                expect(#recent_actions <=6).to_be_true() -- max_actions
+                test.eq(constraints.max_items, 7)
+                test.eq(constraints.max_length, 2500)
+                test.not_nil(recent_actions)
+                test.is_true(#recent_actions <=6) -- max_actions
             end)
         end)
 
@@ -607,9 +607,9 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.memory_recall).not_to_be_nil()
-                expect(memory_contract:get_call_log()).not_to_be_nil()
-                expect(#memory_contract:get_call_log()).to_equal(1)
+                test.not_nil(result.memory_recall)
+                test.not_nil(memory_contract:get_call_log())
+                test.eq(#memory_contract:get_call_log(), 1)
             end)
 
             it("should not trigger recall when conversation is too short", function()
@@ -636,8 +636,8 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.memory_recall).to_be_nil()
-                expect(#memory_contract:get_call_log()).to_equal(0)
+                test.is_nil(result.memory_recall)
+                test.eq(#memory_contract:get_call_log(), 0)
             end)
 
             it("should respect recall cooldown", function()
@@ -676,8 +676,8 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.memory_recall).to_be_nil() -- Should not recall due to cooldown
-                expect(#memory_contract:get_call_log()).to_equal(0)
+                test.is_nil(result.memory_recall) -- Should not recall due to cooldown
+                test.eq(#memory_contract:get_call_log(), 0)
             end)
 
             it("should trigger recall after cooldown period", function()
@@ -713,8 +713,8 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.memory_recall).not_to_be_nil() -- Should recall after cooldown
-                expect(#memory_contract:get_call_log()).to_equal(1)
+                test.not_nil(result.memory_recall) -- Should recall after cooldown
+                test.eq(#memory_contract:get_call_log(), 1)
             end)
 
             it("should respect runtime disable flag", function()
@@ -742,8 +742,8 @@ local function define_tests()
                 -- Disable memory recall via runtime options - FIXED: Use correct 2-parameter signature
                 local result = test_agent:step(prompt_builder, { disable_memory_recall = true })
 
-                expect(result.memory_recall).to_be_nil()
-                expect(#memory_contract:get_call_log()).to_equal(0)
+                test.is_nil(result.memory_recall)
+                test.eq(#memory_contract:get_call_log(), 0)
             end)
         end)
 
@@ -778,17 +778,18 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.memory_recall).not_to_be_nil()
-                expect(result.memory_prompt).not_to_be_nil()
+                test.not_nil(result.memory_recall)
+                test.not_nil(result.memory_prompt)
 
                 local memory_prompt = result.memory_prompt
-                expect(memory_prompt.role).to_equal("developer")
-                expect(memory_prompt.content).to_contain("Relevant context from your memory:")
-                expect(memory_prompt.content).to_contain("- First memory")
-                expect(memory_prompt.content).to_contain("- Second memory")
-                expect(memory_prompt.content).to_contain("- Third memory")
-                expect(memory_prompt.metadata.memory_ids).not_to_be_nil()
-                expect(#memory_prompt.metadata.memory_ids).to_equal(3)
+                test.eq(memory_prompt.role, "developer")
+                local memory_text = memory_prompt.content[1].text
+                test.contains(memory_text, "Relevant context from your memory:")
+                test.contains(memory_text, "- First memory")
+                test.contains(memory_text, "- Second memory")
+                test.contains(memory_text, "- Third memory")
+                test.not_nil(memory_prompt.metadata.memory_ids)
+                test.eq(#memory_prompt.metadata.memory_ids, 3)
             end)
 
             it("should handle empty memory responses", function()
@@ -817,8 +818,8 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.memory_recall).to_be_nil() -- No memories returned
-                expect(result.memory_prompt).to_be_nil()
+                test.is_nil(result.memory_recall) -- No memories returned
+                test.is_nil(result.memory_prompt)
             end)
 
             it("should inject memory into internal message flow", function()
@@ -851,19 +852,20 @@ local function define_tests()
 
                 -- Check that memory was injected into LLM messages
                 local llm_messages = test_messages
-                expect(#llm_messages).to_be_greater_than(3) -- Original + system + memory
+                test.gt(#llm_messages, 3) -- Original + system + memory
 
                 -- Find developer message with memory
                 local memory_message = nil
                 for _, msg in ipairs(llm_messages) do
-                    if msg.role == "developer" and msg.content and msg.content:find("Relevant context") then
+                    if msg.role == "developer" and msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text and msg.content[1].text:find("Relevant context") then
                         memory_message = msg
                         break
                     end
                 end
 
-                expect(memory_message).not_to_be_nil()
-                expect(memory_message.content).to_contain("- Injected memory")
+                test.not_nil(memory_message)
+                local mm = memory_message :: any
+                test.contains(mm.content[1].text, "- Injected memory")
             end)
         end)
 
@@ -908,7 +910,7 @@ local function define_tests()
                 -- We can't directly inspect the context passed to memory contract in this implementation,
                 -- but we can verify the call was made successfully
                 local call_log = memory_contract:get_call_log()
-                expect(#call_log).to_equal(1)
+                test.eq(#call_log, 1)
             end)
 
             it("should include agent_id in memory context", function()
@@ -937,7 +939,7 @@ local function define_tests()
 
                 -- Verify memory contract was called (agent_id would be in context)
                 local call_log = memory_contract:get_call_log()
-                expect(#call_log).to_equal(1)
+                test.eq(#call_log, 1)
             end)
         end)
 
@@ -966,8 +968,8 @@ local function define_tests()
                 -- Should not crash, just skip memory recall
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
             end)
 
             it("should handle memory recall errors gracefully", function()
@@ -998,8 +1000,8 @@ local function define_tests()
                 -- Should not crash, just skip memory recall
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
             end)
 
             it("should handle malformed memory contract responses", function()
@@ -1033,8 +1035,8 @@ local function define_tests()
                 -- Should handle gracefully
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
             end)
 
             it("should handle large memory datasets within constraints", function()
@@ -1078,13 +1080,13 @@ local function define_tests()
                 local result = test_agent:step(prompt_builder)
 
                 -- Should handle large dataset
-                expect(result).not_to_be_nil()
+                test.not_nil(result)
 
                 -- Verify constraints were passed to memory contract
                 local call_log = memory_contract:get_call_log()
-                expect(#call_log).to_equal(1)
-                expect(call_log[1].constraints.max_items).to_equal(5)
-                expect(call_log[1].constraints.max_length).to_equal(1000)
+                test.eq(#call_log, 1)
+                test.eq((call_log[1] :: any).constraints.max_items, 5)
+                test.eq((call_log[1] :: any).constraints.max_length, 1000)
             end)
         end)
 
@@ -1120,26 +1122,26 @@ local function define_tests()
 
                 -- Verify message order in LLM input
                 local llm_messages = test_messages
-                expect(#llm_messages).to_be_greater_than(3)
+                test.gt(#llm_messages, 3)
 
                 -- Should have: system, [cache_marker], conversation messages, memory
-                expect(llm_messages[1].role).to_equal("system")
+                test.eq((llm_messages[1] :: any).role, "system")
 
                 -- Find the memory message - should be near the end since memory is injected at end
                 local memory_found = false
                 local memory_position = 0
 
                 for i, msg in ipairs(llm_messages) do
-                    if msg.role == "developer" and msg.content and msg.content:find("Relevant context") then
+                    if msg.role == "developer" and msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text and msg.content[1].text:find("Relevant context") then
                         memory_found = true
                         memory_position = i
                         break
                     end
                 end
 
-                expect(memory_found).to_be_true()
+                test.is_true(memory_found)
                 -- Memory should be injected after the conversation messages (near the end)
-                expect(memory_position).to_be_greater_than(3) -- After system and some conversation
+                test.gt(memory_position, 3) -- After system and some conversation
             end)
 
             it("should not affect original prompt builder", function()
@@ -1173,13 +1175,13 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 -- Original prompt builder should be unchanged
-                expect(#prompt_builder:get_messages()).to_equal(original_message_count)
+                test.eq(#prompt_builder:get_messages(), original_message_count)
 
                 -- Should not contain memory injection
                 local original_messages = prompt_builder:get_messages()
                 for _, msg in ipairs(original_messages) do
-                    if msg.content and type(msg.content) == "string" then
-                        expect(msg.content:find("Relevant context")).to_be_nil()
+                    if msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text then
+                        test.is_nil(msg.content[1].text:find("Relevant context"))
                     end
                 end
             end)

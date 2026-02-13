@@ -3,6 +3,21 @@ local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
 
+type ClaudeConfig = {
+    api_key: string?,
+    base_url: string,
+    api_version: string,
+    beta_features: {string},
+    timeout: number,
+    headers: {[string]: string}?
+}
+
+type ResponseMetadata = {
+    request_id: string?,
+    processing_ms: number?,
+    rate_limits: {[string]: string | number}?
+}
+
 local claude_client = {}
 
 claude_client._http_client = http_client
@@ -13,42 +28,36 @@ claude_client.ENDPOINTS = {
     MESSAGES = "/v1/messages"
 }
 
----@param value_configs table configuration for context value resolution
----@return table resolved configuration values
-local function resolve_context_values(value_configs)
+local function resolve_config()
     local ctx_all = claude_client._ctx.all() or {}
-    local results = {}
 
-    for key, value_config in pairs(value_configs) do
-        local result = nil
-
+    local function resolve_string(key: string, default_env: string?): string?
         if ctx_all[key] then
-            result = ctx_all[key]
-        else
-            local env_key = key .. "_env"
-            if ctx_all[env_key] then
-                local env_value = claude_client._env.get(ctx_all[env_key])
-                if env_value and env_value ~= '' then
-                    result = env_value
-                end
-            end
+            return tostring(ctx_all[key])
         end
-
-        if not result and value_config.default_env_var then
-            local env_value = claude_client._env.get(value_config.default_env_var)
-            if env_value and env_value ~= '' then
-                result = env_value
-            end
+        local env_key = key .. "_env"
+        if ctx_all[env_key] then
+            local val = claude_client._env.get(tostring(ctx_all[env_key]))
+            if val and val ~= "" then return val end
         end
-
-        results[key] = result or value_config.default_value
+        if default_env then
+            local val = claude_client._env.get(default_env)
+            if val and val ~= "" then return val end
+        end
+        return nil
     end
 
-    return results
+    local config = {
+        api_key = resolve_string("api_key", "ANTHROPIC_API_KEY"),
+        base_url = resolve_string("base_url", "ANTHROPIC_BASE_URL") or "https://api.anthropic.com",
+        api_version = resolve_string("api_version", "ANTHROPIC_API_VERSION") or "2023-06-01",
+        beta_features = ctx_all.beta_features or {},
+        timeout = tonumber(resolve_string("timeout", "ANTHROPIC_TIMEOUT")) or 600,
+        headers = ctx_all.headers
+    }
+    return config
 end
 
----@param http_response table HTTP response object
----@return table extracted metadata
 local function extract_response_metadata(http_response)
     if not http_response or not http_response.headers then
         return {}
@@ -74,8 +83,6 @@ local function extract_response_metadata(http_response)
     return metadata
 end
 
----@param http_response table HTTP response object
----@return table parsed error information
 local function parse_error_response(http_response)
     local error_info = {
         status_code = http_response and http_response.status_code or 0,
@@ -103,21 +110,14 @@ local function parse_error_response(http_response)
         end
     end
 
-    error_info.metadata = extract_response_metadata(http_response)
+    error_info.metadata = extract_response_metadata(http_response :: any)
     return error_info
 end
 
----@param api_key string Anthropic API key
----@param api_version string API version
----@param beta_features table|nil beta features array
----@param method string HTTP method
----@param additional_headers table|nil additional headers
----@return table prepared headers
-local function prepare_headers(api_key, api_version, beta_features, method, additional_headers)
-    local headers = {
-        ["x-api-key"] = api_key,
-        ["anthropic-version"] = api_version
-    }
+local function prepare_headers(api_key, api_version, beta_features, method, additional_headers): {[string]: string}
+    local headers: {[string]: string} = {}
+    headers["x-api-key"] = tostring(api_key)
+    headers["anthropic-version"] = tostring(api_version)
 
     if method == "POST" or method == "PUT" or method == "PATCH" then
         headers["content-type"] = "application/json"
@@ -129,47 +129,19 @@ local function prepare_headers(api_key, api_version, beta_features, method, addi
 
     if additional_headers then
         for header_name, header_value in pairs(additional_headers) do
-            headers[header_name] = header_value
+            headers[tostring(header_name)] = tostring(header_value)
         end
     end
 
     return headers
 end
 
----@param endpoint_path string API endpoint path
----@param payload table|nil request payload
----@param options table|nil request options
----@return table|nil, table|nil response data and error
+
 function claude_client.request(endpoint_path, payload, options)
     options = options or {}
     local method = options.method or "POST"
 
-    local config = resolve_context_values({
-        api_key = {
-            default_value = nil,
-            default_env_var = "ANTHROPIC_API_KEY"
-        },
-        base_url = {
-            default_value = "https://api.anthropic.com",
-            default_env_var = "ANTHROPIC_BASE_URL"
-        },
-        api_version = {
-            default_value = "2023-06-01",
-            default_env_var = "ANTHROPIC_API_VERSION"
-        },
-        beta_features = {
-            default_value = {},
-            default_env_var = nil
-        },
-        timeout = {
-            default_value = 600,
-            default_env_var = "ANTHROPIC_TIMEOUT"
-        },
-        headers = {
-            default_value = nil,
-            default_env_var = nil
-        }
-    })
+    local config = resolve_config()
 
     if not config.api_key then
         return nil, {
@@ -179,11 +151,11 @@ function claude_client.request(endpoint_path, payload, options)
     end
 
     local full_url = config.base_url .. endpoint_path
-    local headers = prepare_headers(config.api_key, config.api_version, config.beta_features, method, config.headers)
+    local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, config.beta_features, method, config.headers)
 
     local http_options = {
         headers = headers,
-        timeout = options.timeout or config.timeout
+        timeout = tonumber(options.timeout) or config.timeout,
     }
 
     if method == "POST" or method == "PUT" or method == "PATCH" then
@@ -196,11 +168,11 @@ function claude_client.request(endpoint_path, payload, options)
         http_options.body = json.encode(payload)
 
         if options.stream then
-            http_options.stream = { buffer_size = 4096 }
+            http_options.stream = true
         end
     end
 
-   local response
+    local response, err
     if method == "GET" then
         response, err = claude_client._http_client.get(full_url, http_options)
     elseif method == "DELETE" then
@@ -216,7 +188,7 @@ function claude_client.request(endpoint_path, payload, options)
     if not response then
         return nil, {
             status_code = 0,
-            message = "Connection failed: " .. tostring(err)
+            message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
         }
     end
 
@@ -242,24 +214,21 @@ function claude_client.request(endpoint_path, payload, options)
         }
     end
 
-    parsed.metadata = extract_response_metadata(response)
+    parsed.metadata = extract_response_metadata(response :: any)
     return parsed
 end
 
----@param stream_response table streaming response object
----@param callbacks table callback functions for stream events
----@return string|nil, string|nil, table|nil content, error, full result
 function claude_client.process_stream(stream_response, callbacks)
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
 
     callbacks = callbacks or {}
-    local on_content = callbacks.on_content or function() end
-    local on_tool_call = callbacks.on_tool_call or function() end
-    local on_thinking = callbacks.on_thinking or function() end
-    local on_error = callbacks.on_error or function() end
-    local on_done = callbacks.on_done or function() end
+    local on_content = callbacks.on_content or function(...) end
+    local on_tool_call = callbacks.on_tool_call or function(...) end
+    local on_thinking = callbacks.on_thinking or function(...) end
+    local on_error = callbacks.on_error or function(...) end
+    local on_done = callbacks.on_done or function(...) end
 
     local full_content = ""
     local tool_calls = {}
@@ -285,7 +254,7 @@ function claude_client.process_stream(stream_response, callbacks)
         end
 
         for event_type, data_json in chunk:gmatch("event: ([^\n]+)\ndata: ([^\n]+)") do
-            local data, decode_err = json.decode(data_json)
+            local data, decode_err = json.decode(tostring(data_json))
             if decode_err or not data then
                 goto continue_event
             end

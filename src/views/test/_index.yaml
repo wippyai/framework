@@ -1,0 +1,74 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: gateway
+    kind: http.service
+    meta:
+      comment: Test HTTP server
+    addr: :19086
+    lifecycle:
+      auto_start: true
+
+  - name: api.public
+    kind: http.router
+    meta:
+      comment: Test public API router
+      server: gateway
+    prefix: /api/public
+
+  - name: dep.wippy.views
+    kind: ns.dependency
+    meta:
+      description: "Views configuration for testing"
+    component: "wippy/views"
+    parameters:
+      - name: api_router
+        value: app:api.public
+
+  - name: test_templates
+    kind: template.set
+    meta:
+      description: Test template set
+    engine:
+      delimiters:
+        left: "{{"
+        right: "}}"
+
+  - name: test_tmpl_contact
+    kind: template.jet
+    meta:
+      type: view.page
+      name: test_tmpl_contact
+      title: Contact
+      icon: mail
+      order: 4
+      group: main
+      group_icon: layout
+      group_order: 1
+      group_placement: sidebar
+      secure: false
+      public: true
+      announced: true
+      inline: false
+    source: file://test_tmpl_contact.jet
+    set: test_templates
+
+  - name: test_tmpl_settings
+    kind: template.jet
+    meta:
+      type: view.page
+      name: test_tmpl_settings
+      title: Settings
+      icon: gear
+      order: 20
+      group: admin
+      group_icon: settings
+      group_order: 99
+      group_placement: default
+      secure: true
+      public: false
+      announced: true
+      inline: false
+    source: file://test_tmpl_settings.jet
+    set: test_templates

@@ -1,5 +1,6 @@
 local openai_mapper = require("openai_mapper")
 local json = require("json")
+local test = require("test")
 
 local function define_tests()
     describe("OpenAI Mapper", function()
@@ -23,14 +24,16 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(3)
-                expect(openai_messages[1].role).to_equal("system")
-                expect(openai_messages[1].content[1].type).to_equal("text")
-                expect(openai_messages[1].content[1].text).to_equal("You are a helpful assistant")
-                expect(openai_messages[2].role).to_equal("user")
-                expect(openai_messages[2].content[1].text).to_equal("Hello")
-                expect(openai_messages[3].role).to_equal("assistant")
-                expect(openai_messages[3].content[1].text).to_equal("Hi there!")
+                test.eq(#openai_messages, 3)
+                test.eq(openai_messages[1].role, "system")
+                local sys_content = openai_messages[1].content :: any
+                test.eq(sys_content[1].type, "text")
+                test.eq(sys_content[1].text, "You are a helpful assistant")
+                test.eq(openai_messages[2].role, "user")
+                local usr_content = openai_messages[2].content :: any
+                test.eq(usr_content[1].text, "Hello")
+                test.eq(openai_messages[3].role, "assistant")
+                test.eq(openai_messages[3].content, "Hi there!")
             end)
 
             it("should convert string content to processed format", function()
@@ -43,8 +46,10 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].content).to_equal("Simple string message")
+                test.eq(#openai_messages, 1)
+                local msg_content = openai_messages[1].content :: any
+                test.eq(msg_content[1].type, "text")
+                test.eq(msg_content[1].text, "Simple string message")
             end)
 
             it("should convert image content to OpenAI format", function()
@@ -66,10 +71,11 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].content[1].type).to_equal("text")
-                expect(openai_messages[1].content[2].type).to_equal("image_url")
-                expect(openai_messages[1].content[2].image_url.url).to_equal("https://example.com/image.jpg")
+                test.eq(#openai_messages, 1)
+                local img_content = openai_messages[1].content :: any
+                test.eq(img_content[1].type, "text")
+                test.eq(img_content[2].type, "image_url")
+                test.eq(img_content[2].image_url.url, "https://example.com/image.jpg")
             end)
 
             it("should convert base64 image content with mime type", function()
@@ -91,10 +97,11 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].content[1].type).to_equal("image_url")
-                expect(openai_messages[1].content[1].image_url.url).to_contain("data:image/jpeg;base64,")
-                expect(openai_messages[1].content[1].image_url.url).to_contain("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
+                test.eq(#openai_messages, 1)
+                local b64_content = openai_messages[1].content :: any
+                test.eq(b64_content[1].type, "image_url")
+                test.contains(b64_content[1].image_url.url, "data:image/jpeg;base64,")
+                test.contains(b64_content[1].image_url.url, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
             end)
 
             it("should consolidate function_call messages into assistant message", function()
@@ -119,20 +126,21 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].role).to_equal("assistant")
-                expect(openai_messages[1].content).to_equal("")
-                expect(#openai_messages[1].tool_calls).to_equal(2)
+                test.eq(#openai_messages, 1)
+                test.eq(openai_messages[1].role, "assistant")
+                test.eq(openai_messages[1].content, "")
+                local tool_calls = openai_messages[1].tool_calls :: any
+                test.eq(#tool_calls, 2)
 
-                expect(openai_messages[1].tool_calls[1].id).to_equal("call_123")
-                expect(openai_messages[1].tool_calls[1].type).to_equal("function")
-                expect(openai_messages[1].tool_calls[1]["function"].name).to_equal("get_weather")
+                test.eq(tool_calls[1].id, "call_123")
+                test.eq(tool_calls[1].type, "function")
+                test.eq(tool_calls[1]["function"].name, "get_weather")
 
-                local args1 = json.decode(openai_messages[1].tool_calls[1]["function"].arguments)
-                expect(args1.location).to_equal("New York")
+                local args1 = json.decode(tostring(tool_calls[1]["function"].arguments))
+                test.eq(args1.location, "New York")
 
-                expect(openai_messages[1].tool_calls[2].id).to_equal("call_456")
-                expect(openai_messages[1].tool_calls[2]["function"].name).to_equal("calculate")
+                test.eq(tool_calls[2].id, "call_456")
+                test.eq(tool_calls[2]["function"].name, "calculate")
             end)
 
             it("should skip function_call messages without id", function()
@@ -149,7 +157,7 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(0)
+                test.eq(#openai_messages, 0)
             end)
 
             it("should convert function_result messages to tool messages", function()
@@ -164,11 +172,12 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].role).to_equal("tool")
-                expect(openai_messages[1].content).to_equal("The weather is sunny")
-                expect(openai_messages[1].tool_call_id).to_equal("call_123")
-                expect(openai_messages[1].name).to_equal("get_weather")
+                test.eq(#openai_messages, 1)
+                local msg = openai_messages[1] :: any
+                test.eq(msg.role, "tool")
+                test.eq(msg.content, "The weather is sunny")
+                test.eq(msg.tool_call_id, "call_123")
+                test.eq(msg.name, "get_weather")
             end)
 
             it("should handle string content in function_result", function()
@@ -182,9 +191,9 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].role).to_equal("tool")
-                expect(openai_messages[1].content).to_equal("Simple string result")
+                test.eq(#openai_messages, 1)
+                test.eq(openai_messages[1].role, "tool")
+                test.eq(openai_messages[1].content, "Simple string result")
             end)
 
             it("should convert developer messages to system messages", function()
@@ -197,9 +206,11 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].role).to_equal("system")
-                expect(openai_messages[1].content).to_equal("Debug: Use detailed explanations")
+                test.eq(#openai_messages, 1)
+                test.eq(openai_messages[1].role, "system")
+                local dev_content = openai_messages[1].content :: any
+                test.eq(dev_content[1].type, "text")
+                test.eq(dev_content[1].text, "Debug: Use detailed explanations")
             end)
 
             it("should handle developer messages for o1-mini with no previous user message", function()
@@ -212,9 +223,11 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages, { model = "o1-mini" })
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].role).to_equal("system")
-                expect(openai_messages[1].content).to_equal("Be precise")
+                test.eq(#openai_messages, 1)
+                test.eq(openai_messages[1].role, "system")
+                local o1_content = openai_messages[1].content :: any
+                test.eq(o1_content[1].type, "text")
+                test.eq(o1_content[1].text, "Be precise")
             end)
 
             it("should skip unknown message roles", function()
@@ -231,9 +244,10 @@ local function define_tests()
 
                 local openai_messages = openai_mapper.map_messages(contract_messages)
 
-                expect(#openai_messages).to_equal(1)
-                expect(openai_messages[1].role).to_equal("user")
-                expect(openai_messages[1].content[1].text).to_equal("This should be kept")
+                test.eq(#openai_messages, 1)
+                test.eq(openai_messages[1].role, "user")
+                local kept_content = openai_messages[1].content :: any
+                test.eq(kept_content[1].text, "This should be kept")
             end)
         end)
 
@@ -267,29 +281,29 @@ local function define_tests()
 
                 local openai_tools, tool_map = openai_mapper.map_tools(contract_tools)
 
-                expect(#openai_tools).to_equal(2)
-                expect(openai_tools[1].type).to_equal("function")
-                expect(openai_tools[1]["function"].name).to_equal("get_weather")
-                expect(openai_tools[1]["function"].description).to_equal("Get weather information")
-                expect(openai_tools[1]["function"].parameters.type).to_equal("object")
-                expect(openai_tools[1]["function"].parameters.properties.location.type).to_equal("string")
+                test.eq(#openai_tools, 2)
+                test.eq(openai_tools[1].type, "function")
+                test.eq(openai_tools[1]["function"].name, "get_weather")
+                test.eq(openai_tools[1]["function"].description, "Get weather information")
+                test.eq(openai_tools[1]["function"].parameters.type, "object")
+                test.eq(openai_tools[1]["function"].parameters.properties.location.type, "string")
 
-                expect(tool_map["get_weather"]).not_to_be_nil()
-                expect(tool_map["calculate"]).not_to_be_nil()
+                test.not_nil(tool_map["get_weather"])
+                test.not_nil(tool_map["calculate"])
             end)
 
             it("should handle empty tools array", function()
                 local openai_tools, tool_map = openai_mapper.map_tools({})
 
-                expect(openai_tools).to_be_nil()
-                expect(next(tool_map)).to_be_nil()
+                test.is_nil(openai_tools)
+                test.is_nil(next(tool_map))
             end)
 
             it("should handle nil tools", function()
                 local openai_tools, tool_map = openai_mapper.map_tools(nil)
 
-                expect(openai_tools).to_be_nil()
-                expect(next(tool_map)).to_be_nil()
+                test.is_nil(openai_tools)
+                test.is_nil(next(tool_map))
             end)
 
             it("should skip tools with missing required fields", function()
@@ -307,10 +321,10 @@ local function define_tests()
 
                 local openai_tools, tool_map = openai_mapper.map_tools(contract_tools)
 
-                expect(#openai_tools).to_equal(1)
-                expect(openai_tools[1]["function"].name).to_equal("valid_tool")
-                expect(tool_map["valid_tool"]).not_to_be_nil()
-                expect(tool_map["invalid_tool"]).to_be_nil()
+                test.eq(#openai_tools, 1)
+                test.eq(openai_tools[1]["function"].name, "valid_tool")
+                test.not_nil(tool_map["valid_tool"])
+                test.is_nil(tool_map["invalid_tool"])
             end)
         end)
 
@@ -323,44 +337,44 @@ local function define_tests()
             it("should map auto tool choice", function()
                 local choice, error = openai_mapper.map_tool_choice("auto", test_tools)
 
-                expect(error).to_be_nil()
-                expect(choice).to_equal("auto")
+                test.is_nil(error)
+                test.eq(choice, "auto")
             end)
 
             it("should map none tool choice", function()
                 local choice, error = openai_mapper.map_tool_choice("none", test_tools)
 
-                expect(error).to_be_nil()
-                expect(choice).to_equal("none")
+                test.is_nil(error)
+                test.eq(choice, "none")
             end)
 
             it("should map any tool choice to required", function()
                 local choice, error = openai_mapper.map_tool_choice("any", test_tools)
 
-                expect(error).to_be_nil()
-                expect(choice).to_equal("required")
+                test.is_nil(error)
+                test.eq(choice, "required")
             end)
 
             it("should map specific tool name", function()
                 local choice, error = openai_mapper.map_tool_choice("get_weather", test_tools)
 
-                expect(error).to_be_nil()
-                expect(choice.type).to_equal("function")
-                expect(choice["function"].name).to_equal("get_weather")
+                test.is_nil(error)
+                test.eq(choice.type, "function")
+                test.eq(choice["function"].name, "get_weather")
             end)
 
             it("should error on non-existent tool", function()
                 local choice, error = openai_mapper.map_tool_choice("nonexistent_tool", test_tools)
 
-                expect(choice).to_be_nil()
-                expect(error).to_contain("not found")
+                test.is_nil(choice)
+                test.contains(error, "not found")
             end)
 
             it("should default to auto for nil input", function()
                 local choice, error = openai_mapper.map_tool_choice(nil, test_tools)
 
-                expect(error).to_be_nil()
-                expect(choice).to_equal("auto")
+                test.is_nil(error)
+                test.eq(choice, "auto")
             end)
         end)
 
@@ -379,17 +393,17 @@ local function define_tests()
 
                 local openai_options = openai_mapper.map_options(contract_options)
 
-                expect(openai_options.temperature).to_equal(0.7)
-                expect(openai_options.max_tokens).to_equal(150)
-                expect(openai_options.top_p).to_equal(0.9)
-                expect(openai_options.frequency_penalty).to_equal(0.5)
-                expect(openai_options.presence_penalty).to_equal(0.3)
-                expect(openai_options.stop).not_to_be_nil()
-                expect(#openai_options.stop).to_equal(2)
-                expect(openai_options.stop[1]).to_equal("STOP")
-                expect(openai_options.stop[2]).to_equal("END")
-                expect(openai_options.seed).to_equal(42)
-                expect(openai_options.user).to_equal("test-user")
+                test.eq(openai_options.temperature, 0.7)
+                test.eq(openai_options.max_tokens, 150)
+                test.eq(openai_options.top_p, 0.9)
+                test.eq(openai_options.frequency_penalty, 0.5)
+                test.eq(openai_options.presence_penalty, 0.3)
+                test.not_nil(openai_options.stop)
+                test.eq(#openai_options.stop, 2)
+                test.eq(openai_options.stop[1], "STOP")
+                test.eq(openai_options.stop[2], "END")
+                test.eq(openai_options.seed, 42)
+                test.eq(openai_options.user, "test-user")
             end)
 
             it("should handle reasoning model options", function()
@@ -402,10 +416,10 @@ local function define_tests()
 
                 local openai_options = openai_mapper.map_options(contract_options)
 
-                expect(openai_options.max_completion_tokens).to_equal(100)
-                expect(openai_options.max_tokens).to_be_nil()
-                expect(openai_options.reasoning_effort).to_equal("medium")
-                expect(openai_options.temperature).to_be_nil()
+                test.eq(openai_options.max_completion_tokens, 100)
+                test.is_nil(openai_options.max_tokens)
+                test.eq(openai_options.reasoning_effort, "medium")
+                test.is_nil(openai_options.temperature)
             end)
 
             it("should map thinking effort levels correctly", function()
@@ -427,20 +441,20 @@ local function define_tests()
 
                     local openai_options = openai_mapper.map_options(contract_options)
 
-                    expect(openai_options.reasoning_effort).to_equal(case.expected)
+                    test.eq(openai_options.reasoning_effort, case.expected)
                 end
             end)
 
             it("should handle nil options", function()
                 local openai_options = openai_mapper.map_options(nil)
 
-                expect(next(openai_options)).to_be_nil()
+                test.is_nil(next(openai_options))
             end)
 
             it("should handle empty options", function()
                 local openai_options = openai_mapper.map_options({})
 
-                expect(next(openai_options)).to_be_nil()
+                test.is_nil(next(openai_options))
             end)
         end)
 
@@ -472,16 +486,22 @@ local function define_tests()
 
                 local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
 
-                expect(#contract_tool_calls).to_equal(2)
+                test.eq(#contract_tool_calls, 2)
 
-                expect(contract_tool_calls[1].id).to_equal("call_123")
-                expect(contract_tool_calls[1].name).to_equal("get_weather")
-                expect(contract_tool_calls[1].arguments.location).to_equal("New York")
-                expect(contract_tool_calls[1].arguments.units).to_equal("celsius")
+                local tc1 = contract_tool_calls[1]
+                if tc1 then
+                    test.eq(tc1.id, "call_123")
+                    test.eq(tc1.name, "get_weather")
+                    test.eq(tc1.arguments.location, "New York")
+                    test.eq(tc1.arguments.units, "celsius")
+                end
 
-                expect(contract_tool_calls[2].id).to_equal("call_456")
-                expect(contract_tool_calls[2].name).to_equal("calculate")
-                expect(contract_tool_calls[2].arguments.expression).to_equal("2+2")
+                local tc2 = contract_tool_calls[2]
+                if tc2 then
+                    test.eq(tc2.id, "call_456")
+                    test.eq(tc2.name, "calculate")
+                    test.eq(tc2.arguments.expression, "2+2")
+                end
             end)
 
             it("should handle invalid JSON arguments", function()
@@ -498,11 +518,14 @@ local function define_tests()
 
                 local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].id).to_equal("call_123")
-                expect(contract_tool_calls[1].name).to_equal("test_tool")
-                expect(contract_tool_calls[1].arguments).not_to_be_nil()
-                expect(next(contract_tool_calls[1].arguments)).to_be_nil()
+                test.eq(#contract_tool_calls, 1)
+                local tc = contract_tool_calls[1]
+                if tc then
+                    test.eq(tc.id, "call_123")
+                    test.eq(tc.name, "test_tool")
+                    test.not_nil(tc.arguments)
+                    test.is_nil(next(tc.arguments))
+                end
             end)
 
             it("should handle empty arguments", function()
@@ -519,15 +542,18 @@ local function define_tests()
 
                 local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
 
-                expect(#contract_tool_calls).to_equal(1)
-                expect(contract_tool_calls[1].arguments).not_to_be_nil()
-                expect(next(contract_tool_calls[1].arguments)).to_be_nil()
+                test.eq(#contract_tool_calls, 1)
+                local tc = contract_tool_calls[1]
+                if tc then
+                    test.not_nil(tc.arguments)
+                    test.is_nil(next(tc.arguments))
+                end
             end)
 
             it("should handle nil tool calls", function()
                 local contract_tool_calls = openai_mapper.map_tool_calls(nil, {})
 
-                expect(#contract_tool_calls).to_equal(0)
+                test.eq(#contract_tool_calls, 0)
             end)
         end)
 
@@ -544,7 +570,7 @@ local function define_tests()
 
                 for _, case in ipairs(test_cases) do
                     local result = openai_mapper.map_finish_reason(case.openai)
-                    expect(result).to_equal(case.expected)
+                    test.eq(result, case.expected)
                 end
             end)
         end)
@@ -559,12 +585,12 @@ local function define_tests()
 
                 local contract_tokens = openai_mapper.map_tokens(openai_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(100)
-                expect(contract_tokens.completion_tokens).to_equal(50)
-                expect(contract_tokens.total_tokens).to_equal(150)
-                expect(contract_tokens.cache_creation_input_tokens).to_equal(0)
-                expect(contract_tokens.cache_read_input_tokens).to_equal(0)
-                expect(contract_tokens.thinking_tokens).to_equal(0)
+                test.eq(contract_tokens.prompt_tokens, 100)
+                test.eq(contract_tokens.completion_tokens, 50)
+                test.eq(contract_tokens.total_tokens, 150)
+                test.eq(contract_tokens.cache_creation_input_tokens, 0)
+                test.eq(contract_tokens.cache_read_input_tokens, 0)
+                test.eq(contract_tokens.thinking_tokens, 0)
             end)
 
             it("should map reasoning tokens (thinking tokens)", function()
@@ -579,10 +605,10 @@ local function define_tests()
 
                 local contract_tokens = openai_mapper.map_tokens(openai_usage)
 
-                expect(contract_tokens.thinking_tokens).to_equal(20)
-                expect(contract_tokens.prompt_tokens).to_equal(100)
-                expect(contract_tokens.completion_tokens).to_equal(80)
-                expect(contract_tokens.total_tokens).to_equal(200)
+                test.eq(contract_tokens.thinking_tokens, 20)
+                test.eq(contract_tokens.prompt_tokens, 100)
+                test.eq(contract_tokens.completion_tokens, 80)
+                test.eq(contract_tokens.total_tokens, 200)
             end)
 
             it("should map cache tokens", function()
@@ -597,16 +623,16 @@ local function define_tests()
 
                 local contract_tokens = openai_mapper.map_tokens(openai_usage)
 
-                expect(contract_tokens.cache_read_input_tokens).to_equal(30)
-                expect(contract_tokens.cache_creation_input_tokens).to_equal(70)
-                expect(contract_tokens.prompt_tokens).to_equal(100)
-                expect(contract_tokens.completion_tokens).to_equal(50)
+                test.eq(contract_tokens.cache_read_input_tokens, 30)
+                test.eq(contract_tokens.cache_creation_input_tokens, 70)
+                test.eq(contract_tokens.prompt_tokens, 70) -- adjusted: total minus cached
+                test.eq(contract_tokens.completion_tokens, 50)
             end)
 
             it("should handle nil usage", function()
                 local contract_tokens = openai_mapper.map_tokens(nil)
 
-                expect(contract_tokens).to_be_nil()
+                test.is_nil(contract_tokens)
             end)
 
             it("should handle partial usage data", function()
@@ -617,10 +643,10 @@ local function define_tests()
 
                 local contract_tokens = openai_mapper.map_tokens(openai_usage)
 
-                expect(contract_tokens.prompt_tokens).to_equal(50)
-                expect(contract_tokens.completion_tokens).to_equal(0)
-                expect(contract_tokens.total_tokens).to_equal(0)
-                expect(contract_tokens.thinking_tokens).to_equal(0)
+                test.eq(contract_tokens.prompt_tokens, 50)
+                test.eq(contract_tokens.completion_tokens, 0)
+                test.eq(contract_tokens.total_tokens, 0)
+                test.eq(contract_tokens.thinking_tokens, 0)
             end)
         end)
 
@@ -644,14 +670,14 @@ local function define_tests()
                 }
 
                 local context = { tool_name_map = {} }
-                local contract_response = openai_mapper.map_success_response(openai_response, context)
+                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("Hello, world!")
-                expect(contract_response.result.tool_calls).not_to_be_nil()
-                expect(#contract_response.result.tool_calls).to_equal(0)
-                expect(contract_response.finish_reason).to_equal("stop")
-                expect(contract_response.tokens.prompt_tokens).to_equal(10)
+                test.is_true(contract_response.success)
+                test.eq(contract_response.result.content, "Hello, world!")
+                test.not_nil(contract_response.result.tool_calls)
+                test.eq(#contract_response.result.tool_calls, 0)
+                test.eq(contract_response.finish_reason, "stop")
+                test.eq(contract_response.tokens.prompt_tokens, 10)
             end)
 
             it("should map tool call response", function()
@@ -688,13 +714,14 @@ local function define_tests()
                     }
                 }
 
-                local contract_response = openai_mapper.map_success_response(openai_response, context)
+                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
 
-                expect(contract_response.success).to_be_true()
-                expect(contract_response.result.content).to_equal("I'll help with that.")
-                expect(#contract_response.result.tool_calls).to_equal(1)
-                expect(contract_response.result.tool_calls[1].name).to_equal("calculate")
-                expect(contract_response.finish_reason).to_equal("tool_call")
+                test.is_true(contract_response.success)
+                test.eq(contract_response.result.content, "I'll help with that.")
+                local tc = contract_response.result.tool_calls :: any
+                test.eq(#tc, 1)
+                test.eq(tc[1].name, "calculate")
+                test.eq(contract_response.finish_reason, "tool_call")
             end)
 
             it("should handle refusal responses", function()
@@ -716,12 +743,12 @@ local function define_tests()
                 }
 
                 local context = { tool_name_map = {} }
-                local contract_response = openai_mapper.map_success_response(openai_response, context)
+                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("content_filtered")
-                expect(contract_response.error_message).to_contain("refused")
-                expect(contract_response.error_message).to_contain("I cannot assist with that request.")
+                test.is_false(contract_response.success)
+                test.eq(contract_response.error, "content_filtered")
+                test.contains(contract_response.error_message, "refused")
+                test.contains(contract_response.error_message, "I cannot assist with that request.")
             end)
         end)
 
@@ -742,9 +769,9 @@ local function define_tests()
 
                     local contract_response = openai_mapper.map_error_response(openai_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal(case.error_type)
-                    expect(contract_response.error_message).to_equal(case.message)
+                    test.is_false(contract_response.success)
+                    test.eq(contract_response.error, case.error_type)
+                    test.eq(contract_response.error_message, case.message)
                 end
             end)
 
@@ -765,18 +792,18 @@ local function define_tests()
 
                     local contract_response = openai_mapper.map_error_response(openai_error)
 
-                    expect(contract_response.success).to_be_false()
-                    expect(contract_response.error).to_equal(case.error_type)
+                    test.is_false(contract_response.success)
+                    test.eq(contract_response.error, case.error_type)
                 end
             end)
 
             it("should handle nil error", function()
                 local contract_response = openai_mapper.map_error_response(nil)
 
-                expect(contract_response.success).to_be_false()
-                expect(contract_response.error).to_equal("server_error")
-                expect(contract_response.error_message).to_equal("Unknown OpenAI error")
-                expect(contract_response.metadata).not_to_be_nil()
+                test.is_false(contract_response.success)
+                test.eq(contract_response.error, "server_error")
+                test.eq(contract_response.error_message, "Unknown OpenAI error")
+                test.not_nil(contract_response.metadata)
             end)
         end)
     end)

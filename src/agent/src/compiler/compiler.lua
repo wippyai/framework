@@ -3,13 +3,70 @@ local tools = require("tools")
 local funcs = require("funcs")
 local json = require("json")
 
+type ToolDef = string | { id: string, alias: string?, context: table?, description: string?, schema: table? }
+type TraitConfig = string | { id: string, context: table? }
+type DelegateConfig = { id: string, name: string?, rule: string?, context: table? }
+
+type RawAgentSpec = {
+    id: string,
+    name: string?,
+    description: string?,
+    meta: table?,
+    model: string?,
+    max_tokens: number?,
+    temperature: number?,
+    thinking_effort: string?,
+    prompt: string?,
+    tools: {ToolDef}?,
+    traits: {TraitConfig}?,
+    delegates: {DelegateConfig}?,
+    context: table?,
+    memory: table?,
+    memory_contract: string?,
+}
+
+type CompilerConfig = {
+    context_merger: any,
+    delegates: any,
+}
+
+type CompiledTool = {
+    name: string,
+    description: string?,
+    schema: table?,
+    context: table,
+    agent_id: string?,
+    registry_id: string?,
+    meta: table?,
+}
+
+type PromptFunc = { trait_id: string, func_id: string, context: table }
+type StepFunc = { trait_id: string, func_id: string, context: table }
+
+type CompiledAgentSpec = {
+    id: string,
+    name: string?,
+    description: string?,
+    meta: table,
+    model: string?,
+    max_tokens: number?,
+    temperature: number?,
+    thinking_effort: string?,
+    prompt: string,
+    tools: {[string]: CompiledTool},
+    memory: table,
+    memory_contract: string?,
+    prompt_funcs: {PromptFunc},
+    step_funcs: {StepFunc},
+}
+
 local compiler = {}
 
 compiler._traits = nil
 compiler._tools = nil
 compiler._funcs = nil
 
-local function get_table_keys(tbl)
+local function get_table_keys(tbl: table): {string}
     local keys = {}
     for k, _ in pairs(tbl) do
         table.insert(keys, tostring(k))
@@ -17,15 +74,15 @@ local function get_table_keys(tbl)
     return keys
 end
 
-local function get_traits()
+local function get_traits(): any
     return compiler._traits or traits
 end
 
-local function get_tools()
+local function get_tools(): any
     return compiler._tools or tools
 end
 
-local function get_funcs()
+local function get_funcs(): any
     return compiler._funcs or funcs
 end
 
@@ -54,7 +111,7 @@ local DEFAULT_CONFIG = {
     }
 }
 
-local function merge_config(user_config)
+local function merge_config(user_config: table?): CompilerConfig
     if not user_config then
         return DEFAULT_CONFIG
     end
@@ -74,7 +131,7 @@ local function merge_config(user_config)
     return config
 end
 
-local function get_canonical_tool_name(tool_id, tool_def)
+local function get_canonical_tool_name(tool_id: any, tool_def: any): any
     if type(tool_def) == "table" and tool_def.alias then
         return tool_def.alias
     end
@@ -96,7 +153,7 @@ local function get_canonical_tool_name(tool_id, tool_def)
     return name
 end
 
-local function process_traits(raw_spec, config)
+local function process_traits(raw_spec: any, config: CompilerConfig): (any, any, any, any, any, any, any)
     local additional_prompts = {}
     local additional_tools = {}
     local trait_contexts = {}
@@ -211,7 +268,7 @@ local function process_traits(raw_spec, config)
     return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs
 end
 
-local function process_tools(raw_spec, additional_tools, trait_contexts, trait_tool_schemas, config)
+local function process_tools(raw_spec: any, additional_tools: any, trait_contexts: any, trait_tool_schemas: any, config: CompilerConfig): any
     local all_tools = {}
 
     for i, tool in ipairs(raw_spec.tools or {}) do
@@ -325,7 +382,7 @@ local function process_tools(raw_spec, additional_tools, trait_contexts, trait_t
     return tools
 end
 
-local function process_delegates(raw_spec, additional_delegates, config)
+local function process_delegates(raw_spec: any, additional_delegates: any, config: CompilerConfig): (any, any)
     local delegate_tools = {}
     local delegate_contexts = {}
 
@@ -380,7 +437,7 @@ local function process_delegates(raw_spec, additional_delegates, config)
     return delegate_tools, delegate_contexts
 end
 
-function compiler.compile(raw_spec, user_config)
+function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
     if not raw_spec then
         return nil, "Raw spec is required"
     end

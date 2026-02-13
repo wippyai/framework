@@ -1,5 +1,0 @@
-name: wippy/security
-dir: .
-description: Security component
-ignore:
-  - "README.md"

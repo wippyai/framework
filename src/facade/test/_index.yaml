@@ -1,0 +1,31 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: gateway
+    kind: http.service
+    meta:
+      comment: Test HTTP server
+    addr: :19085
+    lifecycle:
+      auto_start: true
+
+  - name: api.public
+    kind: http.router
+    meta:
+      comment: Test public API router
+      server: gateway
+    prefix: /api/public
+
+  - name: dep.wippy.facade
+    kind: ns.dependency
+    meta:
+      description: "Facade configuration for testing"
+    component: "wippy/facade"
+    parameters:
+      - name: server
+        value: app:gateway
+      - name: router
+        value: app:api.public
+      - name: domain
+        value: localhost

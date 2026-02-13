@@ -3,17 +3,28 @@ local time = require("time")
 
 local test_registry = {}
 
+type TestEntry = {
+    id: string,
+    name: string,
+    group: string,
+    meta: {[string]: any},
+}
+
+type FindOptions = {
+    type: string?,
+    group: string?,
+}
+
 -- Find test entries in registry
-function test_registry.find(options)
-    options = options or {}
+function test_registry.find(options: FindOptions?): ({TestEntry}?, string?)
+    local opts: FindOptions = options or {} :: FindOptions
 
     local criteria = {
-        ["meta.type"] = options.type or "test",
+        ["meta.type"] = opts.type or "test",
     }
 
-    -- Apply group filter if provided
-    if options.group then
-        criteria["meta.group"] = options.group
+    if opts.group then
+        criteria["meta.group"] = opts.group
     end
 
     -- Get registry snapshot
@@ -26,7 +37,7 @@ function test_registry.find(options)
     local entries = snapshot:find(criteria)
 
     -- Process and transform test entries
-    local tests = {}
+    local tests: {TestEntry} = {}
     for i, entry in ipairs(entries) do
         local meta = entry.meta or {}
         local display_name = meta.name or ("Unnamed test " .. i)
@@ -41,7 +52,7 @@ function test_registry.find(options)
     end
 
     -- Sort tests by group and name
-    table.sort(tests, function(a, b)
+    table.sort(tests, function(a: TestEntry, b: TestEntry): boolean
         if a.group ~= b.group then
             return a.group < b.group
         else

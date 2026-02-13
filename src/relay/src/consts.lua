@@ -1,6 +1,17 @@
 local env = require("env")
 local time = require("time")
 
+type RelayConfig = {
+    max_connections_per_user: number,
+    user_hub_inactivity_timeout: string,
+    queue_multiplier: number,
+    user_hub_host: string?,
+    user_security_scope: string?,
+    message_queue_size: number,
+    gc_check_interval: string,
+    heartbeat_interval: string,
+}
+
 local consts = {
     -- Registry names
     CENTRAL_HUB_REGISTRY_NAME = "wippy.central",
@@ -66,8 +77,7 @@ local consts = {
     CANCEL_TIMEOUT = "10s"
 }
 
-function consts.get_config()
-    -- Get base values from environment
+function consts.get_config(): RelayConfig
     local max_conn, _ = env.get(consts.ENV_IDS.MAX_CONNECTIONS_PER_USER)
     local max_connections = (max_conn and tonumber(max_conn)) or consts.DEFAULTS.MAX_CONNECTIONS_PER_USER
 
@@ -83,23 +93,18 @@ function consts.get_config()
     local scope, _ = env.get(consts.ENV_IDS.USER_SECURITY_SCOPE)
     local user_security_scope = scope or consts.DEFAULTS.USER_SECURITY_SCOPE
 
-    -- Parse inactivity timeout for derived calculations
     local inactivity_duration, _ = time.parse_duration(inactivity_timeout)
     local inactivity_seconds = inactivity_duration and inactivity_duration:seconds() or 300
 
-    -- Calculate derived values
     local gc_seconds = math.floor(inactivity_seconds / 2.5)
     local heartbeat_seconds = math.floor(inactivity_seconds / 5)
 
     return {
-        -- Base configuration
         max_connections_per_user = max_connections,
         user_hub_inactivity_timeout = inactivity_timeout,
         queue_multiplier = queue_multiplier,
         user_hub_host = user_hub_host,
         user_security_scope = user_security_scope,
-
-        -- Derived values
         message_queue_size = max_connections * queue_multiplier,
         gc_check_interval = tostring(gc_seconds) .. "s",
         heartbeat_interval = tostring(heartbeat_seconds) .. "s"

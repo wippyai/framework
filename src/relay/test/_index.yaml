@@ -1,0 +1,14 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: dep.wippy.relay
+    kind: ns.dependency
+    meta:
+      description: "Relay module configuration for testing"
+    component: "wippy/relay"
+    parameters:
+      - name: application_host
+        value: wippy.terminal:host
+      - name: user_security_scope
+        value: app:user

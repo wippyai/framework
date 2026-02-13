@@ -1,5 +1,0 @@
-name: wippy/docs
-dir: .
-description: Wippy Runtime documentation
-ignore:
-  - "README.md"

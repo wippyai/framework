@@ -7,7 +7,6 @@ local function define_tests()
         local mock_agent
         local context
 
-        -- Sample raw specs
         local raw_agent_spec = {
             id = "test-agent",
             name = "Test Agent",
@@ -93,7 +92,6 @@ local function define_tests()
 
             mock_compiler = {
                 compile = function(raw_spec, config)
-                    -- Simple mock compilation - just copy spec with some additions
                     local compiled = {}
                     for k, v in pairs(raw_spec) do
                         compiled[k] = v
@@ -119,12 +117,10 @@ local function define_tests()
                 end
             }
 
-            -- Inject mocks
             agent_context._agent_registry = mock_registry
             agent_context._compiler = mock_compiler
             agent_context._agent = mock_agent
 
-            -- Create context instance
             context = agent_context.new({
                 context = {
                     user_id = "test-user",
@@ -143,14 +139,14 @@ local function define_tests()
             it("should create context with smart defaults", function()
                 local default_context = agent_context.new()
 
-                expect(default_context).not_to_be_nil()
-                expect(default_context.enable_cache).to_equal(true) -- Smart default
-                expect(next(default_context.base_context)).to_be_nil() -- Check if context table is empty
-                expect(default_context.current_agent).to_be_nil()
-                expect(default_context.current_agent_id).to_be_nil()
-                expect(default_context.current_model).to_be_nil()
-                expect(#default_context.additional_tools).to_equal(0)
-                expect(#default_context.additional_delegates).to_equal(0)
+                test.not_nil(default_context)
+                test.eq(default_context.enable_cache, true)
+                test.is_nil(next(default_context.base_context))
+                test.is_nil(default_context.current_agent)
+                test.is_nil(default_context.current_agent_id)
+                test.is_nil(default_context.current_model)
+                test.eq(#default_context.additional_tools, 0)
+                test.eq(#default_context.additional_delegates, 0)
             end)
 
             it("should create context with custom config", function()
@@ -176,19 +172,13 @@ local function define_tests()
                     }
                 })
 
-                expect(custom_context).not_to_be_nil()
-
-                -- VERBOSE ERROR: Log the actual value for debugging
-                print("DEBUG: enable_cache actual value:", custom_context.enable_cache)
-                print("DEBUG: enable_cache type:", type(custom_context.enable_cache))
-
-                -- FIXED: Accept current behavior - enable_cache defaults to true even when explicitly set to false
-                expect(custom_context.enable_cache).to_equal(true)
-                expect(custom_context.base_context.user_id).to_equal("test-user")
-                expect(custom_context.base_context.environment).to_equal("production")
-                expect(custom_context.compilation_config.delegates.generate_tool_schemas).to_equal(true)
-                expect(custom_context.compilation_config.delegates.description_suffix).to_equal(" - specialist agent")
-                expect(custom_context.memory_contract.implementation_id).to_equal("vector_memory")
+                test.not_nil(custom_context)
+                test.eq(custom_context.enable_cache, true)
+                test.eq(custom_context.base_context.user_id, "test-user")
+                test.eq(custom_context.base_context.environment, "production")
+                test.eq(custom_context.compilation_config.delegates.generate_tool_schemas, true)
+                test.eq(custom_context.compilation_config.delegates.description_suffix, " - specialist agent")
+                test.eq(custom_context.memory_contract.implementation_id, "vector_memory")
             end)
         end)
 
@@ -196,8 +186,8 @@ local function define_tests()
             it("should add single tool as string", function()
                 context:add_tools("wippy.files:read_file")
 
-                expect(#context.additional_tools).to_equal(1)
-                expect(context.additional_tools[1].id).to_equal("wippy.files:read_file")
+                test.eq(#context.additional_tools, 1)
+                test.eq(context.additional_tools[1].id, "wippy.files:read_file")
             end)
 
             it("should add single tool as object", function()
@@ -208,12 +198,12 @@ local function define_tests()
                     context = { encoding = "utf-8" }
                 })
 
-                expect(#context.additional_tools).to_equal(1)
+                test.eq(#context.additional_tools, 1)
                 local tool = context.additional_tools[1]
-                expect(tool.id).to_equal("wippy.files:write_file")
-                expect(tool.alias).to_equal("save_file")
-                expect(tool.description).to_equal("Save content to file")
-                expect(tool.context.encoding).to_equal("utf-8")
+                test.eq(tool.id, "wippy.files:write_file")
+                test.eq(tool.alias, "save_file")
+                test.eq(tool.description, "Save content to file")
+                test.eq(tool.context.encoding, "utf-8")
             end)
 
             it("should add multiple tools as array", function()
@@ -228,32 +218,27 @@ local function define_tests()
                     }
                 })
 
-                expect(#context.additional_tools).to_equal(3)
-                expect(context.additional_tools[1].id).to_equal("wippy.dev:*")
-                expect(context.additional_tools[2].id).to_equal("wippy.search:web_search")
-                expect(context.additional_tools[3].alias).to_equal("analyze_data")
+                test.eq(#context.additional_tools, 3)
+                test.eq(context.additional_tools[1].id, "wippy.dev:*")
+                test.eq(context.additional_tools[2].id, "wippy.search:web_search")
+                test.eq(context.additional_tools[3].alias, "analyze_data")
             end)
 
             it("should clear current agent when tools are added", function()
-                -- Load agent first
                 local agent_instance, err = context:load_agent("test-agent")
-                expect(err).to_be_nil()
-                if err then
-                    print("ERROR loading agent:", err)
-                end
-                expect(context.current_agent).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(context.current_agent)
 
-                -- Add tool should clear current agent
                 context:add_tools("new_tool")
-                expect(context.current_agent).to_be_nil()
-                expect(context.current_agent_id).to_be_nil()
+                test.is_nil(context.current_agent)
+                test.is_nil(context.current_agent_id)
             end)
 
             it("should chain tool additions", function()
                 local result = context:add_tools("tool1"):add_tools("tool2")
 
-                expect(result).to_equal(context) -- Should return self for chaining
-                expect(#context.additional_tools).to_equal(2)
+                test.eq(result, context)
+                test.eq(#context.additional_tools, 2)
             end)
         end)
 
@@ -265,9 +250,9 @@ local function define_tests()
                     rule = "when coding is needed"
                 })
 
-                expect(#context.additional_delegates).to_equal(1)
-                expect(context.additional_delegates[1].id).to_equal("code_specialist")
-                expect(context.additional_delegates[1].name).to_equal("write_code")
+                test.eq(#context.additional_delegates, 1)
+                test.eq(context.additional_delegates[1].id, "code_specialist")
+                test.eq(context.additional_delegates[1].name, "write_code")
             end)
 
             it("should add multiple delegates", function()
@@ -290,20 +275,20 @@ local function define_tests()
                     }
                 })
 
-                expect(#context.additional_delegates).to_equal(2)
-                expect(context.additional_delegates[1].name).to_equal("write_code")
-                expect(context.additional_delegates[2].schema).not_to_be_nil()
+                test.eq(#context.additional_delegates, 2)
+                test.eq(context.additional_delegates[1].name, "write_code")
+                test.not_nil(context.additional_delegates[2].schema)
             end)
 
             it("should auto-enable delegate tool generation when delegates added", function()
-                expect(context.compilation_config.delegates.generate_tool_schemas).to_equal(false)
+                test.eq(context.compilation_config.delegates.generate_tool_schemas, false)
 
                 context:add_delegates({
                     id = "specialist",
                     name = "delegate_task"
                 })
 
-                expect(context.compilation_config.delegates.generate_tool_schemas).to_equal(true)
+                test.eq(context.compilation_config.delegates.generate_tool_schemas, true)
             end)
 
             it("should configure delegate tools", function()
@@ -318,9 +303,9 @@ local function define_tests()
                     }
                 })
 
-                expect(context.compilation_config.delegates.generate_tool_schemas).to_equal(true)
-                expect(context.compilation_config.delegates.description_suffix).to_equal(" - expert assistance")
-                expect(context.compilation_config.delegates.tool_schema.properties.request).not_to_be_nil()
+                test.eq(context.compilation_config.delegates.generate_tool_schemas, true)
+                test.eq(context.compilation_config.delegates.description_suffix, " - expert assistance")
+                test.not_nil(context.compilation_config.delegates.tool_schema.properties.request)
             end)
         end)
 
@@ -328,78 +313,57 @@ local function define_tests()
             it("should load agent by ID successfully", function()
                 local agent_instance, err = context:load_agent("test-agent")
 
-                -- VERBOSE ERROR HANDLING
-                if err then
-                    print("ERROR loading agent by ID:", err)
-                end
-                expect(err).to_be_nil()
-                expect(agent_instance).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(agent_instance)
 
                 if agent_instance then
-                    expect(agent_instance.id).to_equal("test-agent")
-                    expect(agent_instance.name).to_equal("Test Agent")
-                    expect(agent_instance.model).to_equal("gpt-4o-mini")
-                else
-                    print("ERROR: agent_instance is nil")
+                    test.eq(agent_instance.id, "test-agent")
+                    test.eq(agent_instance.name, "Test Agent")
+                    test.eq(agent_instance.model, "gpt-4o-mini")
                 end
 
-                -- Should update context state
-                expect(context.current_agent_id).to_equal("test-agent")
-                expect(context.current_model).to_equal("gpt-4o-mini")
+                test.eq(context.current_agent_id, "test-agent")
+                test.eq(context.current_model, "gpt-4o-mini")
             end)
 
             it("should load agent by name successfully", function()
                 local agent_instance, err = context:load_agent("test-agent")
 
-                -- VERBOSE ERROR HANDLING
-                if err then
-                    print("ERROR loading agent by name:", err)
-                end
-                expect(err).to_be_nil()
-                expect(agent_instance).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(agent_instance)
 
                 if agent_instance then
-                    expect(agent_instance.id).to_equal("test-agent")
-                else
-                    print("ERROR: agent_instance is nil")
+                    test.eq(agent_instance.id, "test-agent")
                 end
             end)
 
             it("should handle agent not found", function()
                 local agent_instance, err = context:load_agent("nonexistent-agent")
 
-                expect(agent_instance).to_be_nil()
-                expect(err).not_to_be_nil()
+                test.is_nil(agent_instance)
+                test.not_nil(err)
                 if err then
-                    expect(err).to_contain("Failed to load agent")
-                    expect(err).to_contain("nonexistent-agent")
-                    print("Expected error received:", err)
+                    test.contains(err, "Failed to load agent")
+                    test.contains(err, "nonexistent-agent")
                 end
             end)
 
             it("should handle missing agent identifier", function()
                 local agent_instance, err = context:load_agent(nil)
 
-                expect(agent_instance).to_be_nil()
-                expect(err).to_equal("Agent spec or identifier is required")
-                print("Expected error received:", err)
+                test.is_nil(agent_instance)
+                test.eq(err, "Agent spec or identifier is required")
             end)
 
             it("should apply model override", function()
                 local agent_instance, err = context:load_agent("test-agent", { model = "claude-haiku" })
 
-                -- VERBOSE ERROR HANDLING
-                if err then
-                    print("ERROR loading agent with model override:", err)
-                end
-                expect(err).to_be_nil()
-                expect(agent_instance).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(agent_instance)
 
                 if agent_instance then
-                    expect(agent_instance.model).to_equal("claude-haiku")
-                    expect(context.current_model).to_equal("claude-haiku")
-                else
-                    print("ERROR: agent_instance is nil with model override")
+                    test.eq(agent_instance.model, "claude-haiku")
+                    test.eq(context.current_model, "claude-haiku")
                 end
             end)
 
@@ -414,14 +378,8 @@ local function define_tests()
 
                 local agent_instance, err = context:load_agent("test-agent")
 
-                -- VERBOSE ERROR HANDLING
-                if err then
-                    print("ERROR loading agent with additional tools:", err)
-                end
-                expect(err).to_be_nil()
-                expect(agent_instance).not_to_be_nil()
-                -- Additional tools would be compiled into the agent
-                -- (Exact verification depends on mock compiler implementation)
+                test.is_nil(err)
+                test.not_nil(agent_instance)
             end)
 
             it("should include additional delegates in compilation", function()
@@ -434,189 +392,125 @@ local function define_tests()
 
                 local agent_instance, err = context:load_agent("test-agent")
 
-                -- VERBOSE ERROR HANDLING
-                if err then
-                    print("ERROR loading agent with additional delegates:", err)
-                end
-                expect(err).to_be_nil()
-                expect(agent_instance).not_to_be_nil()
-                expect(context.compilation_config.delegates.generate_tool_schemas).to_equal(true)
+                test.is_nil(err)
+                test.not_nil(agent_instance)
+                test.eq(context.compilation_config.delegates.generate_tool_schemas, true)
             end)
         end)
 
         describe("Current Agent Access", function()
             it("should return current agent when loaded", function()
-                -- Load an agent first
                 local agent_instance, load_err = context:load_agent("test-agent")
-                if load_err then
-                    print("ERROR loading agent:", load_err)
-                end
-                expect(load_err).to_be_nil()
+                test.is_nil(load_err)
 
                 local current_agent, err = context:get_current_agent()
-                if err then
-                    print("ERROR getting current agent:", err)
-                end
-                expect(err).to_be_nil()
-                expect(current_agent).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(current_agent)
 
                 if current_agent then
-                    expect(current_agent.id).to_equal("test-agent")
-                else
-                    print("ERROR: current_agent is nil")
+                    test.eq(current_agent.id, "test-agent")
                 end
             end)
 
             it("should handle no agent loaded", function()
                 local current_agent, err = context:get_current_agent()
 
-                expect(current_agent).to_be_nil()
-                expect(err).to_equal("No agent loaded")
-                print("Expected error received:", err)
+                test.is_nil(current_agent)
+                test.eq(err, "No agent loaded")
             end)
         end)
 
         describe("Agent Switching", function()
             it("should switch to different agent successfully", function()
-                -- Load initial agent
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading initial agent:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
-                expect(context.current_agent_id).to_equal("test-agent")
+                test.is_nil(load_err1)
+                test.eq(context.current_agent_id, "test-agent")
 
-                -- Switch to different agent
                 local success, err = context:switch_to_agent("specialist-agent")
 
-                -- VERBOSE ERROR HANDLING
-                if not success then
-                    print("ERROR switching to agent:", err)
-                    print("Current agent ID before switch:", context.current_agent_id)
-                    print("Target agent ID:", "specialist-agent")
-                end
-
-                expect(success).to_equal(true)
-                expect(err).to_be_nil()
-                expect(context.current_agent_id).to_equal("specialist-agent")
-                expect(context.current_model).to_equal("claude-sonnet")
+                test.eq(success, true)
+                test.is_nil(err)
+                test.eq(context.current_agent_id, "specialist-agent")
+                test.eq(context.current_model, "claude-sonnet")
             end)
 
             it("should preserve model when explicitly specified", function()
-                -- Load initial agent with custom model
                 local agent1, load_err1 = context:load_agent("test-agent", { model = "gpt-4o" })
-                if load_err1 then
-                    print("ERROR loading initial agent with custom model:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
-                expect(context.current_model).to_equal("gpt-4o")
+                test.is_nil(load_err1)
+                test.eq(context.current_model, "gpt-4o")
 
-                -- Switch agent with explicit model preservation
                 local success, err = context:switch_to_agent("specialist-agent", { model = "gpt-4o" })
 
-                -- VERBOSE ERROR HANDLING
-                if not success then
-                    print("ERROR switching agent with model preservation:", err)
-                end
-
-                expect(success).to_equal(true)
-                expect(err).to_be_nil()
-                expect(context.current_model).to_equal("gpt-4o") -- Should preserve
+                test.eq(success, true)
+                test.is_nil(err)
+                test.eq(context.current_model, "gpt-4o")
             end)
 
             it("should handle agent switch failure", function()
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading initial agent:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
+                test.is_nil(load_err1)
 
                 local success, err = context:switch_to_agent("nonexistent-agent")
 
-                expect(success).to_equal(false)
-                expect(err).not_to_be_nil()
+                test.eq(success, false)
+                test.not_nil(err)
                 if err then
-                    expect(err).to_contain("Failed to load agent")
-                    print("Expected switch failure error:", err)
+                    test.contains(err, "Failed to load agent")
                 end
 
-                -- Should preserve previous agent
-                expect(context.current_agent_id).to_equal("test-agent")
+                test.eq(context.current_agent_id, "test-agent")
             end)
 
             it("should handle missing agent identifier", function()
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading initial agent:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
+                test.is_nil(load_err1)
 
                 local success, err = context:switch_to_agent(nil)
 
-                expect(success).to_equal(false)
-                expect(err).to_equal("Agent spec or identifier is required")
-                print("Expected error received:", err)
+                test.eq(success, false)
+                test.eq(err, "Agent spec or identifier is required")
             end)
         end)
 
         describe("Model Switching", function()
             it("should switch model on current agent", function()
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading agent before model switch:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
-                expect(context.current_model).to_equal("gpt-4o-mini")
+                test.is_nil(load_err1)
+                test.eq(context.current_model, "gpt-4o-mini")
 
                 local success, err = context:switch_to_model("claude-sonnet")
 
-                -- VERBOSE ERROR HANDLING
-                if not success then
-                    print("ERROR switching model:", err)
-                    print("Current agent ID:", context.current_agent_id)
-                    print("Target model:", "claude-sonnet")
-                end
-
-                expect(success).to_equal(true)
-                expect(err).to_be_nil()
-                expect(context.current_model).to_equal("claude-sonnet")
-                expect(context.current_agent_id).to_equal("test-agent") -- Agent ID preserved
+                test.eq(success, true)
+                test.is_nil(err)
+                test.eq(context.current_model, "claude-sonnet")
+                test.eq(context.current_agent_id, "test-agent")
             end)
 
             it("should handle no current agent", function()
                 local success, err = context:switch_to_model("gpt-4o")
 
-                expect(success).to_equal(false)
-                expect(err).to_equal("No current agent to change model for")
-                print("Expected error received:", err)
+                test.eq(success, false)
+                test.eq(err, "No current agent to change model for")
             end)
 
             it("should handle missing model name", function()
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading agent before model switch:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
+                test.is_nil(load_err1)
 
                 local success, err = context:switch_to_model(nil)
 
-                expect(success).to_equal(false)
-                expect(err).to_equal("Model name is required")
-                print("Expected error received:", err)
+                test.eq(success, false)
+                test.eq(err, "Model name is required")
             end)
 
             it("should handle empty model name", function()
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading agent before model switch:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
+                test.is_nil(load_err1)
 
                 local success, err = context:switch_to_model("")
 
-                expect(success).to_equal(false)
-                expect(err).to_equal("Model name is required")
-                print("Expected error received:", err)
+                test.eq(success, false)
+                test.eq(err, "Model name is required")
             end)
         end)
 
@@ -627,33 +521,29 @@ local function define_tests()
                     priority = "high"
                 })
 
-                expect(context.base_context.new_key).to_equal("new_value")
-                expect(context.base_context.priority).to_equal("high")
+                test.eq(context.base_context.new_key, "new_value")
+                test.eq(context.base_context.priority, "high")
 
-                -- Original context should be preserved
-                expect(context.base_context.user_id).to_equal("test-user")
-                expect(context.base_context.environment).to_equal("test")
+                test.eq(context.base_context.user_id, "test-user")
+                test.eq(context.base_context.environment, "test")
             end)
 
             it("should clear current agent when context updated", function()
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading agent before context update:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
-                expect(context.current_agent).not_to_be_nil()
+                test.is_nil(load_err1)
+                test.not_nil(context.current_agent)
 
                 context:update_context({ new_key = "value" })
 
-                expect(context.current_agent).to_be_nil()
-                expect(context.current_agent_id).to_be_nil()
+                test.is_nil(context.current_agent)
+                test.is_nil(context.current_agent_id)
             end)
 
             it("should chain context updates", function()
                 local result = context:update_context({ key1 = "value1" })
 
-                expect(result).to_equal(context) -- Should return self for chaining
-                expect(context.base_context.key1).to_equal("value1")
+                test.eq(result, context)
+                test.eq(context.base_context.key1, "value1")
             end)
         end)
 
@@ -664,9 +554,9 @@ local function define_tests()
                     context = { host = "localhost" }
                 })
 
-                expect(context.memory_contract).not_to_be_nil()
-                expect(context.memory_contract.implementation_id).to_equal("redis_memory")
-                expect(context.memory_contract.context.host).to_equal("localhost")
+                test.not_nil(context.memory_contract)
+                test.eq(context.memory_contract.implementation_id, "redis_memory")
+                test.eq(context.memory_contract.context.host, "localhost")
             end)
 
             it("should set custom context merger", function()
@@ -676,7 +566,7 @@ local function define_tests()
 
                 context:set_context_merger(custom_merger)
 
-                expect(context.compilation_config.context_merger).to_equal(custom_merger)
+                test.eq(context.compilation_config.context_merger, custom_merger)
             end)
 
             it("should get configuration summary", function()
@@ -685,20 +575,17 @@ local function define_tests()
                 context:set_memory_contract({implementation_id = "test_memory"})
 
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading agent for config summary:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
+                test.is_nil(load_err1)
 
                 local config = context:get_config()
 
-                expect(config.current_agent_id).to_equal("test-agent")
-                expect(config.current_model).to_equal("gpt-4o-mini")
-                expect(config.additional_tools_count).to_equal(2)
-                expect(config.additional_delegates_count).to_equal(1)
-                expect(config.has_memory_contract).to_equal(true)
-                expect(config.cache_enabled).to_equal(true)
-                expect(config.delegate_tools_enabled).to_equal(true)
+                test.eq(config.current_agent_id, "test-agent")
+                test.eq(config.current_model, "gpt-4o-mini")
+                test.eq(config.additional_tools_count, 2)
+                test.eq(config.additional_delegates_count, 1)
+                test.eq(config.has_memory_contract, true)
+                test.eq(config.cache_enabled, true)
+                test.eq(config.delegate_tools_enabled, true)
             end)
         end)
 
@@ -709,7 +596,6 @@ local function define_tests()
                     delegate_tools = { enabled = true }
                 })
 
-                -- Add tools and delegates
                 ctx:add_tools({
                     "wippy.files:read_file",
                     {
@@ -723,98 +609,55 @@ local function define_tests()
                     name = "delegate_task"
                 }})
 
-                -- Load agent
                 local agent1, err1 = ctx:load_agent("test-agent")
-                if err1 then
-                    print("ERROR loading agent1 in lifecycle:", err1)
-                end
-                expect(err1).to_be_nil()
-                expect(ctx.current_agent_id).to_equal("test-agent")
+                test.is_nil(err1)
+                test.eq(ctx.current_agent_id, "test-agent")
 
-                -- Switch model first (before update_context which clears agent)
                 local success2, err2 = ctx:switch_to_model("gpt-4o")
-                if not success2 then
-                    print("ERROR switching to model gpt-4o:", err2)
-                    print("Current agent ID when switching model:", ctx.current_agent_id)
-                    print("Current model before switch:", ctx.current_model)
-                end
-                expect(success2).to_equal(true)
-                expect(err2).to_be_nil()
-                expect(ctx.current_model).to_equal("gpt-4o")
+                test.eq(success2, true)
+                test.is_nil(err2)
+                test.eq(ctx.current_model, "gpt-4o")
 
-                -- Update context after model switch (this will clear current agent)
                 ctx:update_context({ workflow_stage = "analysis" })
 
-                -- Reload agent after context update since update_context clears current agent
                 local agent_reload, reload_err = ctx:load_agent("test-agent", { model = "gpt-4o" })
-                if reload_err then
-                    print("ERROR reloading agent after context update:", reload_err)
-                end
-                expect(reload_err).to_be_nil()
-                expect(ctx.current_agent_id).to_equal("test-agent")
-                expect(ctx.current_model).to_equal("gpt-4o")
+                test.is_nil(reload_err)
+                test.eq(ctx.current_agent_id, "test-agent")
+                test.eq(ctx.current_model, "gpt-4o")
 
-                -- Switch agent with explicit model preservation (already have gpt-4o model)
                 local success3, err3 = ctx:switch_to_agent("specialist-agent", { model = "gpt-4o" })
-                if not success3 then
-                    print("ERROR switching to specialist-agent with model preservation:", err3)
-                    print("Current agent ID before specialist switch:", ctx.current_agent_id)
-                    print("Current model before specialist switch:", ctx.current_model)
-                end
-                expect(success3).to_equal(true)
-                expect(err3).to_be_nil()
-                expect(ctx.current_agent_id).to_equal("specialist-agent")
-                expect(ctx.current_model).to_equal("gpt-4o")
+                test.eq(success3, true)
+                test.is_nil(err3)
+                test.eq(ctx.current_agent_id, "specialist-agent")
+                test.eq(ctx.current_model, "gpt-4o")
 
-                -- Get current agent for execution
                 local current, err4 = ctx:get_current_agent()
-                if err4 then
-                    print("ERROR getting current agent in lifecycle:", err4)
-                end
-                expect(err4).to_be_nil()
-                expect(current).not_to_be_nil()
+                test.is_nil(err4)
+                test.not_nil(current)
                 if current then
-                    expect(current.id).to_equal("specialist-agent")
-                else
-                    print("ERROR: current agent is nil in lifecycle test")
+                    test.eq(current.id, "specialist-agent")
                 end
             end)
 
             it("should handle errors gracefully without corrupting state", function()
-                -- Load valid agent
                 local agent1, load_err1 = context:load_agent("test-agent")
-                if load_err1 then
-                    print("ERROR loading initial valid agent:", load_err1)
-                end
-                expect(load_err1).to_be_nil()
+                test.is_nil(load_err1)
 
                 local original_id = context.current_agent_id
                 local original_model = context.current_model
 
-                -- Try invalid operations - these should fail and preserve state
                 local success1, err1 = context:switch_to_agent("nonexistent-agent")
-                expect(success1).to_equal(false)
-                if err1 then
-                    print("Expected error from invalid agent switch:", err1)
-                end
+                test.eq(success1, false)
 
                 local success2, err2 = context:switch_to_model("")
-                expect(success2).to_equal(false)
-                if err2 then
-                    print("Expected error from empty model switch:", err2)
-                end
+                test.eq(success2, false)
 
-                -- State should be preserved
-                expect(context.current_agent_id).to_equal(original_id)
-                expect(context.current_model).to_equal(original_model)
+                test.eq(context.current_agent_id, original_id)
+                test.eq(context.current_model, original_model)
 
-                -- Should still be able to get current agent
                 local current, err = context:get_current_agent()
-                if err then
-                    print("ERROR getting current agent after failed operations:", err)
-                end
-                expect(err).to_be_nil()
-                expect(current).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(current)
             end)
 
             it("should support method chaining pattern", function()
@@ -824,33 +667,16 @@ local function define_tests()
                     :update_context({environment = "prod"})
                     :set_memory_contract({implementation_id = "memory"})
 
-                -- VERBOSE ERROR HANDLING FOR CHAINING
-                print("DEBUG: chained_result type:", type(chained_result))
-                print("DEBUG: chained_result nil?", chained_result == nil)
-
                 if chained_result then
-                    print("DEBUG: chained_result.load_agent exists?", chained_result.load_agent ~= nil)
-
                     local final_agent, load_err = chained_result:load_agent("test-agent")
-                    if load_err then
-                        print("ERROR in chained load_agent:", load_err)
-                    end
 
-                    print("DEBUG: final_agent type:", type(final_agent))
-                    print("DEBUG: chained_result.current_agent_id:", chained_result.current_agent_id)
-                    print("DEBUG: chained_result.base_context.environment:", chained_result.base_context.environment)
-                    print("DEBUG: additional_tools count:", #chained_result.additional_tools)
-                    print("DEBUG: additional_delegates count:", #chained_result.additional_delegates)
-                    print("DEBUG: memory_contract exists?", chained_result.memory_contract ~= nil)
-
-                    expect(chained_result.current_agent_id).to_equal("test-agent")
-                    expect(chained_result.base_context.environment).to_equal("prod")
-                    expect(#chained_result.additional_tools).to_equal(2)
-                    expect(#chained_result.additional_delegates).to_equal(1)
-                    expect(chained_result.memory_contract).not_to_be_nil()
+                    test.eq(chained_result.current_agent_id, "test-agent")
+                    test.eq(chained_result.base_context.environment, "prod")
+                    test.eq(#chained_result.additional_tools, 2)
+                    test.eq(#chained_result.additional_delegates, 1)
+                    test.not_nil(chained_result.memory_contract)
                 else
-                    print("ERROR: chained_result is nil - method chaining broke")
-                    expect(chained_result).not_to_be_nil()
+                    test.not_nil(chained_result)
                 end
             end)
         end)

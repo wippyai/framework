@@ -2,6 +2,38 @@ local json = require("json")
 local funcs = require("funcs")
 local store = require("store")
 
+type ToolRegistryEntry = {
+    id: string,
+    meta: {
+        type: string?,
+        name: string?,
+        title: string?,
+        comment: string?,
+        description: string?,
+        llm_description: string?,
+        llm_descirtion: string?,
+        llm_alias: string?,
+        input_schema: table | string?,
+        tags: {string}?,
+    }?,
+    data: table?,
+}
+
+type ToolSchema = {
+    id: string,
+    registry_id: string,
+    name: string,
+    title: string,
+    description: string,
+    schema: table,
+    meta: table,
+}
+
+type FindToolsCriteria = {
+    namespace: string?,
+    tags: {string}?,
+}
+
 -- Tool Resolver Library - For discovering tools and their schemas
 local tool_resolver = {}
 
@@ -18,14 +50,14 @@ tool_resolver._registry = nil
 tool_resolver.INPUT_SCHEMA_TTL = input_schema_ttl
 
 -- Get registry - use injected registry or require it
-local function get_registry()
+local function get_registry(): typeof(require("registry"))
     return tool_resolver._registry or require("registry")
 end
 
 -- Extract the tool name without namespace
-local function extract_tool_name(full_id)
+local function extract_tool_name(full_id: string): string
     -- Split by colon to separate namespace from tool name
-    local parts = {}
+    local parts: {string} = {}
     for part in string.gmatch(full_id, "[^:]+") do
         table.insert(parts, part)
     end
@@ -40,7 +72,7 @@ local function extract_tool_name(full_id)
 end
 
 -- Generate a sanitized name from any string input
-local function sanitize_name(name)
+local function sanitize_name(name: string): string
     -- Replace non-allowed characters with underscores
     local sanitized = name:gsub("[^%w]", "_")
 
@@ -55,7 +87,7 @@ local function sanitize_name(name)
 end
 
 -- Process the input schema using registered processors
-function tool_resolver.run_input_schema_processors(input_schema, tool_id, tool_name)
+function tool_resolver.run_input_schema_processors(input_schema: any, tool_id: string, tool_name: string?): any
     local registry = get_registry()
 
     local processors = registry.find({ [".kind"] = "function.lua", ["meta.type"] = "input_schema_processor" })
@@ -132,7 +164,7 @@ function tool_resolver.run_input_schema_processors(input_schema, tool_id, tool_n
 end
 
 -- Filter out meta fields that are already extracted for LLM tool construction
-local function filter_meta_for_llm(meta)
+local function filter_meta_for_llm(meta: any): any
     if not meta then
         return {}
     end
@@ -162,19 +194,19 @@ local function filter_meta_for_llm(meta)
 end
 
 -- Get the LLM-friendly tool name
-function tool_resolver.get_tool_name(entry)
+function tool_resolver.get_tool_name(entry: any): string
     -- If llm_alias is specified, use that
     if entry.meta and entry.meta.llm_alias then
-        return entry.meta.llm_alias
+        return tostring(entry.meta.llm_alias)
     end
 
     -- Otherwise extract the name part from ID and sanitize
-    local name = extract_tool_name(entry.id)
+    local name = extract_tool_name(tostring(entry.id))
     return sanitize_name(name)
 end
 
 -- Fetch a tool's schema from the registry (no tool caching due to self-modification)
-function tool_resolver.get_tool_schema(tool_id)
+function tool_resolver.get_tool_schema(tool_id: string): (any, string?)
     local registry = get_registry()
 
     if not tool_id or tool_id == "" then
@@ -198,7 +230,7 @@ function tool_resolver.get_tool_schema(tool_id)
         if type(entry.meta.input_schema) == "table" then
             schema = entry.meta.input_schema
         else
-            schema, err = json.decode(entry.meta.input_schema)
+            schema, err = json.decode(tostring(entry.meta.input_schema))
             if err then
                 return nil, "Invalid schema format: " .. tostring(err)
             end
@@ -259,20 +291,20 @@ function tool_resolver.get_tool_schema(tool_id)
 end
 
 -- Get schemas for multiple tools by ID
-function tool_resolver.get_tool_schemas(tool_ids)
+function tool_resolver.get_tool_schemas(tool_ids: {string}): ({[string]: any}, {[string]: string}?)
     if not tool_ids or #tool_ids == 0 then
         return {}
     end
 
     local results = {}
-    local errors = {}
+    local errors: {[string]: string} = {}
 
     -- Process tools
     for _, id in ipairs(tool_ids) do
         local tool, err = tool_resolver.get_tool_schema(id)
         if tool then
             results[id] = tool
-        else
+        elseif err then
             errors[id] = err
         end
     end
@@ -281,20 +313,20 @@ function tool_resolver.get_tool_schemas(tool_ids)
 end
 
 -- Get schemas for multiple tools by ID, preserving order
-function tool_resolver.get_tool_schemas_ordered(tool_ids)
+function tool_resolver.get_tool_schemas_ordered(tool_ids: {string}): ({any}, {[string]: string})
     if not tool_ids or #tool_ids == 0 then
         return {}, {}
     end
 
     local results = {}
-    local errors = {}
+    local errors: {[string]: string} = {}
 
     -- Process tools in the exact order provided
     for _, id in ipairs(tool_ids) do
         local tool, err = tool_resolver.get_tool_schema(id)
         if tool then
             table.insert(results, tool)  -- Insert into array, preserving order
-        else
+        elseif err then
             errors[id] = err
         end
     end
@@ -303,7 +335,7 @@ function tool_resolver.get_tool_schemas_ordered(tool_ids)
 end
 
 -- Find a tool ID from a list of tool IDs that matches a given name
-function tool_resolver.resolve_name_to_id(name, scope_ids)
+function tool_resolver.resolve_name_to_id(name: string, scope_ids: {string}): (string?, string?)
     local registry = get_registry()
 
     if not name or not scope_ids or #scope_ids == 0 then
@@ -314,7 +346,7 @@ function tool_resolver.resolve_name_to_id(name, scope_ids)
     local normalized_name = name:lower()
 
     for _, id in ipairs(scope_ids) do
-        local entry, err = registry.get(id)
+        local entry, err = registry.get(tostring(id))
         if not err and entry and entry.meta and entry.meta.type == "tool" then
             -- Try exact matches in priority order
 
@@ -349,7 +381,7 @@ function tool_resolver.resolve_name_to_id(name, scope_ids)
 end
 
 -- Find tools by criteria (namespace, tags, etc.)
-function tool_resolver.find_tools(criteria)
+function tool_resolver.find_tools(criteria: FindToolsCriteria?): ({any}?, string?)
     local registry = get_registry()
 
     local query = {
@@ -405,7 +437,7 @@ function tool_resolver.find_tools(criteria)
 end
 
 -- Backward compatibility function
-function tool_resolver.sanitize_name(name)
+function tool_resolver.sanitize_name(name: string): string
     -- Handle the namespace case
     if name:find(":") then
         return sanitize_name(extract_tool_name(name))
@@ -415,23 +447,23 @@ end
 
 
 -- Get raw tool metadata by IDs (fast, no processing)
-function tool_resolver.get_tools_meta(tool_ids)
+function tool_resolver.get_tools_meta(tool_ids: {string}): ({[string]: any}, {[string]: string}?)
     if not tool_ids or #tool_ids == 0 then
         return {}
     end
 
     local registry = get_registry()
-    local results = {}
-    local errors = {}
+    local results: {[string]: any} = {}
+    local errors: {[string]: string} = {}
 
     for _, id in ipairs(tool_ids) do
-        local entry, err = registry.get(id)
+        local entry, err = registry.get(tostring(id))
         if err or not entry then
-            errors[id] = err or "Entry not found"
+            errors[id] = tostring(err or "Entry not found")
         elseif not entry.meta or entry.meta.type ~= "tool" then
             errors[id] = "Invalid tool type"
         else
-            results[id] = entry.meta
+            results[id] = entry.meta :: any
         end
     end
 

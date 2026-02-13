@@ -87,7 +87,7 @@ local function define_tests()
         before_each(function()
             mock_registry = {
                 get = function(id)
-                    return agent_entries[id]
+                    return (agent_entries :: any)[id]
                 end,
                 find = function(query)
                     local results = {}
@@ -122,140 +122,140 @@ local function define_tests()
         it("should get raw agent spec by ID", function()
             local spec, err = agent_registry.get_by_id("wippy.agents:basic_assistant")
 
-            expect(err).to_be_nil()
-            expect(spec).not_to_be_nil()
-            expect(spec.id).to_equal("wippy.agents:basic_assistant")
-            expect(spec.name).to_equal("Basic Assistant")
-            expect(spec.description).to_equal("A simple, helpful assistant")
-            expect(spec.model).to_equal("claude-3-7-sonnet")
-            expect(spec.max_tokens).to_equal(4096)
-            expect(spec.temperature).to_equal(0.7)
+            test.is_nil(err)
+            test.not_nil(spec)
+            test.eq(spec.id, "wippy.agents:basic_assistant")
+            test.eq(spec.name, "Basic Assistant")
+            test.eq(spec.description, "A simple, helpful assistant")
+            test.eq(spec.model, "claude-3-7-sonnet")
+            test.eq(spec.max_tokens, 4096)
+            test.eq(spec.temperature, 0.7)
 
             -- Raw arrays without processing
-            expect(#spec.traits).to_equal(1)
-            expect(spec.traits[1]).to_equal("Conversational")
-            expect(#spec.tools).to_equal(1)
-            expect(spec.tools[1]).to_equal("wippy.tools:calculator")
-            expect(#spec.memory).to_equal(2)
-            expect(spec.memory[1]).to_equal("wippy.memory:conversation_history")
+            test.eq(#spec.traits, 1)
+            test.eq(spec.traits[1], "Conversational")
+            test.eq(#spec.tools, 1)
+            test.eq(spec.tools[1], "wippy.tools:calculator")
+            test.eq(#spec.memory, 2)
+            test.eq(spec.memory[1], "wippy.memory:conversation_history")
 
             -- Context should be preserved
-            expect(spec.context).not_to_be_nil()
-            expect(spec.context.workspace).to_equal("/tmp")
+            test.not_nil(spec.context)
+            test.eq(spec.context.workspace, "/tmp")
         end)
 
         it("should handle missing fields gracefully", function()
             local spec, err = agent_registry.get_by_id("wippy.agents:minimal")
 
-            expect(err).to_be_nil()
-            expect(spec).not_to_be_nil()
-            expect(spec.id).to_equal("wippy.agents:minimal")
-            expect(spec.name).to_equal("Minimal Agent")
-            expect(spec.description).to_equal("") -- Default empty
-            expect(spec.model).to_be_nil()        -- Not set
-            expect(spec.prompt).to_equal("You are a minimal agent.")
+            test.is_nil(err)
+            test.not_nil(spec)
+            test.eq(spec.id, "wippy.agents:minimal")
+            test.eq(spec.name, "Minimal Agent")
+            test.eq(spec.description, "") -- Default empty
+            test.is_nil(spec.model)        -- Not set
+            test.eq(spec.prompt, "You are a minimal agent.")
 
             -- Arrays default to empty
-            expect(#spec.traits).to_equal(0)
-            expect(#spec.tools).to_equal(0)
-            expect(#spec.memory).to_equal(0)
-            expect(#spec.delegates).to_equal(0)
-            expect(next(spec.context)).to_be_nil() -- Empty context
+            test.eq(#spec.traits, 0)
+            test.eq(#spec.tools, 0)
+            test.eq(#spec.memory, 0)
+            test.eq(#spec.delegates, 0)
+            test.is_nil(next(spec.context)) -- Empty context
         end)
 
         it("should preserve delegates without processing", function()
             local spec, err = agent_registry.get_by_id("wippy.agents:coding_assistant")
 
-            expect(err).to_be_nil()
-            expect(spec).not_to_be_nil()
-            expect(#spec.delegates).to_equal(1)
-            expect(spec.delegates[1].id).to_equal("data-analyst-id")
-            expect(spec.delegates[1].name).to_equal("to_data_analyst")
-            expect(spec.delegates[1].rule).to_equal("Forward to this agent when data analysis questions are detected")
+            test.is_nil(err)
+            test.not_nil(spec)
+            test.eq(#spec.delegates, 1)
+            test.eq(spec.delegates[1].id, "data-analyst-id")
+            test.eq(spec.delegates[1].name, "to_data_analyst")
+            test.eq(spec.delegates[1].rule, "Forward to this agent when data analysis questions are detected")
         end)
 
         it("should handle agent not found by ID", function()
             local spec, err = agent_registry.get_by_id("nonexistent")
 
-            expect(spec).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("No agent found")).not_to_be_nil()
+            test.is_nil(spec)
+            test.not_nil(err)
+            test.not_nil(err:match("No agent found"))
         end)
 
         it("should validate entry is an agent when getting by ID", function()
             local spec, err = agent_registry.get_by_id("wippy.agents:non_agent_entry")
 
-            expect(spec).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("Entry is not a gen1 agent")).not_to_be_nil()
+            test.is_nil(spec)
+            test.not_nil(err)
+            test.not_nil(err:match("Entry is not a gen1 agent"))
         end)
 
         it("should get raw agent spec by name", function()
             local spec, err = agent_registry.get_by_name("Basic Assistant")
 
-            expect(err).to_be_nil()
-            expect(spec).not_to_be_nil()
-            expect(spec.name).to_equal("Basic Assistant")
-            expect(spec.id).to_equal("wippy.agents:basic_assistant")
+            test.is_nil(err)
+            test.not_nil(spec)
+            test.eq(spec.name, "Basic Assistant")
+            test.eq(spec.id, "wippy.agents:basic_assistant")
 
             -- Should be raw, unprocessed
-            expect(#spec.traits).to_equal(1)
-            expect(spec.traits[1]).to_equal("Conversational")
+            test.eq(#spec.traits, 1)
+            test.eq(spec.traits[1], "Conversational")
         end)
 
         it("should handle agent not found by name", function()
             local spec, err = agent_registry.get_by_name("NonexistentAgent")
 
-            expect(spec).to_be_nil()
-            expect(err).not_to_be_nil()
-            expect(err:match("No agent found with name")).not_to_be_nil()
+            test.is_nil(spec)
+            test.not_nil(err)
+            test.not_nil(err:match("No agent found with name"))
         end)
 
         it("should require parameter for get_by_id", function()
-            local spec, err = agent_registry.get_by_id(nil)
+            local spec, err = agent_registry.get_by_id(nil :: string)
 
-            expect(spec).to_be_nil()
-            expect(err).to_equal("Agent ID is required")
+            test.is_nil(spec)
+            test.eq(err, "Agent ID is required")
         end)
 
         it("should require parameter for get_by_name", function()
-            local spec, err = agent_registry.get_by_name(nil)
+            local spec, err = agent_registry.get_by_name(nil :: string)
 
-            expect(spec).to_be_nil()
-            expect(err).to_equal("Agent name is required")
+            test.is_nil(spec)
+            test.eq(err, "Agent name is required")
         end)
 
         it("should list agents by class and return raw specs", function()
             local specs = agent_registry.list_by_class("assistant.coding")
 
-            expect(#specs).to_equal(1)
-            expect(specs[1].id).to_equal("wippy.agents:class_test")
-            expect(specs[1].name).to_equal("Class Test Agent")
-            expect(specs[1].prompt).to_equal("I can do coding and math.")
+            test.eq(#specs, 1)
+            test.eq(specs[1].id, "wippy.agents:class_test")
+            test.eq(specs[1].name, "Class Test Agent")
+            test.eq(specs[1].prompt, "I can do coding and math.")
         end)
 
         it("should list agents by class with raw_entries option", function()
             local entries = agent_registry.list_by_class("assistant.coding", { raw_entries = true })
 
-            expect(#entries).to_equal(1)
-            expect(entries[1].id).to_equal("wippy.agents:class_test")
-            expect(entries[1].kind).to_equal("registry.entry") -- Raw entry includes kind
-            expect(entries[1].meta).not_to_be_nil()
-            expect(entries[1].data).not_to_be_nil()
+            test.eq(#entries, 1)
+            test.eq(entries[1].id, "wippy.agents:class_test")
+            test.eq(entries[1].kind, "registry.entry") -- Raw entry includes kind
+            test.not_nil(entries[1].meta)
+            test.not_nil(entries[1].data)
         end)
 
         it("should require class_name for list_by_class", function()
-            local specs, err = agent_registry.list_by_class(nil)
+            local specs, err = agent_registry.list_by_class(nil :: string)
 
-            expect(specs).to_be_nil()
-            expect(err).to_equal("class_name required")
+            test.is_nil(specs)
+            test.eq(err, "class_name required")
         end)
 
         it("should handle empty class results", function()
             local specs = agent_registry.list_by_class("nonexistent.class")
 
-            expect(specs).not_to_be_nil()
-            expect(#specs).to_equal(0)
+            test.not_nil(specs)
+            test.eq(#specs, 0)
         end)
     end)
 end

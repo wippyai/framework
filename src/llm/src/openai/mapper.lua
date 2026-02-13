@@ -131,9 +131,6 @@ end
 
 -- MESSAGE MAPPING FUNCTIONS
 
----@param contract_messages table[] Array of contract message objects
----@param options table|nil Message mapping options
----@return table[] OpenAI messages format
 function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
     local processed_messages = {}
@@ -148,7 +145,7 @@ function openai_mapper.map_messages(contract_messages, options)
         if msg.role == "cache_marker" then
             -- Handle cache marker for Claude models
             if is_claude and #processed_messages > 0 then
-                apply_cache_control_to_message(processed_messages[#processed_messages])
+                apply_cache_control_to_message(processed_messages[#processed_messages] :: any)
             end
             -- Skip cache marker message (don't add to processed_messages)
             i = i + 1
@@ -292,8 +289,44 @@ function openai_mapper.map_messages(contract_messages, options)
             })
             i = i + 1
         elseif msg.role == "function_call" then
-            -- Skip orphaned function calls - they should have been collected by assistant message processing
-            i = i + 1
+            -- Standalone function_calls without preceding assistant message
+            if not msg.function_call or not msg.function_call.id then
+                -- Skip function_calls without proper id
+                i = i + 1
+            else
+                -- Create a synthetic assistant message and collect consecutive function_calls
+                local assistant_msg = {
+                    role = "assistant",
+                    content = "",
+                    tool_calls = {}
+                }
+
+                while i <= #contract_messages do
+                    local current = contract_messages[i]
+                    if current.role == "function_call" and current.function_call and current.function_call.id then
+                        local arguments = current.function_call.arguments
+                        if type(arguments) == "table" and not next(arguments) then
+                            arguments = { invoke = true }
+                        end
+                        table.insert(assistant_msg.tool_calls, {
+                            id = current.function_call.id,
+                            type = "function",
+                            ["function"] = {
+                                name = current.function_call.name,
+                                arguments = (type(arguments) == "table") and json.encode(arguments) or tostring(arguments)
+                            }
+                        })
+                        i = i + 1
+                    elseif current.role == "function_call" then
+                        -- function_call without id, skip
+                        i = i + 1
+                    else
+                        break
+                    end
+                end
+
+                table.insert(processed_messages, assistant_msg)
+            end
         else
             -- Skip unknown message types
             i = i + 1
@@ -304,8 +337,6 @@ end
 
 -- INPUT MAPPING FUNCTIONS
 
----@param contract_tools table[] Array of contract tool definitions
----@return table|nil, table OpenAI tools format and tool name map
 function openai_mapper.map_tools(contract_tools)
     if not contract_tools or #contract_tools == 0 then
         return nil, {}
@@ -331,9 +362,6 @@ function openai_mapper.map_tools(contract_tools)
     return openai_tools, tool_name_map
 end
 
----@param contract_choice string|nil Tool choice from contract
----@param available_tools table[] Available tools to validate against
----@return string|table|nil, string|nil OpenAI tool choice format and error message
 function openai_mapper.map_tool_choice(contract_choice, available_tools)
     if not contract_choice or contract_choice == "auto" then
         return "auto", nil
@@ -357,8 +385,6 @@ function openai_mapper.map_tool_choice(contract_choice, available_tools)
     return "auto", nil
 end
 
----@param contract_options table|nil Contract options
----@return table OpenAI options
 function openai_mapper.map_options(contract_options)
     if not contract_options then return {} end
 
@@ -403,9 +429,6 @@ end
 
 -- OUTPUT MAPPING FUNCTIONS
 
----@param openai_tool_calls table[] OpenAI tool calls
----@param tool_name_map table Tool name mapping
----@return table[] Contract format tool calls
 function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
     if not openai_tool_calls then return {} end
 
@@ -414,7 +437,7 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
         if tool_call["function"] then
             local arguments = {}
             if tool_call["function"].arguments then
-                local parsed_args, parse_err = json.decode(tool_call["function"].arguments)
+                local parsed_args, parse_err = json.decode(tostring(tool_call["function"].arguments))
                 if not parse_err and parsed_args then
                     arguments = parsed_args
                 end
@@ -431,21 +454,16 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
     return contract_tool_calls
 end
 
----@param openai_finish_reason string|nil OpenAI finish reason
----@return string Contract format finish reason
 function openai_mapper.map_finish_reason(openai_finish_reason)
-    local FINISH_REASON_MAP = {
-        ["stop"] = output.FINISH_REASON.STOP,
-        ["length"] = output.FINISH_REASON.LENGTH,
-        ["content_filter"] = output.FINISH_REASON.CONTENT_FILTER,
-        ["tool_calls"] = output.FINISH_REASON.TOOL_CALL
-    }
+    local FINISH_REASON_MAP: {[string]: string} = {}
+    FINISH_REASON_MAP["stop"] = output.FINISH_REASON.STOP
+    FINISH_REASON_MAP["length"] = output.FINISH_REASON.LENGTH
+    FINISH_REASON_MAP["content_filter"] = output.FINISH_REASON.CONTENT_FILTER
+    FINISH_REASON_MAP["tool_calls"] = output.FINISH_REASON.TOOL_CALL
 
     return FINISH_REASON_MAP[openai_finish_reason] or output.FINISH_REASON.ERROR
 end
 
----@param openai_usage table|nil OpenAI usage object
----@return table|nil Contract format token usage
 function openai_mapper.map_tokens(openai_usage)
     if not openai_usage then return nil end
 
@@ -463,17 +481,19 @@ function openai_mapper.map_tokens(openai_usage)
     end
 
     if openai_usage.prompt_tokens_details and openai_usage.prompt_tokens_details.cached_tokens then
-        tokens.cache_read_tokens = openai_usage.prompt_tokens_details.cached_tokens
-        tokens.cache_write_tokens = math.max(0, tokens.prompt_tokens - tokens.cache_read_tokens)
-        tokens.prompt_tokens = tokens.prompt_tokens - tokens.cache_read_tokens
+        local cached = tonumber(openai_usage.prompt_tokens_details.cached_tokens) or 0
+        tokens.cache_read_tokens = cached
+        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
+        tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
+
+    -- Cross-provider aliases
+    tokens.cache_creation_input_tokens = tokens.cache_write_tokens
+    tokens.cache_read_input_tokens = tokens.cache_read_tokens
 
     return tokens
 end
 
----@param openai_response table OpenAI API response
----@param context table Response mapping context
----@return table Contract success response
 function openai_mapper.map_success_response(openai_response, context)
     if not openai_response or not openai_response.choices or #openai_response.choices == 0 then
         error("Invalid OpenAI response structure")
@@ -522,8 +542,6 @@ function openai_mapper.map_success_response(openai_response, context)
     return response
 end
 
----@param openai_error table OpenAI error object
----@return table Contract error response
 function openai_mapper.map_error_response(openai_error)
     if not openai_error then
         return {

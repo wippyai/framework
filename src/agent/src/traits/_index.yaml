@@ -14,6 +14,27 @@ entries:
       - ctx
     method: execute
     
+  # wippy.agent.traits:init_time_aware_test
+  - name: init_time_aware_test
+    kind: function.lua
+    meta:
+      name: Init Time Aware Trait Test
+      type: test
+      comment: Tests the time-aware trait initialization and prompt generation
+      group: Agent Framework
+      tags:
+        - traits
+        - time
+        - tests
+    source: file://init_time_aware_test.lua
+    modules:
+      - time
+      - ctx
+    imports:
+      test: wippy.test:test
+      init_time_aware: wippy.agent.traits:init_time_aware
+    method: run_tests
+
   # wippy.agent.traits:time_aware
   - name: time_aware
     kind: registry.entry

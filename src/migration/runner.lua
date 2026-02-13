@@ -4,16 +4,32 @@ local funcs = require("funcs")
 local repository = require("repository")
 local registry_finder = require("migration_registry")
 
+type RunnerResult = {
+    status: string,
+    migrations_found: number,
+    migrations_applied: number,
+    migrations_skipped: number,
+    migrations_failed: number,
+    migrations: {any},
+    duration: number?,
+}
+
+type RunnerOptions = {
+    tags: {string}?,
+    allowed_ids: {string}?,
+    count: number?,
+}
+
 local runner = {}
 
-local function create_error(message)
+local function create_error(message: string): any
     return {
         status = "error",
         error = tostring(message)
     }
 end
 
-local function get_description(migration)
+local function get_description(migration: any): any
     if migration.meta and migration.meta.description and migration.meta.description ~= "" then
         return migration.meta.description
     end
@@ -26,7 +42,7 @@ end
 local Runner = {}
 Runner.__index = Runner
 
-function runner.setup(database_id)
+function runner.setup(database_id: string): any
     if not database_id then
         error("Database ID is required for migration runner setup")
     end
@@ -37,10 +53,10 @@ function runner.setup(database_id)
     return self
 end
 
-function Runner:find_migrations(options)
+function Runner:find_migrations(options: RunnerOptions?): ({any}?, string?)
     options = options or {}
 
-    local db, err = sql.get(self.database_id)
+    local db, err = sql.get(tostring(self.database_id))
     if err then
         return nil, "Failed to connect to database: " .. tostring(err)
     end
@@ -68,8 +84,8 @@ function Runner:find_migrations(options)
         applied_map[m.id] = m
     end
 
-    local find_options = {
-        target_db = self.database_id,
+    local find_options: any = {
+        target_db = tostring(self.database_id),
         tags = options.tags
     }
 
@@ -118,7 +134,7 @@ function Runner:find_migrations(options)
     return sorted
 end
 
-function Runner:get_next_migration(options)
+function Runner:get_next_migration(options: RunnerOptions?): (any?, string?)
     local migrations, err = self:find_migrations(options)
     if err then
         return nil, err
@@ -137,7 +153,7 @@ function Runner:get_next_migration(options)
     return nil, "All migrations have been applied"
 end
 
-local function execute_migration(migration_id, options)
+local function execute_migration(migration_id: string, options: any): any
     local executor = funcs.new()
     local result, exec_err = executor:call(migration_id, options)
     if exec_err then
@@ -154,7 +170,7 @@ local function execute_migration(migration_id, options)
     return result
 end
 
-function Runner:run(options)
+function Runner:run(options: RunnerOptions?): any
     options = options or {}
 
     local migrations, find_err = self:find_migrations(options)
@@ -212,7 +228,7 @@ function Runner:run(options)
             id = migration.id
         }
 
-        local result = execute_migration(migration.id, migration_options)
+        local result = execute_migration(tostring(migration.id), migration_options)
 
         if result and result.status == "error" then
             results.migrations_failed = results.migrations_failed + 1
@@ -272,7 +288,7 @@ function Runner:run(options)
     return results
 end
 
-function Runner:run_next(options)
+function Runner:run_next(options: RunnerOptions?): any
     options = options or {}
 
     local migrations, err = self:find_migrations(options)
@@ -366,7 +382,7 @@ function Runner:run_next(options)
         id = target_migration.id
     }
 
-    local result = execute_migration(target_migration.id, migration_options)
+    local result = execute_migration(tostring(target_migration.id), migration_options)
 
     if result and result.status == "error" then
         results.migrations_failed = 1
@@ -421,10 +437,10 @@ function Runner:run_next(options)
     return results
 end
 
-function Runner:rollback(options)
+function Runner:rollback(options: RunnerOptions?): any
     options = options or {}
 
-    local db, err = sql.get(self.database_id)
+    local db, err = sql.get(tostring(self.database_id))
     if err then
         return create_error("Failed to connect to database: " .. tostring(err))
     end
@@ -455,7 +471,7 @@ function Runner:rollback(options)
     end
 
     for i, migration in ipairs(applied_migrations) do
-        local registry_entry = registry_finder.get(migration.id)
+        local registry_entry = registry_finder.get(tostring(migration.id))
         if registry_entry then
             applied_migrations[i].registry_entry = registry_entry
         end
@@ -521,7 +537,7 @@ function Runner:rollback(options)
             id = migration.id
         }
 
-        local result = execute_migration(migration.id, migration_options)
+        local result = execute_migration(tostring(migration.id), migration_options)
 
         if result and result.status == "error" then
             results.migrations_failed = results.migrations_failed + 1
@@ -579,7 +595,7 @@ function Runner:rollback(options)
     return results
 end
 
-function Runner:status(options)
+function Runner:status(options: RunnerOptions?): any
     options = options or {}
 
     local migrations, find_err = self:find_migrations(options)
@@ -596,7 +612,7 @@ function Runner:status(options)
         migrations = {}
     }
 
-    local db, err = sql.get(self.database_id)
+    local db, err = sql.get(tostring(self.database_id))
     if err then
         return create_error("Failed to connect to database: " .. tostring(err))
     end

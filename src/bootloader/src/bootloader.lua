@@ -1,5 +1,4 @@
 local time = require("time")
-local json = require("json")
 local logger = require("logger")
 local funcs = require("funcs")
 local bootloader_registry = require("bootloader_registry")
@@ -7,7 +6,44 @@ local registry = require("registry")
 
 local log = logger:named("boot")
 
-local function log_bootloader_result(bootloader_entry, result)
+type BootloaderMeta = {
+    type: string,
+    order: number?,
+    description: string?,
+    requires: any?,
+}
+
+type BootloaderEntry = {
+    id: string,
+    kind: string,
+    meta: BootloaderMeta,
+}
+
+type BootloaderResult = {
+    status: string,
+    message: string,
+    duration: number?,
+    details: any?,
+    id: string?,
+}
+
+type BootloaderStats = {
+    success: number,
+    failed: number,
+    skipped: number,
+    total: number,
+    bootloaders: {BootloaderStatEntry},
+}
+
+type BootloaderStatEntry = {
+    id: string,
+    order: number?,
+    status: string,
+    message: string,
+    duration: number?,
+}
+
+local function log_bootloader_result(bootloader_entry: any, result: any)
     local prefix
     local log_level
 
@@ -48,7 +84,7 @@ local function log_bootloader_result(bootloader_entry, result)
     end
 end
 
-local function is_service_id(dep_id)
+local function is_service_id(dep_id: string): boolean
     -- Service IDs contain ':' but don't have '.' in namespace part
     -- Bootloader IDs: "wippy.bootloader.bootloaders:encryption_key"
     -- Service IDs: "app:db", "system:logger"
@@ -61,7 +97,7 @@ local function is_service_id(dep_id)
     return not namespace:match("%.")
 end
 
-local function wait_for_service(service_id, max_attempts, sleep_ms)
+local function wait_for_service(service_id: string, max_attempts: number, sleep_ms: number): (boolean, string?)
     log:info("Waiting for service", {
         service = service_id,
         max_attempts = max_attempts
@@ -98,7 +134,7 @@ local function wait_for_service(service_id, max_attempts, sleep_ms)
     return false, err_msg
 end
 
-local function check_dependencies(entry, completed_bootloaders)
+local function check_dependencies(entry: any, completed_bootloaders: {string}): (boolean, {string}?)
     -- Check if bootloader has requirements
     if not entry.meta or not entry.meta.requires then
         return true, nil
@@ -114,24 +150,25 @@ local function check_dependencies(entry, completed_bootloaders)
     local failed_services = {}
 
     for _, dep_id in ipairs(requires) do
-        if is_service_id(dep_id) then
+        local dep: string = tostring(dep_id)
+        if is_service_id(dep) then
             -- Service dependency - wait for it to be available
-            local ok, err = wait_for_service(dep_id, 20, 500)
+            local ok, err = wait_for_service(dep, 20, 500)
             if not ok then
-                table.insert(failed_services, dep_id .. " (" .. tostring(err) .. ")")
+                table.insert(failed_services, dep .. " (" .. tostring(err) .. ")")
             end
         else
             -- Bootloader dependency - check if completed
             local found = false
             for _, completed_id in ipairs(completed_bootloaders) do
-                if completed_id == dep_id then
+                if completed_id == dep then
                     found = true
                     break
                 end
             end
 
             if not found then
-                table.insert(missing_bootloaders, dep_id)
+                table.insert(missing_bootloaders, dep)
             end
         end
     end
@@ -175,8 +212,8 @@ local function execute_bootloader(entry, options, completed_bootloaders)
         return {
             status = "error",
             message = "Dependencies not met: " .. tostring(error_message),
-            duration = 0
-        }
+            duration = 0.0
+        } :: BootloaderResult
     end
 
     -- Create function executor
@@ -185,7 +222,7 @@ local function execute_bootloader(entry, options, completed_bootloaders)
     -- Execute bootloader
     local result, err = executor:call(bootloader_id, options)
     local end_time = time.now()
-    local duration = end_time:sub(start_time):milliseconds()
+    local duration: number = end_time:sub(start_time):milliseconds()
 
     if err then
         log:error("Bootloader execution failed", {
@@ -197,7 +234,7 @@ local function execute_bootloader(entry, options, completed_bootloaders)
             status = "error",
             message = "Execution failed: " .. tostring(err),
             duration = duration
-        }
+        } :: BootloaderResult
     end
 
     -- Validate result
@@ -211,16 +248,16 @@ local function execute_bootloader(entry, options, completed_bootloaders)
             status = "error",
             message = "Bootloader must return a table with status field",
             duration = duration
-        }
+        } :: BootloaderResult
     end
 
     result.duration = duration
     result.id = bootloader_id
 
-    return result
+    return result :: BootloaderResult
 end
 
-local function run(options)
+local function run(options: any?): (boolean, BootloaderStats | string)
     options = options or {}
 
     log:info("Starting application bootloader")
@@ -252,7 +289,7 @@ local function run(options)
     end
 
     -- Execution statistics
-    local total_stats = {
+    local total_stats: BootloaderStats = {
         success = 0,
         failed = 0,
         skipped = 0,
@@ -261,7 +298,7 @@ local function run(options)
     }
 
     local had_failure = false
-    local completed_bootloaders = {}
+    local completed_bootloaders: {string} = {}
 
     -- Execute each bootloader in order
     for _, entry in ipairs(bootloaders) do
@@ -312,7 +349,11 @@ local function run(options)
         skipped = total_stats.skipped
     })
 
-    return not had_failure, total_stats
+    return not had_failure, total_stats :: BootloaderStats
 end
 
-return { run = run }
+return {
+    run = run,
+    _is_service_id = is_service_id,
+    _check_dependencies = check_dependencies,
+}

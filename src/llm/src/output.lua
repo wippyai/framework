@@ -1,6 +1,55 @@
 local output = {}
 
 ---------------------------
+-- Type Aliases
+---------------------------
+
+type ErrorInfo = {
+    type: string,
+    message: string,
+    code: any?,
+}
+
+type OutputChunk = {
+    type: string,
+    content: string?,
+    error: ErrorInfo?,
+    name: string?,
+    arguments: string?,
+    id: string?,
+    meta: table?,
+    usage: UsageInfo?,
+}
+
+type UsageInfo = {
+    prompt_tokens: number,
+    completion_tokens: number,
+    thinking_tokens: number,
+    cache_write_tokens: number,
+    cache_read_tokens: number,
+    total_tokens: number,
+}
+
+type DoneMeta = {
+    finish_reason: string?,
+    model: string?,
+}
+
+type Streamer = {
+    pid: string,
+    topic: string,
+    buffer: string,
+    buffer_size: number,
+    send_content: (self: Streamer, text: string) -> boolean,
+    send_thinking: (self: Streamer, text: string) -> boolean,
+    send_tool_call: (self: Streamer, name: string, arguments: string, id: string?) -> boolean,
+    send_error: (self: Streamer, type: string, message: string, code: any?) -> boolean,
+    send_done: (self: Streamer, meta: DoneMeta?) -> boolean,
+    buffer_content: (self: Streamer, text: string?) -> boolean,
+    flush: (self: Streamer) -> boolean,
+}
+
+---------------------------
 -- Chunk Types
 ---------------------------
 
@@ -40,11 +89,11 @@ output.FINISH_REASON = {
 ---------------------------
 
 -- Format an error object
-function output.error(type, message, code)
+function output.error(err_type: string, message: string, code: any?): OutputChunk
     return {
         type = output.TYPE.ERROR,
         error = {
-            type = type or output.ERROR_TYPE.SERVER_ERROR,
+            type = err_type or output.ERROR_TYPE.SERVER_ERROR,
             message = message or "Unknown error",
             code = code
         }
@@ -52,7 +101,7 @@ function output.error(type, message, code)
 end
 
 -- Format a content response
-function output.content(text)
+function output.content(text: string): OutputChunk
     return {
         type = output.TYPE.CONTENT,
         content = text
@@ -60,7 +109,7 @@ function output.content(text)
 end
 
 -- Format a thinking response
-function output.thinking(content)
+function output.thinking(content: string): OutputChunk
     return {
         type = output.TYPE.THINKING,
         content = content
@@ -68,7 +117,7 @@ function output.thinking(content)
 end
 
 -- Format a tool call response
-function output.tool_call(name, arguments, id)
+function output.tool_call(name: string, arguments: string, id: string?): OutputChunk
     return {
         type = output.TYPE.TOOL_CALL,
         name = name,
@@ -78,7 +127,7 @@ function output.tool_call(name, arguments, id)
 end
 
 -- Format a done/completion response
-function output.done(meta)
+function output.done(meta: DoneMeta?): OutputChunk
     return {
         type = output.TYPE.DONE,
         meta = meta or {}
@@ -86,7 +135,7 @@ function output.done(meta)
 end
 
 -- Create usage information
-function output.usage(prompt_tokens, completion_tokens, thinking_tokens, cache_write_tokens, cache_read_tokens)
+function output.usage(prompt_tokens: number?, completion_tokens: number?, thinking_tokens: number?, cache_write_tokens: number?, cache_read_tokens: number?): UsageInfo
     return {
         prompt_tokens = prompt_tokens or 0,
         completion_tokens = completion_tokens or 0,
@@ -98,7 +147,7 @@ function output.usage(prompt_tokens, completion_tokens, thinking_tokens, cache_w
 end
 
 -- Wrap an LLM result
-function output.wrap(result_type, content, usage_info)
+function output.wrap(result_type: string, content: any, usage_info: UsageInfo?): OutputChunk
     local wrapped = {
         type = result_type
     }
@@ -126,7 +175,7 @@ function output.wrap(result_type, content, usage_info)
         wrapped.usage = usage_info
     end
 
-    return wrapped
+    return wrapped :: OutputChunk
 end
 
 ---------------------------
@@ -134,7 +183,7 @@ end
 ---------------------------
 
 -- Create a new streamer for a specific PID
-function output.streamer(pid, topic, buffer_size)
+function output.streamer(pid: string?, topic: string?, buffer_size: number?): (Streamer?, string?)
     if not pid then
         return nil, "PID is required for streamer"
     end
@@ -146,38 +195,41 @@ function output.streamer(pid, topic, buffer_size)
         buffer_size = buffer_size or 10 -- Default buffer size
     }
 
+    local target_pid = tostring(pid)
+    local target_topic = tostring(topic or "llm_response")
+
     -- Send content chunk
-    streamer.send_content = function(self, text)
-        return process.send(self.pid, self.topic, output.content(text))
+    streamer.send_content = function(self: Streamer, text: string): boolean
+        return process.send(target_pid, target_topic, output.content(text))
     end
 
     -- Send thinking chunk
-    streamer.send_thinking = function(self, text)
-        return process.send(self.pid, self.topic, output.thinking(text))
+    streamer.send_thinking = function(self: Streamer, text: string): boolean
+        return process.send(target_pid, target_topic, output.thinking(text))
     end
 
     -- Send tool call chunk
-    streamer.send_tool_call = function(self, name, arguments, id)
-        return process.send(self.pid, self.topic, output.tool_call(name, arguments, id))
+    streamer.send_tool_call = function(self: Streamer, name: string, arguments: string, id: string?): boolean
+        return process.send(target_pid, target_topic, output.tool_call(name, arguments, id))
     end
 
     -- Send error chunk
-    streamer.send_error = function(self, type, message, code)
-        return process.send(self.pid, self.topic, output.error(type, message, code))
+    streamer.send_error = function(self: Streamer, err_type: string, message: string, code: any?): boolean
+        return process.send(target_pid, target_topic, output.error(err_type, message, code))
     end
 
     -- Send done chunk
-    streamer.send_done = function(self, meta)
-        return process.send(self.pid, self.topic, output.done(meta))
+    streamer.send_done = function(self: Streamer, meta: DoneMeta?): boolean
+        return process.send(target_pid, target_topic, output.done(meta))
     end
 
     -- Buffer content and send when a natural break is detected
-    streamer.buffer_content = function(self, text)
+    streamer.buffer_content = function(self: Streamer, text: string?): boolean
         self.buffer = self.buffer .. (text or "")
 
         -- Stream chunks when buffer is larger than buffer_size or sentence appears complete
         if self.buffer_size > 0 and (#self.buffer >= self.buffer_size or self.buffer:match("[%.%!%?]%s*$")) then
-            self:send_content(self.buffer)
+            process.send(target_pid, target_topic, output.content(self.buffer))
             self.buffer = ""
             return true
         end
@@ -186,16 +238,16 @@ function output.streamer(pid, topic, buffer_size)
     end
 
     -- Flush any remaining buffered content
-    streamer.flush = function(self)
+    streamer.flush = function(self: Streamer): boolean
         if #self.buffer > 0 then
-            self:send_content(self.buffer)
+            process.send(target_pid, target_topic, output.content(self.buffer))
             self.buffer = ""
-            return true -- Return true regardless of what send_content returns
+            return true
         end
         return false
     end
 
-    return streamer
+    return streamer :: Streamer
 end
 
 return output

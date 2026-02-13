@@ -1,5 +1,0 @@
-name: wippy/agent
-dir: .
-description: Agent component
-ignore:
-  - "README.md"

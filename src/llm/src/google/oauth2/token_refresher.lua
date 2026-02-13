@@ -22,12 +22,15 @@ local function refresh_token()
         return
     end
 
+    local access_token = response and response.access_token
+    local expires_in = (response and tonumber(response.expires_in)) or 3600
+
     local token = {
-        access_token = response.access_token,
-        expires_at = (time_now:unix() + response.expires_in) - 300 -- Subtract 5 minutes to be safe
+        access_token = access_token,
+        expires_at = (time_now:unix() + expires_in) - 300
     }
 
-    local _, err = store_instance:set(config.OAUTH2_TOKEN_CACHE_KEY, token, response.expires_in)
+    local _, err = store_instance:set(config.OAUTH2_TOKEN_CACHE_KEY, token, expires_in)
     if err then
         print("Failed to store token in cache: " .. tostring(err))
         store_instance:release()
@@ -43,6 +46,15 @@ end
 local function run(args)
     if not config.has_credentials() then
         print("Google credentials are missing, Google OAuth2 token refresher will not start.")
+        local events = process.events()
+        while true do
+            local result = channel.select({
+                events:case_receive()
+            })
+            if result.value and result.value.kind == process.event.CANCEL then
+                break
+            end
+        end
         return { status = "completed" }
     end
 

@@ -1,0 +1,12 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: dep.wippy.embeddings
+    kind: ns.dependency
+    meta:
+      description: "Embeddings module configuration for testing"
+    component: "wippy/embeddings"
+    parameters:
+      - name: target_db
+        value: app:db

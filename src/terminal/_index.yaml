@@ -8,9 +8,12 @@ entries:
       title: Terminal
       description: Terminal UI components and utilities
 
-  # wippy.terminal:bapp
-  - name: bapp
-    kind: library.lua
+  # wippy.terminal:host
+  - name: host
+    kind: terminal.host
     meta:
-      comment: Unified terminal application library
-    source: file://bapp.lua
+      comment: Default terminal host for CLI processes
+    hide_logs: false
+    lifecycle:
+      auto_start: true
+

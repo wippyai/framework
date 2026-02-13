@@ -13,8 +13,8 @@ local function define_tests()
             it("should use GET method when specified", function()
                 client._http_client = {
                     get = function(url, options)
-                        expect(url).to_equal("https://test.googleapis.com/v1/test")
-                        expect(options.headers["Accept"]).to_equal("application/json")
+                        tests.eq(url, "https://test.googleapis.com/v1/test")
+                        tests.eq(options.headers["Accept"], "application/json")
                         return {
                             status_code = 200,
                             body = json.encode({ data = "test" })
@@ -26,16 +26,16 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response.data).to_equal("test")
+                tests.is_nil(err)
+                tests.eq(response.data, "test")
             end)
 
             it("should use POST method when specified", function()
                 client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://test.googleapis.com/v1/test")
-                        expect(options.headers["Accept"]).to_equal("application/json")
-                        expect(options.headers["Content-Type"]).to_equal("application/json")
+                        tests.eq(url, "https://test.googleapis.com/v1/test")
+                        tests.eq(options.headers["Accept"], "application/json")
+                        tests.eq(options.headers["Content-Type"], "application/json")
                         return {
                             status_code = 200,
                             body = json.encode({ data = "test" })
@@ -48,8 +48,8 @@ local function define_tests()
                     body = json.encode({ test = "data" })
                 })
 
-                expect(err).to_be_nil()
-                expect(response.data).to_equal("test")
+                tests.is_nil(err)
+                tests.eq(response.data, "test")
             end)
 
             it("should default to POST for unknown methods", function()
@@ -66,7 +66,7 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
+                tests.is_nil(err)
             end)
         end)
 
@@ -74,7 +74,7 @@ local function define_tests()
             it("should always add Accept header", function()
                 client._http_client = {
                     get = function(url, options)
-                        expect(options.headers["Accept"]).to_equal("application/json")
+                        tests.eq(options.headers["Accept"], "application/json")
                         return {
                             status_code = 200,
                             body = json.encode({})
@@ -90,7 +90,7 @@ local function define_tests()
             it("should add Content-Type header for POST requests", function()
                 client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["Content-Type"]).to_equal("application/json")
+                        tests.eq(options.headers["Content-Type"], "application/json")
                         return {
                             status_code = 200,
                             body = json.encode({})
@@ -106,7 +106,7 @@ local function define_tests()
             it("should not add Content-Type header for GET requests", function()
                 client._http_client = {
                     get = function(url, options)
-                        expect(options.headers["Content-Type"]).to_be_nil()
+                        tests.is_nil(options.headers["Content-Type"])
                         return {
                             status_code = 200,
                             body = json.encode({})
@@ -122,8 +122,8 @@ local function define_tests()
             it("should preserve existing headers", function()
                 client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer token")
-                        expect(options.headers["X-Custom-Header"]).to_equal("custom-value")
+                        tests.eq(options.headers["Authorization"], "Bearer token")
+                        tests.eq(options.headers["X-Custom-Header"], "custom-value")
                         return {
                             status_code = 200,
                             body = json.encode({})
@@ -159,8 +159,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response.candidates[1].content.parts[1].text).to_equal("Hello")
+                tests.is_nil(err)
+                tests.eq(response.candidates[1].content.parts[1].text, "Hello")
             end)
 
             it("should add status_code to response", function()
@@ -177,8 +177,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response.status_code).to_equal(200)
+                tests.is_nil(err)
+                tests.eq(response.status_code, 200)
             end)
 
             it("should extract and add metadata to response", function()
@@ -188,7 +188,7 @@ local function define_tests()
                             status_code = 200,
                             body = json.encode({
                                 data = "test",
-                                modelVersion = "gemini-1.5-pro-001",
+                                modelVersion = "gemini-2.5-pro-001",
                                 responseId = "resp-123",
                                 createTime = "2024-01-15T10:30:00Z"
                             })
@@ -200,10 +200,10 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response.metadata.model_version).to_equal("gemini-1.5-pro-001")
-                expect(response.metadata.response_id).to_equal("resp-123")
-                expect(response.metadata.create_time).to_equal("2024-01-15T10:30:00Z")
+                tests.is_nil(err)
+                tests.eq(response.metadata.model_version, "gemini-2.5-pro-001")
+                tests.eq(response.metadata.response_id, "resp-123")
+                tests.eq(response.metadata.create_time, "2024-01-15T10:30:00Z")
             end)
 
             it("should handle response without metadata fields", function()
@@ -220,8 +220,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response.metadata).not_to_be_nil()
+                tests.is_nil(err)
+                tests.not_nil(response.metadata)
             end)
         end)
 
@@ -246,11 +246,11 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(400)
-                expect(err.message).to_equal("Invalid request parameters")
-                expect(err.code).to_equal(400)
-                expect(err.type).to_equal("invalid_request_error")
+                tests.is_nil(response)
+                tests.eq(err.status_code, 400)
+                tests.eq(err.message, "Invalid request parameters")
+                tests.eq(err.code, 400)
+                tests.eq(err.type, "invalid_request_error")
             end)
 
             it("should handle HTTP 5xx errors", function()
@@ -272,9 +272,9 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(503)
-                expect(err.message).to_equal("Service temporarily unavailable")
+                tests.is_nil(response)
+                tests.eq(err.status_code, 503)
+                tests.eq(err.message, "Service temporarily unavailable")
             end)
 
             it("should handle error response without detailed error object", function()
@@ -291,9 +291,9 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(401)
-                expect(err.message).to_equal("Google API error: 401")
+                tests.is_nil(response)
+                tests.eq(err.status_code, 401)
+                tests.eq(err.message, "Google API error: 401")
             end)
 
             it("should handle error response with empty body", function()
@@ -309,9 +309,9 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(500)
-                expect(err.message).to_equal("Google API error: 500")
+                tests.is_nil(response)
+                tests.eq(err.status_code, 500)
+                tests.eq(err.message, "Google API error: 500")
             end)
 
             it("should include error param and type when available", function()
@@ -335,9 +335,9 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.param).to_equal("temperature")
-                expect(err.type).to_equal("invalid_request_error")
+                tests.is_nil(response)
+                tests.eq(err.param, "temperature")
+                tests.eq(err.type, "invalid_request_error")
             end)
         end)
 
@@ -353,9 +353,9 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_contain("Connection failed:")
+                tests.is_nil(response)
+                tests.eq(err.status_code, 0)
+                tests.contains(err.message, "Connection failed:")
             end)
 
             it("should include error details in connection failure message", function()
@@ -369,8 +369,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.message).to_contain("DNS resolution failed")
+                tests.is_nil(response)
+                tests.contains(err.message, "DNS resolution failed")
             end)
         end)
 
@@ -389,9 +389,9 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(200)
-                expect(err.message).to_contain("Failed to parse Google response:")
+                tests.is_nil(response)
+                tests.eq(err.status_code, 200)
+                tests.contains(err.message, "Failed to parse Google response:")
             end)
 
             it("should include metadata in parse error", function()
@@ -400,7 +400,7 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = "Invalid JSON",
-                            modelVersion = "gemini-1.5-pro-001"
+                            modelVersion = "gemini-2.5-pro-001"
                         }
                     end
                 }
@@ -409,8 +409,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err.metadata).not_to_be_nil()
+                tests.is_nil(response)
+                tests.not_nil(err.metadata)
             end)
         end)
 
@@ -430,8 +430,8 @@ local function define_tests()
                         headers = {}
                     })
 
-                    expect(err).to_be_nil()
-                    expect(response.result).to_equal("ok")
+                    tests.is_nil(err)
+                    tests.eq(response.result, "ok")
                 end
             end)
 
@@ -449,8 +449,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err).not_to_be_nil()
+                tests.is_nil(response)
+                tests.not_nil(err)
             end)
 
             it("should treat >= 300 as error", function()
@@ -467,8 +467,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(response).to_be_nil()
-                expect(err).not_to_be_nil()
+                tests.is_nil(response)
+                tests.not_nil(err)
             end)
         end)
 
@@ -487,8 +487,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response).not_to_be_nil()
+                tests.is_nil(err)
+                tests.not_nil(response)
             end)
 
             it("should handle response with null values", function()
@@ -496,7 +496,7 @@ local function define_tests()
                     get = function(url, options)
                         return {
                             status_code = 200,
-                            body = json.encode({ data = json.null })
+                            body = '{"data":null}'
                         }
                     end
                 }
@@ -505,8 +505,8 @@ local function define_tests()
                     headers = {}
                 })
 
-                expect(err).to_be_nil()
-                expect(response).not_to_be_nil()
+                tests.is_nil(err)
+                tests.not_nil(response)
             end)
         end)
     end)

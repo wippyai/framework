@@ -1,0 +1,19 @@
+organization: wippy
+module: facade
+description: Portable iframe facade for Wippy frontend
+license: Apache-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - facade
+  - frontend
+  - iframe
+exclude_meta:
+  type:
+    - test
+  scope:
+    - dev
+exclude:
+  - "app:**"
+embed:
+  - "public_files"

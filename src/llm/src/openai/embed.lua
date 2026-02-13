@@ -7,8 +7,6 @@ local embeddings_handler = {
     _mapper = openai_mapper
 }
 
----@param contract_args table Contract arguments for embeddings
----@return table Contract-compliant response
 function embeddings_handler.handler(contract_args)
     -- Validate required arguments
     if not contract_args.model then
@@ -42,8 +40,9 @@ function embeddings_handler.handler(contract_args)
     end
 
     -- Add user if specified
-    if contract_args.options and contract_args.options.user then
-        openai_payload.user = contract_args.options.user
+    local opts = contract_args.options :: any
+    if opts and opts.user then
+        openai_payload.user = opts.user
     end
 
     -- Make API request using our client

@@ -1,5 +1,6 @@
 local status_handler = require("status_handler")
 local json = require("json")
+local test = require("test")
 
 local function define_tests()
     describe("OpenAI Status Handler", function()
@@ -27,9 +28,9 @@ local function define_tests()
 
                 status_handler._client._http_client = {
                     get = function(url, options)
-                        expect(url).to_contain("/models")
-                        expect(options.headers["Content-Type"]).to_be_nil()
-                        expect(options.body).to_be_nil()
+                        test.contains(url, "/models")
+                        test.is_nil(options.headers["Content-Type"])
+                        test.is_nil(options.body)
 
                         return {
                             status_code = 200,
@@ -46,9 +47,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
-                expect(response.message).to_equal("OpenAI API is responding normally")
+                test.is_true(response.success)
+                test.eq(response.status, "healthy")
+                test.eq(response.message, "OpenAI API is responding normally")
             end)
 
             it("should resolve API key from context", function()
@@ -70,8 +71,8 @@ local function define_tests()
 
                 status_handler._client._http_client = {
                     get = function(url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer custom-test-key")
-                        expect(url).to_equal("https://api.openai.com/v1/models")
+                        test.eq(options.headers["Authorization"], "Bearer custom-test-key")
+                        test.eq(url, "https://api.openai.com/v1/models")
 
                         return {
                             status_code = 200,
@@ -83,8 +84,8 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
+                test.is_true(response.success)
+                test.eq(response.status, "healthy")
             end)
         end)
 
@@ -119,9 +120,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("Invalid API key")
+                test.is_false(response.success)
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "Invalid API key")
             end)
 
             it("should return unhealthy for network errors", function()
@@ -149,9 +150,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("Connection failed")
+                test.is_false(response.success)
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "Connection failed")
             end)
 
             it("should return unhealthy for missing API key", function()
@@ -171,9 +172,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("API key is required")
+                test.is_false(response.success)
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "API key is required")
             end)
 
             it("should handle nil HTTP response", function()
@@ -197,9 +198,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_equal("Connection failed")
+                test.is_false(response.success)
+                test.eq(response.status, "unhealthy")
+                test.eq(response.message, "Connection failed")
             end)
         end)
 
@@ -237,9 +238,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Rate limited but service is available")
+                test.is_false(response.success)
+                test.eq(response.status, "degraded")
+                test.eq(response.message, "Rate limited but service is available")
             end)
 
             it("should return degraded for server errors (5xx)", function()
@@ -272,9 +273,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                test.is_false(response.success)
+                test.eq(response.status, "degraded")
+                test.eq(response.message, "Service experiencing issues")
             end)
 
             it("should return degraded for internal server error (500)", function()
@@ -307,9 +308,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("degraded")
-                expect(response.message).to_equal("Service experiencing issues")
+                test.is_false(response.success)
+                test.eq(response.status, "degraded")
+                test.eq(response.message, "Service experiencing issues")
             end)
         end)
 
@@ -339,9 +340,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("Failed to parse")
+                test.is_false(response.success)
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "Failed to parse")
             end)
 
             it("should handle malformed JSON response", function()
@@ -369,9 +370,9 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_false()
-                expect(response.status).to_equal("unhealthy")
-                expect(response.message).to_contain("Failed to parse")
+                test.is_false(response.success)
+                test.eq(response.status, "unhealthy")
+                test.contains(response.message, "Failed to parse")
             end)
 
             it("should handle custom base URL from context", function()
@@ -392,7 +393,7 @@ local function define_tests()
 
                 status_handler._client._http_client = {
                     get = function(url, options)
-                        expect(url).to_equal("https://custom.openai.proxy/v1/models")
+                        test.eq(url, "https://custom.openai.proxy/v1/models")
 
                         return {
                             status_code = 200,
@@ -404,8 +405,8 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true()
-                expect(response.status).to_equal("healthy")
+                test.is_true(response.success)
+                test.eq(response.status, "healthy")
             end)
 
             it("should use GET method properly", function()
@@ -425,9 +426,9 @@ local function define_tests()
                 status_handler._client._http_client = {
                     get = function(url, options)
                         method_called = "GET"
-                        expect(options.headers["Authorization"]).to_equal("Bearer test-key")
-                        expect(options.headers["Content-Type"]).to_be_nil()
-                        expect(options.body).to_be_nil()
+                        test.eq(options.headers["Authorization"], "Bearer test-key")
+                        test.is_nil(options.headers["Content-Type"])
+                        test.is_nil(options.body)
 
                         return {
                             status_code = 200,
@@ -439,8 +440,8 @@ local function define_tests()
 
                 local response = status_handler.handler()
 
-                expect(response.success).to_be_true()
-                expect(method_called).to_equal("GET")
+                test.is_true(response.success)
+                test.eq(method_called, "GET")
             end)
         end)
     end)

@@ -38,6 +38,7 @@ entries:
         path: ".storage"
       - entry: wippy.relay.env:user_security_scope
         path: ".storage"
+    default: "wippy.relay.env:envs"
 
   - name: user_security_scope
     kind: ns.requirement
@@ -75,11 +76,11 @@ entries:
     default: 7200s
 
   # Dependencies
-  - name: __dependency.wippy.actor
+  - name: dep.wippy.test
     kind: "ns.dependency"
     meta:
-      description: "Actor component"
-    component: "wippy/actor"
+      description: "Testing component"
+    component: "wippy/test"
     version: ">=v0.2.0"
 
   # wippy.relay:central
@@ -97,7 +98,6 @@ entries:
       - security
       - logger
     imports:
-      actor: wippy.actor:actor
       consts: wippy.relay:consts
       plugin_discovery: wippy.relay.discovery:plugins
     method: run
@@ -142,6 +142,27 @@ entries:
       - uuid
       - logger
     imports:
-      actor: wippy.actor:actor
       consts: wippy.relay:consts
+    method: run
+
+  # wippy.relay:consts_test
+  - name: consts_test
+    kind: function.lua
+    meta:
+      name: Relay Constants Test
+      type: test
+      suite: relay
+      comment: Tests relay configuration constants and derived values
+      group: Relay
+      tags:
+        - relay
+        - constants
+        - tests
+    source: file://consts_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules:
+      - env
+      - time
     method: run

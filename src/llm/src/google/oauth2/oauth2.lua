@@ -24,13 +24,13 @@ function oauth2.get_token()
             typ = "JWT",
             kid = config.get_private_key_id()
         }
-    }, config.get_private_key(), "RS256")
+    }, tostring(config.get_private_key()), "RS256")
 
     if err then
         return nil, "Failed to sign JWT: " .. tostring(err)
     end
 
-    local response, err = http.post(config.get_token_uri(), {
+    local response, err = http.post(tostring(config.get_token_uri()), {
         headers = {
             ["Content-Type"] = "application/json"
         },

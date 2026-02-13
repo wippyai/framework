@@ -1,5 +1,48 @@
 local registry = require("registry")
 
+type TraitToolDef = string | {
+    id: string,
+    context: {[string]: any}?,
+    description: string?,
+    alias: string?,
+}
+
+type TraitToolEntry = {
+    id: string,
+    context: {[string]: any}?,
+    description: string?,
+    alias: string?,
+}
+
+type TraitSpec = {
+    id: string,
+    name: string,
+    description: string,
+    prompt: string,
+    tools: {TraitToolEntry},
+    build_func_id: string?,
+    prompt_func_id: string?,
+    step_func_id: string?,
+    context: {[string]: any},
+}
+
+type TraitRegistryEntry = {
+    id: string,
+    meta: {
+        type: string?,
+        name: string?,
+        comment: string?,
+    }?,
+    data: {
+        prompt: string?,
+        tools: {TraitToolDef}?,
+        build_func_id: string?,
+        prompt_func_id: string?,
+        step_func_id: string?,
+        context: {[string]: any}?,
+    }?,
+}
+
 -- Main module
 local traits = {}
 
@@ -7,7 +50,7 @@ local traits = {}
 traits._registry = nil
 
 -- Get registry - use injected registry or require it
-local function get_registry()
+local function get_registry(): typeof(registry)
     return traits._registry or registry
 end
 
@@ -23,13 +66,13 @@ traits.TRAIT_TYPE = "agent.trait"
 ---------------------------
 
 -- Process tools array to handle both old and new formats
-local function process_tools(tools_data)
+local function process_tools(tools_data: any): {TraitToolEntry}
     if not tools_data or #tools_data == 0 then
         return {}
     end
 
-    local tools_count = #tools_data
-    local processed_tools = table.create(tools_count, 0)
+    local tools_count: number = #tools_data
+    local processed_tools = table.create(tools_count :: integer, 0)
     local output_index = 1
 
     for _, tool_def in ipairs(tools_data) do
@@ -69,10 +112,10 @@ local function process_tools(tools_data)
         for i = 1, output_index - 1 do
             final_tools[i] = processed_tools[i]
         end
-        return final_tools
+        return final_tools :: {TraitToolEntry}
     end
 
-    return processed_tools
+    return processed_tools :: {TraitToolEntry}
 end
 
 ---------------------------
@@ -80,7 +123,7 @@ end
 ---------------------------
 
 -- Get trait by ID
-function traits.get_by_id(trait_id)
+function traits.get_by_id(trait_id: string): (TraitSpec?, string?)
     if not trait_id then
         return nil, "Trait ID is required"
     end
@@ -88,7 +131,7 @@ function traits.get_by_id(trait_id)
     -- Get trait directly from registry using the getter function
     local reg = get_registry()
 
-    local entry, err = reg.get(trait_id)
+    local entry, err = reg.get(tostring(trait_id))
     if not entry then
         return nil, "No trait found with ID: " .. tostring(trait_id) .. ", error: " .. tostring(err)
     end
@@ -99,25 +142,27 @@ function traits.get_by_id(trait_id)
     end
 
     -- Process tools to handle both formats
-    local processed_tools = process_tools(entry.data and entry.data.tools)
+    local data = entry.data :: any
+    local processed_tools = process_tools(data and data.tools)
 
     -- Build trait spec
-    local trait_spec = table.create(0, 9)
-    trait_spec.id = entry.id
-    trait_spec.name = (entry.meta and entry.meta.name) or ""
-    trait_spec.description = (entry.meta and entry.meta.comment) or ""
-    trait_spec.prompt = (entry.data and entry.data.prompt) or ""
-    trait_spec.tools = processed_tools
-    trait_spec.build_func_id = (entry.data and entry.data.build_func_id)
-    trait_spec.prompt_func_id = (entry.data and entry.data.prompt_func_id)
-    trait_spec.step_func_id = (entry.data and entry.data.step_func_id)
-    trait_spec.context = (entry.data and entry.data.context) or {}
+    local trait_spec = {
+        id = entry.id,
+        name = (entry.meta and entry.meta.name) or "",
+        description = (entry.meta and entry.meta.comment) or "",
+        prompt = (data and data.prompt) or "",
+        tools = processed_tools,
+        build_func_id = (data and data.build_func_id),
+        prompt_func_id = (data and data.prompt_func_id),
+        step_func_id = (data and data.step_func_id),
+        context = (data and data.context) or {},
+    }
 
-    return trait_spec
+    return trait_spec :: TraitSpec
 end
 
 -- Get trait by name
-function traits.get_by_name(name)
+function traits.get_by_name(name: string): (TraitSpec?, string?)
     if not name then
         return nil, "Trait name is required"
     end
@@ -136,24 +181,26 @@ function traits.get_by_name(name)
 
     -- Return the first match with enhanced processing
     local entry = entries[1]
-    local processed_tools = process_tools(entry.data and entry.data.tools)
+    local data = entry.data :: any
+    local processed_tools = process_tools(data and data.tools)
 
-    local trait_spec = table.create(0, 9)
-    trait_spec.id = entry.id
-    trait_spec.name = (entry.meta and entry.meta.name) or ""
-    trait_spec.description = (entry.meta and entry.meta.comment) or ""
-    trait_spec.prompt = (entry.data and entry.data.prompt) or ""
-    trait_spec.tools = processed_tools
-    trait_spec.build_func_id = (entry.data and entry.data.build_func_id)
-    trait_spec.prompt_func_id = (entry.data and entry.data.prompt_func_id)
-    trait_spec.step_func_id = (entry.data and entry.data.step_func_id)
-    trait_spec.context = (entry.data and entry.data.context) or {}
+    local trait_spec = {
+        id = entry.id,
+        name = (entry.meta and entry.meta.name) or "",
+        description = (entry.meta and entry.meta.comment) or "",
+        prompt = (data and data.prompt) or "",
+        tools = processed_tools,
+        build_func_id = (data and data.build_func_id),
+        prompt_func_id = (data and data.prompt_func_id),
+        step_func_id = (data and data.step_func_id),
+        context = (data and data.context) or {},
+    }
 
-    return trait_spec
+    return trait_spec :: TraitSpec
 end
 
 -- Get all available traits
-function traits.get_all()
+function traits.get_all(): {TraitSpec}
     -- Find all traits from registry using the getter function
     local reg = get_registry()
     local entries = reg.find({
@@ -170,23 +217,25 @@ function traits.get_all()
     local trait_specs = table.create(entries_count, 0)
 
     for i, entry in ipairs(entries) do
-        local processed_tools = process_tools(entry.data and entry.data.tools)
+        local data = entry.data :: any
+        local processed_tools = process_tools(data and data.tools)
 
-        local trait_spec = table.create(0, 9)
-        trait_spec.id = entry.id
-        trait_spec.name = (entry.meta and entry.meta.name) or ""
-        trait_spec.description = (entry.meta and entry.meta.comment) or ""
-        trait_spec.prompt = (entry.data and entry.data.prompt) or ""
-        trait_spec.tools = processed_tools
-        trait_spec.build_func_id = (entry.data and entry.data.build_func_id)
-        trait_spec.prompt_func_id = (entry.data and entry.data.prompt_func_id)
-        trait_spec.step_func_id = (entry.data and entry.data.step_func_id)
-        trait_spec.context = (entry.data and entry.data.context) or {}
+        local trait_spec = {
+            id = entry.id,
+            name = (entry.meta and entry.meta.name) or "",
+            description = (entry.meta and entry.meta.comment) or "",
+            prompt = (data and data.prompt) or "",
+            tools = processed_tools,
+            build_func_id = (data and data.build_func_id),
+            prompt_func_id = (data and data.prompt_func_id),
+            step_func_id = (data and data.step_func_id),
+            context = (data and data.context) or {},
+        }
 
-        trait_specs[i] = trait_spec
+        trait_specs[i] = trait_spec :: TraitSpec
     end
 
-    return trait_specs
+    return trait_specs :: {TraitSpec}
 end
 
 return traits

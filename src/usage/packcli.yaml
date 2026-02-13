@@ -1,5 +1,0 @@
-name: wippy/usage
-dir: .
-description: Usage component
-ignore:
-  - "README.md"

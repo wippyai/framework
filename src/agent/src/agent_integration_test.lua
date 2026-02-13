@@ -216,7 +216,7 @@ Be concise but ALWAYS use the tools when requested.]],
             table.concat(test_helpers.get_keys(agent_runner.tools), ", ")))
 
         local prompt_builder = prompt.new()
-        prompt_builder:add_user(user_message)
+        prompt_builder:add_user(tostring(user_message), nil)
 
         -- Prepare step options
         local step_options = runtime_options or {}
@@ -321,12 +321,12 @@ Be concise but ALWAYS use the tools when requested.]],
                 if result.result and result.result.message then
                     print(string.format("  Message: '%s'", result.result.message))
                 end
-                if result.result and result.result.delay_applied then
-                    print(string.format("  Delay: %dms", result.result.delay_applied))
+                if result.result and (result.result :: any).delay_applied then
+                    print(string.format("  Delay: %dms", (result.result :: any).delay_applied))
                 end
-                if result.result and result.result.context_received then
+                if result.result and (result.result :: any).context_received then
                     print(string.format("  Context keys received: [%s]",
-                        table.concat(test_helpers.get_keys(result.result.context_received), ", ")))
+                        table.concat(test_helpers.get_keys((result.result :: any).context_received), ", ")))
                 end
             end
         end
@@ -341,20 +341,20 @@ Be concise but ALWAYS use the tools when requested.]],
 
     -- Helper: Assert tool execution result
     function test_helpers.assert_tool_result(result, expected_message, expected_delay, call_name)
-        expect(result).not_to_be_nil()
-        expect(result.error).to_be_nil()
-        expect(result.result).not_to_be_nil()
+        test.not_nil(result)
+        test.is_nil(result.error)
+        test.not_nil(result.result)
 
         local tool_result = result.result
-        expect(tool_result.message).to_equal(expected_message)
+        test.eq(tool_result.message, expected_message)
 
         if expected_delay then
             -- Allow some flexibility in delay timing (within 50ms)
-            expect(math.abs(tool_result.delay_applied - expected_delay) < 50).to_be_true()
+            test.is_true(math.abs(tool_result.delay_applied - expected_delay) < 50)
         end
 
-        expect(tool_result.timestamp).not_to_be_nil()
-        expect(tool_result.context_received).not_to_be_nil()
+        test.not_nil(tool_result.timestamp)
+        test.not_nil(tool_result.context_received)
 
         print(string.format("ASSERTION PASSED: %s - message='%s', delay=%dms",
             call_name or "Tool call", tool_result.message, tool_result.delay_applied or 0))
@@ -394,10 +394,10 @@ Be concise but ALWAYS use the tools when requested.]],
             local agent_runner, compiled_spec = test_helpers.compile_and_create_agent(raw_spec)
 
             -- Verify compiled spec structure
-            expect(compiled_spec.id).to_equal(raw_spec.id)
-            expect(compiled_spec.name).to_equal(raw_spec.name)
-            expect(compiled_spec.model).to_equal(raw_spec.model)
-            expect(compiled_spec.prompt).to_equal(raw_spec.prompt)
+            test.eq(compiled_spec.id, raw_spec.id)
+            test.eq(compiled_spec.name, raw_spec.name)
+            test.eq(compiled_spec.model, raw_spec.model)
+            test.eq(compiled_spec.prompt, raw_spec.prompt)
 
             -- Execute basic agent step
             local execution = test_helpers.execute_agent_step(
@@ -405,9 +405,9 @@ Be concise but ALWAYS use the tools when requested.]],
                 "Say hello in exactly 3 words"
             )
 
-            expect(execution.result).not_to_be_nil()
-            expect(execution.result.result).not_to_be_nil()
-            expect(#execution.result.result > 5).to_be_true()
+            test.not_nil(execution.result)
+            test.not_nil(execution.result.result)
+            test.is_true(#execution.result.result > 5)
 
             print(string.format("SUCCESS: Basic agent responded: '%s'", execution.result.result))
             print(string.format("Token usage: %d total", execution.agent_stats.total_tokens.total))
@@ -425,21 +425,21 @@ Be concise but ALWAYS use the tools when requested.]],
             local agent_runner, compiled_spec = test_helpers.compile_and_create_agent(raw_spec)
 
             -- Verify compilation worked correctly - UPDATED for unified structure
-            expect(compiled_spec.tools).not_to_be_nil()
-            expect(test_helpers.count_table(compiled_spec.tools)).to_equal(2)
+            test.not_nil(compiled_spec.tools)
+            test.eq(test_helpers.count_table(compiled_spec.tools), 2)
 
             print(string.format("Compiled agent has %d tools: [%s]",
                 test_helpers.count_table(compiled_spec.tools),
                 table.concat(test_helpers.get_keys(compiled_spec.tools), ", ")))
 
             -- Verify unified tool structure has correct entries
-            expect(compiled_spec.tools["fast_echo"]).not_to_be_nil()
-            expect(compiled_spec.tools["slow_echo"]).not_to_be_nil()
+            test.not_nil(compiled_spec.tools["fast_echo"])
+            test.not_nil(compiled_spec.tools["slow_echo"])
 
             -- Check tool properties
-            expect(compiled_spec.tools["fast_echo"].context.default_delay).to_equal(25)
-            expect(compiled_spec.tools["slow_echo"].context.default_delay).to_equal(80)
-            expect(compiled_spec.tools["fast_echo"].context.agent_id).to_equal(raw_spec.id)
+            test.eq(compiled_spec.tools["fast_echo"].context.default_delay, 25)
+            test.eq(compiled_spec.tools["slow_echo"].context.default_delay, 80)
+            test.eq(compiled_spec.tools["fast_echo"].context.agent_id, raw_spec.id)
 
             -- Execute agent step to get tool calls
             local execution = test_helpers.execute_agent_step(
@@ -449,9 +449,9 @@ Be concise but ALWAYS use the tools when requested.]],
             )
 
             -- Verify agent made tool calls
-            expect(execution.result).not_to_be_nil()
-            expect(execution.result.tool_calls).not_to_be_nil()
-            expect(#execution.result.tool_calls).to_equal(2)
+            test.not_nil(execution.result)
+            test.not_nil(execution.result.tool_calls)
+            test.eq(#execution.result.tool_calls, 2)
 
             print(string.format("SUCCESS: Agent made %d tool calls as expected", #execution.result.tool_calls))
 
@@ -468,18 +468,20 @@ Be concise but ALWAYS use the tools when requested.]],
                 end
             end
 
-            expect(fast_call).not_to_be_nil()
-            expect(slow_call).not_to_be_nil()
+            test.not_nil(fast_call)
+            test.not_nil(slow_call)
+            local fc = fast_call :: any
+            local sc = slow_call :: any
 
             -- Verify tool call properties
-            expect(fast_call.registry_id).to_equal("wippy.agent.tools:delay_tool")
-            expect(slow_call.registry_id).to_equal("wippy.agent.tools:delay_tool")
+            test.eq(fc.registry_id, "wippy.agent.tools:delay_tool")
+            test.eq(sc.registry_id, "wippy.agent.tools:delay_tool")
 
             print("Tool calls have correct registry IDs")
 
             -- Verify contexts are already attached by agent
-            expect(fast_call.context).not_to_be_nil()
-            expect(slow_call.context).not_to_be_nil()
+            test.not_nil(fc.context)
+            test.not_nil(sc.context)
 
             print("Tool contexts already attached by agent automatically")
 
@@ -494,15 +496,16 @@ Be concise but ALWAYS use the tools when requested.]],
                 "PARALLEL"
             )
 
-            expect(tool_execution).not_to_be_nil()
-            expect(tool_execution.results).not_to_be_nil()
+            test.not_nil(tool_execution)
+            local te = tool_execution :: any
+            test.not_nil(te.results)
 
             -- Find results by matching tool names (using LLM call IDs as keys)
             local fast_result = nil
             local slow_result = nil
 
-            for call_id, result in pairs(tool_execution.results) do
-                local validated_tool = tool_execution.validated_tools[call_id]
+            for call_id, result in pairs(te.results) do
+                local validated_tool = te.validated_tools[call_id]
                 if validated_tool and validated_tool.name == "fast_echo" then
                     fast_result = result
                 elseif validated_tool and validated_tool.name == "slow_echo" then
@@ -516,32 +519,32 @@ Be concise but ALWAYS use the tools when requested.]],
 
             -- Verify parallel execution timing
             -- Should be closer to max delay (80ms) rather than sum (105ms)
-            expect(tool_execution.duration_ms < 150).to_be_true()     -- Allow overhead
-            expect(tool_execution.duration_ms).to_be_greater_than(60) -- Should be at least close to max delay
+            test.is_true(te.duration_ms < 150)     -- Allow overhead
+            test.gt(te.duration_ms, 60) -- Should be at least close to max delay
 
             print(string.format("Parallel execution timing verified: %dms (expected ~80ms)",
-                tool_execution.duration_ms))
+                te.duration_ms))
 
             -- Verify contexts were properly merged and received
-            local fast_context = fast_result.result.context_received
-            local slow_context = slow_result.result.context_received
+            local fast_context = (fast_result :: any).result.context_received
+            local slow_context = (slow_result :: any).result.context_received
 
             -- Check fast_echo context
-            expect(fast_context.service_type).to_equal("fast_response")
-            expect(fast_context.priority).to_equal("high")
-            expect(fast_context.agent_id).to_equal(compiled_spec.id)
-            expect(fast_context.test_run).to_equal("parallel_alias_integration")
+            test.eq(fast_context.service_type, "fast_response")
+            test.eq(fast_context.priority, "high")
+            test.eq(fast_context.agent_id, compiled_spec.id)
+            test.eq(fast_context.test_run, "parallel_alias_integration")
 
             -- Check slow_echo context
-            expect(slow_context.service_type).to_equal("thorough_processing")
-            expect(slow_context.priority).to_equal("normal")
-            expect(slow_context.agent_id).to_equal(compiled_spec.id)
-            expect(slow_context.test_run).to_equal("parallel_alias_integration")
+            test.eq(slow_context.service_type, "thorough_processing")
+            test.eq(slow_context.priority, "normal")
+            test.eq(slow_context.agent_id, compiled_spec.id)
+            test.eq(slow_context.test_run, "parallel_alias_integration")
 
             print("Tool contexts properly merged and received")
 
             -- Verify token usage tracking
-            expect(execution.agent_stats.total_tokens.total).to_be_greater_than(0)
+            test.gt(execution.agent_stats.total_tokens.total, 0)
             print(string.format("Token usage: %d total tokens",
                 execution.agent_stats.total_tokens.total))
 
@@ -588,11 +591,11 @@ Be concise but ALWAYS use the tools when requested.]],
                 { tool_choice = "required" } -- Force tool calling
             )
 
-            expect(execution.result.tool_calls).not_to_be_nil()
-            expect(#execution.result.tool_calls).to_equal(1)
+            test.not_nil(execution.result.tool_calls)
+            test.eq(#execution.result.tool_calls, 1)
 
             local tool_calls = execution.result.tool_calls
-            expect(tool_calls[1].context).not_to_be_nil()
+            test.not_nil(tool_calls[1].context)
 
             print("Tool call has context automatically attached by agent")
 
@@ -608,10 +611,11 @@ Be concise but ALWAYS use the tools when requested.]],
                 "SEQUENTIAL"
             )
 
-            expect(tool_execution.results).not_to_be_nil()
+            local te = tool_execution :: any
+            test.not_nil(te.results)
 
             local result = nil
-            for _, res in pairs(tool_execution.results) do
+            for _, res in pairs(te.results) do
                 result = res
                 break
             end
@@ -619,11 +623,11 @@ Be concise but ALWAYS use the tools when requested.]],
             test_helpers.assert_tool_result(result, "Context precedence test", 40, "context_test_tool")
 
             -- Verify context precedence: session > tool context
-            local context = result.result.context_received
-            expect(context.shared_key).to_equal("from_context") -- Session wins
-            expect(context.tool_only_key).to_equal("tool_value")        -- Tool context preserved
-            expect(context.session_only_key).to_equal("session_value")  -- Session context preserved
-            expect(context.test_scenario).to_equal("context_precedence")
+            local context = (result :: any).result.context_received
+            test.eq(context.shared_key, "from_context") -- Session wins
+            test.eq(context.tool_only_key, "tool_value")        -- Tool context preserved
+            test.eq(context.session_only_key, "session_value")  -- Session context preserved
+            test.eq(context.test_scenario, "context_precedence")
 
             print("Context precedence verified: session overrides tool context")
         end)
@@ -647,16 +651,16 @@ Be concise but ALWAYS use the tools when requested.]],
             )
 
             -- Verify agent made tool calls
-            expect(execution.result).not_to_be_nil()
-            expect(execution.result.tool_calls).not_to_be_nil()
-            expect(#execution.result.tool_calls).to_equal(3)
+            test.not_nil(execution.result)
+            test.not_nil(execution.result.tool_calls)
+            test.eq(#execution.result.tool_calls, 3)
 
             print(string.format("SUCCESS: Agent made %d tool calls as expected", #execution.result.tool_calls))
 
             -- Tool calls should already have contexts attached
             local tool_calls = execution.result.tool_calls
             for _, tool_call in ipairs(tool_calls) do
-                expect(tool_call.context).not_to_be_nil()
+                test.not_nil(tool_call.context)
                 print(string.format("Tool %s has context automatically attached", tool_call.name))
             end
 
@@ -670,12 +674,13 @@ Be concise but ALWAYS use the tools when requested.]],
                 "SEQUENTIAL"
             )
 
-            expect(seq_execution.results).not_to_be_nil()
-            expect(test_helpers.count_table(seq_execution.results)).to_equal(3)
+            local se = seq_execution :: any
+            test.not_nil(se.results)
+            test.eq(test_helpers.count_table(se.results), 3)
 
             -- Sequential should take sum of delays (~90ms)
-            expect(seq_execution.duration_ms).to_be_greater_than(80)
-            print(string.format("Sequential execution: %dms (expected ~90ms)", seq_execution.duration_ms))
+            test.gt(se.duration_ms, 80)
+            print(string.format("Sequential execution: %dms (expected ~90ms)", se.duration_ms))
 
             -- Test parallel execution with same tool calls
             print("\nTesting PARALLEL strategy:")
@@ -685,18 +690,19 @@ Be concise but ALWAYS use the tools when requested.]],
                 "PARALLEL"
             )
 
-            expect(par_execution.results).not_to_be_nil()
-            expect(test_helpers.count_table(par_execution.results)).to_equal(3)
+            local pe = par_execution :: any
+            test.not_nil(pe.results)
+            test.eq(test_helpers.count_table(pe.results), 3)
 
             -- Parallel should take max delay (~35ms)
-            expect(par_execution.duration_ms < 80).to_be_true()
-            expect(par_execution.duration_ms).to_be_greater_than(25)
-            print(string.format("Parallel execution: %dms (expected ~35ms)", par_execution.duration_ms))
+            test.is_true(pe.duration_ms < 80)
+            test.gt(pe.duration_ms, 25)
+            print(string.format("Parallel execution: %dms (expected ~35ms)", pe.duration_ms))
 
             -- Verify parallel is significantly faster
-            local speedup = seq_execution.duration_ms / par_execution.duration_ms
+            local speedup = se.duration_ms / pe.duration_ms
             print(string.format("Parallel speedup: %.2fx faster", speedup))
-            expect(speedup).to_be_greater_than(1.5) -- Should be at least 1.5x faster
+            test.gt(speedup, 1.5) -- Should be at least 1.5x faster
 
             print("Tool caller strategy comparison completed successfully")
         end)

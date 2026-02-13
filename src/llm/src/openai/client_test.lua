@@ -1,5 +1,6 @@
 local openai_client = require("openai_client")
 local json = require("json")
+local test = require("test")
 
 local function define_tests()
     describe("OpenAI Client", function()
@@ -29,15 +30,15 @@ local function define_tests()
                 openai_client._http_client = {
                     post = function(url, options)
                         called_method = "POST"
-                        expect(options.headers["Content-Type"]).to_equal("application/json")
-                        expect(options.body).not_to_be_nil()
+                        test.eq(options.headers["Content-Type"], "application/json")
+                        test.not_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", {})
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("POST")
+                test.is_nil(err)
+                test.eq(called_method, "POST")
             end)
 
             it("should support GET method", function()
@@ -57,15 +58,15 @@ local function define_tests()
                 openai_client._http_client = {
                     get = function(url, options)
                         called_method = "GET"
-                        expect(options.headers["Content-Type"]).to_be_nil()
-                        expect(options.body).to_be_nil()
+                        test.is_nil(options.headers["Content-Type"])
+                        test.is_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/models", nil, { method = "GET" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("GET")
+                test.is_nil(err)
+                test.eq(called_method, "GET")
             end)
 
             it("should support DELETE method", function()
@@ -85,15 +86,15 @@ local function define_tests()
                 openai_client._http_client = {
                     delete = function(url, options)
                         called_method = "DELETE"
-                        expect(options.headers["Content-Type"]).to_be_nil()
-                        expect(options.body).to_be_nil()
+                        test.is_nil(options.headers["Content-Type"])
+                        test.is_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/files/123", nil, { method = "DELETE" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("DELETE")
+                test.is_nil(err)
+                test.eq(called_method, "DELETE")
             end)
 
             it("should support PUT method with body", function()
@@ -113,15 +114,15 @@ local function define_tests()
                 openai_client._http_client = {
                     put = function(url, options)
                         called_method = "PUT"
-                        expect(options.headers["Content-Type"]).to_equal("application/json")
-                        expect(options.body).not_to_be_nil()
+                        test.eq(options.headers["Content-Type"], "application/json")
+                        test.not_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", { data = "value" }, { method = "PUT" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("PUT")
+                test.is_nil(err)
+                test.eq(called_method, "PUT")
             end)
 
             it("should support PATCH method with body", function()
@@ -141,15 +142,15 @@ local function define_tests()
                 openai_client._http_client = {
                     patch = function(url, options)
                         called_method = "PATCH"
-                        expect(options.headers["Content-Type"]).to_equal("application/json")
-                        expect(options.body).not_to_be_nil()
+                        test.eq(options.headers["Content-Type"], "application/json")
+                        test.not_nil(options.body)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", { update = "value" }, { method = "PATCH" })
-                expect(err).to_be_nil()
-                expect(called_method).to_equal("PATCH")
+                test.is_nil(err)
+                test.eq(called_method, "PATCH")
             end)
         end)
 
@@ -175,10 +176,10 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {})
 
-                expect(response).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_equal("Connection failed")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err.status_code, 0)
+                test.eq(err.message, "Connection failed")
             end)
 
             it("should handle nil response for GET requests", function()
@@ -202,10 +203,10 @@ local function define_tests()
 
                 local response, err = openai_client.request("/models", nil, { method = "GET" })
 
-                expect(response).to_be_nil()
-                expect(err).not_to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_equal("Connection failed")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err.status_code, 0)
+                test.eq(err.message, "Connection failed")
             end)
         end)
 
@@ -225,14 +226,14 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer context-key")
+                        test.eq(options.headers["Authorization"], "Bearer context-key")
                         return { status_code = 200, body = '{"test": true}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", {})
-                expect(err).to_be_nil()
-                expect(response.test).to_be_true()
+                test.is_nil(err)
+                test.is_true(response.test)
             end)
 
             it("should resolve API key from environment variable", function()
@@ -251,13 +252,13 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer env-key")
+                        test.eq(options.headers["Authorization"], "Bearer env-key")
                         return { status_code = 200, body = '{"test": true}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use custom base URL from context", function()
@@ -278,13 +279,13 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://custom.api/v1/test")
+                        test.eq(url, "https://custom.api/v1/test")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
 
             it("should use timeout from context", function()
@@ -305,13 +306,13 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        expect(options.timeout).to_equal(60)
+                        test.eq(options.timeout, 60)
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/test", {})
-                expect(err).to_be_nil()
+                test.is_nil(err)
             end)
         end)
 
@@ -333,9 +334,9 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(401)
-                expect(err.message).to_contain("API key is required")
+                test.is_nil(response)
+                test.eq(err.status_code, 401)
+                test.contains(err.message, "API key is required")
             end)
 
             it("should parse HTTP error responses", function()
@@ -369,11 +370,11 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {})
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(404)
-                expect(err.message).to_equal("Model not found")
-                expect(err.code).to_equal("model_not_found")
-                expect(err.type).to_equal("invalid_request_error")
+                test.is_nil(response)
+                test.eq(err.status_code, 404)
+                test.eq(err.message, "Model not found")
+                test.eq(err.code, "model_not_found")
+                test.eq(err.type, "invalid_request_error")
             end)
 
             it("should handle error responses with nil HTTP response", function()
@@ -397,9 +398,9 @@ local function define_tests()
 
                 local response, err = openai_client.request("/models", nil, { method = "GET" })
 
-                expect(response).to_be_nil()
-                expect(err.status_code).to_equal(0)
-                expect(err.message).to_equal("Connection failed")
+                test.is_nil(response)
+                test.eq(err.status_code, 0)
+                test.eq(err.message, "Connection failed")
             end)
 
             it("should extract metadata from error responses", function()
@@ -430,10 +431,11 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {})
 
-                expect(response).to_be_nil()
-                expect(err.metadata).not_to_be_nil()
-                expect(err.metadata.request_id).to_equal("req_error123")
-                expect(err.metadata.processing_ms).to_equal(250)
+                test.is_nil(response)
+                test.not_nil(err.metadata)
+                local err_meta = assert(err.metadata)
+                test.eq(err_meta.request_id, "req_error123")
+                test.eq(err_meta.processing_ms, 250)
             end)
         end)
 
@@ -475,10 +477,10 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, http_options)
-                        expect(http_options.stream).to_be_true()
-                        local payload = json.decode(http_options.body)
-                        expect(payload.stream).to_be_true()
-                        expect(payload.stream_options.include_usage).to_be_true()
+                        test.is_true(http_options.stream)
+                        local payload = json.decode(tostring(http_options.body))
+                        test.is_true(payload.stream)
+                        test.is_true(payload.stream_options.include_usage)
 
                         return {
                             status_code = 200,
@@ -490,8 +492,8 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {}, { stream = true })
 
-                expect(err).to_be_nil()
-                expect(response.stream).not_to_be_nil()
+                test.is_nil(err)
+                test.not_nil(response.stream)
             end)
 
             it("should process streaming content correctly", function()
@@ -536,12 +538,12 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_be_nil()
-                expect(full_content).to_equal("Hello world")
-                expect(#content_chunks).to_equal(2)
-                expect(content_chunks[1]).to_equal("Hello")
-                expect(content_chunks[2]).to_equal(" world")
-                expect(finish_reason).to_equal("stop")
+                test.is_nil(err)
+                test.eq(full_content, "Hello world")
+                test.eq(#content_chunks, 2)
+                test.eq(content_chunks[1], "Hello")
+                test.eq(content_chunks[2], " world")
+                test.eq(finish_reason, "stop")
             end)
 
             it("should process streaming tool calls", function()
@@ -583,11 +585,12 @@ local function define_tests()
                     end
                 })
 
-                expect(err).to_be_nil()
-                expect(#tool_calls).to_equal(1)
-                expect(tool_calls[1].id).to_equal("call_123")
-                expect(tool_calls[1].name).to_equal("test_tool")
-                expect(tool_calls[1].arguments).to_equal('{"param": "value"}')
+                test.is_nil(err)
+                test.eq(#tool_calls, 1)
+                local tc = assert(tool_calls[1])
+                test.eq(tc.id, "call_123")
+                test.eq(tc.name, "test_tool")
+                test.eq(tc.arguments, '{"param": "value"}')
             end)
         end)
 
@@ -622,12 +625,13 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {})
 
-                expect(err).to_be_nil()
-                expect(response.metadata).not_to_be_nil()
-                expect(response.metadata.request_id).to_equal("req_metadata123")
-                expect(response.metadata.organization).to_equal("org-test")
-                expect(response.metadata.processing_ms).to_equal(150)
-                expect(response.metadata.version).to_equal("2023-12-01")
+                test.is_nil(err)
+                test.not_nil(response.metadata)
+                local meta = assert(response.metadata)
+                test.eq(meta.request_id, "req_metadata123")
+                test.eq(meta.organization, "org-test")
+                test.eq(meta.processing_ms, 150)
+                test.eq(meta.version, "2023-12-01")
             end)
 
             it("should extract rate limit information", function()
@@ -660,12 +664,12 @@ local function define_tests()
 
                 local response, err = openai_client.request("/test", {})
 
-                expect(err).to_be_nil()
-                expect(response.metadata.rate_limits).not_to_be_nil()
-                expect(response.metadata.rate_limits.limit_requests).to_equal(5000)
-                expect(response.metadata.rate_limits.remaining_requests).to_equal(4999)
-                expect(response.metadata.rate_limits.limit_tokens).to_equal(200000)
-                expect(response.metadata.rate_limits.remaining_tokens).to_equal(199500)
+                test.is_nil(err)
+                test.not_nil(response.metadata.rate_limits)
+                test.eq(response.metadata.rate_limits.limit_requests, 5000)
+                test.eq(response.metadata.rate_limits.remaining_requests, 4999)
+                test.eq(response.metadata.rate_limits.limit_tokens, 200000)
+                test.eq(response.metadata.rate_limits.remaining_tokens, 199500)
             end)
         end)
 
@@ -685,19 +689,19 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        expect(url).to_equal("https://api.openai.com/v1/chat/completions")
-                        expect(options.headers["Content-Type"]).to_equal("application/json")
-                        expect(options.headers["Authorization"]).to_equal("Bearer test-key")
-                        expect(options.body).not_to_be_nil()
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("gpt-4")
+                        test.eq(url, "https://api.openai.com/v1/chat/completions")
+                        test.eq(options.headers["Content-Type"], "application/json")
+                        test.eq(options.headers["Authorization"], "Bearer test-key")
+                        test.not_nil(options.body)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "gpt-4")
                         return { status_code = 200, body = '{"test": "success"}', headers = {} }
                     end
                 }
 
                 local response, err = openai_client.request("/chat/completions", { model = "gpt-4" })
-                expect(err).to_be_nil()
-                expect(response.test).to_equal("success")
+                test.is_nil(err)
+                test.eq(response.test, "success")
             end)
         end)
     end)

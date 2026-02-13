@@ -6,8 +6,8 @@ local function define_tests()
         it("should create content responses", function()
             local response = output.content("Hello world")
 
-            expect(response.type).to_equal(output.TYPE.CONTENT)
-            expect(response.content).to_equal("Hello world")
+            test.eq(response.type, output.TYPE.CONTENT)
+            test.eq(response.content, "Hello world")
         end)
 
         it("should create error responses", function()
@@ -17,10 +17,10 @@ local function define_tests()
                 400
             )
 
-            expect(response.type).to_equal(output.TYPE.ERROR)
-            expect(response.error.type).to_equal(output.ERROR_TYPE.INVALID_REQUEST)
-            expect(response.error.message).to_equal("Bad request")
-            expect(response.error.code).to_equal(400)
+            test.eq(response.type, output.TYPE.ERROR)
+            test.eq(response.error.type, output.ERROR_TYPE.INVALID_REQUEST)
+            test.eq(response.error.message, "Bad request")
+            test.eq(response.error.code, 400)
         end)
 
         it("should create tool call responses", function()
@@ -30,33 +30,33 @@ local function define_tests()
                 "call_123"
             )
 
-            expect(response.type).to_equal(output.TYPE.TOOL_CALL)
-            expect(response.name).to_equal("get_weather")
-            expect(response.arguments).to_equal('{"location":"London"}')
-            expect(response.id).to_equal("call_123")
+            test.eq(response.type, output.TYPE.TOOL_CALL)
+            test.eq(response.name, "get_weather")
+            test.eq(response.arguments, '{"location":"London"}')
+            test.eq(response.id, "call_123")
         end)
 
         it("should create thinking responses", function()
             local response = output.thinking("Analyzing data...")
 
-            expect(response.type).to_equal(output.TYPE.THINKING)
-            expect(response.content).to_equal("Analyzing data...")
+            test.eq(response.type, output.TYPE.THINKING)
+            test.eq(response.content, "Analyzing data...")
         end)
 
         it("should calculate usage information", function()
             local usage = output.usage(100, 50, 25)
 
-            expect(usage.prompt_tokens).to_equal(100)
-            expect(usage.completion_tokens).to_equal(50)
-            expect(usage.thinking_tokens).to_equal(25)
-            expect(usage.total_tokens).to_equal(175)
+            test.eq(usage.prompt_tokens, 100)
+            test.eq(usage.completion_tokens, 50)
+            test.eq(usage.thinking_tokens, 25)
+            test.eq(usage.total_tokens, 175)
         end)
 
         it("should wrap content results", function()
             local wrapped = output.wrap(output.TYPE.CONTENT, "Hello world")
 
-            expect(wrapped.type).to_equal(output.TYPE.CONTENT)
-            expect(wrapped.content).to_equal("Hello world")
+            test.eq(wrapped.type, output.TYPE.CONTENT)
+            test.eq(wrapped.content, "Hello world")
         end)
 
         it("should wrap tool call results", function()
@@ -69,10 +69,10 @@ local function define_tests()
                 }
             )
 
-            expect(wrapped.type).to_equal(output.TYPE.TOOL_CALL)
-            expect(wrapped.name).to_equal("get_weather")
-            expect(wrapped.arguments).to_equal('{"location":"London"}')
-            expect(wrapped.id).to_equal("call_123")
+            test.eq(wrapped.type, output.TYPE.TOOL_CALL)
+            test.eq(wrapped.name, "get_weather")
+            test.eq(wrapped.arguments, '{"location":"London"}')
+            test.eq(wrapped.id, "call_123")
         end)
 
         it("should wrap error results", function()
@@ -84,8 +84,8 @@ local function define_tests()
 
             local wrapped = output.wrap(output.TYPE.ERROR, error_info)
 
-            expect(wrapped.type).to_equal(output.TYPE.ERROR)
-            expect(wrapped.error).to_equal(error_info)
+            test.eq(wrapped.type, output.TYPE.ERROR)
+            test.eq(wrapped.error, error_info)
         end)
 
         it("should include usage information in wrapped results", function()
@@ -96,7 +96,7 @@ local function define_tests()
                 usage_info
             )
 
-            expect(wrapped.usage).to_equal(usage_info)
+            test.eq(wrapped.usage, usage_info)
         end)
 
         it("should create a streamer with proper configuration", function()
@@ -112,16 +112,17 @@ local function define_tests()
             end)
 
             local streamer = output.streamer("test-pid", "custom_topic", 20)
+            assert(streamer)
 
-            expect(streamer).not_to_be_nil()
-            expect(streamer.pid).to_equal("test-pid")
-            expect(streamer.topic).to_equal("custom_topic")
-            expect(streamer.buffer_size).to_equal(20)
+            test.not_nil(streamer)
+            test.eq(streamer.pid, "test-pid")
+            test.eq(streamer.topic, "custom_topic")
+            test.eq(streamer.buffer_size, 20)
 
             -- Test missing PID
             local bad_streamer, err = output.streamer(nil)
-            expect(bad_streamer).to_be_nil()
-            expect(err).not_to_be_nil()
+            test.is_nil(bad_streamer)
+            test.not_nil(err)
         end)
 
         it("should send content chunks via streamer", function()
@@ -137,13 +138,15 @@ local function define_tests()
             end)
 
             local streamer = output.streamer("test-pid")
+            assert(streamer)
             streamer:send_content("Hello world")
 
-            expect(#sent_messages).to_equal(1)
-            expect(sent_messages[1].pid).to_equal("test-pid")
-            expect(sent_messages[1].topic).to_equal("llm_response")
-            expect(sent_messages[1].payload.type).to_equal(output.TYPE.CONTENT)
-            expect(sent_messages[1].payload.content).to_equal("Hello world")
+            test.eq(#sent_messages, 1)
+            local msg = assert(sent_messages[1])
+            test.eq(msg.pid, "test-pid")
+            test.eq(msg.topic, "llm_response")
+            test.eq(msg.payload.type, output.TYPE.CONTENT)
+            test.eq(msg.payload.content, "Hello world")
         end)
 
         it("should send thinking chunks via streamer", function()
@@ -159,11 +162,13 @@ local function define_tests()
             end)
 
             local streamer = output.streamer("test-pid")
+            assert(streamer)
             streamer:send_thinking("Analyzing...")
 
-            expect(#sent_messages).to_equal(1)
-            expect(sent_messages[1].payload.type).to_equal(output.TYPE.THINKING)
-            expect(sent_messages[1].payload.content).to_equal("Analyzing...")
+            test.eq(#sent_messages, 1)
+            local msg = assert(sent_messages[1])
+            test.eq(msg.payload.type, output.TYPE.THINKING)
+            test.eq(msg.payload.content, "Analyzing...")
         end)
 
         it("should send tool call chunks via streamer", function()
@@ -179,13 +184,15 @@ local function define_tests()
             end)
 
             local streamer = output.streamer("test-pid")
+            assert(streamer)
             streamer:send_tool_call("get_weather", '{"location":"London"}', "call_123")
 
-            expect(#sent_messages).to_equal(1)
-            expect(sent_messages[1].payload.type).to_equal(output.TYPE.TOOL_CALL)
-            expect(sent_messages[1].payload.name).to_equal("get_weather")
-            expect(sent_messages[1].payload.arguments).to_equal('{"location":"London"}')
-            expect(sent_messages[1].payload.id).to_equal("call_123")
+            test.eq(#sent_messages, 1)
+            local msg = assert(sent_messages[1])
+            test.eq(msg.payload.type, output.TYPE.TOOL_CALL)
+            test.eq(msg.payload.name, "get_weather")
+            test.eq(msg.payload.arguments, '{"location":"London"}')
+            test.eq(msg.payload.id, "call_123")
         end)
 
         it("should send error chunks via streamer", function()
@@ -201,13 +208,15 @@ local function define_tests()
             end)
 
             local streamer = output.streamer("test-pid")
+            assert(streamer)
             streamer:send_error(output.ERROR_TYPE.RATE_LIMIT, "Too many requests", 429)
 
-            expect(#sent_messages).to_equal(1)
-            expect(sent_messages[1].payload.type).to_equal(output.TYPE.ERROR)
-            expect(sent_messages[1].payload.error.type).to_equal(output.ERROR_TYPE.RATE_LIMIT)
-            expect(sent_messages[1].payload.error.message).to_equal("Too many requests")
-            expect(sent_messages[1].payload.error.code).to_equal(429)
+            test.eq(#sent_messages, 1)
+            local msg = assert(sent_messages[1])
+            test.eq(msg.payload.type, output.TYPE.ERROR)
+            test.eq(msg.payload.error.type, output.ERROR_TYPE.RATE_LIMIT)
+            test.eq(msg.payload.error.message, "Too many requests")
+            test.eq(msg.payload.error.code, 429)
         end)
 
         it("should buffer content and send on natural breaks", function()
@@ -223,20 +232,22 @@ local function define_tests()
             end)
 
             local streamer = output.streamer("test-pid")
+            assert(streamer)
 
             -- Add content that doesn't trigger sending
             local sent = streamer:buffer_content("Hello")
-            expect(sent).to_be_false()
-            expect(#sent_messages).to_equal(0)
+            test.is_false(sent)
+            test.eq(#sent_messages, 0)
 
             -- Add content with period that should trigger sending
             sent = streamer:buffer_content(" world.")
-            expect(sent).to_be_true()
-            expect(#sent_messages).to_equal(1)
-            expect(sent_messages[1].payload.content).to_equal("Hello world.")
+            test.is_true(sent)
+            test.eq(#sent_messages, 1)
+            local msg = assert(sent_messages[1])
+            test.eq(msg.payload.content, "Hello world.")
 
             -- Buffer should be empty now
-            expect(streamer.buffer).to_equal("")
+            test.eq(streamer.buffer, "")
         end)
 
         it("should flush remaining buffer content", function()
@@ -253,25 +264,27 @@ local function define_tests()
 
             -- Create streamer with a larger buffer size to prevent auto-send
             local streamer = output.streamer("test-pid", "llm_response", 20)
+            assert(streamer)
 
             -- Empty buffer case - should return false
             local sent = streamer:flush()
-            expect(sent).to_be_false()
-            expect(#sent_messages).to_equal(0)
+            test.is_false(sent)
+            test.eq(#sent_messages, 0)
 
             -- Add content without triggering automatic send
             streamer:buffer_content("Hello world")
 
             -- Now there should be content to flush
             sent = streamer:flush()
-            expect(sent).to_be_true()
-            expect(#sent_messages).to_equal(1)
-            expect(sent_messages[1].payload.content).to_equal("Hello world")
+            test.is_true(sent)
+            test.eq(#sent_messages, 1)
+            local msg = assert(sent_messages[1])
+            test.eq(msg.payload.content, "Hello world")
 
             -- Flush empty buffer should not send anything and return false
             sent = streamer:flush()
-            expect(sent).to_be_false()
-            expect(#sent_messages).to_equal(1) -- Still just one message
+            test.is_false(sent)
+            test.eq(#sent_messages, 1) -- Still just one message
         end)
     end)
 end

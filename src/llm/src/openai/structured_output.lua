@@ -68,8 +68,6 @@ local function _validate_schema(schema)
     return #errors == 0, errors
 end
 
----@param contract_args table Contract arguments for structured output
----@return table Contract-compliant response
 function structured_output_handler.handler(contract_args)
     -- Validate required arguments
     if not contract_args.model then
@@ -205,7 +203,7 @@ function structured_output_handler.handler(contract_args)
 
     -- Parse the JSON content for structured output
     local structured_data = nil
-    local parsed_content, decode_err = json.decode(first_choice.message.content)
+    local parsed_content, decode_err = json.decode(tostring(first_choice.message.content))
     if decode_err then
         return {
             success = false,

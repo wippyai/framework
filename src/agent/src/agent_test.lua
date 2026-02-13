@@ -509,22 +509,22 @@ local function define_tests()
             it("should create agent from compiled specification", function()
                 local test_agent = agent.new(basic_compiled_spec)
 
-                expect(test_agent).not_to_be_nil()
-                expect(test_agent.id).to_equal("basic-agent")
-                expect(test_agent.name).to_equal("Basic Agent")
-                expect(test_agent.model).to_equal("gpt-4o-mini")
+                test.not_nil(test_agent)
+                test.eq(test_agent.id, "basic-agent")
+                test.eq(test_agent.name, "Basic Agent")
+                test.eq(test_agent.model, "gpt-4o-mini")
                 -- Updated expectation: memory items are automatically appended to system prompt
-                expect(test_agent.system_prompt).to_equal("You are a helpful test agent.\n\n## Your memory contains:\n- You are designed for testing")
-                expect(test_agent.tools["calculator"]).not_to_be_nil()
-                expect(test_agent.tools["weather"]).not_to_be_nil()
-                expect(test_agent.total_tokens.total).to_equal(0)
+                test.eq(test_agent.system_prompt, "You are a helpful test agent.\n\n## Your memory contains:\n- You are designed for testing")
+                test.not_nil(test_agent.tools["calculator"])
+                test.not_nil(test_agent.tools["weather"])
+                test.eq(test_agent.total_tokens.total, 0)
             end)
 
             it("should handle nil compiled spec", function()
                 local test_agent, err = agent.new(nil)
 
-                expect(test_agent).to_be_nil()
-                expect(err).to_equal("Compiled spec is required")
+                test.is_nil(test_agent)
+                test.eq(err, "Compiled spec is required")
             end)
 
             it("should use default values for missing fields", function()
@@ -537,12 +537,12 @@ local function define_tests()
 
                 local test_agent = agent.new(minimal_spec)
 
-                expect(test_agent).not_to_be_nil()
-                expect(test_agent.model).to_equal("")
-                expect(test_agent.max_tokens).to_equal(512)
-                expect(test_agent.temperature).to_equal(0)
-                expect(test_agent.thinking_effort).to_equal(0)
-                expect(next(test_agent.tools)).to_be_nil() -- Empty tools table
+                test.not_nil(test_agent)
+                test.eq(test_agent.model, "")
+                test.eq(test_agent.max_tokens, 512)
+                test.eq(test_agent.temperature, 0)
+                test.eq(test_agent.thinking_effort, 0)
+                test.is_nil(next(test_agent.tools)) -- Empty tools table
             end)
         end)
 
@@ -554,18 +554,18 @@ local function define_tests()
                 prompt_builder:add_user("Please calculate 2 + 2")
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.tool_calls).not_to_be_nil()
-                expect(#result.tool_calls).to_equal(1)
+                test.not_nil(result.tool_calls)
+                test.eq(#result.tool_calls, 1)
 
                 local tool_call = result.tool_calls[1]
-                expect(tool_call.id).to_equal("call_calc_123")
-                expect(tool_call.name).to_equal("calculator") -- Canonical name
-                expect(tool_call.registry_id).to_equal("test:calculator")
+                test.eq(tool_call.id, "call_calc_123")
+                test.eq(tool_call.name, "calculator") -- Canonical name
+                test.eq(tool_call.registry_id, "test:calculator")
 
                 -- Context should be automatically attached
-                expect(tool_call.context).not_to_be_nil()
-                expect(tool_call.context.precision).to_equal("high")
-                expect(tool_call.context.timeout).to_equal(30)
+                test.not_nil(tool_call.context)
+                test.eq(tool_call.context.precision, "high")
+                test.eq(tool_call.context.timeout, 30)
             end)
 
             it("should handle multiple tool calls with different contexts", function()
@@ -575,20 +575,20 @@ local function define_tests()
                 prompt_builder:add_user("Get weather and calculate 10 * 5")
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.tool_calls).not_to_be_nil()
-                expect(#result.tool_calls).to_equal(2)
+                test.not_nil(result.tool_calls)
+                test.eq(#result.tool_calls, 2)
 
                 local weather_call = result.tool_calls[1]
                 local calc_call = result.tool_calls[2]
 
                 -- Both should have contexts attached
-                expect(weather_call.context).not_to_be_nil()
-                expect(weather_call.context.api_key).to_equal("test_key")
-                expect(weather_call.context.units).to_equal("celsius")
+                test.not_nil(weather_call.context)
+                test.eq(weather_call.context.api_key, "test_key")
+                test.eq(weather_call.context.units, "celsius")
 
-                expect(calc_call.context).not_to_be_nil()
-                expect(calc_call.context.precision).to_equal("high")
-                expect(calc_call.context.timeout).to_equal(30)
+                test.not_nil(calc_call.context)
+                test.eq(calc_call.context.precision, "high")
+                test.eq(calc_call.context.timeout, 30)
             end)
 
             it("should handle tools with no context gracefully", function()
@@ -598,11 +598,11 @@ local function define_tests()
                 prompt_builder:add_user("Use tool with no context")
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.tool_calls).not_to_be_nil()
-                expect(#result.tool_calls).to_equal(1)
+                test.not_nil(result.tool_calls)
+                test.eq(#result.tool_calls, 1)
 
                 local tool_call = result.tool_calls[1]
-                expect(tool_call.context).to_be_nil() -- No context available for this tool
+                test.is_nil(tool_call.context) -- No context available for this tool
             end)
 
             it("should handle custom schema tool calls with contexts", function()
@@ -612,17 +612,17 @@ local function define_tests()
                 prompt_builder:add_user("Please call the API to get user data")
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.tool_calls).not_to_be_nil()
-                expect(#result.tool_calls).to_equal(1)
+                test.not_nil(result.tool_calls)
+                test.eq(#result.tool_calls, 1)
 
                 local tool_call = result.tool_calls[1]
-                expect(tool_call.name).to_equal("api_client") -- Canonical name
-                expect(tool_call.registry_id).to_equal("custom:api_client")
+                test.eq(tool_call.name, "api_client") -- Canonical name
+                test.eq(tool_call.registry_id, "custom:api_client")
 
                 -- Context should be attached
-                expect(tool_call.context).not_to_be_nil()
-                expect(tool_call.context.endpoint).to_equal("https://api.example.com")
-                expect(tool_call.context.timeout).to_equal(60)
+                test.not_nil(tool_call.context)
+                test.eq(tool_call.context.endpoint, "https://api.example.com")
+                test.eq(tool_call.context.timeout, 60)
             end)
         end)
 
@@ -634,35 +634,35 @@ local function define_tests()
                 prompt_builder:add_user("Use both fast and slow echo tools")
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.tool_calls).not_to_be_nil()
-                expect(#result.tool_calls).to_equal(2)
+                test.not_nil(result.tool_calls)
+                test.eq(#result.tool_calls, 2)
 
                 local fast_call = result.tool_calls[1]
                 local slow_call = result.tool_calls[2]
 
                 -- Verify fast_echo context
-                expect(fast_call.name).to_equal("fast_echo")
-                expect(fast_call.registry_id).to_equal("wippy.agent.tools:delay_tool")
-                expect(fast_call.context).not_to_be_nil()
-                expect(fast_call.context.delay).to_equal(25)
-                expect(fast_call.context.priority).to_equal("high")
+                test.eq(fast_call.name, "fast_echo")
+                test.eq(fast_call.registry_id, "wippy.agent.tools:delay_tool")
+                test.not_nil(fast_call.context)
+                test.eq(fast_call.context.delay, 25)
+                test.eq(fast_call.context.priority, "high")
 
                 -- Verify slow_echo context
-                expect(slow_call.name).to_equal("slow_echo")
-                expect(slow_call.registry_id).to_equal("wippy.agent.tools:delay_tool")
-                expect(slow_call.context).not_to_be_nil()
-                expect(slow_call.context.delay).to_equal(80)
-                expect(slow_call.context.priority).to_equal("low")
+                test.eq(slow_call.name, "slow_echo")
+                test.eq(slow_call.registry_id, "wippy.agent.tools:delay_tool")
+                test.not_nil(slow_call.context)
+                test.eq(slow_call.context.delay, 80)
+                test.eq(slow_call.context.priority, "low")
             end)
 
             it("should handle same registry ID with different aliases correctly", function()
                 local test_agent = agent.new(compiled_spec_with_aliases)
 
                 -- Updated: Access contexts via unified tools table
-                expect(test_agent.tools["fast_echo"]).not_to_be_nil()
-                expect(test_agent.tools["slow_echo"]).not_to_be_nil()
-                expect(test_agent.tools["fast_echo"].context.delay).to_equal(25)
-                expect(test_agent.tools["slow_echo"].context.delay).to_equal(80)
+                test.not_nil(test_agent.tools["fast_echo"])
+                test.not_nil(test_agent.tools["slow_echo"])
+                test.eq(test_agent.tools["fast_echo"].context.delay, 25)
+                test.eq(test_agent.tools["slow_echo"].context.delay, 80)
             end)
         end)
 
@@ -675,11 +675,11 @@ local function define_tests()
                 local result = test_agent:step(prompt_builder)
 
                 -- Updated expectation: should use delegate_calls array
-                expect(result.delegate_calls).not_to_be_nil()
-                expect(#result.delegate_calls).to_equal(1)
-                expect(result.delegate_calls[1].agent_id).to_equal("specialist:data")
-                expect(result.delegate_calls[1].name).to_equal("to_data_specialist")
-                expect(result.tool_calls).to_be_nil() -- Tool calls should be cleared for delegates
+                test.not_nil(result.delegate_calls)
+                test.eq(#result.delegate_calls, 1)
+                test.eq(result.delegate_calls[1].agent_id, "specialist:data")
+                test.eq(result.delegate_calls[1].name, "to_data_specialist")
+                test.is_nil(result.tool_calls) -- Tool calls should be cleared for delegates
             end)
 
             it("should preserve tool calls when no delegates are triggered", function()
@@ -689,9 +689,9 @@ local function define_tests()
                 prompt_builder:add_user("Please calculate 2 + 2")
                 local result = test_agent:step(prompt_builder)
 
-                expect(result.tool_calls).not_to_be_nil()
-                expect(#result.tool_calls).to_equal(1)
-                expect(result.delegate_calls).to_be_nil()
+                test.not_nil(result.tool_calls)
+                test.eq(#result.tool_calls, 1)
+                test.is_nil(result.delegate_calls)
             end)
         end)
 
@@ -709,11 +709,11 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).not_to_be_nil()
-                expect(result.memory_recall.memory_ids).not_to_be_nil()
-                expect(result.memory_recall.count).to_be_greater_than(0)
-                expect(result.memory_prompt).not_to_be_nil()
+                test.not_nil(result)
+                test.not_nil(result.memory_recall)
+                test.not_nil(result.memory_recall.memory_ids)
+                test.gt(result.memory_recall.count, 0)
+                test.not_nil(result.memory_prompt)
             end)
 
             it("should skip memory recall when conversation is too short", function()
@@ -725,9 +725,9 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
-                expect(result.memory_prompt).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
+                test.is_nil(result.memory_prompt)
             end)
 
             it("should skip memory recall when disabled", function()
@@ -744,9 +744,9 @@ local function define_tests()
                 -- Disable memory recall via runtime options
                 local result = test_agent:step(prompt_builder, { disable_memory_recall = true })
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
-                expect(result.memory_prompt).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
+                test.is_nil(result.memory_prompt)
             end)
 
             it("should handle memory contract errors gracefully", function()
@@ -772,8 +772,8 @@ local function define_tests()
                 -- Should not fail, just skip memory recall
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
             end)
 
             it("should respect memory recall cooldown", function()
@@ -794,8 +794,8 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil() -- Should not recall due to cooldown
+                test.not_nil(result)
+                test.is_nil(result.memory_recall) -- Should not recall due to cooldown
             end)
 
             it("should handle agents without memory contracts", function()
@@ -808,9 +808,9 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder)
 
-                expect(result).not_to_be_nil()
-                expect(result.memory_recall).to_be_nil()
-                expect(result.memory_prompt).to_be_nil()
+                test.not_nil(result)
+                test.is_nil(result.memory_recall)
+                test.is_nil(result.memory_prompt)
             end)
 
             it("should include session context in memory recall", function()
@@ -832,10 +832,10 @@ local function define_tests()
                     }
                 })
 
-                expect(result).not_to_be_nil()
+                test.not_nil(result)
                 -- Memory recall should work and use the session context internally
                 if result.memory_recall then
-                    expect(result.memory_recall.memory_ids).not_to_be_nil()
+                    test.not_nil(result.memory_recall.memory_ids)
                 end
             end)
         end)
@@ -848,10 +848,10 @@ local function define_tests()
                 prompt_builder:add_user("Please calculate 2 + 2")
                 local result = test_agent:step(prompt_builder)
 
-                expect(test_agent.total_tokens.total).to_equal(25)
-                expect(test_agent.total_tokens.prompt).to_equal(15)
-                expect(test_agent.total_tokens.completion).to_equal(10)
-                expect(test_agent.total_tokens.thinking).to_equal(0)
+                test.eq(test_agent.total_tokens.total, 25)
+                test.eq(test_agent.total_tokens.prompt, 15)
+                test.eq(test_agent.total_tokens.completion, 10)
+                test.eq(test_agent.total_tokens.thinking, 0)
             end)
 
             it("should accumulate token usage across multiple steps", function()
@@ -862,13 +862,13 @@ local function define_tests()
                 prompt_builder:add_user("Please calculate 2 + 2")
                 test_agent:step(prompt_builder)
 
-                expect(test_agent.total_tokens.total).to_equal(25)
+                test.eq(test_agent.total_tokens.total, 25)
 
                 -- Second step
                 prompt_builder:add_user("What about 3 + 3?")
                 test_agent:step(prompt_builder)
 
-                expect(test_agent.total_tokens.total).to_equal(50) -- Should accumulate
+                test.eq(test_agent.total_tokens.total, 50) -- Should accumulate
             end)
 
             it("should provide agent statistics", function()
@@ -879,11 +879,11 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 local stats = test_agent:get_stats()
-                expect(stats).not_to_be_nil()
-                expect(stats.id).to_equal("basic-agent")
-                expect(stats.name).to_equal("Basic Agent")
-                expect(stats.total_tokens).not_to_be_nil()
-                expect(stats.total_tokens.total).to_be_greater_than(0)
+                test.not_nil(stats)
+                test.eq(stats.id, "basic-agent")
+                test.eq(stats.name, "Basic Agent")
+                test.not_nil(stats.total_tokens)
+                test.gt(stats.total_tokens.total, 0)
             end)
         end)
 
@@ -912,24 +912,25 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 -- Updated expectation: should use tools array
-                expect(captured_options).not_to_be_nil()
-                expect(captured_options.tools).not_to_be_nil() -- Should be array format
-                expect(#captured_options.tools).to_equal(2)
+                test.not_nil(captured_options)
+                local opts = captured_options :: any
+                test.not_nil(opts.tools) -- Should be array format
+                test.eq(#opts.tools, 2)
 
                 -- Check that tools are in array format with proper structure
                 local found_calculator = false
                 local found_weather = false
-                for _, tool in ipairs(captured_options.tools) do
+                for _, tool in ipairs(opts.tools) do
                     if tool.name == "calculator" then
                         found_calculator = true
-                        expect(tool.registry_id).to_equal("test:calculator")
+                        test.eq(tool.registry_id, "test:calculator")
                     elseif tool.name == "weather" then
                         found_weather = true
-                        expect(tool.registry_id).to_equal("test:weather")
+                        test.eq(tool.registry_id, "test:weather")
                     end
                 end
-                expect(found_calculator).to_be_true()
-                expect(found_weather).to_be_true()
+                test.is_true(found_calculator)
+                test.is_true(found_weather)
 
                 -- Cleanup
                 agent._llm = nil
@@ -959,23 +960,24 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 -- Updated expectation: should use tools array
-                expect(captured_options).not_to_be_nil()
-                expect(captured_options.tools).not_to_be_nil()
-                expect(#captured_options.tools).to_equal(2)
+                test.not_nil(captured_options)
+                local opts = captured_options :: any
+                test.not_nil(opts.tools)
+                test.eq(#opts.tools, 2)
 
                 local found_fast = false
                 local found_slow = false
-                for _, tool in ipairs(captured_options.tools) do
+                for _, tool in ipairs(opts.tools) do
                     if tool.name == "fast_echo" then
                         found_fast = true
-                        expect(tool.registry_id).to_equal("wippy.agent.tools:delay_tool")
+                        test.eq(tool.registry_id, "wippy.agent.tools:delay_tool")
                     elseif tool.name == "slow_echo" then
                         found_slow = true
-                        expect(tool.registry_id).to_equal("wippy.agent.tools:delay_tool")
+                        test.eq(tool.registry_id, "wippy.agent.tools:delay_tool")
                     end
                 end
-                expect(found_fast).to_be_true()
-                expect(found_slow).to_be_true()
+                test.is_true(found_fast)
+                test.is_true(found_slow)
 
                 -- Cleanup
                 agent._llm = nil
@@ -1010,8 +1012,9 @@ local function define_tests()
                 test_agent:step(prompt_builder)
 
                 -- Verify no tools are sent when there are no tools
-                expect(captured_options).not_to_be_nil()
-                expect(captured_options.tools).to_be_nil() -- Should be nil when no tools
+                test.not_nil(captured_options)
+                local opts = captured_options :: any
+                test.is_nil(opts.tools) -- Should be nil when no tools
 
                 agent._llm = nil
             end)
@@ -1040,7 +1043,7 @@ local function define_tests()
                 prompt_builder:add_user("Test streaming")
                 test_agent:step(prompt_builder, { stream_target = mock_stream_target })
 
-                expect(captured_options.stream).to_equal(mock_stream_target)
+                test.eq((captured_options :: any).stream, mock_stream_target)
 
                 agent._llm = nil
             end)
@@ -1067,7 +1070,7 @@ local function define_tests()
                 test_agent:step(prompt_builder, { tool_call = "required" })
 
                 -- Updated expectation: tool_call should be mapped to tool_choice
-                expect(captured_options.tool_choice).to_equal("required")
+                test.eq((captured_options :: any).tool_choice, "required")
 
                 agent._llm = nil
             end)
@@ -1102,8 +1105,8 @@ local function define_tests()
                 prompt_builder:add_user("Think about this")
                 local result = test_agent:step(prompt_builder)
 
-                expect(captured_options.thinking_effort).to_equal(75)
-                expect(test_agent.total_tokens.thinking).to_equal(20)
+                test.eq((captured_options :: any).thinking_effort, 75)
+                test.eq(test_agent.total_tokens.thinking, 20)
 
                 agent._llm = nil
             end)
@@ -1127,8 +1130,8 @@ local function define_tests()
 
                 local result = test_agent:step(prompt_builder, runtime_options)
 
-                expect(result).not_to_be_nil()
-                expect(result.result).not_to_be_nil()
+                test.not_nil(result)
+                test.not_nil(result.result)
             end)
         end)
     end)

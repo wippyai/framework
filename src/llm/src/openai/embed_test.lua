@@ -1,5 +1,6 @@
 local embed_handler = require("embed_handler")
 local json = require("json")
+local test = require("test")
 
 local function define_tests()
     describe("OpenAI Embed Handler", function()
@@ -17,11 +18,11 @@ local function define_tests()
                     input = "Test input text"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Model is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Model is required")
             end)
 
             it("should require input parameter", function()
@@ -29,11 +30,11 @@ local function define_tests()
                     model = "text-embedding-3-small"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("Input is required")
+                test.is_false(response.success)
+                test.eq(response.error, "invalid_request")
+                test.contains(response.error_message, "Input is required")
             end)
 
             it("should accept string input", function()
@@ -51,9 +52,9 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.input).to_equal("Test input string")
-                        expect(type(payload.input)).to_equal("string")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.input, "Test input string")
+                        test.eq(type(payload.input), "string")
 
                         return {
                             status_code = 200,
@@ -76,14 +77,14 @@ local function define_tests()
                     input = "Test input string"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.embeddings).not_to_be_nil()
-                expect(type(response.result.embeddings)).to_equal("table")
-                expect(#response.result.embeddings).to_equal(1)
-                expect(type(response.result.embeddings[1])).to_equal("table")
-                expect(#response.result.embeddings[1]).to_equal(3)
+                test.is_true(response.success)
+                test.not_nil(response.result.embeddings)
+                test.eq(type(response.result.embeddings), "table")
+                test.eq(#response.result.embeddings, 1)
+                test.eq(type(response.result.embeddings[1]), "table")
+                test.eq(#response.result.embeddings[1], 3)
             end)
 
             it("should accept array input", function()
@@ -101,11 +102,11 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(type(payload.input)).to_equal("table")
-                        expect(#payload.input).to_equal(2)
-                        expect(payload.input[1]).to_equal("First text")
-                        expect(payload.input[2]).to_equal("Second text")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(type(payload.input), "table")
+                        test.eq(#payload.input, 2)
+                        test.eq(payload.input[1], "First text")
+                        test.eq(payload.input[2], "Second text")
 
                         return {
                             status_code = 200,
@@ -126,12 +127,12 @@ local function define_tests()
                     input = { "First text", "Second text" }
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result.embeddings).not_to_be_nil()
-                expect(type(response.result.embeddings)).to_equal("table")
-                expect(#response.result.embeddings).to_equal(2)
+                test.is_true(response.success)
+                test.not_nil(response.result.embeddings)
+                test.eq(type(response.result.embeddings), "table")
+                test.eq(#response.result.embeddings, 2)
             end)
         end)
 
@@ -151,12 +152,12 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("/embeddings")
+                        test.contains(url, "/embeddings")
 
-                        local payload = json.decode(options.body)
-                        expect(payload.model).to_equal("text-embedding-3-small")
-                        expect(payload.input).to_equal("Test embedding input")
-                        expect(payload.encoding_format).to_equal("float")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.model, "text-embedding-3-small")
+                        test.eq(payload.input, "Test embedding input")
+                        test.eq(payload.encoding_format, "float")
 
                         return {
                             status_code = 200,
@@ -184,20 +185,20 @@ local function define_tests()
                     input = "Test embedding input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(response.result).not_to_be_nil()
-                expect(response.result.embeddings).not_to_be_nil()
-                expect(type(response.result.embeddings)).to_equal("table")
-                expect(#response.result.embeddings).to_equal(1)
-                expect(type(response.result.embeddings[1])).to_equal("table")
-                expect(#response.result.embeddings[1]).to_equal(3)
-                expect(response.result.embeddings[1][1]).to_equal(0.123)
-                expect(response.result.embeddings[1][2]).to_equal(-0.456)
-                expect(response.result.embeddings[1][3]).to_equal(0.789)
-                expect(response.tokens.prompt_tokens).to_equal(5)
-                expect(response.tokens.total_tokens).to_equal(5)
+                test.is_true(response.success)
+                test.not_nil(response.result)
+                test.not_nil(response.result.embeddings)
+                test.eq(type(response.result.embeddings), "table")
+                test.eq(#response.result.embeddings, 1)
+                test.eq(type(response.result.embeddings[1]), "table")
+                test.eq(#response.result.embeddings[1], 3)
+                test.eq(response.result.embeddings[1][1], 0.123)
+                test.eq(response.result.embeddings[1][2], -0.456)
+                test.eq(response.result.embeddings[1][3], 0.789)
+                test.eq(response.tokens.prompt_tokens, 5)
+                test.eq(response.tokens.total_tokens, 5)
             end)
 
             it("should handle dimensions parameter", function()
@@ -215,8 +216,8 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.dimensions).to_equal(512)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.dimensions, 512)
 
                         return {
                             status_code = 200,
@@ -242,10 +243,10 @@ local function define_tests()
                     }
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(#response.result.embeddings[1]).to_equal(2)
+                test.is_true(response.success)
+                test.eq(#response.result.embeddings[1], 2)
             end)
 
             it("should handle user parameter", function()
@@ -263,8 +264,8 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(payload.user).to_equal("test-user-id")
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(payload.user, "test-user-id")
 
                         return {
                             status_code = 200,
@@ -285,9 +286,9 @@ local function define_tests()
                     }
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
 
@@ -307,9 +308,9 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        local payload = json.decode(options.body)
-                        expect(type(payload.input)).to_equal("table")
-                        expect(#payload.input).to_equal(3)
+                        local payload = json.decode(tostring(options.body))
+                        test.eq(type(payload.input), "table")
+                        test.eq(#payload.input, 3)
 
                         return {
                             status_code = 200,
@@ -343,25 +344,25 @@ local function define_tests()
                     input = { "First text", "Second text", "Third text" }
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(type(response.result.embeddings)).to_equal("table")
-                expect(#response.result.embeddings).to_equal(3)
-                expect(type(response.result.embeddings[1])).to_equal("table")
-                expect(type(response.result.embeddings[2])).to_equal("table")
-                expect(type(response.result.embeddings[3])).to_equal("table")
+                test.is_true(response.success)
+                test.eq(type(response.result.embeddings), "table")
+                test.eq(#response.result.embeddings, 3)
+                test.eq(type(response.result.embeddings[1]), "table")
+                test.eq(type(response.result.embeddings[2]), "table")
+                test.eq(type(response.result.embeddings[3]), "table")
 
                 -- Check individual embeddings
-                expect(response.result.embeddings[1][1]).to_equal(0.111)
-                expect(response.result.embeddings[1][2]).to_equal(-0.222)
-                expect(response.result.embeddings[2][1]).to_equal(0.333)
-                expect(response.result.embeddings[2][2]).to_equal(-0.444)
-                expect(response.result.embeddings[3][1]).to_equal(0.555)
-                expect(response.result.embeddings[3][2]).to_equal(-0.666)
+                test.eq(response.result.embeddings[1][1], 0.111)
+                test.eq(response.result.embeddings[1][2], -0.222)
+                test.eq(response.result.embeddings[2][1], 0.333)
+                test.eq(response.result.embeddings[2][2], -0.444)
+                test.eq(response.result.embeddings[3][1], 0.555)
+                test.eq(response.result.embeddings[3][2], -0.666)
 
-                expect(response.tokens.prompt_tokens).to_equal(12)
-                expect(response.tokens.total_tokens).to_equal(12)
+                test.eq(response.tokens.prompt_tokens, 12)
+                test.eq(response.tokens.total_tokens, 12)
             end)
 
             it("should maintain consistent dimension sizes across embeddings", function()
@@ -398,13 +399,13 @@ local function define_tests()
                     input = { "Text one", "Text two" }
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(#response.result.embeddings).to_equal(2)
-                expect(#response.result.embeddings[1]).to_equal(4)
-                expect(#response.result.embeddings[2]).to_equal(4)
-                expect(#response.result.embeddings[1]).to_equal(#response.result.embeddings[2])
+                test.is_true(response.success)
+                test.eq(#response.result.embeddings, 2)
+                test.eq(#response.result.embeddings[1], 4)
+                test.eq(#response.result.embeddings[2], 4)
+                test.eq(#response.result.embeddings[1], #response.result.embeddings[2])
             end)
         end)
 
@@ -442,11 +443,11 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("model_error")
-                expect(response.error_message).to_contain("does not exist")
+                test.is_false(response.success)
+                test.eq(response.error, "model_error")
+                test.contains(response.error_message, "does not exist")
             end)
 
             it("should handle authentication errors", function()
@@ -482,11 +483,11 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("Invalid API key")
+                test.is_false(response.success)
+                test.eq(response.error, "authentication_error")
+                test.contains(response.error_message, "Invalid API key")
             end)
 
             it("should handle rate limit errors", function()
@@ -522,11 +523,11 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("rate_limit_exceeded")
-                expect(response.error_message).to_contain("Rate limit exceeded")
+                test.is_false(response.success)
+                test.eq(response.error, "rate_limit_exceeded")
+                test.contains(response.error_message, "Rate limit exceeded")
             end)
 
             it("should handle server errors", function()
@@ -562,11 +563,11 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Internal server error")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Internal server error")
             end)
 
             it("should handle empty response", function()
@@ -597,11 +598,11 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid or empty response")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Invalid or empty response")
             end)
 
             it("should handle malformed response data", function()
@@ -634,11 +635,11 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid or empty response")
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.contains(response.error_message, "Invalid or empty response")
             end)
         end)
 
@@ -658,7 +659,7 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer context-api-key")
+                        test.eq(options.headers["Authorization"], "Bearer context-api-key")
 
                         return {
                             status_code = 200,
@@ -676,9 +677,9 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
 
             it("should resolve API key from environment variable", function()
@@ -697,7 +698,7 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        expect(options.headers["Authorization"]).to_equal("Bearer env-api-key")
+                        test.eq(options.headers["Authorization"], "Bearer env-api-key")
 
                         return {
                             status_code = 200,
@@ -715,9 +716,9 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
 
             it("should use custom base URL from context", function()
@@ -738,7 +739,7 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        expect(url).to_contain("https://custom.openai.proxy/v1/embeddings")
+                        test.contains(url, "https://custom.openai.proxy/v1/embeddings")
 
                         return {
                             status_code = 200,
@@ -756,9 +757,9 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
 
             it("should use custom timeout from context", function()
@@ -779,7 +780,7 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        expect(options.timeout).to_equal(60)
+                        test.eq(options.timeout, 60)
 
                         return {
                             status_code = 200,
@@ -798,9 +799,9 @@ local function define_tests()
                     timeout = 60
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
+                test.is_true(response.success)
             end)
         end)
 
@@ -841,15 +842,15 @@ local function define_tests()
                     input = "Single text input"
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(type(response.result.embeddings)).to_equal("table")
-                expect(#response.result.embeddings).to_equal(1)
-                expect(type(response.result.embeddings[1])).to_equal("table")
-                expect(#response.result.embeddings[1]).to_equal(5)
-                expect(response.result.embeddings[1][1]).to_equal(0.1)
-                expect(response.result.embeddings[1][5]).to_equal(0.5)
+                test.is_true(response.success)
+                test.eq(type(response.result.embeddings), "table")
+                test.eq(#response.result.embeddings, 1)
+                test.eq(type(response.result.embeddings[1]), "table")
+                test.eq(#response.result.embeddings[1], 5)
+                test.eq(response.result.embeddings[1][1], 0.1)
+                test.eq(response.result.embeddings[1][5], 0.5)
             end)
 
             it("should return array of arrays for multiple embeddings", function()
@@ -886,16 +887,16 @@ local function define_tests()
                     input = { "Text one", "Text two" }
                 }
 
-                local response = embed_handler.handler(contract_args)
+                local response = embed_handler.handler(contract_args) :: any
 
-                expect(response.success).to_be_true()
-                expect(type(response.result.embeddings)).to_equal("table")
-                expect(#response.result.embeddings).to_equal(2)
-                expect(type(response.result.embeddings[1])).to_equal("table")
-                expect(type(response.result.embeddings[2])).to_equal("table")
-                expect(type(response.result.embeddings[1][1])).to_equal("number")
-                expect(#response.result.embeddings[1]).to_equal(3)
-                expect(#response.result.embeddings[2]).to_equal(3)
+                test.is_true(response.success)
+                test.eq(type(response.result.embeddings), "table")
+                test.eq(#response.result.embeddings, 2)
+                test.eq(type(response.result.embeddings[1]), "table")
+                test.eq(type(response.result.embeddings[2]), "table")
+                test.eq(type(response.result.embeddings[1][1]), "number")
+                test.eq(#response.result.embeddings[1], 3)
+                test.eq(#response.result.embeddings[2], 3)
             end)
         end)
     end)

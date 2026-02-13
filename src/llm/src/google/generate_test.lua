@@ -32,9 +32,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Model is required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -55,9 +55,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Messages are required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Messages are required")
             end)
 
             it("should reject empty messages array", function()
@@ -79,9 +79,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_equal("Messages are required")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.eq(response.error_message, "Messages are required")
             end)
         end)
 
@@ -124,9 +124,9 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.endpoint_path).to_equal("generateContent")
-                        expect(args.model).to_equal("gemini-1.5-pro")
-                        expect(args.payload.contents).not_to_be_nil()
+                        tests.eq(args.endpoint_path, "generateContent")
+                        tests.eq(args.model, "gemini-1.5-pro")
+                        tests.not_nil(args.payload.contents)
 
                         return {
                             status_code = 200,
@@ -171,11 +171,12 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.content).to_equal("Hello! How can I help you today?")
-                expect(response.tokens.prompt_tokens).to_equal(10)
-                expect(response.tokens.completion_tokens).to_equal(8)
-                expect(response.finish_reason).to_equal("stop")
+                tests.is_true(response.success)
+                assert(response.success)
+                tests.eq(response.result.content, "Hello! How can I help you today?")
+                tests.eq(response.tokens.prompt_tokens, 10)
+                tests.eq(response.tokens.completion_tokens, 8)
+                tests.eq(response.finish_reason, "stop")
             end)
 
             it("should handle options mapping", function()
@@ -215,11 +216,11 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.generationConfig).not_to_be_nil()
-                        expect(args.payload.generationConfig.temperature).to_equal(0.7)
-                        expect(args.payload.generationConfig.maxOutputTokens).to_equal(100)
-                        expect(args.payload.generationConfig.topP).to_equal(0.9)
-                        expect(args.payload.generationConfig.topK).to_equal(40)
+                        tests.not_nil(args.payload.generationConfig)
+                        tests.eq(args.payload.generationConfig.temperature, 0.7)
+                        tests.eq(args.payload.generationConfig.maxOutputTokens, 100)
+                        tests.eq(args.payload.generationConfig.topP, 0.9)
+                        tests.eq(args.payload.generationConfig.topK, 40)
 
                         return {
                             status_code = 200,
@@ -259,7 +260,8 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
+                assert(response.success)
             end)
 
             it("should handle system instructions", function()
@@ -296,10 +298,10 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.systemInstruction).not_to_be_nil()
-                        expect(args.payload.systemInstruction.parts).not_to_be_nil()
-                        expect(#args.payload.systemInstruction.parts).to_equal(1)
-                        expect(args.payload.systemInstruction.parts[1].text).to_equal("You are a helpful assistant")
+                        tests.not_nil(args.payload.systemInstruction)
+                        tests.not_nil(args.payload.systemInstruction.parts)
+                        tests.eq(#args.payload.systemInstruction.parts, 1)
+                        tests.eq(args.payload.systemInstruction.parts[1].text, "You are a helpful assistant")
 
                         return {
                             status_code = 200,
@@ -334,7 +336,8 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
+                assert(response.success)
             end)
 
             it("should not include generationConfig when empty", function()
@@ -369,7 +372,7 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.generationConfig).to_be_nil()
+                        tests.is_nil(args.payload.generationConfig)
 
                         return {
                             status_code = 200,
@@ -465,12 +468,12 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.tools).not_to_be_nil()
-                        expect(args.payload.tools.functionDeclarations).not_to_be_nil()
-                        expect(#args.payload.tools.functionDeclarations).to_equal(1)
-                        expect(args.payload.tools.functionDeclarations[1].name).to_equal("calculate")
-                        expect(args.payload.toolConfig).not_to_be_nil()
-                        expect(args.payload.toolConfig.functionCallingConfig).not_to_be_nil()
+                        tests.not_nil(args.payload.tools)
+                        tests.not_nil(args.payload.tools.functionDeclarations)
+                        tests.eq(#args.payload.tools.functionDeclarations, 1)
+                        tests.eq(args.payload.tools.functionDeclarations[1].name, "calculate")
+                        tests.not_nil(args.payload.toolConfig)
+                        tests.not_nil(args.payload.toolConfig.functionCallingConfig)
 
                         return {
                             status_code = 200,
@@ -532,11 +535,12 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_true()
-                expect(response.result.tool_calls).not_to_be_nil()
-                expect(#response.result.tool_calls).to_equal(1)
-                expect(response.result.tool_calls[1].name).to_equal("calculate")
-                expect(response.finish_reason).to_equal("tool_call")
+                tests.is_true(response.success)
+                assert(response.success)
+                tests.not_nil(response.result.tool_calls)
+                tests.eq(#response.result.tool_calls, 1)
+                tests.eq(response.result.tool_calls[1].name, "calculate")
+                tests.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle tool_choice parameter", function()
@@ -555,7 +559,7 @@ local function define_tests()
                         }
                     end,
                     map_tool_config = function(tool_choice, tools)
-                        expect(tool_choice).to_equal("calculate")
+                        tests.eq(tool_choice, "calculate")
                         return {
                             mode = "ANY",
                             allowedFunctionNames = { "calculate" }
@@ -587,8 +591,8 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.toolConfig.functionCallingConfig.mode).to_equal("ANY")
-                        expect(args.payload.toolConfig.functionCallingConfig.allowedFunctionNames[1]).to_equal("calculate")
+                        tests.eq(args.payload.toolConfig.functionCallingConfig.mode, "ANY")
+                        tests.eq(args.payload.toolConfig.functionCallingConfig.allowedFunctionNames[1], "calculate")
 
                         return {
                             status_code = 200,
@@ -644,7 +648,8 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
+                assert(response.success)
             end)
 
             it("should return error for invalid tool_choice", function()
@@ -692,9 +697,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("invalid_request")
-                expect(response.error_message).to_contain("not found in tools list")
+                tests.is_false(response.success)
+                tests.eq(response.error, "invalid_request")
+                tests.contains(response.error_message, "not found in tools list")
             end)
         end)
 
@@ -731,7 +736,7 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.options.timeout).to_equal(180)
+                        tests.eq(args.options.timeout, 180)
 
                         return {
                             status_code = 200,
@@ -813,9 +818,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Failed to get client contract")
+                tests.is_false(response.success)
+                tests.eq(response.error, "server_error")
+                tests.contains(response.error_message, "Failed to get client contract")
             end)
 
             it("should handle client binding errors", function()
@@ -871,9 +876,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Failed to open client binding")
+                tests.is_false(response.success)
+                tests.eq(response.error, "server_error")
+                tests.contains(response.error_message, "Failed to open client binding")
             end)
 
             it("should handle API error responses", function()
@@ -938,9 +943,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("authentication_error")
-                expect(response.error_message).to_contain("API key is invalid")
+                tests.is_false(response.success)
+                tests.eq(response.error, "authentication_error")
+                tests.contains(response.error_message, "API key is invalid")
             end)
 
             it("should handle response mapping errors", function()
@@ -1008,9 +1013,9 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
-                expect(response.error).to_equal("server_error")
-                expect(response.error_message).to_contain("Invalid response structure")
+                tests.is_false(response.success)
+                tests.eq(response.error, "server_error")
+                tests.contains(response.error_message, "Invalid response structure")
             end)
         end)
 
@@ -1062,20 +1067,20 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context.api_key).to_equal("test-key")
-                        expect(context.project_id).to_equal("test-project")
+                        tests.eq(context.api_key, "test-key")
+                        tests.eq(context.project_id, "test-project")
                         context_passed = true
                         return self
                     end,
                     open = function(self, client_id)
-                        expect(client_id).to_equal("test-client-id")
+                        tests.eq(client_id, "test-client-id")
                         return mock_client_instance, nil
                     end
                 }
 
                 generate._contract = {
                     get = function(contract_id)
-                        expect(contract_id).to_equal(require("google_config").CLIENT_CONTRACT_ID)
+                        tests.eq(contract_id, require("google_config").CLIENT_CONTRACT_ID)
                         return mock_contract, nil
                     end
                 }
@@ -1089,7 +1094,7 @@ local function define_tests()
 
                 generate.handler(contract_args)
 
-                expect(context_passed).to_be_true()
+                tests.is_true(context_passed)
             end)
 
             it("should handle nil context gracefully", function()
@@ -1134,7 +1139,7 @@ local function define_tests()
 
                 local mock_contract = {
                     with_context = function(self, context)
-                        expect(context).not_to_be_nil()
+                        tests.not_nil(context)
                         return self
                     end,
                     open = function(self, client_id)
@@ -1157,7 +1162,8 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_true()
+                tests.is_true(response.success)
+                assert(response.success)
             end)
         end)
 
@@ -1199,10 +1205,10 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.generationConfig.temperature).to_equal(0.5)
-                        expect(args.payload.generationConfig.maxOutputTokens).to_be_nil()
-                        expect(args.payload.generationConfig.topP).to_equal(0.8)
-                        expect(args.payload.generationConfig.topK).to_be_nil()
+                        tests.eq(args.payload.generationConfig.temperature, 0.5)
+                        tests.is_nil(args.payload.generationConfig.maxOutputTokens)
+                        tests.eq(args.payload.generationConfig.topP, 0.8)
+                        tests.is_nil(args.payload.generationConfig.topK)
 
                         return {
                             status_code = 200,
@@ -1273,7 +1279,7 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        expect(args.payload.systemInstruction).to_be_nil()
+                        tests.is_nil(args.payload.systemInstruction)
 
                         return {
                             status_code = 200,
@@ -1370,7 +1376,7 @@ local function define_tests()
 
                 local response = generate.handler(contract_args)
 
-                expect(response.success).to_be_false()
+                tests.is_false(response.success)
             end)
         end)
     end)

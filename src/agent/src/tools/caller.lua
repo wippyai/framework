@@ -2,47 +2,82 @@ local json = require("json")
 local tools = require("tools")
 local funcs = require("funcs")
 
--- Function status constants
+type ToolCall = {
+    id: string,
+    name: string,
+    arguments: string | table,
+    registry_id: string,
+    context: table?,
+}
+
+type ValidatedTool = {
+    call_id: string,
+    name: string,
+    args: string | table,
+    registry_id: string,
+    meta: table,
+    context: table?,
+    error: string?,
+    valid: boolean,
+}
+
+type ToolExecResult = {
+    result: any?,
+    error: string?,
+    tool_call: ValidatedTool,
+}
+
 local FUNC_STATUS = {
     PENDING = "pending",
     SUCCESS = "success",
     ERROR = "error"
 }
 
--- Strategy constants
 local STRATEGY = {
     SEQUENTIAL = "sequential",
     PARALLEL = "parallel"
 }
 
--- Tool Caller class
 local tool_caller = {}
 tool_caller.__index = tool_caller
 
--- Constructor
-function tool_caller.new()
+tool_caller._json = nil
+tool_caller._tools = nil
+tool_caller._funcs = nil
+
+local function get_json(): any
+    return tool_caller._json or json
+end
+
+local function get_tools(): any
+    return tool_caller._tools or tools
+end
+
+local function get_funcs(): any
+    return tool_caller._funcs or funcs
+end
+
+function tool_caller.new(): any
     local self = setmetatable({}, tool_caller)
-    self.executor = funcs.new()
+    self.executor = get_funcs().new()
     self.strategy = STRATEGY.SEQUENTIAL -- Default strategy
     return self
 end
 
--- Set execution strategy
-function tool_caller:set_strategy(strategy)
+function tool_caller:set_strategy(strategy: string): any
     if strategy == STRATEGY.PARALLEL or strategy == STRATEGY.SEQUENTIAL then
         self.strategy = strategy
     end
     return self
 end
 
--- Validate tool calls and return enriched data
-function tool_caller:validate(tool_calls)
+function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     -- Check if there are any tool calls
     if not tool_calls or #tool_calls == 0 then
         return {}, nil
     end
 
-    local validated_tools = {}
+    local validated_tools: {[string]: any} = {}
     local has_exclusive = false
     local exclusive_tool = nil
 
@@ -55,7 +90,7 @@ function tool_caller:validate(tool_calls)
         local function_call_id = tool_call.id
 
         -- Get tool schema with metadata
-        local schema, err = tools.get_tool_schema(registry_id)
+        local schema, err = get_tools().get_tool_schema(registry_id)
         if err then
             -- Add to validated tools with error
             validated_tools[function_call_id] = {
@@ -99,7 +134,7 @@ function tool_caller:validate(tool_calls)
 
     -- Second pass: if we have an exclusive tool, only keep that one
     if has_exclusive and #tool_calls > 1 then
-        local exclusive_data = validated_tools[exclusive_tool]
+        local exclusive_data = (validated_tools :: any)[exclusive_tool]
         local result = {}
         result[exclusive_tool] = exclusive_data
 
@@ -110,14 +145,13 @@ function tool_caller:validate(tool_calls)
     return validated_tools, nil
 end
 
--- Execute a single tool call
-local function execute_single_tool(executor, call_id, tool_call, context)
+local function execute_single_tool(executor: any, call_id: string, tool_call: any, context: table?): any
     local registry_id = tool_call.registry_id
     local args = tool_call.args
     local tool_context = tool_call.context or {}
 
     if type(args) == "string" then
-        local parsed_args, err = json.decode(args)
+        local parsed_args, err = get_json().decode(args)
         if err then
             return {
                 result = nil,
@@ -142,7 +176,7 @@ local function execute_single_tool(executor, call_id, tool_call, context)
 
     -- Execute the tool
     local ctx_executor = executor:with_context(merged_context)
-    local result, err = ctx_executor:call(registry_id, args)
+    local result, err = ctx_executor:call(tostring(registry_id), args)
 
     return {
         result = result,
@@ -151,8 +185,7 @@ local function execute_single_tool(executor, call_id, tool_call, context)
     }
 end
 
--- Execute tools sequentially
-local function execute_sequential(self, context, validated_tools)
+local function execute_sequential(self: any, context: any, validated_tools: any): any
     local results = {}
 
     -- Handle nil or empty validated_tools
@@ -169,7 +202,7 @@ local function execute_sequential(self, context, validated_tools)
             goto continue
         end
 
-        local exec_result = execute_single_tool(self.executor, call_id, tool_call, context)
+        local exec_result = execute_single_tool(self.executor, tostring(call_id), tool_call, context as {}?)
         results[call_id] = exec_result
 
         ::continue::
@@ -178,8 +211,7 @@ local function execute_sequential(self, context, validated_tools)
     return results
 end
 
--- Execute tools in parallel
-local function execute_parallel(self, context, validated_tools)
+local function execute_parallel(self: any, context: table?, validated_tools: any): any
     local results = {}
     local commands = {}
 
@@ -198,7 +230,7 @@ local function execute_parallel(self, context, validated_tools)
         local tool_context = tool_call.context or {}
 
         if type(args) == "string" then
-            local parsed_args, err = json.decode(args)
+            local parsed_args, err = get_json().decode(args)
             if err then
                 results[call_id] = {
                     error = "Failed to parse arguments: " .. tostring(err),
@@ -221,7 +253,7 @@ local function execute_parallel(self, context, validated_tools)
 
         -- Start async execution
         local ctx_executor = self.executor:with_context(merged_context)
-        local command = ctx_executor:async(registry_id, args)
+        local command = ctx_executor:async(tostring(registry_id), args)
 
         commands[call_id] = {
             command = command,
@@ -269,17 +301,16 @@ local function execute_parallel(self, context, validated_tools)
     return results
 end
 
--- Execute validated tools
-function tool_caller:execute(context, validated_tools)
+function tool_caller:execute(context: any, validated_tools: any): any
     -- Handle nil validated_tools
     if not validated_tools then
         validated_tools = {}
     end
 
     if self.strategy == STRATEGY.PARALLEL then
-        return execute_parallel(self, context, validated_tools)
+        return execute_parallel(self :: any, context as table?, validated_tools)
     else
-        return execute_sequential(self, context, validated_tools)
+        return execute_sequential(self :: any, context, validated_tools)
     end
 end
 
