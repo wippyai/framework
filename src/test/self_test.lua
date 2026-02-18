@@ -30,6 +30,55 @@ local function define_tests()
             test.not_nil("")
         end)
 
+        test.it("not_nil narrows nullable to non-nil", function()
+            local val: string? = "hello"
+            test.not_nil(val)
+            test.eq(#val, 5)
+        end)
+
+        test.it("not_nil narrows multi-return nullable", function()
+            local function fetch(): ({id: string, name: string}?, string?)
+                return {id = "x", name = "y"}, nil
+            end
+
+            local result, err = fetch()
+            test.is_nil(err)
+            test.not_nil(result)
+            test.eq(result.id, "x")
+            test.eq(result.name, "y")
+        end)
+
+        test.it("is_string narrows any to string", function()
+            local val: any = "hello"
+            local s = test.is_string(val)
+            test.eq(#s, 5)
+            test.eq(s:upper(), "HELLO")
+        end)
+
+        test.it("is_number narrows any to number", function()
+            local val: any = 42
+            local n = test.is_number(val)
+            test.eq(n + 1, 43)
+        end)
+
+        test.it("is_table narrows any to table", function()
+            local val: any = {a = 1}
+            local t = test.is_table(val)
+            test.not_nil(t)
+        end)
+
+        test.it("is_boolean narrows any to boolean", function()
+            local val: any = true
+            local b = test.is_boolean(val)
+            test.is_true(b)
+        end)
+
+        test.it("ok narrows falsy values", function()
+            local val: string? = "present"
+            local v = test.ok(val)
+            test.not_nil(v)
+        end)
+
         test.it("is_true and is_false work", function()
             test.is_true(true)
             test.is_false(false)
@@ -42,20 +91,22 @@ local function define_tests()
             test.is_function(function() end)
         end)
 
-        test.it("contains checks substring", function()
-            test.contains("hello world", "world")
-            test.contains("testing", "est")
+        test.it("contains narrows and returns string", function()
+            local val: any = "hello world"
+            local s = test.contains(val, "world")
+            test.eq(#s, 11)
         end)
 
-        test.it("matches checks patterns", function()
-            test.matches("hello123", "%d+")
-            test.matches("test@example.com", "@")
+        test.it("matches narrows and returns string", function()
+            local val: any = "hello123"
+            local s = test.matches(val, "%d+")
+            test.eq(s:sub(1, 5), "hello")
         end)
 
-        test.it("has_key checks table keys", function()
+        test.it("has_key returns the value", function()
             local t = {name = "test", value = 42}
-            test.has_key(t, "name")
-            test.has_key(t, "value")
+            local v = test.has_key(t, "name")
+            test.eq(v, "test")
         end)
 
         test.it("len checks length", function()
@@ -70,11 +121,20 @@ local function define_tests()
             test.lte(5, 5)
         end)
 
-        test.it("throws catches errors", function()
+        test.it("throws catches errors and returns it", function()
             local err = test.throws(function()
                 error("expected error")
             end)
             test.ok(err)
+            test.contains(tostring(err), "expected")
+        end)
+
+        test.it("has_error validates nil result with error", function()
+            test.has_error(nil, "something went wrong")
+        end)
+
+        test.it("no_error validates present result without error", function()
+            test.no_error("result", nil)
         end)
     end)
 

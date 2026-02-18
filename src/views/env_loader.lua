@@ -112,9 +112,11 @@ function env_loader.resolve_env_values(context)
     local resolved = {}
 
     for context_key, env_var in pairs(context) do
-        local value = env.get(env_var)
-        if value then
-            resolved[context_key] = value
+        if type(context_key) == "string" and type(env_var) == "string" then
+            local value = env.get(env_var)
+            if value then
+                resolved[context_key] = value
+            end
         end
     end
 

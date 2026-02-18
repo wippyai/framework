@@ -110,7 +110,13 @@ local function merge_contexts(base_context: {[string]: any}?, override_context: 
     return merged
 end
 
-function agent_context.new(config): any
+function agent_context.new(config: {
+    enable_cache: boolean?,
+    context: {[string]: any}?,
+    delegate_tools: DelegateToolsConfig?,
+    memory_contract: MemoryContractConfig?,
+    context_merger: any?,
+}?): any
     config = config or {}
 
     local self = setmetatable({}, agent_context)

@@ -39,21 +39,21 @@ local function handler()
     for _, component in ipairs(all_components) do
         if (not component.secure or page_registry.can_access(component)) and component.announced then
             local component_info: ComponentResponse = {
-                id = component.id,
-                name = component.name or "",
-                title = component.title or "",
-                icon = component.icon or "",
-                order = component.order or 9999,
-                group = component.group or "",
-                group_icon = component.group_icon or "",
-                group_order = component.group_order or 9999,
-                group_placement = component.group_placement or "default",
-                secure = component.secure or false,
-                announced = component.announced or false,
-                kind = component.kind,
+                id = type(component.id) == "string" and component.id or tostring(component.id),
+                name = type(component.name) == "string" and component.name or "",
+                title = type(component.title) == "string" and component.title or "",
+                icon = type(component.icon) == "string" and component.icon or "",
+                order = tonumber(component.order) or 9999,
+                group = type(component.group) == "string" and component.group or "",
+                group_icon = type(component.group_icon) == "string" and component.group_icon or "",
+                group_order = tonumber(component.group_order) or 9999,
+                group_placement = type(component.group_placement) == "string" and component.group_placement or "default",
+                secure = component.secure == true,
+                announced = component.announced == true,
+                kind = type(component.kind) == "string" and component.kind or "component",
             }
 
-            if component.url then
+            if type(component.url) == "string" then
                 component_info.url = component.url
             end
 

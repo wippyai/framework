@@ -100,9 +100,14 @@ function renderer.render(page_id, params, query)
 
     -- Get the template set
     local tmpl_id = page.template_set
-    local tmpl, tmpl_get_err = templates.get(tmpl_id)
+    if not tmpl_id then
+        return nil, "Page '" .. page_id .. "' has no template_set defined"
+    end
+    local template_set: string = tmpl_id
+
+    local tmpl, tmpl_get_err = templates.get(template_set)
     if tmpl_get_err then
-        return nil, "Failed to load template set '" .. tmpl_id .. "': " .. tmpl_get_err
+        return nil, "Failed to load template set '" .. template_set .. "': " .. tmpl_get_err
     end
 
     -- Render the template using the correctly built context

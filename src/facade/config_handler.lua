@@ -28,7 +28,7 @@ type Customization = {
 
 type FacadeConfig = {
     facade_url: string,
-    iframe_origin: string,
+    iframe_origin: string?,
     iframe_url: string,
     api_url: string,
     ws_url: string,
@@ -63,7 +63,7 @@ local function handler()
     local facade_url = get_req("fe_facade_url")
     local entry_path = get_req("fe_entry_path")
 
-    local iframe_origin = ""
+    local iframe_origin: string? = ""
     if facade_url ~= "" then
         iframe_origin = facade_url:match("^(https?://[^/]+)")
     end

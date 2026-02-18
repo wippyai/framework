@@ -12,7 +12,6 @@ entries:
       auto_generated: true
       private: true
     readonly: false
-    storage: # Will be set by env_storage requirement
     variable: ENCRYPTION_KEY
 
   # Bootloaders

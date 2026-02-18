@@ -155,7 +155,7 @@ function agent_selector.execute(input): (SelectionResult?, string?)
     local user_prompt = input.user_prompt or input.prompt
     local class_name = input.class_name or input.class
 
-    return agent_selector.select_agent(tostring(user_prompt), tostring(class_name))
+    return agent_selector.select_agent(user_prompt, class_name)
 end
 
 return agent_selector
