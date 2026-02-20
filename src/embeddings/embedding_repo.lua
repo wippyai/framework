@@ -19,7 +19,7 @@ local function get_db()
         return nil, "target_db requirement value is empty"
     end
 
-    local db, err = sql.get(db_resource)
+    local db, err = sql.get(tostring(db_resource))
     if err then
         return nil, "Failed to connect to database: " .. err
     end
@@ -65,7 +65,7 @@ local function encode_meta_for_db(meta, db_type)
 end
 
 -- Helper function to decode JSON metadata from database
-local function decode_meta_from_db(meta_json)
+local function decode_meta_from_db(meta_json: string)
     if not meta_json or meta_json == "" then
         return {}
     end
@@ -364,7 +364,7 @@ function embedding_repo.get_by_origin(origin_id)
     -- Process the results: decode metadata JSON
     for i, result in ipairs(results) do
         if result.meta and result.meta ~= "" then
-            results[i].meta = decode_meta_from_db(result.meta)
+            results[i].meta = decode_meta_from_db(tostring(result.meta))
         else
             results[i].meta = {}
         end
@@ -575,7 +575,7 @@ function embedding_repo.search_by_embedding(embedding, options)
     for i, result in ipairs(results) do
         -- Decode metadata
         if result.meta and result.meta ~= "" then
-            results[i].meta = decode_meta_from_db(result.meta)
+            results[i].meta = decode_meta_from_db(tostring(result.meta))
         else
             results[i].meta = {}
         end

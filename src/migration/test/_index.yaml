@@ -2,6 +2,18 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: env_storage
+    kind: env.storage.file
+    meta:
+      type: envstorage
+    file_path: ./.wippy/test.env
+    auto_create: true
+
+  - name: processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
+
   - name: dep.wippy.migration
     kind: ns.dependency
     meta:
@@ -10,3 +22,14 @@ entries:
     parameters:
       - name: app_db
         value: app:db
+
+  - name: dep.wippy.bootloader
+    kind: ns.dependency
+    meta:
+      description: "Bootloader configuration for testing"
+    component: "wippy/bootloader"
+    parameters:
+      - name: application_host
+        value: app:processes
+      - name: env_storage
+        value: app:env_storage

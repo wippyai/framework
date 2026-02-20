@@ -23,7 +23,7 @@ type Customization = {
     custom_css: string,
     css_variables: {[string]: string},
     i18n: { app: AppIdentity },
-    icons: {[string]: string},
+    icons: {[string]: any},
 }
 
 type FacadeConfig = {
@@ -45,6 +45,31 @@ local function get_req(name: string): string
         return entry.data.default or ""
     end
     return ""
+end
+
+local function get_req_json(name: string): {[string]: string}
+    local raw = get_req(name)
+    if raw == "" then
+        return {}
+    end
+    local val, err = json.decode(raw)
+    if err then
+        return {}
+    end
+    return (val :: {[string]: string}) or {}
+end
+
+-- workaround: icons have nested structure ({body, width, height})
+local function get_req_json_any(name: string): {[string]: any}
+    local raw = get_req(name)
+    if raw == "" then
+        return {}
+    end
+    local val, err = json.decode(raw)
+    if err then
+        return {}
+    end
+    return (val :: {[string]: any}) or {}
 end
 
 local function derive_ws_url(api_url: string): string
@@ -73,13 +98,8 @@ local function handler()
         iframe_url = facade_url .. entry_path .. "?waitForCustomConfig"
     end
 
-    local api_url_env = get_req("api_url_env")
-    local api_url = ""
-    local ws_url = ""
-    if api_url_env ~= "" then
-        api_url = env.get(api_url_env) or ""
-        ws_url = derive_ws_url(api_url)
-    end
+    local api_url = env.get("PUBLIC_API_URL") or ""
+    local ws_url = derive_ws_url(api_url)
 
     local config: FacadeConfig = {
         facade_url = facade_url,
@@ -98,7 +118,7 @@ local function handler()
         },
         customization = {
             custom_css = get_req("custom_css"),
-            css_variables = {},
+            css_variables = get_req_json("css_variables"),
             i18n = {
                 app = {
                     title = get_req("app_title"),
@@ -106,7 +126,7 @@ local function handler()
                     appName = get_req("app_name"),
                 },
             },
-            icons = {},
+            icons = get_req_json_any("icons"),
         },
         login_path = get_req("login_path"),
     }

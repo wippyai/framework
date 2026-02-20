@@ -28,7 +28,7 @@ local function define_tests()
         test.after_all(function()
             local entry, _ = registry.get("wippy.embeddings:target_db")
             local db_resource = entry.data.default
-            local db, err = sql.get(db_resource)
+            local db, err = sql.get(tostring(db_resource))
             if err then
                 print("Warning: Could not connect to database for cleanup: " .. err)
                 return

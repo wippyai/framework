@@ -153,7 +153,7 @@ function claude_client.request(endpoint_path, payload, options)
     local full_url = config.base_url .. endpoint_path
     local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, config.beta_features, method, config.headers)
 
-    local http_options = {
+    local http_options: {[string]: any} = {
         headers = headers,
         timeout = tonumber(options.timeout) or config.timeout,
     }

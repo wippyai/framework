@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - actor
+          - bootloader
+          - embeddings
+          - facade
+          - llm
+          - migration
+          - relay
+          - usage
+          - views
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Wippy
+        run: |
+          curl -fsSL https://hub.wippy.ai/install.sh -o /tmp/wippy-install.sh
+          . /tmp/wippy-install.sh
+          echo "$HOME/.wippy/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: src/${{ matrix.module }}/test
+        run: wippy install
+
+      - name: Lint
+        working-directory: src/${{ matrix.module }}/test
+        run: wippy lint --level error
+
+  test:
+    name: Test (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - actor
+          - bootloader
+          - embeddings
+          - facade
+          - llm
+          - migration
+          - relay
+          - usage
+          - views
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Wippy
+        run: |
+          curl -fsSL https://hub.wippy.ai/install.sh -o /tmp/wippy-install.sh
+          . /tmp/wippy-install.sh
+          echo "$HOME/.wippy/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: src/${{ matrix.module }}/test
+        run: wippy install
+
+      - name: Test
+        working-directory: src/${{ matrix.module }}/test
+        run: wippy run test

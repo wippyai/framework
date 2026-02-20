@@ -2,10 +2,35 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: wait_for_boot
+    kind: function.lua
+    meta:
+      type: test
+      suite: "00_setup"
+      comment: Waits for bootloader to apply migrations before tests run
+    source: file://wait_for_boot.lua
+    modules:
+      - sql
+      - time
+    method: run
+
+  - name: db
+    kind: db.sql.sqlite
+    meta:
+      comment: In-memory database for usage tests
+    file: ":memory:"
+
   - name: env_storage
-    kind: env.storage.os
+    kind: env.storage.file
     meta:
       type: envstorage
+    file_path: ./.wippy/test.env
+    auto_create: true
+
+  - name: processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
 
   - name: dep.wippy.usage
     kind: ns.dependency
@@ -16,6 +41,17 @@ entries:
       - name: target_db
         value: app:db
 
+  - name: dep.wippy.llm
+    kind: ns.dependency
+    meta:
+      description: "LLM dependency configuration for testing"
+    component: "wippy/llm"
+    parameters:
+      - name: process_host
+        value: app:processes
+      - name: env_storage
+        value: app:env_storage
+
   - name: dep.wippy.bootloader
     kind: ns.dependency
     meta:
@@ -23,6 +59,6 @@ entries:
     component: "wippy/bootloader"
     parameters:
       - name: application_host
-        value: wippy.terminal:host
+        value: app:processes
       - name: env_storage
         value: app:env_storage

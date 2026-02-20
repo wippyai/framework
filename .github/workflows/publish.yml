@@ -17,15 +17,17 @@ jobs:
           - { folder: actor }
           - { folder: agent }
           - { folder: bootloader }
+          - { folder: docs }
+          - { folder: embeddings }
+          - { folder: facade }
+          - { folder: llm }
           - { folder: migration }
           - { folder: relay }
           - { folder: security }
           - { folder: terminal }
           - { folder: test }
-          - { folder: views }
-          - { folder: llm }
           - { folder: usage }
-          - { folder: docs }
+          - { folder: views }
     steps:
       - uses: actions/checkout@v5
         with:

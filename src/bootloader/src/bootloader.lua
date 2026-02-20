@@ -190,7 +190,7 @@ local function check_dependencies(entry: any, completed_bootloaders: {string}): 
 end
 
 local function execute_bootloader(entry, options, completed_bootloaders)
-    local bootloader_id = entry.id
+    local bootloader_id: string = tostring(entry.id)
     local start_time = time.now()
 
     log:info("Executing bootloader", {
