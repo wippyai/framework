@@ -5,7 +5,7 @@ local registry = require("registry")
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "api_url_env", "session_type",
+    "fe_facade_url", "fe_entry_path", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel",
     "custom_css", "app_title", "app_icon", "app_name", "login_path",
@@ -15,7 +15,6 @@ local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
         fe_facade_url = "https://front.wippy.ai",
         fe_entry_path = "/iframe.html",
-        api_url_env = "PUBLIC_API_URL",
         session_type = "non-persistent",
         history_mode = "hash",
         show_admin = "true",
@@ -170,12 +169,6 @@ local function define_tests()
                 test.eq(entry.data.default, "Custom App")
             end)
 
-            test.it("api_url_env defaults to PUBLIC_API_URL", function()
-                local entry = registry.get(NS .. "api_url_env")
-                test.not_nil(entry)
-                test.eq(entry.data.default, "PUBLIC_API_URL")
-            end)
-
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
                 test.eq(entry.data.default, "https://front.wippy.ai")
@@ -212,8 +205,8 @@ local function define_tests()
                         disable_right_panel = false,
                     },
                     customization = {
-                        custom_css = "",
-                        css_variables = {},
+                        custom_css = "@import url('https://fonts.example.com');",
+                        css_variables = { ["p-primary"] = "#3b82f6" },
                         i18n = {
                             app = {
                                 title = "Wippy",
@@ -221,7 +214,7 @@ local function define_tests()
                                 appName = "Wippy AI",
                             },
                         },
-                        icons = {},
+                        icons = { logo = { body = "<path/>", width = 24, height = 24 } },
                     },
                     login_path = "/login.html",
                 }

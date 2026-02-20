@@ -8,7 +8,7 @@ entries:
     meta:
       comment: Lists all virtual pages with metadata
       description: Pages listing endpoint
-      router: app:api.public
+      router: api_router
     source: file://list_pages.lua
     modules:
       - http
@@ -25,7 +25,7 @@ entries:
     meta:
       comment: Endpoint that lists all accessible pages
       description: CMS pages listing endpoint
-      router: app:api.public
+      router: api_router
     method: GET
     func: list_pages
     path: /pages/list
@@ -36,7 +36,7 @@ entries:
     meta:
       comment: Lists all view components with metadata
       description: Components listing endpoint
-      router: app:api.public
+      router: api_router
     source: file://list_components.lua
     modules:
       - http
@@ -53,7 +53,7 @@ entries:
     meta:
       comment: Endpoint that lists all accessible view components
       description: View components listing endpoint
-      router: app:api.public
+      router: api_router
     method: GET
     func: list_components
     path: /components/list
@@ -64,7 +64,7 @@ entries:
     meta:
       comment: Returns the rendered content of a specific virtual page by ID
       description: Page rendering endpoint
-      router: app:api.public
+      router: api_router
     source: file://render.lua
     modules:
       - http
@@ -82,7 +82,7 @@ entries:
     meta:
       comment: Endpoint that renders a virtual page by ID
       description: CMS page renderer endpoint
-      router: app:api.public
+      router: api_router
     method: GET
     func: render
     path: /pages/content/{id}
@@ -92,7 +92,7 @@ entries:
     kind: function.lua
     meta:
       comment: Returns base URL for component page assets
-      router: app:api.public
+      router: api_router
     source: file://public_url.lua
     modules:
       - http
@@ -105,7 +105,7 @@ entries:
     kind: http.endpoint
     meta:
       comment: Component page public URL endpoint
-      router: app:api.public
+      router: api_router
     method: GET
     func: public_url
     path: /pages/public/{id}

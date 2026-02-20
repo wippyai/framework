@@ -11,3 +11,5 @@ keywords:
 exclude_meta:
   type:
     - test
+exclude:
+  - "app:**"

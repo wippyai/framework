@@ -2,18 +2,6 @@ version: "1.0"
 namespace: app
 
 entries:
-  - name: wait_for_boot
-    kind: function.lua
-    meta:
-      type: test
-      suite: "00_setup"
-      comment: Waits for bootloader to apply migrations before tests run
-    source: file://wait_for_boot.lua
-    modules:
-      - sql
-      - time
-    method: run
-
   - name: db
     kind: db.sql.sqlite
     meta:
