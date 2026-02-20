@@ -12,7 +12,7 @@ entries:
   - name: api_router
     kind: ns.requirement
     meta:
-      description: Injects API router configuration into endpoints
+      description: Public API router for view endpoints
       parent: app.deps:__dependency.wippy.views
     targets:
       - entry: wippy.views.api:list_pages
@@ -32,16 +32,21 @@ entries:
       - entry: wippy.views.api:public_url.endpoint
         path: .meta.router
 
-  # wippy.views:api_url_env
-  - name: api_url_env
+  # wippy.views:public_api_url
+  - name: public_api_url
+    kind: env.variable
+    meta:
+      comment: Public API URL for resolving component base URLs
+    variable: PUBLIC_API_URL
+
+  # wippy.views:env_storage
+  - name: env_storage
     kind: ns.requirement
     meta:
-      description: Name of environment variable containing the public API URL
-      parent: app.deps:__dependency.wippy.views
+      description: Environment storage for PUBLIC_API_URL
     targets:
-      - entry: wippy.views:page_registry
-        path: .meta.api_url_env
-    default: PUBLIC_API_URL
+      - entry: wippy.views:public_api_url
+        path: ".storage"
 
   # wippy.views:env_contract
   - name: env_contract

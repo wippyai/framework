@@ -26,16 +26,6 @@ entries:
       - entry: wippy.facade:config_endpoint
         path: .meta.router
 
-  # Core configuration
-  - name: api_url_env
-    kind: ns.requirement
-    meta:
-      description: Name of environment variable containing the public API URL
-    targets:
-      - entry: wippy.facade:api_url_env
-        path: .default
-    default: PUBLIC_API_URL
-
   - name: fe_facade_url
     kind: ns.requirement
     meta:
@@ -160,11 +150,29 @@ entries:
   - name: custom_css
     kind: ns.requirement
     meta:
-      description: Custom CSS injected into iframe config
+      description: Custom CSS injected into iframe
     targets:
       - entry: wippy.facade:custom_css
         path: .default
     default: "@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');"
+
+  - name: css_variables
+    kind: ns.requirement
+    meta:
+      description: CSS custom properties as JSON object (key-value pairs mapped to --key:value)
+    targets:
+      - entry: wippy.facade:css_variables
+        path: .default
+    default: "{}"
+
+  - name: icons
+    kind: ns.requirement
+    meta:
+      description: Custom Iconify icons as JSON object ({name:{body,width,height}})
+    targets:
+      - entry: wippy.facade:icons
+        path: .default
+    default: "{}"
 
   # Static files
   - name: public_files

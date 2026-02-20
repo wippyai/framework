@@ -278,9 +278,7 @@ end
 function pages.resolve_base_url(page)
     local base_url = page.url or ""
 
-    local entry = registry.get("wippy.views:page_registry")
-    local env_name = entry and entry.meta and entry.meta.api_url_env or "PUBLIC_API_URL"
-    local origin = env.get(env_name) or ""
+    local origin = env.get("PUBLIC_API_URL") or ""
 
     if origin ~= "" and base_url ~= "" and not base_url:match("^https?://") then
         base_url = origin .. base_url

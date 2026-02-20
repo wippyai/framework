@@ -50,13 +50,18 @@
             hideNavBar: cfg.feature.hide_nav_bar,
             disableRightPanel: cfg.feature.disable_right_panel,
         },
-        customization: cfg.customization,
+        customization: {
+            customCSS: cfg.customization.custom_css || '',
+            cssVariables: cfg.customization.css_variables || {},
+            i18n: cfg.customization.i18n || {},
+            icons: cfg.customization.icons || {},
+        },
     };
 
     const iframe = document.createElement('iframe');
     iframe.src = cfg.iframe_url;
     iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-presentation');
-    iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
+    iframe.setAttribute('allow', 'clipboard-read; clipboard-write; local-network-access');
     let routingActive = false;
 
     window.addEventListener('message', (e) => {
