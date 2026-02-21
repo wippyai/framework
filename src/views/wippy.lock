@@ -11,3 +11,6 @@ modules:
     - name: wippy/views
       version: 0.4.15
       hash: 804de16d370216ca5bf7c46c01c3815ec0774394965998248fa72f2421941ca3
+replacements:
+    - from: wippy/views
+      to: .

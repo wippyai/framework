@@ -11,6 +11,22 @@ local PRIORITY_CONVENTIONS = table.freeze({
     ENVIRONMENT_OVERRIDES = table.freeze({min = 30, max = 100})
 })
 
+local function priority_convention_for_category(category)
+    if category == "FRAMEWORK_DEFAULTS" then
+        return PRIORITY_CONVENTIONS.FRAMEWORK_DEFAULTS
+    end
+    if category == "SYSTEM_OVERRIDES" then
+        return PRIORITY_CONVENTIONS.SYSTEM_OVERRIDES
+    end
+    if category == "APPLICATION_MAPPINGS" then
+        return PRIORITY_CONVENTIONS.APPLICATION_MAPPINGS
+    end
+    if category == "ENVIRONMENT_OVERRIDES" then
+        return PRIORITY_CONVENTIONS.ENVIRONMENT_OVERRIDES
+    end
+    return nil
+end
+
 -- Load all view.env_mapping entries from registry
 function env_loader.load_mappings(filter)
     local mappings_data = {}
@@ -154,7 +170,7 @@ function env_loader.validate_priority(priority, category)
     end
 
     if category then
-        local conv = PRIORITY_CONVENTIONS[category]
+        local conv = priority_convention_for_category(category)
         if conv and (priority < conv.min or priority > conv.max) then
             return false, "Priority " .. priority .. " outside " .. category ..
                          " range (" .. conv.min .. "-" .. conv.max .. ")"
@@ -166,7 +182,7 @@ end
 
 -- Framework utility: Get recommended priority for category
 function env_loader.get_recommended_priority(category)
-    local conv = PRIORITY_CONVENTIONS[category]
+    local conv = priority_convention_for_category(category)
     if not conv then
         return nil, "Unknown category: " .. tostring(category)
     end

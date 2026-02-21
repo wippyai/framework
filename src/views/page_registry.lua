@@ -51,6 +51,15 @@ type PageDetail = PageInfo & {
     entry_point: string?,
 }
 
+type TemplatePage = PageInfo & {
+    template_set: string,
+    template_name: string,
+    data_func: string?,
+    resources: {string},
+    content_type: string,
+    source: string?,
+}
+
 local DEFAULT_PROXY = {
     enabled = true,
     css = {
@@ -272,6 +281,55 @@ function pages.get(page_id)
     end
 
     return page
+end
+
+-- Get a single template page by ID with required template fields guaranteed
+function pages.get_template(page_id)
+    local page, err = pages.get(page_id)
+    if err then
+        return nil, err
+    end
+
+    if page.kind ~= "template" then
+        return nil, "Page '" .. page_id .. "' is not a template page"
+    end
+
+    local template_set = page.template_set
+    if not template_set then
+        return nil, "Page '" .. page_id .. "' has no template_set defined"
+    end
+
+    local template_name = page.template_name
+    if not template_name then
+        return nil, "Page '" .. page_id .. "' has no template_name defined"
+    end
+
+    local template_page: TemplatePage = {
+        id = page.id,
+        name = page.name,
+        title = page.title,
+        icon = page.icon,
+        order = page.order,
+        group = page.group,
+        group_icon = page.group_icon,
+        group_order = page.group_order,
+        group_placement = page.group_placement,
+        secure = page.secure,
+        parent = page.parent :: string?,
+        public = page.public,
+        announced = page.announced,
+        inline = page.inline,
+        kind = "template",
+        url = page.url :: string?,
+        template_set = template_set,
+        template_name = template_name,
+        data_func = page.data_func,
+        resources = page.resources or {},
+        content_type = page.content_type,
+        source = page.source :: string?,
+    }
+
+    return template_page, nil
 end
 
 -- Resolve a page URL to an absolute base URL with trailing slash
