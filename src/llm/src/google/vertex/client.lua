@@ -8,7 +8,8 @@ local vertex_client = {
 }
 
 local PROJECT_REQUIRED_ENDPOINTS = {
-    "generateContent"
+    "generateContent",
+    "streamGenerateContent"
 }
 
 local function build_url(base_url, contract_args)
@@ -59,6 +60,12 @@ function vertex_client.request(contract_args)
     }
     if contract_args.options.method == "POST" then
         options.body = json.encode(contract_args.payload or {})
+    end
+    if contract_args.options.stream then
+        options.stream = true
+        options.stream_reply_to = contract_args.options.stream_reply_to
+        options.stream_topic = contract_args.options.stream_topic
+        options.stream_buffer_size = contract_args.options.stream_buffer_size
     end
 
     local base_url = contract_args.options.base_url
