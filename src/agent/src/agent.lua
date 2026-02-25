@@ -588,6 +588,7 @@ function agent:step(prompt_builder, runtime_options)
                     arguments = tool_call.arguments,
                     registry_id = tool_call.registry_id,
                     context = tool_call.context,
+                    provider_metadata = tool_call.provider_metadata,
                     agent_id = tool_info.agent_id
                 }
 

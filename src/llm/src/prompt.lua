@@ -239,7 +239,7 @@ function prompt.new(messages)
     end
 
     -- Add a function call by assistant
-    builder.add_function_call = function(self, function_name, arguments, function_call_id)
+    builder.add_function_call = function(self, function_name, arguments, function_call_id, options)
         if function_name and arguments then
             local message = {
                 role = prompt.ROLE.FUNCTION_CALL,
@@ -252,6 +252,10 @@ function prompt.new(messages)
 
             if function_call_id then
                 message.function_call.id = function_call_id
+            end
+
+            if options and options.provider_metadata then
+                message.function_call.provider_metadata = options.provider_metadata
             end
 
             table.insert(self.messages, message)
