@@ -42,8 +42,8 @@ function renderer.render(page_id, params, query)
         return nil, "Page ID is required"
     end
 
-    -- Get the template page from registry
-    local page, err = page_registry.get_template(page_id)
+    -- Get the page from registry
+    local page, err = page_registry.get(page_id)
     if err then
         return nil, "Failed to get page '" .. page_id .. "': " .. tostring(err)
     end
@@ -98,9 +98,16 @@ function renderer.render(page_id, params, query)
         env = resolved_env or {}
     }
 
-    local tmpl, tmpl_get_err = templates.get(page.template_set)
+    -- Get the template set
+    local tmpl_id = page.template_set
+    if not tmpl_id then
+        return nil, "Page '" .. page_id .. "' has no template_set defined"
+    end
+    local template_set: string = tmpl_id
+
+    local tmpl, tmpl_get_err = templates.get(template_set)
     if tmpl_get_err then
-        return nil, "Failed to load template set '" .. page.template_set .. "': " .. tmpl_get_err
+        return nil, "Failed to load template set '" .. template_set .. "': " .. tmpl_get_err
     end
 
     -- Render the template using the correctly built context

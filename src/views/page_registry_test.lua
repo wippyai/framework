@@ -1,6 +1,7 @@
 local test = require("test")
 local registry = require("registry")
 local page_registry = require("page_registry")
+local component_registry = require("component_registry")
 local resource_registry = require("resource_registry")
 local env_loader = require("env_loader")
 
@@ -559,19 +560,12 @@ local function define_tests()
                 test.is_nil(page.url)
             end)
 
-            test.it("get_template returns template page with required template fields", function()
-                local page, err = page_registry.get_template(APP_NS .. "test_tmpl_contact")
+            test.it("get returns template page with template fields", function()
+                local page, err = page_registry.get(APP_NS .. "test_tmpl_contact")
                 test.is_nil(err)
                 test.eq(page.kind, "template")
                 test.eq(page.template_set, APP_NS .. "test_templates")
                 test.eq(page.template_name, "test_tmpl_contact")
-                test.not_nil(page.resources)
-            end)
-
-            test.it("get_template rejects component pages", function()
-                local page, err = page_registry.get_template(NS .. "test_home")
-                test.is_nil(page)
-                test.not_nil(err)
             end)
         end)
 
@@ -648,8 +642,8 @@ local function define_tests()
             teardown_dynamic()
         end)
 
-        test.it("find_all_components returns only view.component entries", function()
-            local components, err = page_registry.find_all_components()
+        test.it("find_all returns only view.component entries", function()
+            local components, err = component_registry.find_all()
             test.is_nil(err)
             test.not_nil(components)
 
@@ -662,8 +656,8 @@ local function define_tests()
             test.eq(count, 3)
         end)
 
-        test.it("find_all_components does not include view.page entries", function()
-            local components, err = page_registry.find_all_components()
+        test.it("find_all does not include view.page entries", function()
+            local components, err = component_registry.find_all()
             test.is_nil(err)
 
             for _, comp in ipairs(components) do
@@ -683,22 +677,21 @@ local function define_tests()
         end)
 
         test.it("get works for view.component entries", function()
-            local comp, err = page_registry.get(NS .. "test_comp_widget")
+            local comp, err = component_registry.get(NS .. "test_comp_widget")
             test.is_nil(err)
             test.eq(comp.id, NS .. "test_comp_widget")
             test.eq(comp.title, "Widget")
-            test.eq(comp.kind, "component")
             test.eq(comp.url, "https://cdn.example.com/widget/")
         end)
 
         test.it("view.component defaults entry_point to index.js", function()
-            local comp, err = page_registry.get(NS .. "test_comp_widget")
+            local comp, err = component_registry.get(NS .. "test_comp_widget")
             test.is_nil(err)
             test.eq(comp.entry_point, "index.js")
         end)
 
         test.it("view.component respects custom entry_point", function()
-            local comp, err = page_registry.get(NS .. "test_comp_custom_entry")
+            local comp, err = component_registry.get(NS .. "test_comp_custom_entry")
             test.is_nil(err)
             test.eq(comp.entry_point, "main.js")
         end)
@@ -709,8 +702,8 @@ local function define_tests()
             test.eq(page.entry_point, "index.html")
         end)
 
-        test.it("find_all_components sorts by order then title", function()
-            local components, err = page_registry.find_all_components()
+        test.it("find_all sorts by name", function()
+            local components, err = component_registry.find_all()
             test.is_nil(err)
 
             local test_comps = {}
@@ -721,13 +714,7 @@ local function define_tests()
             end
 
             for i = 1, #test_comps - 1 do
-                local a = test_comps[i]
-                local b = test_comps[i + 1]
-                if a.order == b.order then
-                    test.is_true(a.title <= b.title)
-                else
-                    test.is_true(a.order < b.order)
-                end
+                test.is_true(test_comps[i].name <= test_comps[i + 1].name)
             end
         end)
     end)

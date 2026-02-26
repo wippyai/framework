@@ -6,16 +6,12 @@
     <title>Wippy</title>
     <style>
         html, body { padding: 0; margin: 0; }
-        iframe {
-            position: fixed; top: 0; right: 0; bottom: 0; left: 0;
-            width: 100%; height: 100%; background: white; border: none; z-index: 100;
-        }
     </style>
 </head>
 <body>
+<div id="app">Loading...</div>
 <script type="module">
     const STORAGE_KEY = '@wippy_token_info';
-    const MSG_TYPE = '@gen2-chat';
 
     const res = await fetch('/api/public/facade/config');
     if (!res.ok) { document.body.textContent = 'Failed to load config'; throw new Error('config fetch failed'); }
@@ -32,12 +28,9 @@
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = cfg.ws_url || (wsProto + '//' + window.location.host);
 
-    function currentPath() {
-        return window.location.pathname + window.location.search + window.location.hash;
-    }
+    await import(cfg.facade_url + '/module.js');
 
-    const config = {
-        path: currentPath(),
+    const events = window.initWippyApp({
         auth: { token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
         feature: {
             session: { type: cfg.feature.session_type },
@@ -56,39 +49,22 @@
             i18n: cfg.customization.i18n || {},
             icons: cfg.customization.icons || {},
         },
-    };
+    }, '#app');
 
-    const iframe = document.createElement('iframe');
-    iframe.src = cfg.iframe_url;
-    iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-presentation');
-    iframe.setAttribute('allow', 'clipboard-read; clipboard-write; local-network-access');
-    let routingActive = false;
+    const loginPath = cfg.login_path || '/login.html';
 
-    window.addEventListener('message', (e) => {
-        if (e.origin !== cfg.iframe_origin) return;
-        try {
-            const p = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-            if (p.type !== MSG_TYPE) return;
-            if (p.action === 'get-config') {
-                e.source.postMessage(JSON.stringify({ type: MSG_TYPE, action: 'set-config', ...config }), '*');
-            } else if (p.action === 'cmd-handle-error' && p.code === 'auth-expired') {
-                window.location.href = cfg.login_path || '/login.html';
-            } else if (p.action === 'history') {
-                routingActive = true;
-                window.history.pushState({}, '', p.path);
-                requestAnimationFrame(() => { routingActive = false; });
-            }
-        } catch {}
+    // Handle logout and session expiration — clean up token and redirect to login
+    events.on('authExpired', () => {
+        localStorage.removeItem(STORAGE_KEY);
+        window.location.href = loginPath;
     });
 
-    window.addEventListener('popstate', () => {
-        if (routingActive) return;
-        iframe.contentWindow.postMessage(JSON.stringify({
-            type: MSG_TYPE, action: 'history', path: currentPath()
-        }), '*');
+    // Handle critical errors
+    events.on('error', (err) => {
+        console.error('Wippy critical error:', err);
+        localStorage.removeItem(STORAGE_KEY);
+        window.location.href = loginPath;
     });
-
-    document.body.appendChild(iframe);
 </script>
 </body>
 </html>

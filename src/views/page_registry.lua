@@ -48,16 +48,8 @@ type PageDetail = PageInfo & {
     content_type: string,
     source: string?,
     proxy: ProxyConfig?,
+    base_path: string?,
     entry_point: string?,
-}
-
-type TemplatePage = PageInfo & {
-    template_set: string,
-    template_name: string,
-    data_func: string?,
-    resources: {string},
-    content_type: string,
-    source: string?,
 }
 
 local DEFAULT_PROXY = {
@@ -179,37 +171,6 @@ function pages.find_all()
     return pages_list
 end
 
--- Find all view components in the registry
-function pages.find_all_components()
-    local entries, err = registry.find({
-        ["meta.type"] = "view.component"
-    })
-
-    if err then
-        return nil, "Failed to find view components: " .. tostring(err)
-    end
-
-    if not entries or #entries == 0 then
-        return {}
-    end
-
-    local components_list = {}
-    for _, entry in ipairs(entries) do
-        if entry.meta then
-            table.insert(components_list, extract_page_info(entry))
-        end
-    end
-
-    table.sort(components_list, function(a, b)
-        if a.order == b.order then
-            return a.title < b.title
-        end
-        return a.order < b.order
-    end)
-
-    return components_list
-end
-
 -- Get a single page by ID
 function pages.get(page_id)
     if not page_id then
@@ -271,6 +232,7 @@ function pages.get(page_id)
         page.source = rawget(entry, "source")
     else
         page.url = entry.meta.url or entry.meta.public_url
+        page.base_path = entry.meta.base_path
         page.proxy = build_proxy(entry.data and entry.data.proxy)
 
         local default_entry_point = "index.html"
@@ -283,58 +245,20 @@ function pages.get(page_id)
     return page
 end
 
--- Get a single template page by ID with required template fields guaranteed
-function pages.get_template(page_id)
-    local page, err = pages.get(page_id)
-    if err then
-        return nil, err
-    end
-
-    if page.kind ~= "template" then
-        return nil, "Page '" .. page_id .. "' is not a template page"
-    end
-
-    local template_set = page.template_set
-    if not template_set then
-        return nil, "Page '" .. page_id .. "' has no template_set defined"
-    end
-
-    local template_name = page.template_name
-    if not template_name then
-        return nil, "Page '" .. page_id .. "' has no template_name defined"
-    end
-
-    local template_page: TemplatePage = {
-        id = page.id,
-        name = page.name,
-        title = page.title,
-        icon = page.icon,
-        order = page.order,
-        group = page.group,
-        group_icon = page.group_icon,
-        group_order = page.group_order,
-        group_placement = page.group_placement,
-        secure = page.secure,
-        parent = page.parent :: string?,
-        public = page.public,
-        announced = page.announced,
-        inline = page.inline,
-        kind = "template",
-        url = page.url :: string?,
-        template_set = template_set,
-        template_name = template_name,
-        data_func = page.data_func,
-        resources = page.resources or {},
-        content_type = page.content_type,
-        source = page.source :: string?,
-    }
-
-    return template_page, nil
-end
-
--- Resolve a page URL to an absolute base URL with trailing slash
+-- Resolve a page URL to an absolute base URL with trailing slash.
+-- When base_path is set, it is appended to the URL to form the project root.
+-- Entry point paths are relative to this resolved base.
 function pages.resolve_base_url(page)
     local base_url = page.url or ""
+
+    -- Append base_path to get the project root
+    local base_path = page.base_path or ""
+    if base_path ~= "" then
+        if not base_url:match("/$") then
+            base_url = base_url .. "/"
+        end
+        base_url = base_url .. base_path
+    end
 
     local origin = env.get("PUBLIC_API_URL") or ""
 

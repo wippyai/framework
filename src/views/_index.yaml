@@ -1,244 +1,230 @@
 version: "1.0"
 namespace: wippy.views
-
 entries:
-  - name: definition
-    kind: ns.definition
-    meta:
-      title: Views
-      description: UI view components
-
-  # wippy.views:api_router
-  - name: api_router
-    kind: ns.requirement
-    meta:
-      description: Public API router for view endpoints
-      parent: app.deps:__dependency.wippy.views
-    targets:
-      - entry: wippy.views.api:list_pages
-        path: .meta.router
-      - entry: wippy.views.api:list_pages.endpoint
-        path: .meta.router
-      - entry: wippy.views.api:list_components
-        path: .meta.router
-      - entry: wippy.views.api:list_components.endpoint
-        path: .meta.router
-      - entry: wippy.views.api:render
-        path: .meta.router
-      - entry: wippy.views.api:render.endpoint
-        path: .meta.router
-      - entry: wippy.views.api:public_url
-        path: .meta.router
-      - entry: wippy.views.api:public_url.endpoint
-        path: .meta.router
-
-  # wippy.views:public_api_url
-  - name: public_api_url
-    kind: env.variable
-    meta:
-      comment: Public API URL for resolving component base URLs
-    variable: PUBLIC_API_URL
-
-  # wippy.views:env_storage
-  - name: env_storage
-    kind: ns.requirement
-    meta:
-      description: Environment storage for PUBLIC_API_URL
-    targets:
-      - entry: wippy.views:public_api_url
-        path: ".storage"
-
-  # wippy.views:env_contract
-  - name: env_contract
-    kind: contract.definition
-    meta:
-      version: "1.0"
-      name: Environment Variable Provider Contract
-      description: Contract interface for environment variable providers and consumers
-    methods:
-      - name: load_mappings
-        description: Load environment variable mappings from provider
-        input_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "filter": {
-                    "type": "object",
-                    "description": "Optional filter criteria for mappings"
-                  }
-                },
-                "additionalProperties": false
-              }
-            format: application/schema+json
-        output_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "success": {"type": "boolean"},
-                  "mappings": {
-                    "type": "array",
-                    "items": {
+    - name: definition
+      kind: ns.definition
+      meta:
+        description: UI view components
+        title: Views
+    - name: api_router
+      kind: ns.requirement
+      meta:
+        description: Public API router for view endpoints
+        parent: app.deps:__dependency.wippy.views
+      targets:
+        - entry: wippy.views.api:list_pages
+          path: .meta.router
+        - entry: wippy.views.api:list_pages.endpoint
+          path: .meta.router
+        - entry: wippy.views.api:list_components
+          path: .meta.router
+        - entry: wippy.views.api:list_components.endpoint
+          path: .meta.router
+        - entry: wippy.views.api:render
+          path: .meta.router
+        - entry: wippy.views.api:render.endpoint
+          path: .meta.router
+        - entry: wippy.views.api:public_url
+          path: .meta.router
+        - entry: wippy.views.api:public_url.endpoint
+          path: .meta.router
+    - name: public_api_url
+      kind: env.variable
+      meta:
+        comment: Public API URL for resolving component base URLs
+      variable: PUBLIC_API_URL
+    - name: env_storage
+      kind: ns.requirement
+      meta:
+        description: Environment storage for PUBLIC_API_URL
+      targets:
+        - entry: wippy.views:public_api_url
+          path: .storage
+    - name: env_contract
+      kind: contract.definition
+      meta:
+        description: Contract interface for environment variable providers and consumers
+        name: Environment Variable Provider Contract
+        version: "1.0"
+      methods:
+        - description: Load environment variable mappings from provider
+          input_schemas:
+            - definition: |
+                {
+                  "type": "object",
+                  "properties": {
+                    "filter": {
                       "type": "object",
-                      "properties": {
-                        "id": {"type": "string"},
-                        "priority": {"type": "integer"},
-                        "mappings": {"type": "object"}
-                      },
-                      "required": ["id", "priority", "mappings"]
+                      "description": "Optional filter criteria for mappings"
                     }
                   },
-                  "error": {"type": "string"}
-                },
-                "required": ["success"]
-              }
-            format: application/schema+json
-      - name: resolve_env_values
-        description: Resolve environment variable values from context
-        input_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "context": {
-                    "type": "object",
-                    "description": "Context mapping from keys to environment variable names"
-                  }
-                },
-                "required": ["context"]
-              }
-            format: application/schema+json
-        output_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "success": {"type": "boolean"},
-                  "resolved": {
-                    "type": "object",
-                    "description": "Resolved environment variable values"
+                  "additionalProperties": false
+                }
+              format: application/schema+json
+          name: load_mappings
+          output_schemas:
+            - definition: |
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "mappings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {"type": "string"},
+                          "priority": {"type": "integer"},
+                          "mappings": {"type": "object"}
+                        },
+                        "required": ["id", "priority", "mappings"]
+                      }
+                    },
+                    "error": {"type": "string"}
                   },
-                  "error": {"type": "string"}
-                },
-                "required": ["success"]
-              }
-            format: application/schema+json
-
-  # wippy.views:env_contract_binding
-  - name: env_contract_binding
-    kind: contract.binding
-    meta:
-      comment: Contract binding for environment variable provider
-      description: Implements the environment variable provider contract using env_loader library
-    contracts:
-      - contract: wippy.views:env_contract
-        methods:
-          load_mappings: wippy.views:env_loader
-          resolve_env_values: wippy.views:env_loader
-
-  # wippy.views:env_loader
-  - name: env_loader
-    kind: library.lua
-    meta:
-      type: framework.library
-      comment: Framework environment variable mapping loader
-      description: Core framework library for loading and resolving environment variable mappings from registry
-    source: file://env_loader.lua
-    modules:
-      - registry
-      - env
-
-  # wippy.views:env_mapping_schema
-  - name: env_mapping_schema
-    kind: registry.entry
-    meta:
-      version: "1.0"
-      name: Environment Variable Mapping Schema
-      type: schema.definition
-      description: Schema definition for view.env_mapping registry entries
-    priority_conventions:
-      application_mappings: 20-29
-      environment_overrides: 30+
-      framework_defaults: 0-9
-      system_overrides: 10-19
-    schema:
-      type: object
-      properties:
-        mappings:
-          type: object
-          description: Key-value pairs mapping view context names to environment variables
-          additionalProperties:
-            type: string
-        priority:
-          type: integer
-          description: Priority order for merging mappings (higher priority overrides lower)
-          default: 0
-          maximum: 100
-          minimum: 0
-      required:
-        - mappings
-
-  # wippy.views:page_registry
-  - name: page_registry
-    kind: library.lua
-    meta:
-      comment: Registry for managing virtual pages
-      description: Provides functions to find and access virtual pages
-    source: file://page_registry.lua
-    modules:
-      - registry
-      - security
-      - env
-
-  # wippy.views:renderer
-  - name: renderer
-    kind: library.lua
-    meta:
-      comment: Page renderer for virtual pages
-      description: Renders virtual pages with data and resources
-    source: file://renderer.lua
-    modules:
-      - templates
-      - funcs
-      - json
-      - env
-    imports:
-      page_registry: wippy.views:page_registry
-      resource_registry: wippy.views:resource_registry
-      env_loader: wippy.views:env_loader
-
-  # wippy.views:resource_registry
-  - name: resource_registry
-    kind: library.lua
-    meta:
-      comment: Registry for managing page resources
-      description: Provides functions to find and access page resources
-    source: file://resource_registry.lua
-    modules:
-      - registry
-
-  # Dependencies
-  - name: dep.wippy.test
-    kind: ns.dependency
-    meta:
-      scope: dev
-    component: wippy/test
-    version: "*"
-
-  # Tests
-  - name: page_registry_test
-    kind: function.lua
-    meta:
-      type: test
-      suite: views
-      comment: Page registry, resource registry, and env loader tests
-    source: file://page_registry_test.lua
-    method: run
-    imports:
-      test: wippy.test:test
-      page_registry: wippy.views:page_registry
-      resource_registry: wippy.views:resource_registry
-      env_loader: wippy.views:env_loader
-    modules:
-      - registry
+                  "required": ["success"]
+                }
+              format: application/schema+json
+        - description: Resolve environment variable values from context
+          input_schemas:
+            - definition: |
+                {
+                  "type": "object",
+                  "properties": {
+                    "context": {
+                      "type": "object",
+                      "description": "Context mapping from keys to environment variable names"
+                    }
+                  },
+                  "required": ["context"]
+                }
+              format: application/schema+json
+          name: resolve_env_values
+          output_schemas:
+            - definition: |
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "resolved": {
+                      "type": "object",
+                      "description": "Resolved environment variable values"
+                    },
+                    "error": {"type": "string"}
+                  },
+                  "required": ["success"]
+                }
+              format: application/schema+json
+    - name: env_contract_binding
+      kind: contract.binding
+      meta:
+        comment: Contract binding for environment variable provider
+        description: Implements the environment variable provider contract using env_loader library
+      contracts:
+        - contract: wippy.views:env_contract
+          methods:
+            load_mappings: wippy.views:env_loader
+            resolve_env_values: wippy.views:env_loader
+    - name: env_loader
+      kind: library.lua
+      meta:
+        comment: Framework environment variable mapping loader
+        description: Core framework library for loading and resolving environment variable mappings from registry
+        type: framework.library
+      source: file://env_loader.lua
+      modules:
+        - registry
+        - env
+    - name: env_mapping_schema
+      kind: registry.entry
+      meta:
+        description: Schema definition for view.env_mapping registry entries
+        name: Environment Variable Mapping Schema
+        type: schema.definition
+        version: "1.0"
+      priority_conventions:
+        application_mappings: 20-29
+        environment_overrides: 30+
+        framework_defaults: 0-9
+        system_overrides: 10-19
+      schema:
+        properties:
+            mappings:
+                additionalProperties:
+                    type: string
+                description: Key-value pairs mapping view context names to environment variables
+                type: object
+            priority:
+                default: 0
+                description: Priority order for merging mappings (higher priority overrides lower)
+                maximum: 100
+                minimum: 0
+                type: integer
+        required:
+            - mappings
+        type: object
+    - name: page_registry
+      kind: library.lua
+      meta:
+        comment: Registry for managing virtual pages
+        description: Provides functions to find and access virtual pages
+      source: file://page_registry.lua
+      modules:
+        - registry
+        - security
+        - env
+    - name: component_registry
+      kind: library.lua
+      meta:
+        comment: Registry for managing view components (web components)
+        description: Provides functions to find and access view components
+      source: file://component_registry.lua
+      modules:
+        - registry
+        - security
+        - env
+    - name: renderer
+      kind: library.lua
+      meta:
+        comment: Page renderer for virtual pages
+        description: Renders virtual pages with data and resources
+      source: file://renderer.lua
+      imports:
+        env_loader: wippy.views:env_loader
+        page_registry: wippy.views:page_registry
+        resource_registry: wippy.views:resource_registry
+      modules:
+        - templates
+        - funcs
+        - json
+        - env
+    - name: resource_registry
+      kind: library.lua
+      meta:
+        comment: Registry for managing page resources
+        description: Provides functions to find and access page resources
+      source: file://resource_registry.lua
+      modules:
+        - registry
+    - name: dep.wippy.test
+      kind: ns.dependency
+      meta:
+        scope: dev
+      component: wippy/test
+      version: '*'
+    - name: page_registry_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Page registry, component registry, resource registry, and env loader tests
+      source: file://page_registry_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
+        page_registry: wippy.views:page_registry
+        component_registry: wippy.views:component_registry
+        resource_registry: wippy.views:resource_registry
+        env_loader: wippy.views:env_loader
+      modules:
+        - registry
