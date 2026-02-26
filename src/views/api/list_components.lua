@@ -1,20 +1,16 @@
 local http = require("http")
-local page_registry = require("page_registry")
+local component_registry = require("component_registry")
 
 type ComponentResponse = {
     id: string,
     name: string,
     title: string,
-    icon: string,
-    order: number,
-    group: string,
-    group_icon: string,
-    group_order: number,
-    group_placement: string,
-    secure: boolean,
-    announced: boolean,
-    kind: string,
-    url: string?,
+    tag_name: string?,
+    base_url: string?,
+    entry_point: string?,
+    auto_register: boolean,
+    props: any?,
+    events: any?,
 }
 
 local function handler()
@@ -25,7 +21,7 @@ local function handler()
         return nil, "Failed to get HTTP context"
     end
 
-    local all_components, err = page_registry.find_all_components()
+    local all_components, err = component_registry.find_all()
     if err then
         res:set_status(http.STATUS.INTERNAL_ERROR)
         res:write_json({
@@ -35,44 +31,32 @@ local function handler()
         return
     end
 
+    -- Optional query param: ?auto_register=true to filter auto-register components only
+    local filter_auto_register = req:query("auto_register") == "true"
+
     local components: {ComponentResponse} = {}
     for _, component in ipairs(all_components) do
-        if (not component.secure or page_registry.can_access(component)) and component.announced then
-            local component_info: ComponentResponse = {
-                id = type(component.id) == "string" and component.id or tostring(component.id),
-                name = type(component.name) == "string" and component.name or "",
-                title = type(component.title) == "string" and component.title or "",
-                icon = type(component.icon) == "string" and component.icon or "",
-                order = tonumber(component.order) or 9999,
-                group = type(component.group) == "string" and component.group or "",
-                group_icon = type(component.group_icon) == "string" and component.group_icon or "",
-                group_order = tonumber(component.group_order) or 9999,
-                group_placement = type(component.group_placement) == "string" and component.group_placement or "default",
-                secure = component.secure == true,
-                announced = component.announced == true,
-                kind = type(component.kind) == "string" and component.kind or "component",
-            }
+        if (not component.secure or component_registry.can_access(component)) and component.announced then
+            if not filter_auto_register or component.auto_register then
+                local component_info: ComponentResponse = {
+                    id = type(component.id) == "string" and component.id or tostring(component.id),
+                    name = type(component.name) == "string" and component.name or "",
+                    title = type(component.title) == "string" and component.title or "",
+                    tag_name = type(component.tag_name) == "string" and component.tag_name or nil,
+                    base_url = component_registry.resolve_base_url(component),
+                    entry_point = type(component.entry_point) == "string" and component.entry_point or nil,
+                    auto_register = component.auto_register == true,
+                    props = component.props,
+                    events = component.events,
+                }
 
-            if type(component.url) == "string" then
-                component_info.url = component.url
+                table.insert(components, component_info)
             end
-
-            table.insert(components, component_info)
         end
     end
 
     table.sort(components, function(a: ComponentResponse, b: ComponentResponse): boolean
-        if a.group == b.group then
-            if a.order == b.order then
-                return a.title < b.title
-            end
-            return a.order < b.order
-        end
-
-        if a.group_order == b.group_order then
-            return a.group < b.group
-        end
-        return a.group_order < b.group_order
+        return a.name < b.name
     end)
 
     res:set_content_type(http.CONTENT.JSON)
