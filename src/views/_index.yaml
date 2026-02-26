@@ -212,3 +212,19 @@ entries:
         scope: dev
       component: wippy/test
       version: '*'
+    - name: page_registry_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Page registry, component registry, resource registry, and env loader tests
+      source: file://page_registry_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
+        page_registry: wippy.views:page_registry
+        component_registry: wippy.views:component_registry
+        resource_registry: wippy.views:resource_registry
+        env_loader: wippy.views:env_loader
+      modules:
+        - registry
