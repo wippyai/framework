@@ -217,14 +217,54 @@ entries:
       meta:
         type: test
         suite: views
-        comment: Page registry, component registry, resource registry, and env loader tests
+        comment: Page registry tests
       source: file://page_registry_test.lua
       method: run
       imports:
         test: wippy.test:test
         page_registry: wippy.views:page_registry
+      modules:
+        - registry
+
+    - name: component_registry_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Component registry tests
+      source: file://component_registry_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
+        page_registry: wippy.views:page_registry
         component_registry: wippy.views:component_registry
+      modules:
+        - registry
+
+    - name: resource_registry_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Resource registry tests
+      source: file://resource_registry_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
         resource_registry: wippy.views:resource_registry
+      modules:
+        - registry
+
+    - name: env_loader_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Env loader tests
+      source: file://env_loader_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
         env_loader: wippy.views:env_loader
       modules:
         - registry
