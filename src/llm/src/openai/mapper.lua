@@ -172,34 +172,29 @@ function openai_mapper.map_messages(contract_messages, options)
 
             i = i + 1 -- Move to next message
 
-            -- Collect ALL function_calls that belong to this assistant message
-            -- Look ahead through remaining messages to find all related function calls
+            -- Collect ALL function_calls and function_results that belong to this assistant message
+            -- The prompt builder interleaves them: call_A, result_A, call_B, result_B
             local function_calls_found = {}
+            local function_results_found = {}
+            local scan_end = i
             local j = i
             while j <= #contract_messages do
                 local current_msg = contract_messages[j]
 
                 if current_msg.role == "function_call" and current_msg.function_call and current_msg.function_call.id then
-                    -- Collect this function call
-                    table.insert(function_calls_found, {
-                        index = j,
-                        msg = current_msg
-                    })
-                elseif current_msg.role == "assistant" then
-                    -- Stop when we hit another assistant message
-                    break
+                    table.insert(function_calls_found, current_msg)
+                    scan_end = j
                 elseif current_msg.role == "function_result" then
-                    -- This handles interleaved function_call/function_result patterns
-                elseif current_msg.role == "user" then
-                    -- Stop when we hit a user message (new conversation turn)
+                    table.insert(function_results_found, current_msg)
+                    scan_end = j
+                elseif current_msg.role == "assistant" or current_msg.role == "user" then
                     break
                 end
                 j = j + 1
             end
 
-            -- Process all collected function calls
-            for _, func_call_info in ipairs(function_calls_found) do
-                local func_msg = func_call_info.msg
+            -- Attach function calls as tool_calls on the assistant message
+            for _, func_msg in ipairs(function_calls_found) do
                 local arguments = func_msg.function_call.arguments
                 if type(arguments) == "table" and not next(arguments) then
                     arguments = { invoke = true }
@@ -215,12 +210,6 @@ function openai_mapper.map_messages(contract_messages, options)
                 })
             end
 
-            -- Mark all collected function calls as processed by creating a set of indices
-            local processed_indices = {}
-            for _, func_call_info in ipairs(function_calls_found) do
-                processed_indices[func_call_info.index] = true
-            end
-
             -- Remove tool_calls field if empty
             if #assistant_msg.tool_calls == 0 then
                 assistant_msg.tool_calls = nil
@@ -228,14 +217,36 @@ function openai_mapper.map_messages(contract_messages, options)
 
             table.insert(processed_messages, assistant_msg)
 
-            -- Continue processing, but skip the function calls we already processed
-            while i <= #contract_messages do
-                if processed_indices[i] then
-                    i = i + 1
+            -- Emit function results as tool messages in order
+            for _, result_msg in ipairs(function_results_found) do
+                local tool_content = ""
+                if type(result_msg.content) == "string" then
+                    tool_content = result_msg.content
+                elseif type(result_msg.content) == "table" then
+                    if #result_msg.content > 0 and result_msg.content[1] and result_msg.content[1].text then
+                        tool_content = result_msg.content[1].text
+                    else
+                        tool_content = json.encode(result_msg.content)
+                    end
                 else
-                    break
+                    tool_content = tostring(result_msg.content or "")
                 end
+
+                local tool_msg = {
+                    role = "tool",
+                    content = tool_content
+                }
+                if result_msg.function_call_id then
+                    tool_msg.tool_call_id = result_msg.function_call_id
+                end
+                if result_msg.name then
+                    tool_msg.name = result_msg.name
+                end
+                table.insert(processed_messages, tool_msg)
             end
+
+            -- Advance past all scanned messages
+            i = scan_end + 1
         elseif msg.role == "function_result" then
             -- Convert function results to tool messages - use simple string content
             local tool_content = ""

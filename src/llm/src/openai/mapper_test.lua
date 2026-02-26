@@ -143,6 +143,179 @@ local function define_tests()
                 test.eq(tool_calls[2]["function"].name, "calculate")
             end)
 
+            it("should handle interleaved function_call and function_result after assistant", function()
+                local contract_messages = {
+                    { role = "user", content = "Show me containers and images" },
+                    {
+                        role = "assistant",
+                        content = {{ type = "text", text = "Let me look that up." }}
+                    },
+                    {
+                        role = "function_call",
+                        function_call = {
+                            id = "call_AAA",
+                            name = "ListContainers",
+                            arguments = {}
+                        }
+                    },
+                    {
+                        role = "function_result",
+                        content = "3 containers found",
+                        function_call_id = "call_AAA",
+                        name = "ListContainers"
+                    },
+                    {
+                        role = "function_call",
+                        function_call = {
+                            id = "call_BBB",
+                            name = "ListImages",
+                            arguments = {}
+                        }
+                    },
+                    {
+                        role = "function_result",
+                        content = "5 images found",
+                        function_call_id = "call_BBB",
+                        name = "ListImages"
+                    }
+                }
+
+                local openai_messages = openai_mapper.map_messages(contract_messages)
+
+                -- user, assistant(tool_calls=[AAA,BBB]), tool(AAA), tool(BBB)
+                test.eq(#openai_messages, 4)
+
+                test.eq(openai_messages[1].role, "user")
+
+                test.eq(openai_messages[2].role, "assistant")
+                local tool_calls = openai_messages[2].tool_calls :: any
+                test.eq(#tool_calls, 2)
+                test.eq(tool_calls[1].id, "call_AAA")
+                test.eq(tool_calls[1]["function"].name, "ListContainers")
+                test.eq(tool_calls[2].id, "call_BBB")
+                test.eq(tool_calls[2]["function"].name, "ListImages")
+
+                test.eq(openai_messages[3].role, "tool")
+                test.eq(openai_messages[3].tool_call_id, "call_AAA")
+                test.eq(openai_messages[3].content, "3 containers found")
+
+                test.eq(openai_messages[4].role, "tool")
+                test.eq(openai_messages[4].tool_call_id, "call_BBB")
+                test.eq(openai_messages[4].content, "5 images found")
+            end)
+
+            it("should handle three interleaved tool calls after assistant", function()
+                local contract_messages = {
+                    {
+                        role = "assistant",
+                        content = ""
+                    },
+                    {
+                        role = "function_call",
+                        function_call = { id = "call_1", name = "ToolA", arguments = { x = 1 } }
+                    },
+                    {
+                        role = "function_result",
+                        content = "result_A",
+                        function_call_id = "call_1"
+                    },
+                    {
+                        role = "function_call",
+                        function_call = { id = "call_2", name = "ToolB", arguments = { y = 2 } }
+                    },
+                    {
+                        role = "function_result",
+                        content = "result_B",
+                        function_call_id = "call_2"
+                    },
+                    {
+                        role = "function_call",
+                        function_call = { id = "call_3", name = "ToolC", arguments = { z = 3 } }
+                    },
+                    {
+                        role = "function_result",
+                        content = "result_C",
+                        function_call_id = "call_3"
+                    },
+                    {
+                        role = "assistant",
+                        content = "Here are the results."
+                    }
+                }
+
+                local openai_messages = openai_mapper.map_messages(contract_messages)
+
+                -- assistant(tool_calls=[1,2,3]), tool(1), tool(2), tool(3), assistant
+                test.eq(#openai_messages, 5)
+
+                test.eq(openai_messages[1].role, "assistant")
+                local tc = openai_messages[1].tool_calls :: any
+                test.eq(#tc, 3)
+                test.eq(tc[1].id, "call_1")
+                test.eq(tc[2].id, "call_2")
+                test.eq(tc[3].id, "call_3")
+
+                test.eq(openai_messages[2].role, "tool")
+                test.eq(openai_messages[2].tool_call_id, "call_1")
+                test.eq(openai_messages[3].role, "tool")
+                test.eq(openai_messages[3].tool_call_id, "call_2")
+                test.eq(openai_messages[4].role, "tool")
+                test.eq(openai_messages[4].tool_call_id, "call_3")
+
+                test.eq(openai_messages[5].role, "assistant")
+                test.eq(openai_messages[5].content, "Here are the results.")
+                test.is_nil(openai_messages[5].tool_calls)
+            end)
+
+            it("should handle interleaved calls followed by user message", function()
+                local contract_messages = {
+                    {
+                        role = "assistant",
+                        content = ""
+                    },
+                    {
+                        role = "function_call",
+                        function_call = { id = "call_X", name = "Navigate", arguments = { page = "home" } }
+                    },
+                    {
+                        role = "function_result",
+                        content = "navigated",
+                        function_call_id = "call_X"
+                    },
+                    {
+                        role = "function_call",
+                        function_call = { id = "call_Y", name = "GetData", arguments = {} }
+                    },
+                    {
+                        role = "function_result",
+                        content = "data fetched",
+                        function_call_id = "call_Y"
+                    },
+                    {
+                        role = "user",
+                        content = "Thanks"
+                    }
+                }
+
+                local openai_messages = openai_mapper.map_messages(contract_messages)
+
+                -- assistant(tool_calls=[X,Y]), tool(X), tool(Y), user
+                test.eq(#openai_messages, 4)
+
+                test.eq(openai_messages[1].role, "assistant")
+                local tc = openai_messages[1].tool_calls :: any
+                test.eq(#tc, 2)
+                test.eq(tc[1].id, "call_X")
+                test.eq(tc[2].id, "call_Y")
+
+                test.eq(openai_messages[2].role, "tool")
+                test.eq(openai_messages[2].tool_call_id, "call_X")
+                test.eq(openai_messages[3].role, "tool")
+                test.eq(openai_messages[3].tool_call_id, "call_Y")
+
+                test.eq(openai_messages[4].role, "user")
+            end)
+
             it("should skip function_call messages without id", function()
                 local contract_messages = {
                     {

@@ -13,7 +13,7 @@ type FindOptions = {
 
 -- Base criteria for identifying migration entries in the registry
 local BASE_MIGRATION_CRITERIA = {
-    [".kind"] = "function.lua",
+    [".kind"] = "function.*",
     ["meta.type"] = "migration",
 }
 

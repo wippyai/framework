@@ -25,7 +25,7 @@ end
 
 function discovery.get_plugins(): ({[string]: PluginConfig}?, string?)
     local entries, err = registry.find({
-        [".kind"] = "process.lua",
+        [".kind"] = "process.*",
         ["meta.type"] = consts.PLUGIN_META_TYPE
     })
 

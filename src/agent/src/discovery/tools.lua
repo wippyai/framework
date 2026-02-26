@@ -90,7 +90,7 @@ end
 function tool_resolver.run_input_schema_processors(input_schema: any, tool_id: string, tool_name: string?): any
     local registry = get_registry()
 
-    local processors = registry.find({ [".kind"] = "function.lua", ["meta.type"] = "input_schema_processor" })
+    local processors = registry.find({ [".kind"] = "function.*", ["meta.type"] = "input_schema_processor" })
 
     if #processors == 0 then
         return input_schema
@@ -385,7 +385,7 @@ function tool_resolver.find_tools(criteria: FindToolsCriteria?): ({any}?, string
     local registry = get_registry()
 
     local query = {
-        [".kind"] = "function.lua",
+        [".kind"] = "function.*",
         ["meta.type"] = "tool"
     }
 

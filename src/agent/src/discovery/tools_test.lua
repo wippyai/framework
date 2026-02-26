@@ -187,9 +187,12 @@ local function define_tests()
                     for id, entry in pairs(registry_entries :: any) do
                         local matches = true
 
-                        -- Check kind
-                        if query[".kind"] and entry.kind ~= query[".kind"] then
-                            matches = false
+                        -- Check kind (glob-aware, supports patterns like function.*)
+                        if query[".kind"] then
+                            local kind_pattern = "^" .. tostring(query[".kind"]):gsub("%.", "%%."):gsub("%*", ".*") .. "$"
+                            if not tostring(entry.kind):match(kind_pattern) then
+                                matches = false
+                            end
                         end
 
                         -- Check type

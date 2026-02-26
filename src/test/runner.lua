@@ -185,6 +185,9 @@ local function run_tests(): number
             local test_name = discovery.short_name(entry_id)
             display.test_progress(test_name, suite.name, i, #suite.tests, completed_tests, total_tests)
 
+            local entry_meta: any = (entry :: any).meta or {}
+            local test_timeout = entry_meta.timeout or "30s"
+
             local cmd: any, cmd_err: any = executor:async(entry_id, {
                 pid = process.pid(),
                 topic = "test:update",
@@ -195,7 +198,7 @@ local function run_tests(): number
                 record_failure(all_failures, case_stats, entry_id, suite.name, test_name, tostring(cmd_err))
                 display.case_fail(suite.name, test_name, tostring(cmd_err), 0)
             else
-                local response = wait_for(cmd:response(), "30s")
+                local response = wait_for(cmd:response(), test_timeout)
 
                 if not response then
                     local _, result_err = cmd:result()

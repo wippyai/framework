@@ -15,7 +15,7 @@ type BootloaderEntry = {
 
 -- Base criteria for finding bootloaders
 local BASE_BOOTLOADER_CRITERIA = {
-    [".kind"] = "function.lua",
+    [".kind"] = "function.*",
     ["meta.type"] = "bootloader",
 }
 
