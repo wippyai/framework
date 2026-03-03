@@ -26,7 +26,7 @@ API URL and WebSocket URL are derived from the `domain` requirement. If `domain`
 | Requirement | Default | Description |
 |---|---|---|
 | `domain` | _(empty)_ | Canonical app domain (e.g. `localhost:8085`, `app.wippy.ai`). Derives API and WS URLs. |
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.6` | CDN base URL for frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.9` | CDN base URL for frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Entry point path within the bundle |
 
 ### App Identity
@@ -91,9 +91,9 @@ Only override what differs from defaults.
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.6",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.9",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.6/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.9/iframe.html?waitForCustomConfig",
   "api_url": "http://localhost:8086",
   "ws_url": "ws://localhost:8086",
   "feature": {
