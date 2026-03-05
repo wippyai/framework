@@ -126,6 +126,7 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
             registry_id = registry_id,
             meta = meta,
             context = tool_call.context, -- Preserve tool context
+            provider_metadata = tool_call.provider_metadata,
             valid = true
         }
 
