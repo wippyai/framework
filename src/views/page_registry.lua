@@ -38,6 +38,7 @@ type PageInfo = {
     inline: boolean,
     kind: string,
     url: string?,
+    internal: string?,
 }
 
 type PageDetail = PageInfo & {
@@ -130,6 +131,7 @@ local function extract_page_info(entry)
         public = meta.public or false,
         announced = meta.announced or meta.public or false,
         inline = meta.inline or false,
+        internal = meta.internal or "",
         kind = kind,
     }
 
