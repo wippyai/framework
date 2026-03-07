@@ -176,7 +176,7 @@ function openai_mapper.map_messages(contract_messages, options)
             -- The prompt builder interleaves them: call_A, result_A, call_B, result_B
             local function_calls_found = {}
             local function_results_found = {}
-            local scan_end = i
+            local scan_end = i - 1
             local j = i
             while j <= #contract_messages do
                 local current_msg = contract_messages[j]
