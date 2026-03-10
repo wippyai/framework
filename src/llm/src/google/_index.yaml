@@ -113,6 +113,8 @@ entries:
     modules:
       - json
       - http_client
+    imports:
+      output: wippy.llm:output
 
   # wippy.llm.google:client_test
   - name: client_test

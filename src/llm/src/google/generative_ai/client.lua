@@ -26,6 +26,12 @@ function generative_ai_client.request(contract_args)
     if contract_args.options.method == "POST" then
         options.body = json.encode(contract_args.payload or {})
     end
+    if contract_args.options.stream then
+        options.stream = true
+        options.stream_reply_to = contract_args.options.stream_reply_to
+        options.stream_topic = contract_args.options.stream_topic
+        options.stream_buffer_size = contract_args.options.stream_buffer_size
+    end
 
     local base_url = contract_args.options.base_url or generative_ai_client._config.get_generative_ai_base_url()
     if contract_args.model and contract_args.model ~= "" then
