@@ -2,14 +2,6 @@ local json = require("json")
 local http_client = require("http_client")
 local output = require("output")
 
-type StreamCallbacks = {
-    on_content: ((text: string) -> ())?,
-    on_tool_call: ((part: any) -> ())?,
-    on_thinking: ((text: string) -> ())?,
-    on_error: ((error_info: any) -> ())?,
-    on_done: ((result: StreamResult) -> ())?,
-}
-
 type StreamInput = {
     stream: any,
     metadata: table?,
@@ -21,6 +13,14 @@ type StreamResult = {
     finish_reason: string?,
     usage: any?,
     metadata: table,
+}
+
+type StreamCallbacks = {
+    on_content: ((text: string) -> nil)?,
+    on_tool_call: ((part: any) -> nil)?,
+    on_thinking: ((text: string) -> nil)?,
+    on_error: ((error_info: any) -> nil)?,
+    on_done: ((result: StreamResult) -> nil)?,
 }
 
 local client = {
