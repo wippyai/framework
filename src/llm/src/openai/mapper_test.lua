@@ -316,6 +316,53 @@ local function define_tests()
                 test.eq(openai_messages[4].role, "user")
             end)
 
+            it("should preserve user messages after assistant without tool calls", function()
+                local contract_messages = {
+                    {
+                        role = "user",
+                        content = {{ type = "text", text = "Do you see this file?" }}
+                    },
+                    {
+                        role = "assistant",
+                        content = {{ type = "text", text = "Yes, I see the file." }}
+                    },
+                    {
+                        role = "user",
+                        content = {{ type = "text", text = "Build me a data model" }}
+                    },
+                    {
+                        role = "assistant",
+                        content = {{ type = "text", text = "Sure, here is the model." }}
+                    },
+                    {
+                        role = "user",
+                        content = {{ type = "text", text = "Use your tools" }}
+                    }
+                }
+
+                local openai_messages = openai_mapper.map_messages(contract_messages)
+
+                test.eq(#openai_messages, 5)
+
+                test.eq(openai_messages[1].role, "user")
+                local u1 = openai_messages[1].content :: any
+                test.eq(u1[1].text, "Do you see this file?")
+
+                test.eq(openai_messages[2].role, "assistant")
+                test.eq(openai_messages[2].content, "Yes, I see the file.")
+
+                test.eq(openai_messages[3].role, "user")
+                local u2 = openai_messages[3].content :: any
+                test.eq(u2[1].text, "Build me a data model")
+
+                test.eq(openai_messages[4].role, "assistant")
+                test.eq(openai_messages[4].content, "Sure, here is the model.")
+
+                test.eq(openai_messages[5].role, "user")
+                local u3 = openai_messages[5].content :: any
+                test.eq(u3[1].text, "Use your tools")
+            end)
+
             it("should skip function_call messages without id", function()
                 local contract_messages = {
                     {

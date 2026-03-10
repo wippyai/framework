@@ -1,70 +1,127 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>Wippy</title>
     <style>
-        html, body { padding: 0; margin: 0; }
+        .facade-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; gap: 16px; font-family: system-ui, -apple-system, sans-serif;
+        }
+        .facade-loader__spinner {
+            width: 28px; height: 28px;
+            border: 2.5px solid rgba(128,128,128,0.15);
+            border-top-color: rgba(128,128,128,0.5);
+            border-radius: 50%;
+            animation: facade-spin 0.7s linear infinite;
+        }
+        .facade-loader__text { font-size: 13px; color: rgba(128,128,128,0.6); }
+        .facade-error {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; gap: 12px; padding: 24px; text-align: center;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .facade-error__title { font-size: 15px; font-weight: 600; }
+        .facade-error__detail { font-size: 13px; opacity: 0.6; max-width: 420px; word-break: break-word; }
+        .facade-error__retry {
+            margin-top: 8px; padding: 6px 18px; font-size: 13px;
+            background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2);
+            border-radius: 6px; cursor: pointer; color: inherit;
+        }
+        .facade-error__retry:hover { background: rgba(128,128,128,0.18); }
+        @keyframes facade-spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-<div id="app">Loading...</div>
+<div id="app">
+    <div class="facade-loader">
+        <div class="facade-loader__spinner"></div>
+        <div class="facade-loader__text">Loading...</div>
+    </div>
+</div>
 <script type="module">
     const STORAGE_KEY = '@wippy_token_info';
+    const appEl = document.getElementById('app');
 
-    const res = await fetch('/api/public/facade/config');
-    if (!res.ok) { document.body.textContent = 'Failed to load config'; throw new Error('config fetch failed'); }
-    const cfg = await res.json();
+    function showError(title, detail) {
+        appEl.innerHTML =
+            '<div class="facade-error">' +
+                '<div class="facade-error__title">' + title + '</div>' +
+                (detail ? '<div class="facade-error__detail">' + detail + '</div>' : '') +
+                '<button class="facade-error__retry" onclick="location.reload()">Retry</button>' +
+            '</div>';
+    }
 
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) { window.location.href = cfg.login_path || '/login.html'; throw new Error('no token'); }
+    try {
+        const res = await fetch('/api/public/facade/config');
+        if (!res.ok) {
+            showError('Failed to load configuration', 'Server returned ' + res.status + '. Check that the backend is running.');
+            throw new Error('config fetch failed: ' + res.status);
+        }
+        const cfg = await res.json();
 
-    let token;
-    try { token = JSON.parse(stored).token; }
-    catch { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (!stored) { window.location.href = cfg.login_path || '/login.html'; throw new Error('no token'); }
 
-    const apiUrl = cfg.api_url || window.location.origin;
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = cfg.ws_url || (wsProto + '//' + window.location.host);
+        let token;
+        try { token = JSON.parse(stored).token; }
+        catch { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
 
-    await import(cfg.facade_url + '/module.js');
+        const apiUrl = cfg.api_url || window.location.origin;
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = cfg.ws_url || (wsProto + '//' + window.location.host);
 
-    const events = window.initWippyApp({
-        auth: { token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
-        feature: {
-            session: { type: cfg.feature.session_type },
-            history: cfg.feature.history_mode,
-            env: { APP_API_URL: apiUrl, APP_WEBSOCKET_URL: wsUrl },
-            routePrefix: apiUrl,
-            showAdmin: cfg.feature.show_admin,
-            allowSelectModel: cfg.feature.allow_select_model,
-            startNavOpen: cfg.feature.start_nav_open,
-            hideNavBar: cfg.feature.hide_nav_bar,
-            disableRightPanel: cfg.feature.disable_right_panel,
-        },
-        customization: {
-            customCSS: cfg.customization.custom_css || '',
-            cssVariables: cfg.customization.css_variables || {},
-            i18n: cfg.customization.i18n || {},
-            icons: cfg.customization.icons || {},
-        },
-    }, '#app');
+        let mod;
+        try {
+            mod = await import(cfg.facade_url + '/module.js');
+        } catch (importErr) {
+            showError('Failed to load frontend bundle', 'Could not load ' + cfg.facade_url + '/module.js — ' + importErr.message);
+            throw importErr;
+        }
 
-    const loginPath = cfg.login_path || '/login.html';
+        if (typeof window.initWippyApp !== 'function') {
+            showError('Frontend bundle error', 'initWippyApp not found after loading module. The bundle may be incompatible.');
+            throw new Error('initWippyApp not found');
+        }
 
-    // Handle logout and session expiration — clean up token and redirect to login
-    events.on('authExpired', () => {
-        localStorage.removeItem(STORAGE_KEY);
-        window.location.href = loginPath;
-    });
+        const events = window.initWippyApp({
+            auth: { token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
+            feature: {
+                session: { type: cfg.feature.session_type },
+                history: cfg.feature.history_mode,
+                env: { APP_API_URL: apiUrl, APP_WEBSOCKET_URL: wsUrl },
+                routePrefix: apiUrl,
+                showAdmin: cfg.feature.show_admin,
+                allowSelectModel: cfg.feature.allow_select_model,
+                startNavOpen: cfg.feature.start_nav_open,
+                hideNavBar: cfg.feature.hide_nav_bar,
+                disableRightPanel: cfg.feature.disable_right_panel,
+            },
+            customization: {
+                customCSS: cfg.customization.custom_css || '',
+                cssVariables: cfg.customization.css_variables || {},
+                i18n: cfg.customization.i18n || {},
+                icons: cfg.customization.icons || {},
+            },
+        }, '#app');
 
-    // Handle critical errors
-    events.on('error', (err) => {
-        console.error('Wippy critical error:', err);
-        localStorage.removeItem(STORAGE_KEY);
-        window.location.href = loginPath;
-    });
+        const loginPath = cfg.login_path || '/login.html';
+
+        events.on('authExpired', () => {
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = loginPath;
+        });
+
+        events.on('error', (err) => {
+            console.error('Wippy critical error:', err);
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = loginPath;
+        });
+    } catch (err) {
+        console.error('Facade initialization failed:', err);
+    }
 </script>
 </body>
 </html>
