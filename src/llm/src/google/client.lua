@@ -133,18 +133,19 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
                             table.insert(tool_calls, part)
                             on_tool_call(part)
                         elseif part.text then
+                            local text = tostring(part.text)
                             if part.thought == true then
-                                on_thinking(part.text)
+                                on_thinking(text)
                             else
-                                full_content = full_content .. part.text
-                                on_content(part.text)
+                                full_content = full_content .. text
+                                on_content(text)
                             end
                         end
                     end
                 end
 
                 if candidate.finishReason then
-                    finish_reason = candidate.finishReason
+                    finish_reason = tostring(candidate.finishReason)
                 end
             end
 
@@ -173,11 +174,9 @@ end
 --- Process a streaming response and send chunks via output.streamer.
 --- Returns an aggregated Google-like response compatible with map_success_response().
 local function handle_stream_response(response, http_options)
-    local streamer = output.streamer(
-        http_options.stream_reply_to,
-        http_options.stream_topic,
-        http_options.stream_buffer_size or 10
-    )
+    local reply_to: string? = http_options.stream_reply_to
+    local topic: string? = http_options.stream_topic
+    local streamer = output.streamer(reply_to, topic, http_options.stream_buffer_size or 10)
     if not streamer then
         return nil, {
             status_code = 500,
@@ -191,40 +190,42 @@ local function handle_stream_response(response, http_options)
     local usage_metadata: any = nil
     local response_metadata: table = {}
 
+    local callbacks: StreamCallbacks = {
+        on_content = function(chunk: string)
+            full_content = full_content .. chunk
+            streamer:buffer_content(chunk)
+        end,
+
+        on_tool_call = function(tool_part: any)
+            table.insert(tool_call_parts, tool_part)
+            if tool_part.functionCall then
+                streamer:send_tool_call(
+                    tostring(tool_part.functionCall.name),
+                    tostring(tool_part.functionCall.args or "{}"),
+                    tostring(tool_part.functionCall.name)
+                )
+            end
+        end,
+
+        on_thinking = function(text: string)
+            streamer:send_thinking(text)
+        end,
+
+        on_error = function(error_info: any)
+            streamer:send_error("server_error", tostring(error_info.message), nil)
+        end,
+
+        on_done = function(result: StreamResult)
+            streamer:flush()
+            finish_reason = result.finish_reason
+            usage_metadata = result.usage
+            response_metadata = result.metadata
+        end,
+    }
+
     local _, stream_err = client.process_stream(
         { stream = response.stream, metadata = {} },
-        {
-            on_content = function(chunk: string)
-                full_content = full_content .. chunk
-                streamer:buffer_content(chunk)
-            end,
-
-            on_tool_call = function(tool_part: any)
-                table.insert(tool_call_parts, tool_part)
-                if tool_part.functionCall then
-                    streamer:send_tool_call(
-                        tool_part.functionCall.name,
-                        tool_part.functionCall.args or {},
-                        tool_part.functionCall.name
-                    )
-                end
-            end,
-
-            on_thinking = function(text: string)
-                streamer:send_thinking(text)
-            end,
-
-            on_error = function(error_info: any)
-                streamer:send_error("server_error", tostring(error_info.message))
-            end,
-
-            on_done = function(result: StreamResult)
-                streamer:flush()
-                finish_reason = result.finish_reason
-                usage_metadata = result.usage
-                response_metadata = result.metadata
-            end
-        }
+        callbacks
     )
 
     if stream_err then
