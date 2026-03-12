@@ -174,8 +174,8 @@ end
 --- Process a streaming response and send chunks via output.streamer.
 --- Returns an aggregated Google-like response compatible with map_success_response().
 local function handle_stream_response(response, http_options)
-    local reply_to: string? = http_options.stream_reply_to
-    local topic: string? = http_options.stream_topic
+    local reply_to = http_options.stream_reply_to :: string?
+    local topic = http_options.stream_topic :: string?
     local streamer = output.streamer(reply_to, topic, http_options.stream_buffer_size or 10)
     if not streamer then
         return nil, {
@@ -190,7 +190,7 @@ local function handle_stream_response(response, http_options)
     local usage_metadata: any = nil
     local response_metadata: table = {}
 
-    local callbacks: StreamCallbacks = {
+    local callbacks = {
         on_content = function(chunk: string)
             full_content = full_content .. chunk
             streamer:buffer_content(chunk)
@@ -285,7 +285,7 @@ function client.request(method, url, http_options)
 
     if response.status_code < 200 or response.status_code >= 300 then
         if http_options.stream and response.stream and not response.body then
-            response.body = response.stream:read()
+            response.body = (response.stream:read() :: any) :: string
         end
         local parsed_error = parse_error_response(response)
         return nil, parsed_error
