@@ -225,7 +225,7 @@ local function handle_stream_response(response, http_options)
 
     local _, stream_err = client.process_stream(
         { stream = response.stream, metadata = {} },
-        callbacks
+        callbacks :: StreamCallbacks
     )
 
     if stream_err then
@@ -285,7 +285,8 @@ function client.request(method, url, http_options)
 
     if response.status_code < 200 or response.status_code >= 300 then
         if http_options.stream and response.stream and not response.body then
-            response.body = (response.stream:read() :: any) :: string
+            local body_data = response.stream:read()
+            response.body = body_data
         end
         local parsed_error = parse_error_response(response)
         return nil, parsed_error
