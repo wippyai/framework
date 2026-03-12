@@ -69,16 +69,16 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
     end
 
     callbacks = callbacks or {}
-    local on_content = callbacks.on_content or function() end
-    local on_tool_call = callbacks.on_tool_call or function() end
-    local on_thinking = callbacks.on_thinking or function() end
-    local on_error = callbacks.on_error or function() end
-    local on_done = callbacks.on_done or function() end
+    local on_content = callbacks.on_content or function(_text: string) end
+    local on_tool_call = callbacks.on_tool_call or function(_part: any) end
+    local on_thinking = callbacks.on_thinking or function(_text: string) end
+    local on_error = callbacks.on_error or function(_error_info: any) end
+    local on_done = callbacks.on_done or function(_result: StreamResult) end
 
     local full_content = ""
-    local tool_calls = {}
-    local finish_reason = nil
-    local usage = nil
+    local tool_calls: {any} = {}
+    local finish_reason: string? = nil
+    local usage: any = nil
     local metadata = stream_response.metadata or {}
 
     while true do
@@ -114,7 +114,7 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
                     status = parsed.error.status
                 }
                 on_error(error_info)
-                return nil, error_info.message, { error = error_info }
+                return nil, tostring(error_info.message)
             end
 
             if parsed.modelVersion then
@@ -178,12 +178,18 @@ local function handle_stream_response(response, http_options)
         http_options.stream_topic,
         http_options.stream_buffer_size or 10
     )
+    if not streamer then
+        return nil, {
+            status_code = 500,
+            message = "Failed to create streamer"
+        }
+    end
 
     local full_content = ""
-    local tool_call_parts = {}
-    local finish_reason = nil
-    local usage_metadata = nil
-    local response_metadata = {}
+    local tool_call_parts: {any} = {}
+    local finish_reason: string? = nil
+    local usage_metadata: any = nil
+    local response_metadata: table = {}
 
     local _, stream_err = client.process_stream(
         { stream = response.stream, metadata = {} },
@@ -209,7 +215,7 @@ local function handle_stream_response(response, http_options)
             end,
 
             on_error = function(error_info: any)
-                streamer:send_error("server_error", error_info.message)
+                streamer:send_error("server_error", tostring(error_info.message))
             end,
 
             on_done = function(result: StreamResult)
