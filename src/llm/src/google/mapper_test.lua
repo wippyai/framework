@@ -905,12 +905,16 @@ local function define_tests()
             it("should map Google function calls to contract format", function()
                 local google_function_calls = {
                     {
-                        name = "get_weather",
-                        args = { location = "New York", units = "celsius" }
+                        functionCall = {
+                            name = "get_weather",
+                            args = { location = "New York", units = "celsius" }
+                        }
                     },
                     {
-                        name = "calculate",
-                        args = { expression = "2+2" }
+                        functionCall = {
+                            name = "calculate",
+                            args = { expression = "2+2" }
+                        }
                     }
                 }
 
@@ -932,9 +936,9 @@ local function define_tests()
 
             it("should generate unique IDs for each tool call", function()
                 local google_function_calls = {
-                    { name = "tool1", args = {} },
-                    { name = "tool2", args = {} },
-                    { name = "tool3", args = {} }
+                    { functionCall = { name = "tool1", args = {} } },
+                    { functionCall = { name = "tool2", args = {} } },
+                    { functionCall = { name = "tool3", args = {} } }
                 }
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
@@ -943,7 +947,7 @@ local function define_tests()
 
                 local ids = {}
                 for _, call in ipairs(contract_tool_calls) do
-                    tests.is_nil(ids[call.id]) -- ID should be unique
+                    tests.is_nil(ids[call.id])
                     ids[call.id] = true
                 end
             end)
@@ -951,8 +955,10 @@ local function define_tests()
             it("should handle empty args", function()
                 local google_function_calls = {
                     {
-                        name = "no_args_tool",
-                        args = {}
+                        functionCall = {
+                            name = "no_args_tool",
+                            args = {}
+                        }
                     }
                 }
 
@@ -967,8 +973,10 @@ local function define_tests()
             it("should handle nil args", function()
                 local google_function_calls = {
                     {
-                        name = "nil_args_tool",
-                        args = nil
+                        functionCall = {
+                            name = "nil_args_tool",
+                            args = nil
+                        }
                     }
                 }
 
@@ -983,16 +991,18 @@ local function define_tests()
             it("should handle complex nested arguments", function()
                 local google_function_calls = {
                     {
-                        name = "complex_tool",
-                        args = {
-                            simple = "value",
-                            nested = {
-                                key1 = "value1",
-                                key2 = {
-                                    deep = "nested"
-                                }
-                            },
-                            array = { "item1", "item2", "item3" }
+                        functionCall = {
+                            name = "complex_tool",
+                            args = {
+                                simple = "value",
+                                nested = {
+                                    key1 = "value1",
+                                    key2 = {
+                                        deep = "nested"
+                                    }
+                                },
+                                array = { "item1", "item2", "item3" }
+                            }
                         }
                     }
                 }
@@ -1022,8 +1032,9 @@ local function define_tests()
             it("should handle function call with only name", function()
                 local google_function_calls = {
                     {
-                        name = "simple_tool"
-                        -- No args field
+                        functionCall = {
+                            name = "simple_tool"
+                        }
                     }
                 }
 
@@ -1038,15 +1049,17 @@ local function define_tests()
             it("should handle various argument types", function()
                 local google_function_calls = {
                     {
-                        name = "typed_args",
-                        args = {
-                            string_arg = "text",
-                            number_arg = 42,
-                            float_arg = 3.14,
-                            bool_arg = true,
-                            null_arg = nil,
-                            array_arg = {1, 2, 3},
-                            object_arg = { key = "value" }
+                        functionCall = {
+                            name = "typed_args",
+                            args = {
+                                string_arg = "text",
+                                number_arg = 42,
+                                float_arg = 3.14,
+                                bool_arg = true,
+                                null_arg = nil,
+                                array_arg = {1, 2, 3},
+                                object_arg = { key = "value" }
+                            }
                         }
                     }
                 }
@@ -1065,13 +1078,12 @@ local function define_tests()
 
             it("should generate ID with timestamp component", function()
                 local google_function_calls = {
-                    { name = "test_tool", args = {} }
+                    { functionCall = { name = "test_tool", args = {} } }
                 }
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
                 tests.eq(#contract_tool_calls, 1)
-                -- ID format: name_timestamp
                 local id = contract_tool_calls[1].id
                 tests.contains(id, "test_tool_")
             end)
@@ -1079,8 +1091,9 @@ local function define_tests()
             it("should handle function call with missing name gracefully", function()
                 local google_function_calls = {
                     {
-                        args = { key = "value" }
-                        -- Missing name
+                        functionCall = {
+                            args = { key = "value" }
+                        }
                     }
                 }
 
@@ -2242,6 +2255,47 @@ local function define_tests()
                 local result = mapper.standardize_content(content)
 
                 tests.eq(result, "Text with type")
+            end)
+        end)
+
+        describe("Finish Reason Preservation", function()
+            it("should preserve LENGTH when finishReason is MAX_TOKENS with tool_calls", function()
+                local google_response = {
+                    candidates = {
+                        {
+                            content = {
+                                parts = {
+                                    { text = "I will call..." },
+                                    { functionCall = { name = "test_tool", args = {} } }
+                                }
+                            },
+                            finishReason = "MAX_TOKENS"
+                        }
+                    },
+                    usageMetadata = { promptTokenCount = 100, candidatesTokenCount = 8000, totalTokenCount = 8100 }
+                }
+
+                local result = mapper.map_success_response(google_response)
+                tests.eq(result.finish_reason, "length")
+            end)
+
+            it("should map STOP to TOOL_CALL when tool_calls are present", function()
+                local google_response = {
+                    candidates = {
+                        {
+                            content = {
+                                parts = {
+                                    { functionCall = { name = "test_tool", args = {} } }
+                                }
+                            },
+                            finishReason = "STOP"
+                        }
+                    },
+                    usageMetadata = { promptTokenCount = 50, candidatesTokenCount = 100, totalTokenCount = 150 }
+                }
+
+                local result = mapper.map_success_response(google_response)
+                tests.eq(result.finish_reason, "tool_call")
             end)
         end)
     end)

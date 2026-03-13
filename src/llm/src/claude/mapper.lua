@@ -671,8 +671,7 @@ function mapper.format_streaming_response(client_result, name_to_id_map, usage, 
             tool_calls = mapped_tool_calls
         },
         tokens = tokens,
-        finish_reason = #mapped_tool_calls > 0 and output.FINISH_REASON.TOOL_CALL or
-            mapper.map_finish_reason(finish_reason),
+        finish_reason = mapper.map_finish_reason(finish_reason),
         metadata = response_metadata or {}
     }
 

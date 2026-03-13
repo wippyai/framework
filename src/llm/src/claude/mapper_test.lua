@@ -499,6 +499,34 @@ local function define_tests()
                 test.eq(image_content.source.url, "https://example.com/image.jpg")
             end)
         end)
+
+        describe("Streaming Finish Reason Preservation", function()
+            it("should preserve LENGTH finish_reason when streaming response has tool_calls", function()
+                local client_result = {
+                    content = "I will call the tool...",
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, {}, nil, "max_tokens", {})
+                test.eq(result.finish_reason, output.FINISH_REASON.LENGTH)
+            end)
+
+            it("should map tool_use to TOOL_CALL for normal streaming tool calls", function()
+                local client_result = {
+                    content = "",
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, {}, nil, "tool_use", {})
+                test.eq(result.finish_reason, output.FINISH_REASON.TOOL_CALL)
+            end)
+        end)
     end)
 end
 

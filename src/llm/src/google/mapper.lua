@@ -347,18 +347,21 @@ function mapper.map_success_response(google_response)
         success = true,
         metadata = google_response.metadata or {}
     }
+    local mapped_tool_calls = {}
     if #tool_calls > 0 then
-        response.result = {
-            content = content,
-            tool_calls = mapper.map_tool_calls(tool_calls)
-        }
+        mapped_tool_calls = mapper.map_tool_calls(tool_calls)
+    end
+
+    response.result = {
+        content = content,
+        tool_calls = mapped_tool_calls
+    }
+
+    local mapped_reason = mapper.map_finish_reason(candidate.finishReason or "UNKNOWN")
+    if #tool_calls > 0 and mapped_reason == output.FINISH_REASON.STOP then
         response.finish_reason = output.FINISH_REASON.TOOL_CALL
     else
-        response.result = {
-            content = content,
-            tool_calls = {}
-        }
-        response.finish_reason = mapper.map_finish_reason(candidate.finishReason or "UNKNOWN")
+        response.finish_reason = mapped_reason
     end
 
     response.tokens = mapper.map_tokens(google_response.usageMetadata)

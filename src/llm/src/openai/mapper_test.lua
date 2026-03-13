@@ -1026,6 +1026,62 @@ local function define_tests()
                 test.not_nil(contract_response.metadata)
             end)
         end)
+
+        describe("Finish Reason Preservation", function()
+            it("should preserve LENGTH finish_reason when response has tool_calls", function()
+                local openai_response = {
+                    choices = {
+                        {
+                            message = {
+                                content = "I will call...",
+                                tool_calls = {
+                                    {
+                                        id = "call_1",
+                                        type = "function",
+                                        ["function"] = {
+                                            name = "test_tool",
+                                            arguments = "{}"
+                                        }
+                                    }
+                                }
+                            },
+                            finish_reason = "length"
+                        }
+                    },
+                    usage = { prompt_tokens = 100, completion_tokens = 4096, total_tokens = 4196 }
+                }
+
+                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
+                test.eq(result.finish_reason, "length")
+            end)
+
+            it("should map tool_calls finish_reason to TOOL_CALL normally", function()
+                local openai_response = {
+                    choices = {
+                        {
+                            message = {
+                                content = "",
+                                tool_calls = {
+                                    {
+                                        id = "call_1",
+                                        type = "function",
+                                        ["function"] = {
+                                            name = "test_tool",
+                                            arguments = "{}"
+                                        }
+                                    }
+                                }
+                            },
+                            finish_reason = "tool_calls"
+                        }
+                    },
+                    usage = { prompt_tokens = 50, completion_tokens = 100, total_tokens = 150 }
+                }
+
+                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
+                test.eq(result.finish_reason, "tool_call")
+            end)
+        end)
     end)
 end
 

@@ -90,7 +90,7 @@ local function handle_streaming(stream_response, context, stream_config)
             tool_calls = tool_calls
         },
         tokens = generate_handler._mapper.map_tokens(final_usage),
-        finish_reason = #tool_calls > 0 and output.FINISH_REASON.TOOL_CALL or generate_handler._mapper.map_finish_reason(finish_reason),
+        finish_reason = generate_handler._mapper.map_finish_reason(finish_reason),
         metadata = stream_response.metadata or {}
     }
 

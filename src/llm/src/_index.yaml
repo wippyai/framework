@@ -55,6 +55,7 @@ entries:
         path: ".meta.default_host"
       - entry: wippy.llm.google.oauth2:token_refresher.service
         path: ".host"
+    default: "wippy.terminal:host"
 
   # Dependencies
   - name: dep.wippy.test

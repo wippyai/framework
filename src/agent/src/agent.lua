@@ -2,6 +2,7 @@ local prompt = require("prompt")
 local llm = require("llm")
 local contract = require("contract")
 local funcs = require("funcs")
+local output = require("output")
 
 type UnifiedTool = {
     name: string,
@@ -544,6 +545,11 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         finish_reason = result.finish_reason,
         metadata = result.metadata
     }
+
+    if output.detect_truncation(result) then
+        response.truncated = true
+        return response
+    end
 
     if memory_ids then
         response.memory_recall = {
