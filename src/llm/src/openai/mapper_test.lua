@@ -100,8 +100,8 @@ local function define_tests()
                 test.eq(#openai_messages, 1)
                 local b64_content = openai_messages[1].content :: any
                 test.eq(b64_content[1].type, "image_url")
-                test.contains(b64_content[1].image_url.url, "data:image/jpeg;base64,")
-                test.contains(b64_content[1].image_url.url, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
+                test.contains(tostring(b64_content[1].image_url.url), "data:image/jpeg;base64,")
+                test.contains(tostring(b64_content[1].image_url.url), "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
             end)
 
             it("should consolidate function_call messages into assistant message", function()
@@ -587,7 +587,7 @@ local function define_tests()
                 local choice, error = openai_mapper.map_tool_choice("nonexistent_tool", test_tools)
 
                 test.is_nil(choice)
-                test.contains(error, "not found")
+                test.contains(tostring(error), "not found")
             end)
 
             it("should default to auto for nil input", function()
@@ -967,8 +967,8 @@ local function define_tests()
 
                 test.is_false(contract_response.success)
                 test.eq(contract_response.error, "content_filtered")
-                test.contains(contract_response.error_message, "refused")
-                test.contains(contract_response.error_message, "I cannot assist with that request.")
+                test.contains(tostring(contract_response.error_message), "refused")
+                test.contains(tostring(contract_response.error_message), "I cannot assist with that request.")
             end)
         end)
 

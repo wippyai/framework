@@ -8,6 +8,7 @@ type ToolCall = {
     arguments: string | table,
     registry_id: string,
     context: table?,
+    provider_metadata: table?,
 }
 
 type ValidatedTool = {

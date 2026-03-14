@@ -124,7 +124,7 @@ local function define_tests()
                 local b64_parts = google_messages[1].parts :: any
                 tests.not_nil(b64_parts[1].inlineData)
                 tests.eq(b64_parts[1].inlineData.mimeType, "image/jpeg")
-                tests.contains(b64_parts[1].inlineData.data, "iVBORw0KGgo")
+                tests.contains(tostring(b64_parts[1].inlineData.data), "iVBORw0KGgo")
             end)
 
             it("should convert function_call messages to model with functionCall", function()
@@ -677,8 +677,8 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
-                tests.contains(error, "nonexistent_tool")
+                tests.contains(tostring(error), "not found")
+                tests.contains(tostring(error), "nonexistent_tool")
             end)
 
             it("should handle empty tools array with specific tool name", function()
@@ -686,7 +686,7 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
+                tests.contains(tostring(error), "not found")
             end)
 
             it("should handle nil tools array with specific tool name", function()
@@ -694,7 +694,7 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
+                tests.contains(tostring(error), "not found")
             end)
 
             it("should be case-sensitive for tool names", function()
@@ -702,7 +702,7 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
+                tests.contains(tostring(error), "not found")
             end)
 
             it("should handle tool name with exact match", function()
@@ -926,12 +926,12 @@ local function define_tests()
                 tests.eq(contract_tool_calls[1].arguments.location, "New York")
                 tests.eq(contract_tool_calls[1].arguments.units, "celsius")
                 tests.not_nil(contract_tool_calls[1].id)
-                tests.contains(contract_tool_calls[1].id, "get_weather_")
+                tests.contains(tostring(contract_tool_calls[1].id), "get_weather_")
 
                 tests.eq(contract_tool_calls[2].name, "calculate")
                 tests.eq(contract_tool_calls[2].arguments.expression, "2+2")
                 tests.not_nil(contract_tool_calls[2].id)
-                tests.contains(contract_tool_calls[2].id, "calculate_")
+                tests.contains(tostring(contract_tool_calls[2].id), "calculate_")
             end)
 
             it("should generate unique IDs for each tool call", function()
@@ -1085,7 +1085,7 @@ local function define_tests()
 
                 tests.eq(#contract_tool_calls, 1)
                 local id = contract_tool_calls[1].id
-                tests.contains(id, "test_tool_")
+                tests.contains(tostring(id), "test_tool_")
             end)
 
             it("should handle function call with missing name gracefully", function()
@@ -1100,7 +1100,7 @@ local function define_tests()
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
                 tests.eq(#contract_tool_calls, 1)
-                tests.contains(contract_tool_calls[1].id, "func_")
+                tests.contains(tostring(contract_tool_calls[1].id), "func_")
                 tests.eq(contract_tool_calls[1].arguments.key, "value")
             end)
         end)
@@ -1591,7 +1591,7 @@ local function define_tests()
                 end)
 
                 tests.is_false(success)
-                tests.contains(error, "Invalid Google response structure")
+                tests.contains(tostring(error), "Invalid Google response structure")
             end)
 
             it("should error on empty candidates array", function()
@@ -1604,7 +1604,7 @@ local function define_tests()
                 end)
 
                 tests.is_false(success)
-                tests.contains(error, "Invalid Google response structure")
+                tests.contains(tostring(error), "Invalid Google response structure")
             end)
 
             it("should error on nil candidates", function()

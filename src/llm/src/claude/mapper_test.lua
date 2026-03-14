@@ -160,8 +160,8 @@ local function define_tests()
                 local user_msg = result.messages[1]
                 test.eq(user_msg.role, "user")
                 local first_content = user_msg.content[1] :: any
-                test.contains(first_content.text, "Hello")
-                test.contains(first_content.text, "<developer-instruction>Be concise</developer-instruction>")
+                test.contains(tostring(first_content.text), "Hello")
+                test.contains(tostring(first_content.text), "<developer-instruction>Be concise</developer-instruction>")
             end)
 
             it("should convert function calls to assistant tool_use format", function()
@@ -315,7 +315,7 @@ local function define_tests()
                 local tools = { { name = "tool1" } }
                 local result, error = mapper.map_tool_choice("invalid_tool", tools)
                 test.is_nil(result)
-                test.contains(error, "not found")
+                test.contains(tostring(error), "not found")
             end)
 
             it("should return nil when no tools available", function()

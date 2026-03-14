@@ -142,7 +142,7 @@ local function define_tests()
                 tests.eq(config.get_token_uri(), "https://oauth2.googleapis.com/token")
                 tests.eq(config.get_client_email(), "test@project.iam.gserviceaccount.com")
                 tests.eq(config.get_private_key_id(), "key123")
-                tests.contains(config.get_private_key(), "BEGIN PRIVATE KEY")
+                tests.contains(tostring(config.get_private_key()), "BEGIN PRIVATE KEY")
                 tests.eq(config.get_project_id(), "test-project")
             end)
 
@@ -301,7 +301,7 @@ local function define_tests()
                 local token, err = config.get_oauth2_token()
 
                 tests.is_nil(token)
-                tests.contains(err, "Failed to access cache store")
+                tests.contains(tostring(err), "Failed to access cache store")
             end)
 
             it("should return nil when token is not in cache", function()

@@ -110,7 +110,7 @@ local function define_tests()
 
                 test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
-                test.contains(response.result.content, "Integration test successful")
+                test.contains(tostring(response.result.content), "Integration test successful")
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
                 test.is_true(response.tokens.completion_tokens > 0, "No completion tokens reported")
                 test.is_true(response.tokens.total_tokens > 0, "No total tokens reported")
@@ -145,7 +145,7 @@ local function define_tests()
 
                 test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
-                test.contains(response.result.content, "Absolutely")
+                test.contains(tostring(response.result.content), "Absolutely")
             end)
 
             it("should generate text with tool calling", function()
@@ -189,8 +189,8 @@ local function define_tests()
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
                 assert(response.result.tool_calls[1])
                 test.eq(response.result.tool_calls[1].name, "calculate")
-                test.contains(response.result.tool_calls[1].arguments.expression, "15")
-                test.contains(response.result.tool_calls[1].arguments.expression, "7")
+                test.contains(tostring(response.result.tool_calls[1].arguments.expression), "15")
+                test.contains(tostring(response.result.tool_calls[1].arguments.expression), "7")
                 -- Forced tool_choice returns "stop" from OpenAI API
                 test.is_true(
                     response.finish_reason == "tool_call" or response.finish_reason == "stop",
@@ -277,7 +277,7 @@ local function define_tests()
 
                 test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
-                test.contains(response.result.content, "160")  -- 120 + 40 = 160 miles
+                test.contains(tostring(response.result.content), "160")  -- 120 + 40 = 160 miles
                 test.not_nil(response.tokens.thinking_tokens, "No thinking tokens reported")
                 test.is_true(response.tokens.thinking_tokens > 0, "Expected non-zero thinking tokens")
                 test.eq(response.finish_reason, "stop")
@@ -358,8 +358,8 @@ local function define_tests()
 
                 test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
-                test.contains(response.result.content, "1")
-                test.contains(response.result.content, "5")
+                test.contains(tostring(response.result.content), "1")
+                test.contains(tostring(response.result.content), "5")
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
                 test.eq(response.finish_reason, "stop")
             end)
@@ -411,8 +411,8 @@ local function define_tests()
                 test.is_true(response.success, "Streaming request failed: " .. (response.error_message or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in streaming response")
-                test.contains(response.result.content, "1")
-                test.contains(response.result.content, "5")
+                test.contains(tostring(response.result.content), "1")
+                test.contains(tostring(response.result.content), "5")
 
                 -- Verify streaming events occurred
                 local content_events = 0
@@ -650,7 +650,7 @@ local function define_tests()
 
                 test.is_true(continuation_response.success, "Continuation streaming failed: " .. (continuation_response.error_message or "unknown"))
                 assert(continuation_response.success)
-                test.contains(continuation_response.result.content, "12")
+                test.contains(tostring(continuation_response.result.content), "12")
                 test.eq(continuation_response.finish_reason, "stop")
             end)
 
@@ -1025,7 +1025,7 @@ local function define_tests()
 
                 test.is_false(response.success, "Expected error for nonexistent model")
                 test.eq(response.error, "model_error")
-                test.contains(response.error_message, "does not exist")
+                test.contains(tostring(response.error_message), "does not exist")
             end)
 
             it("should handle authentication errors", function()
@@ -1088,7 +1088,7 @@ local function define_tests()
 
                 test.is_false(response.success, "Expected error for invalid schema")
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Root schema must be an object")
+                test.contains(tostring(response.error_message), "Root schema must be an object")
             end)
 
             it("should handle rate limit errors gracefully", function()
@@ -1239,7 +1239,7 @@ local function define_tests()
 
                 test.is_false(response.success, "Expected auth failure")
                 test.eq(response.status, "unhealthy")
-                test.contains(response.message, "Incorrect API")
+                test.contains(tostring(response.message), "Incorrect API")
             end)
 
             it("should work with custom base URL", function()
@@ -1311,7 +1311,7 @@ local function define_tests()
 
                 test.is_false(response.success, "Expected timeout")
                 test.eq(response.status, "unhealthy")
-                test.contains(response.message, "Connection failed")
+                test.contains(tostring(response.message), "Connection failed")
             end)
 
             it("should resolve API key from environment", function()
