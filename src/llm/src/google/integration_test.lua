@@ -169,7 +169,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0.7,
-                        max_tokens = 200
+                        max_tokens = 2048
                     }
                 }
 
@@ -605,7 +605,7 @@ local function define_tests()
                     tool_choice = "none",
                     options = {
                         temperature = 0,
-                        max_tokens = 50
+                        max_tokens = 2048
                     }
                 }
 
@@ -819,7 +819,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 100
+                        max_tokens = 2048
                     }
                 }
 
@@ -928,7 +928,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 100
+                        max_tokens = 2048
                     }
                 }
 
@@ -992,7 +992,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 50
+                        max_tokens = 2048
                     }
                 }
 

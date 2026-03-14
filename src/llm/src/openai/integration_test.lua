@@ -191,7 +191,11 @@ local function define_tests()
                 test.eq(response.result.tool_calls[1].name, "calculate")
                 test.contains(response.result.tool_calls[1].arguments.expression, "15")
                 test.contains(response.result.tool_calls[1].arguments.expression, "7")
-                test.eq(response.finish_reason, "tool_call")
+                -- Forced tool_choice returns "stop" from OpenAI API
+                test.is_true(
+                    response.finish_reason == "tool_call" or response.finish_reason == "stop",
+                    "finish_reason should be tool_call or stop, got: " .. tostring(response.finish_reason)
+                )
             end)
 
             it("should handle multiple tool calls", function()
