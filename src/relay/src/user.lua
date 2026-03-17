@@ -29,14 +29,16 @@ type UserState = {
 }
 
 local function get_plugin_info(state: UserState): any
-    local info = {}
+    local count = 0
+    for _ in pairs(state.plugins) do count = count + 1 end
+    local info = table.create(count, 0)
     for prefix, plugin_config in pairs(state.plugins) do
         local plugin_state = state.active_plugins[prefix]
-        info[prefix] = {
+        table.insert(info, {
             prefix = prefix,
             process_id = plugin_config.process_id,
             status = plugin_state and plugin_state.status or "not_started"
-        }
+        })
     end
     return info
 end
