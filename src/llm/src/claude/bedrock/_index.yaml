@@ -1,0 +1,384 @@
+version: "1.0"
+namespace: wippy.llm.claude.bedrock
+
+entries:
+  # Environment variables
+  - name: aws_region
+    kind: env.variable
+    meta:
+      comment: AWS region for Bedrock Runtime
+      icon: tabler:world
+    variable: AWS_REGION
+
+  - name: aws_access_key_id
+    kind: env.variable
+    meta:
+      comment: AWS access key ID for Bedrock authentication
+      icon: tabler:key
+    variable: AWS_ACCESS_KEY_ID
+
+  - name: aws_secret_access_key
+    kind: env.variable
+    meta:
+      comment: AWS secret access key for Bedrock authentication
+      icon: tabler:key
+    variable: AWS_SECRET_ACCESS_KEY
+
+  - name: aws_session_token
+    kind: env.variable
+    meta:
+      comment: AWS session token for temporary credentials
+      icon: tabler:key
+    variable: AWS_SESSION_TOKEN
+
+  - name: base_url
+    kind: env.variable
+    meta:
+      comment: Bedrock Runtime base URL override
+      icon: tabler:world
+    variable: BEDROCK_BASE_URL
+
+  - name: timeout
+    kind: env.variable
+    meta:
+      comment: Bedrock API request timeout in seconds
+      icon: tabler:clock
+    variable: BEDROCK_TIMEOUT
+
+  # Libraries
+  - name: sigv4
+    kind: library.lua
+    meta:
+      comment: AWS SigV4 request signing
+    source: file://sigv4.lua
+    modules:
+      - crypto
+      - hash
+      - time
+
+  - name: credentials
+    kind: library.lua
+    meta:
+      comment: AWS credential resolution from env vars, cache, and ECS/EKS container metadata
+    source: file://credentials.lua
+    modules:
+      - http_client
+      - json
+      - env
+      - ctx
+      - store
+      - time
+
+  - name: client
+    kind: library.lua
+    meta:
+      comment: Bedrock Runtime HTTP client with SigV4 signing
+    source: file://client.lua
+    modules:
+      - http_client
+      - json
+      - env
+      - ctx
+    imports:
+      sigv4: wippy.llm.claude.bedrock:sigv4
+      bedrock_credentials: wippy.llm.claude.bedrock:credentials
+      claude_client: wippy.llm.claude:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+
+  # Credential refresher
+  - name: credential_refresher
+    kind: process.lua
+    meta:
+      comment: Background process to refresh AWS container credentials
+      description: Periodically fetches credentials from ECS/EKS metadata endpoint and stores in cache
+    source: file://credential_refresher.lua
+    modules:
+      - time
+      - store
+      - env
+    imports:
+      bedrock_credentials: wippy.llm.claude.bedrock:credentials
+    method: run
+
+  - name: credential_refresher.service
+    kind: process.service
+    meta:
+      comment: AWS Bedrock Credential Refresher Service
+      description: Always-running service to keep AWS credentials fresh in container environments
+    lifecycle:
+      auto_start: true
+    process: credential_refresher
+
+  # Handlers
+  - name: generate
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Bedrock text generation via Anthropic Messages API
+    source: file://generate.lua
+    modules:
+      - json
+    imports:
+      bedrock_client: wippy.llm.claude.bedrock:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+
+  - name: structured_output
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Bedrock structured output via tool calling
+    source: file://structured_output.lua
+    modules:
+      - json
+      - hash
+    imports:
+      bedrock_client: wippy.llm.claude.bedrock:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+
+  - name: status
+    kind: function.lua
+    meta:
+      type: llm_function
+      comment: Bedrock API health check
+    source: file://status.lua
+    imports:
+      bedrock_client: wippy.llm.claude.bedrock:client
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+    method: handler
+
+  # Driver binding
+  - name: driver
+    kind: contract.binding
+    meta:
+      name: AWS Bedrock LLM Driver
+      comment: AWS Bedrock implementation using Anthropic Messages API with SigV4 authentication
+      tags:
+        - bedrock
+        - aws
+        - llm
+        - driver
+        - anthropic
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: wippy.llm.claude.bedrock:generate
+      - contract: wippy.llm:structured_output
+        methods:
+          structured_output: wippy.llm.claude.bedrock:structured_output
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.claude.bedrock:status
+    optional_context:
+      region:
+        type: string
+        description: AWS region for Bedrock Runtime
+        default_env: AWS_REGION
+        default_value: us-east-1
+      access_key:
+        type: string
+        description: AWS access key ID
+        default_env: AWS_ACCESS_KEY_ID
+      secret_key:
+        type: string
+        description: AWS secret access key
+        default_env: AWS_SECRET_ACCESS_KEY
+      session_token:
+        type: string
+        description: AWS session token for temporary credentials
+        default_env: AWS_SESSION_TOKEN
+      base_url:
+        type: string
+        description: Bedrock Runtime base URL override
+        default_env: BEDROCK_BASE_URL
+      timeout:
+        type: integer
+        description: Request timeout in seconds
+        default_env: BEDROCK_TIMEOUT
+        default_value: 600
+
+  # Provider registry entry
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: bedrock
+      type: llm.provider
+      title: AWS Bedrock
+      comment: AWS Bedrock provider for Anthropic Claude models with SigV4 authentication
+      tags:
+        - llm
+        - provider
+        - aws
+        - bedrock
+        - anthropic
+    depends_on:
+      - wippy.llm.claude.bedrock:aws_region
+      - wippy.llm.claude.bedrock:aws_access_key_id
+      - wippy.llm.claude.bedrock:aws_secret_access_key
+      - wippy.llm.claude.bedrock:aws_session_token
+      - wippy.llm.claude.bedrock:base_url
+      - wippy.llm.claude.bedrock:timeout
+    driver:
+      id: wippy.llm.claude.bedrock:driver
+      options:
+        region_env: wippy.llm.claude.bedrock:aws_region
+        access_key_env: wippy.llm.claude.bedrock:aws_access_key_id
+        secret_key_env: wippy.llm.claude.bedrock:aws_secret_access_key
+        session_token_env: wippy.llm.claude.bedrock:aws_session_token
+        base_url_env: wippy.llm.claude.bedrock:base_url
+        timeout_env: wippy.llm.claude.bedrock:timeout
+
+  # Tests
+  - name: sigv4_test
+    kind: function.lua
+    meta:
+      name: AWS SigV4 Signing Unit Tests
+      type: test
+      comment: Unit tests for AWS SigV4 request signing
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - sigv4
+        - aws
+        - bedrock
+    source: file://sigv4_test.lua
+    modules:
+      - crypto
+      - hash
+      - time
+    imports:
+      sigv4: wippy.llm.claude.bedrock:sigv4
+      test: wippy.test:test
+    method: run_tests
+
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Bedrock Client Unit Tests
+      type: test
+      comment: Unit tests for Bedrock client
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - client
+        - bedrock
+    source: file://client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+      - crypto
+      - hash
+      - time
+      - store
+    imports:
+      bedrock_client: wippy.llm.claude.bedrock:client
+      test: wippy.test:test
+    method: run_tests
+
+  - name: generate_test
+    kind: function.lua
+    meta:
+      name: Bedrock Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock text generation handler
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - generation
+        - bedrock
+    source: file://generate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - crypto
+      - hash
+      - time
+      - store
+    imports:
+      generate_handler: wippy.llm.claude.bedrock:generate
+      test: wippy.test:test
+    method: run_tests
+
+  - name: structured_output_test
+    kind: function.lua
+    meta:
+      name: Bedrock Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock structured output handler
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - structured-output
+        - bedrock
+    source: file://structured_output_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - hash
+      - crypto
+      - time
+      - store
+    imports:
+      structured_output_handler: wippy.llm.claude.bedrock:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  - name: status_test
+    kind: function.lua
+    meta:
+      name: Bedrock Status Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock status handler
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - status
+        - bedrock
+    source: file://status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - crypto
+      - hash
+      - time
+      - store
+    imports:
+      status_handler: wippy.llm.claude.bedrock:status
+      test: wippy.test:test
+    method: run_tests
+
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: Bedrock Integration Tests
+      type: test
+      comment: Integration tests for Bedrock using real API calls
+      group: LLM / Drivers / Bedrock
+      tags:
+        - integration-test
+        - bedrock
+    source: file://integration_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - crypto
+      - hash
+      - time
+      - store
+    imports:
+      generate_handler: wippy.llm.claude.bedrock:generate
+      status_handler: wippy.llm.claude.bedrock:status
+      structured_output_handler: wippy.llm.claude.bedrock:structured_output
+      test: wippy.test:test
+    method: run_tests
