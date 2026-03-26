@@ -1,5 +1,6 @@
 local json = require("json")
 local http_client = require("http_client")
+local base64 = require("base64")
 local env = require("env")
 local ctx = require("ctx")
 local sigv4 = require("sigv4")
@@ -238,7 +239,247 @@ function bedrock_client.request(model_id, payload, options)
     return parsed
 end
 
--- Delegate streaming to Claude client parser (same SSE format)
-bedrock_client.process_stream = claude_client.process_stream
+-- Parse a single AWS eventstream message from a binary buffer.
+-- Returns: payload string, bytes consumed, or nil and error.
+local function parse_eventstream_message(buf)
+    if #buf < 12 then
+        return nil, 0
+    end
+
+    local total_length = string.unpack(">I4", buf, 1)
+    local headers_length = string.unpack(">I4", buf, 5)
+
+    if #buf < total_length then
+        return nil, 0
+    end
+
+    -- payload sits after prelude (12) + headers, before trailing CRC (4)
+    local payload_offset = 13 + headers_length
+    local payload_length = total_length - 12 - headers_length - 4
+
+    if payload_length <= 0 then
+        return "", total_length
+    end
+
+    local payload = buf:sub(payload_offset, payload_offset + payload_length - 1)
+    return payload, total_length
+end
+
+-- Read all eventstream messages from a binary stream, yielding decoded JSON payloads.
+-- Each payload contains a "type" field matching the Claude SSE event types.
+local function read_eventstream_events(stream)
+    local events = {}
+    local buf = ""
+
+    while true do
+        local chunk, err = stream:read(0)
+
+        if err then
+            return nil, err
+        end
+
+        if not chunk or #chunk == 0 then
+            break
+        end
+
+        buf = buf .. chunk
+
+        while #buf >= 12 do
+            local payload, consumed = parse_eventstream_message(buf)
+            if consumed == 0 then
+                break
+            end
+
+            buf = buf:sub(consumed + 1)
+
+            if payload and #payload > 0 then
+                local decoded, decode_err = json.decode(payload)
+                if not decode_err and decoded then
+                    if decoded.bytes then
+                        local raw = base64.decode(tostring(decoded.bytes))
+                        if raw then
+                            local inner, inner_err = json.decode(raw)
+                            if not inner_err and inner then
+                                table.insert(events, inner)
+                            end
+                        end
+                    else
+                        table.insert(events, decoded)
+                    end
+                end
+            end
+        end
+    end
+
+    return events
+end
+
+-- Process Bedrock eventstream, dispatching to the same callbacks as Claude SSE.
+function bedrock_client.process_stream(stream_response, callbacks)
+    if not stream_response or not stream_response.stream then
+        return nil, "Invalid stream response"
+    end
+
+    callbacks = callbacks or {}
+    local on_content = callbacks.on_content or function() end
+    local on_tool_call = callbacks.on_tool_call or function() end
+    local on_thinking = callbacks.on_thinking or function() end
+    local on_error = callbacks.on_error or function() end
+    local on_done = callbacks.on_done or function() end
+
+    local full_content = ""
+    local tool_calls = {}
+    local thinking_blocks = {}
+    local finish_reason = nil
+    local usage = {}
+    local content_blocks = {}
+
+    local events, stream_err = read_eventstream_events(stream_response.stream)
+    if stream_err then
+        on_error({ message = stream_err })
+        return nil, stream_err
+    end
+
+    for _, data in ipairs(events) do
+        local event_type = data.type
+
+        if event_type == "message_start" then
+            if data.message and data.message.usage then
+                usage = data.message.usage
+            end
+        elseif event_type == "content_block_start" then
+            if data.index ~= nil and data.content_block then
+                content_blocks[data.index] = data.content_block
+
+                if data.content_block.type == "thinking" then
+                    thinking_blocks[data.index] = {
+                        type = "thinking",
+                        thinking = data.content_block.thinking or "",
+                        signature = data.content_block.signature or ""
+                    }
+                end
+            end
+        elseif event_type == "content_block_delta" then
+            local index = data.index or 0
+            local delta = data.delta or {}
+
+            if delta.type == "text_delta" then
+                local text_chunk = delta.text or ""
+                full_content = full_content .. text_chunk
+                on_content(text_chunk)
+            elseif delta.type == "thinking_delta" then
+                local thinking_chunk = delta.thinking or ""
+                on_thinking(thinking_chunk)
+
+                if thinking_blocks[index] then
+                    thinking_blocks[index].thinking = thinking_blocks[index].thinking .. thinking_chunk
+                end
+            elseif delta.type == "signature_delta" then
+                local signature_chunk = delta.signature or ""
+
+                if thinking_blocks[index] then
+                    thinking_blocks[index].signature = thinking_blocks[index].signature .. signature_chunk
+                end
+            elseif delta.type == "input_json_delta" then
+                if not tool_calls[index] then
+                    tool_calls[index] = { partial_json = "" }
+                end
+                tool_calls[index].partial_json = tool_calls[index].partial_json .. (delta.partial_json or "")
+            end
+        elseif event_type == "content_block_stop" then
+            local index = data.index or 0
+
+            if content_blocks[index] and content_blocks[index].type == "tool_use" then
+                local json_str = ""
+                if tool_calls[index] and tool_calls[index].partial_json then
+                    json_str = tool_calls[index].partial_json
+                end
+
+                local arguments = {}
+                if json_str ~= "" then
+                    local parsed_args, parse_err = json.decode(json_str)
+                    if not parse_err then
+                        arguments = parsed_args or {}
+                    end
+                end
+
+                local tool_call = {
+                    id = content_blocks[index].id or "",
+                    name = content_blocks[index].name or "",
+                    arguments = arguments
+                }
+
+                tool_calls[index] = tool_call
+                on_tool_call(tool_call)
+            end
+        elseif event_type == "message_delta" then
+            if data.delta then
+                finish_reason = data.delta.stop_reason
+            end
+            if data.usage then
+                for k, v in pairs(data.usage) do
+                    usage[k] = v
+                end
+            end
+        elseif event_type == "message_stop" then
+            local final_tool_calls = {}
+            for _, tool_call in pairs(tool_calls) do
+                if type(tool_call) == "table" and tool_call.id then
+                    table.insert(final_tool_calls, tool_call)
+                end
+            end
+
+            local final_thinking_blocks = {}
+            for _, thinking_block in pairs(thinking_blocks) do
+                if type(thinking_block) == "table" and thinking_block.type == "thinking" then
+                    table.insert(final_thinking_blocks, thinking_block)
+                end
+            end
+
+            local result = {
+                content = full_content,
+                tool_calls = final_tool_calls,
+                thinking = final_thinking_blocks,
+                finish_reason = finish_reason,
+                usage = usage,
+                metadata = stream_response.metadata or {}
+            }
+
+            on_done(result)
+            return full_content, nil, result
+        elseif event_type == "error" then
+            if data.error then
+                on_error(data.error)
+                return nil, data.error.message
+            end
+        end
+    end
+
+    local final_tool_calls = {}
+    for _, tool_call in pairs(tool_calls) do
+        if type(tool_call) == "table" and tool_call.id then
+            table.insert(final_tool_calls, tool_call)
+        end
+    end
+
+    local final_thinking_blocks = {}
+    for _, thinking_block in pairs(thinking_blocks) do
+        if type(thinking_block) == "table" and thinking_block.type == "thinking" then
+            table.insert(final_thinking_blocks, thinking_block)
+        end
+    end
+
+    local result = {
+        content = full_content,
+        tool_calls = final_tool_calls,
+        thinking = final_thinking_blocks,
+        finish_reason = finish_reason,
+        usage = usage,
+        metadata = stream_response.metadata or {}
+    }
+
+    on_done(result)
+    return full_content, nil, result
+end
 
 return bedrock_client

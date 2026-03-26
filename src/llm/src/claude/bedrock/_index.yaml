@@ -113,6 +113,7 @@ entries:
     modules:
       - http_client
       - json
+      - base64
       - env
       - ctx
     imports:
