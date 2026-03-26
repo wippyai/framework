@@ -131,6 +131,7 @@ local function extract_page_info(entry)
         announced = meta.announced or meta.public or false,
         inline = meta.inline or false,
         kind = kind,
+        config_overrides = meta.config_overrides,
     }
 
     if kind == "component" then
@@ -207,6 +208,7 @@ function pages.get(page_id)
         inline = entry.meta.inline or false,
         kind = kind,
         content_type = entry.meta.content_type or "text/html",
+        config_overrides = entry.meta.config_overrides,
     }
 
     if kind == "template" then

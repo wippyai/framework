@@ -8,7 +8,7 @@ Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loa
 2. On load, it fetches `GET /api/public/facade/config` to get runtime configuration
 3. Checks `localStorage` for an auth token, redirects to `login_path` if missing
 4. Loads the Web Host bundle from CDN (`facade_url + '/module.js'`)
-5. Calls `initWippyApp()` with auth, feature flags, and customization config
+5. Calls `initWippyApp()` with the full AppConfig (wippy-context-2.0 format)
 6. Shows inline loader/error UI during initialization (no external CSS dependencies)
 
 ## Derived values
@@ -17,8 +17,8 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Field | Source | Description |
 |---|---|---|
-| `api_url` | `PUBLIC_API_URL` env var | Base URL for API calls. Falls back to `window.location.origin` in the browser if empty. |
-| `ws_url` | Derived from `api_url` | WebSocket URL — `http://` → `ws://`, `https://` → `wss://` |
+| `env.APP_API_URL` | `PUBLIC_API_URL` env var | Base URL for API calls. Falls back to `window.location.origin` in the browser if empty. |
+| `env.APP_WEBSOCKET_URL` | Derived from `APP_API_URL` | WebSocket URL — `http://` → `ws://`, `https://` → `wss://` |
 | `iframe_origin` | Extracted from `fe_facade_url` | Origin portion of facade URL (e.g. `https://web-host.wippy.ai`), used for `postMessage` security |
 | `iframe_url` | `fe_facade_url` + `fe_entry_path` + `?waitForCustomConfig` | Full iframe URL passed to the Web Host |
 
@@ -35,22 +35,22 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.16` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.18` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 
 ### App Identity
 
-Passed to the Web Host as `customization.i18n.app` — controls branding in sidebar and navigation.
+Passed to the Web Host as `theming.host.i18n.app` — controls branding in sidebar and navigation.
 
 | Requirement | Default | Config path | Description |
 |---|---|---|---|
-| `app_title` | `Wippy` | `customization.i18n.app.title` | Short title shown in sidebar header |
-| `app_name` | `Wippy AI` | `customization.i18n.app.appName` | Full application name |
-| `app_icon` | `wippy:logo` | `customization.i18n.app.icon` | Iconify icon reference (e.g. `custom:logo`, `tabler:home`) |
+| `app_title` | `Wippy` | `theming.host.i18n.app.title` | Short title shown in sidebar header |
+| `app_name` | `Wippy AI` | `theming.host.i18n.app.appName` | Full application name |
+| `app_icon` | `wippy:logo` | `theming.host.i18n.app.icon` | Iconify icon reference (e.g. `custom:logo`, `tabler:home`) |
 
-### Feature Flags
+### Host Config (hostConfig)
 
-Passed to the Web Host as `feature.*` — control UI behavior and visibility.
+Host-only UI flags — NOT sent to child iframes.
 
 | Requirement | Default | Type | Description |
 |---|---|---|---|
@@ -59,10 +59,24 @@ Passed to the Web Host as `feature.*` — control UI behavior and visibility.
 | `hide_nav_bar` | `false` | bool (`== "true"`) | Completely hide the left navigation sidebar |
 | `disable_right_panel` | `false` | bool (`== "true"`) | Disable the right sidebar panel |
 | `allow_select_model` | `false` | bool (`== "true"`) | Allow LLM model selection dropdown in chat |
+| `hide_session_selector` | `false` | bool (`== "true"`) | Hide the chat session selector dropdown |
 | `session_type` | `non-persistent` | string | Chat session persistence (`non-persistent` or `cookie`) |
-| `history_mode` | `hash` | string | Browser history mode (`hash` or `history`/`browser`) |
+| `history_mode` | `hash` | string | Browser history mode (`hash` or `browser`) |
 
-> **Boolean parsing:** `show_admin` defaults to `true` (any value except `"false"` is truthy). All other boolean flags default to `false` (only `"true"` is truthy). This is implemented in `config_handler.lua`.
+> **Boolean parsing:** `show_admin` defaults to `true` (any value except `"false"` is truthy). All other boolean flags default to `false` (only `"true"` is truthy).
+
+#### Advanced hostConfig (JSON)
+
+These accept JSON strings for complex configuration:
+
+| Requirement | Default | Config path | Description |
+|---|---|---|---|
+| `api_routes` | `{}` | `hostConfig.apiRoutes` | API route overrides (e.g. `{"agents":{"list":"/custom/agents"}}`) |
+| `additional_nav_items` | `[]` | `hostConfig.additionalNavItems` | Extra sidebar nav items as JSON array |
+| `state_cache` | `{}` | `hostConfig.stateCache` | Child state LRU config (e.g. `{"maxPages":50,"maxSizePerPage":1048576}`) |
+| `allow_additional_tags` | `{}` | `hostConfig.allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
+| `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
+| `axios_defaults` | `{}` | `axiosDefaults` | HTTP client defaults (e.g. `{"timeout":30000}`) — top-level, not under hostConfig |
 
 ### Auth
 
@@ -70,15 +84,34 @@ Passed to the Web Host as `feature.*` — control UI behavior and visibility.
 |---|---|---|
 | `login_path` | `/login.html` | Path to redirect unauthenticated users (no token in localStorage) |
 
-### Theming & Customization
+### Theming
 
-Passed to the Web Host as `customization.*` — control visual appearance across all host-rendered pages and web components.
+Three theming scopes control which layers see which styles:
+
+#### Global scope (`theming.global`) — applied to host AND children
 
 | Requirement | Default | Config path | Description |
 |---|---|---|---|
-| `custom_css` | Poppins font `@import` | `customization.custom_css` | Raw CSS string injected as `<style>` into host and child iframes. Use for font imports, body font-family, and custom rules. |
-| `css_variables` | `{}` | `customization.css_variables` | JSON object of CSS custom properties (e.g. `{"--p-primary":"#6366f1"}`). Injected as `:root { --key: value; }` overrides. Supports `@dark` and `@light` variants. |
-| `icons` | `{}` | `customization.icons` | JSON object of custom Iconify icons (e.g. `{"logo":{"body":"<svg>...</svg>","width":24,"height":24}}`). Registered under `custom:` prefix — use as `custom:logo`. |
+| `custom_css` | Poppins font `@import` | `theming.global.customCSS` | CSS applied everywhere — host chrome and child iframes |
+| `css_variables` | `{}` | `theming.global.cssVariables` | CSS variables applied everywhere. Supports `@dark`/`@light` variants. |
+| `icon_sets` | `{}` | `theming.global.iconSets` | Iconify icon sets as `{prefix: {name: {body,width,height}}}` (e.g. `{"custom":{"logo":{...}}}`) |
+
+#### Host scope (`theming.host`) — applied to host chrome ONLY
+
+| Requirement | Default | Config path | Description |
+|---|---|---|---|
+| `host_custom_css` | _(empty)_ | `theming.host.customCSS` | CSS for sidebar, chat, nav — NOT applied to child iframes |
+| `host_css_variables` | `{}` | `theming.host.cssVariables` | CSS variables for host chrome only — override global vars |
+| `host_icon_sets` | `{}` | `theming.host.iconSets` | Icon sets for host chrome only (same format as global `icon_sets`) |
+
+#### Children scope (`theming.children`) — applied to child iframes ONLY
+
+| Requirement | Default | Config path | Description |
+|---|---|---|---|
+| `children_custom_css` | _(empty)_ | `theming.children.customCSS` | CSS for child iframes only — NOT applied to host chrome |
+| `children_css_variables` | `{}` | `theming.children.cssVariables` | CSS variables for children only — override global vars |
+
+> **Merge rules:** Host sees `global + host` merged. Children see `global + children` merged. Host-scope styles never leak to children and vice versa. Icons are only in `global` and `host` scopes (children don't get their own icon sets).
 
 ## Usage
 
@@ -111,42 +144,68 @@ Only override what differs from defaults.
       value: '{"--p-primary":"#6366f1"}'
 ```
 
+### Host-only styling (chat area gets custom look, children stay default)
+
+```yaml
+    - name: host_custom_css
+      value: ".chat-message { border-radius: 0; } .chat-input { font-size: 15px; }"
+    - name: host_css_variables
+      value: '{"--wippy-host-message-bg":"#f8f9fa","--wippy-host-input-bg":"#ffffff"}'
+```
+
+### Children-only styling (embedded pages get branded, host stays default)
+
+```yaml
+    - name: children_css_variables
+      value: '{"--p-primary":"#dc2626"}'
+    - name: children_custom_css
+      value: "body { font-family: 'Comic Sans MS', cursive; }"
+```
+
 ### Custom icons
 
 ```yaml
-    - name: icons
-      value: '{"logo":{"body":"<svg viewBox=\"0 0 24 24\"><path d=\"M12 2L2 22h20L12 2z\"/></svg>","width":24,"height":24}}'
+    - name: icon_sets
+      value: '{"custom":{"logo":{"body":"<svg viewBox=\"0 0 24 24\"><path d=\"M12 2L2 22h20L12 2z\"/></svg>","width":24,"height":24}}}'
     - name: app_icon
       value: "custom:logo"
 ```
 
 ## Config Response
 
-`GET /api/public/facade/config` returns:
+`GET /api/public/facade/config` returns (wippy-context-2.0 format):
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.16",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.18",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.16/iframe.html?waitForCustomConfig",
-  "api_url": "http://localhost:8085",
-  "ws_url": "ws://localhost:8085",
-  "feature": {
-    "session_type": "non-persistent",
-    "history_mode": "hash",
-    "show_admin": true,
-    "allow_select_model": false,
-    "start_nav_open": false,
-    "hide_nav_bar": false,
-    "disable_right_panel": false
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.18/iframe.html?waitForCustomConfig",
+  "login_path": "/login.html",
+  "env": {
+    "APP_API_URL": "http://localhost:8085",
+    "APP_AUTH_API_URL": "http://localhost:8085",
+    "APP_WEBSOCKET_URL": "ws://localhost:8085"
   },
-  "customization": {
-    "custom_css": "@import url('https://fonts.googleapis.com/css2?family=Poppins...');",
-    "css_variables": {},
-    "i18n": { "app": { "title": "Wippy", "icon": "wippy:logo", "appName": "Wippy AI" } },
-    "icons": {}
+  "routePrefix": "http://localhost:8085",
+  "theming": {
+    "global": {
+      "customCSS": "@import url('https://fonts.googleapis.com/css2?family=Poppins...');"
+    },
+    "host": {
+      "i18n": { "app": { "title": "Wippy", "icon": "wippy:logo", "appName": "Wippy AI" } }
+    },
+    "children": null
   },
-  "login_path": "/login.html"
+  "hostConfig": {
+    "session": { "type": "non-persistent" },
+    "history": "hash",
+    "showAdmin": true,
+    "allowSelectModel": false,
+    "startNavOpen": false,
+    "hideNavBar": false,
+    "disableRightPanel": false,
+    "hideSessionSelector": false
+  }
 }
 ```
 
@@ -156,25 +215,13 @@ Only override what differs from defaults.
 fetch /api/public/facade/config
   → check localStorage for auth token → redirect to login_path if missing
   → import(facade_url + '/module.js') → load Web Host bundle from CDN
-  → initWippyApp({ auth, feature, customization }, '#app')
+  → initWippyApp({ $schema, auth, env, routePrefix, theming, hostConfig, context }, '#app')
   → listen for 'authExpired' and 'error' events → redirect to login_path
 ```
 
+The backend returns config in wippy-context-2.0 shape. `index.html` only adds `$schema` (from `facade_url`), `auth` (from localStorage), and `context` (empty default). All other fields pass through from the backend unchanged.
+
 If any step fails (config fetch, CDN import, missing `initWippyApp`), the page shows a styled error message with a Retry button. No external CSS is required for the loader/error UI.
-
-## Web Host options not exposed by facade
-
-The Web Host (`initWippyApp`) supports additional options that are intentionally not wired as facade requirements because they are advanced or context-specific:
-
-- `hideSessionSelector` — hide session picker dropdown
-- `apiRoutes` — override API endpoint paths
-- `axiosDefaults` — custom HTTP client defaults
-- `routePrefix` — prefix for internal route links (facade passes `api_url` as `routePrefix`)
-- `chat.convertPasteToFile` — auto-convert pasted content to file uploads
-- `allowAdditionalTags` — HTML sanitizer tag whitelist
-- `externalEvents` — cross-origin event bridging
-
-These can be set by directly modifying `index.html` or by creating a custom facade entry.
 
 ## Publishing
 

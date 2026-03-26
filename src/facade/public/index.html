@@ -70,9 +70,18 @@
             try { token = JSON.parse(stored).token; }
             catch (e) { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
 
-            var apiUrl = cfg.api_url || window.location.origin;
-            var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            var wsUrl = cfg.ws_url || (wsProto + '//' + window.location.host);
+            // Fallback env URLs if backend didn't provide them
+            if (!cfg.env.APP_API_URL) {
+                cfg.env.APP_API_URL = window.location.origin;
+                cfg.env.APP_AUTH_API_URL = window.location.origin;
+            }
+            if (!cfg.env.APP_WEBSOCKET_URL) {
+                var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                cfg.env.APP_WEBSOCKET_URL = wsProto + '//' + window.location.host;
+            }
+            if (!cfg.routePrefix) {
+                cfg.routePrefix = cfg.env.APP_API_URL;
+            }
 
             // Inject import map BEFORE any module loading
             try {
@@ -101,25 +110,15 @@
                 throw new Error('initWippyApp not found');
             }
 
+            // Backend returns config in wippy-context-2.0 shape — just add auth + schema
             var events = window.initWippyApp({
+                $schema: cfg.facade_url + '/schemas/wippy-context-2.0.xsd',
                 auth: { token: token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
-                feature: {
-                    session: { type: cfg.feature.session_type },
-                    history: cfg.feature.history_mode,
-                    env: { APP_API_URL: apiUrl, APP_WEBSOCKET_URL: wsUrl },
-                    routePrefix: apiUrl,
-                    showAdmin: cfg.feature.show_admin,
-                    allowSelectModel: cfg.feature.allow_select_model,
-                    startNavOpen: cfg.feature.start_nav_open,
-                    hideNavBar: cfg.feature.hide_nav_bar,
-                    disableRightPanel: cfg.feature.disable_right_panel,
-                },
-                customization: {
-                    customCSS: cfg.customization.custom_css || '',
-                    cssVariables: cfg.customization.css_variables || {},
-                    i18n: cfg.customization.i18n || {},
-                    icons: cfg.customization.icons || {},
-                },
+                env: cfg.env,
+                routePrefix: cfg.routePrefix,
+                theming: cfg.theming,
+                hostConfig: cfg.hostConfig,
+                context: { resourceId: '', resourceType: 'page' },
             }, '#app');
 
             var loginPath = cfg.login_path || '/login.html';

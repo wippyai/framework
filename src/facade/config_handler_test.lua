@@ -7,8 +7,13 @@ local NS = "wippy.facade:"
 local REQ_NAMES: {string} = {
     "fe_facade_url", "fe_entry_path", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
-    "hide_nav_bar", "disable_right_panel",
-    "custom_css", "app_title", "app_icon", "app_name", "login_path",
+    "hide_nav_bar", "disable_right_panel", "hide_session_selector",
+    "custom_css", "css_variables", "icon_sets",
+    "host_custom_css", "host_css_variables", "host_icon_sets",
+    "children_custom_css", "children_css_variables",
+    "app_title", "app_icon", "app_name", "login_path",
+    "api_routes", "additional_nav_items", "state_cache",
+    "allow_additional_tags", "chat", "axios_defaults",
 }
 
 local function setup_registry(overrides: {[string]: string}?)
@@ -22,11 +27,25 @@ local function setup_registry(overrides: {[string]: string}?)
         allow_select_model = "false",
         hide_nav_bar = "false",
         disable_right_panel = "false",
+        hide_session_selector = "false",
         custom_css = "",
+        css_variables = "{}",
+        icons = "{}",
+        host_custom_css = "",
+        host_css_variables = "{}",
+        host_icons = "{}",
+        children_custom_css = "",
+        children_css_variables = "{}",
         app_title = "Wippy",
         app_icon = "wippy:logo",
         app_name = "Wippy AI",
         login_path = "/login.html",
+        api_routes = "{}",
+        additional_nav_items = "[]",
+        state_cache = "{}",
+        allow_additional_tags = "{}",
+        chat = "{}",
+        axios_defaults = "{}",
     }
 
     if overrides then
@@ -93,7 +112,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.16"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.18"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -187,36 +206,44 @@ local function define_tests()
             end)
         end)
 
-        test.describe("config JSON structure", function()
+        test.describe("config JSON structure (wippy-context-2.0)", function()
             test.it("builds complete config object", function()
                 local config = {
                     facade_url = "https://front.wippy.ai",
                     iframe_origin = "https://front.wippy.ai",
                     iframe_url = "https://front.wippy.ai/iframe.html?waitForCustomConfig",
-                    api_url = "http://localhost:8085",
-                    ws_url = "ws://localhost:8085",
-                    feature = {
-                        session_type = "non-persistent",
-                        history_mode = "hash",
-                        show_admin = true,
-                        allow_select_model = false,
-                        start_nav_open = false,
-                        hide_nav_bar = false,
-                        disable_right_panel = false,
+                    login_path = "/login.html",
+                    env = {
+                        APP_API_URL = "http://localhost:8085",
+                        APP_AUTH_API_URL = "http://localhost:8085",
+                        APP_WEBSOCKET_URL = "ws://localhost:8085",
                     },
-                    customization = {
-                        custom_css = "@import url('https://fonts.example.com');",
-                        css_variables = { ["p-primary"] = "#3b82f6" },
-                        i18n = {
-                            app = {
-                                title = "Wippy",
-                                icon = "wippy:logo",
-                                appName = "Wippy AI",
+                    routePrefix = "http://localhost:8085",
+                    theming = {
+                        global = {
+                            customCSS = "@import url('https://fonts.example.com');",
+                            cssVariables = { ["p-primary"] = "#3b82f6" },
+                            iconSets = { custom = { logo = { body = "<path/>", width = 24, height = 24 } } },  -- from icon_sets requirement
+                        },
+                        host = {
+                            i18n = {
+                                app = {
+                                    title = "Wippy",
+                                    icon = "wippy:logo",
+                                    appName = "Wippy AI",
+                                },
                             },
                         },
-                        icons = { logo = { body = "<path/>", width = 24, height = 24 } },
                     },
-                    login_path = "/login.html",
+                    hostConfig = {
+                        session = { type = "non-persistent" },
+                        history = "hash",
+                        showAdmin = true,
+                        allowSelectModel = false,
+                        startNavOpen = false,
+                        hideNavBar = false,
+                        disableRightPanel = false,
+                    },
                 }
 
                 local body, err = json.encode(config)
@@ -226,12 +253,12 @@ local function define_tests()
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
                 test.eq(decoded.facade_url, "https://front.wippy.ai")
-                test.eq(decoded.api_url, "http://localhost:8085")
-                test.eq(decoded.ws_url, "ws://localhost:8085")
-                test.eq(decoded.feature.session_type, "non-persistent")
-                test.is_true(decoded.feature.show_admin)
-                test.is_false(decoded.feature.allow_select_model)
-                test.eq(decoded.customization.i18n.app.title, "Wippy")
+                test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
+                test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
+                test.eq(decoded.hostConfig.session.type, "non-persistent")
+                test.is_true(decoded.hostConfig.showAdmin)
+                test.is_false(decoded.hostConfig.allowSelectModel)
+                test.eq(decoded.theming.host.i18n.app.title, "Wippy")
                 test.eq(decoded.login_path, "/login.html")
             end)
         end)
