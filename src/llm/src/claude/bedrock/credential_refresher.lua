@@ -6,6 +6,13 @@ local credentials = require("bedrock_credentials")
 local REFRESH_INTERVAL = "5h"
 local EXPIRY_BUFFER = 900 -- 15 minutes before expiration
 
+local function fetch_metadata_credentials()
+    if credentials.has_container_endpoint() then
+        return credentials.fetch_container_credentials()
+    end
+    return credentials.fetch_instance_credentials()
+end
+
 local function refresh_credentials()
     local store_instance, err = store.get(env.get("APP_CACHE") or credentials.DEFAULT_CACHE_ID)
     if err then
@@ -13,7 +20,7 @@ local function refresh_credentials()
         return
     end
 
-    local creds, fetch_err = credentials.fetch_container_credentials()
+    local creds, fetch_err = fetch_metadata_credentials()
     if fetch_err then
         print("Failed to refresh AWS credentials: " .. tostring(fetch_err))
         store_instance:release()
@@ -45,9 +52,13 @@ local function refresh_credentials()
     print("AWS credentials refreshed, next refresh in 5 hours")
 end
 
+local function has_metadata_endpoint()
+    return credentials.has_container_endpoint() or credentials.has_instance_endpoint()
+end
+
 local function run(args)
-    if not credentials.has_container_endpoint() then
-        print("No container credentials endpoint, AWS credential refresher will not start.")
+    if not has_metadata_endpoint() then
+        print("No metadata credentials endpoint, AWS credential refresher will not start.")
         local events = process.events()
         while true do
             local result = channel.select({

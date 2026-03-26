@@ -8,6 +8,7 @@ entries:
     meta:
       comment: AWS region for Bedrock Runtime
       icon: tabler:world
+    storage: wippy.llm.env:envs
     variable: AWS_REGION
 
   - name: aws_access_key_id
@@ -15,6 +16,7 @@ entries:
     meta:
       comment: AWS access key ID for Bedrock authentication
       icon: tabler:key
+    storage: wippy.llm.env:envs
     variable: AWS_ACCESS_KEY_ID
 
   - name: aws_secret_access_key
@@ -22,6 +24,7 @@ entries:
     meta:
       comment: AWS secret access key for Bedrock authentication
       icon: tabler:key
+    storage: wippy.llm.env:envs
     variable: AWS_SECRET_ACCESS_KEY
 
   - name: aws_session_token
@@ -29,6 +32,7 @@ entries:
     meta:
       comment: AWS session token for temporary credentials
       icon: tabler:key
+    storage: wippy.llm.env:envs
     variable: AWS_SESSION_TOKEN
 
   - name: base_url
@@ -36,6 +40,7 @@ entries:
     meta:
       comment: Bedrock Runtime base URL override
       icon: tabler:world
+    storage: wippy.llm.env:envs
     variable: BEDROCK_BASE_URL
 
   - name: timeout
@@ -43,7 +48,38 @@ entries:
     meta:
       comment: Bedrock API request timeout in seconds
       icon: tabler:clock
+    storage: wippy.llm.env:envs
     variable: BEDROCK_TIMEOUT
+
+  # System-level AWS env vars (read-only, set by AWS runtime)
+  - name: system_env
+    kind: env.storage.os
+    meta:
+      comment: OS storage for system-level AWS credentials variables
+
+  - name: container_credentials_relative_uri
+    kind: env.variable
+    meta:
+      comment: ECS/Fargate container credentials relative URI (auto-set by ECS agent)
+      icon: tabler:cloud
+    storage: wippy.llm.claude.bedrock:system_env
+    variable: AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+
+  - name: container_credentials_full_uri
+    kind: env.variable
+    meta:
+      comment: ECS/EKS container credentials full URI (auto-set by ECS agent)
+      icon: tabler:cloud
+    storage: wippy.llm.claude.bedrock:system_env
+    variable: AWS_CONTAINER_CREDENTIALS_FULL_URI
+
+  - name: container_authorization_token
+    kind: env.variable
+    meta:
+      comment: Authorization token for container credentials endpoint
+      icon: tabler:key
+    storage: wippy.llm.claude.bedrock:system_env
+    variable: AWS_CONTAINER_AUTHORIZATION_TOKEN
 
   # Libraries
   - name: sigv4
@@ -59,7 +95,7 @@ entries:
   - name: credentials
     kind: library.lua
     meta:
-      comment: AWS credential resolution from env vars, cache, and ECS/EKS container metadata
+      comment: AWS credential resolution from env vars, cache, EC2 instance metadata, and ECS/EKS container metadata
     source: file://credentials.lua
     modules:
       - http_client
@@ -90,8 +126,8 @@ entries:
   - name: credential_refresher
     kind: process.lua
     meta:
-      comment: Background process to refresh AWS container credentials
-      description: Periodically fetches credentials from ECS/EKS metadata endpoint and stores in cache
+      comment: Background process to refresh AWS metadata credentials
+      description: Periodically fetches credentials from EC2 IMDS or ECS/EKS metadata endpoint and stores in cache
     source: file://credential_refresher.lua
     modules:
       - time
@@ -105,10 +141,12 @@ entries:
     kind: process.service
     meta:
       comment: AWS Bedrock Credential Refresher Service
-      description: Always-running service to keep AWS credentials fresh in container environments
+      description: Always-running service to keep AWS credentials fresh in EC2 and container environments
     lifecycle:
       auto_start: true
     process: credential_refresher
+
+  # Note: host is injected via wippy.llm:process_host requirement
 
   # Handlers
   - name: generate
