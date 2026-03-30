@@ -100,6 +100,7 @@ local function handler()
                         iconifyIcons = proxy.iconify_icons or false,
                     },
                 },
+                configOverrides = page.config_overrides,
             },
         })
         return

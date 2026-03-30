@@ -3,40 +3,6 @@ local registry = require("registry")
 local json = require("json")
 local env = require("env")
 
-type AppIdentity = {
-    title: string,
-    icon: string,
-    appName: string,
-}
-
-type FeatureFlags = {
-    session_type: string,
-    history_mode: string,
-    show_admin: boolean,
-    allow_select_model: boolean,
-    start_nav_open: boolean,
-    hide_nav_bar: boolean,
-    disable_right_panel: boolean,
-}
-
-type Customization = {
-    custom_css: string,
-    css_variables: {[string]: string},
-    i18n: { app: AppIdentity },
-    icons: {[string]: any},
-}
-
-type FacadeConfig = {
-    facade_url: string,
-    iframe_origin: string?,
-    iframe_url: string,
-    api_url: string,
-    ws_url: string,
-    feature: FeatureFlags,
-    customization: Customization,
-    login_path: string,
-}
-
 local NS = "wippy.facade:"
 
 local function get_req(name: string): string
@@ -59,7 +25,6 @@ local function get_req_json(name: string): {[string]: string}
     return (val :: {[string]: string}) or {}
 end
 
--- workaround: icons have nested structure ({body, width, height})
 local function get_req_json_any(name: string): {[string]: any}
     local raw = get_req(name)
     if raw == "" then
@@ -77,6 +42,37 @@ local function derive_ws_url(api_url: string): string
         return ""
     end
     return api_url:gsub("^https://", "wss://"):gsub("^http://", "ws://")
+end
+
+local function non_empty_or_nil(s: string): string?
+    if s == "" then
+        return nil
+    end
+    return s
+end
+
+local function non_empty_map_or_nil(m: {[string]: any}): {[string]: any}?
+    if next(m) == nil then
+        return nil
+    end
+    return m
+end
+
+-- Build a theming scope from requirement name prefixes.
+-- Each scope can have: customCSS, cssVariables, iconSets.
+local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?): {[string]: any}?
+    local custom_css = non_empty_or_nil(get_req(css_req))
+    local css_vars = non_empty_map_or_nil(get_req_json(vars_req))
+    local icon_sets = icon_sets_req and non_empty_map_or_nil(get_req_json_any(icon_sets_req)) or nil
+
+    if not custom_css and not css_vars and not icon_sets then
+        return nil
+    end
+    return {
+        customCSS = custom_css,
+        cssVariables = css_vars,
+        iconSets = icon_sets,
+    }
 end
 
 local function handler()
@@ -101,34 +97,90 @@ local function handler()
     local api_url = env.get("PUBLIC_API_URL") or ""
     local ws_url = derive_ws_url(api_url)
 
-    local config: FacadeConfig = {
+    -- Theming: three scopes (global, host, children)
+    local global_scope = build_theming_scope("custom_css", "css_variables", "icon_sets")
+    local host_scope = build_theming_scope("host_custom_css", "host_css_variables", "host_icon_sets")
+    local children_scope: {[string]: any}? = nil
+
+    -- Children scope has no icons — only CSS
+    local children_css = non_empty_or_nil(get_req("children_custom_css"))
+    local children_vars = non_empty_map_or_nil(get_req_json("children_css_variables"))
+    if children_css or children_vars then
+        children_scope = {
+            customCSS = children_css,
+            cssVariables = children_vars,
+        }
+    end
+
+    -- Host theming also carries i18n
+    if not host_scope then
+        host_scope = {}
+    end
+    host_scope.i18n = {
+        app = {
+            title = get_req("app_title"),
+            icon = get_req("app_icon"),
+            appName = get_req("app_name"),
+        },
+    }
+
+    local host_config: {[string]: any} = {
+        session = { type = non_empty_or_nil(get_req("session_type")) },
+        history = non_empty_or_nil(get_req("history_mode")),
+        showAdmin = get_req("show_admin") ~= "false",
+        allowSelectModel = get_req("allow_select_model") == "true",
+        startNavOpen = get_req("start_nav_open") == "true",
+        hideNavBar = get_req("hide_nav_bar") == "true",
+        disableRightPanel = get_req("disable_right_panel") == "true",
+        hideSessionSelector = get_req("hide_session_selector") == "true",
+    }
+
+    local api_routes = non_empty_map_or_nil(get_req_json_any("api_routes"))
+    if api_routes then
+        host_config.apiRoutes = api_routes
+    end
+
+    local additional_nav = non_empty_map_or_nil(get_req_json_any("additional_nav_items"))
+    if additional_nav then
+        host_config.additionalNavItems = additional_nav
+    end
+
+    local state_cache = non_empty_map_or_nil(get_req_json_any("state_cache"))
+    if state_cache then
+        host_config.stateCache = state_cache
+    end
+
+    local additional_tags = non_empty_map_or_nil(get_req_json_any("allow_additional_tags"))
+    if additional_tags then
+        host_config.allowAdditionalTags = additional_tags
+    end
+
+    local chat_config = non_empty_map_or_nil(get_req_json_any("chat"))
+    if chat_config then
+        host_config.chat = chat_config
+    end
+
+    local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
+
+    local config = {
         facade_url = facade_url,
         iframe_origin = iframe_origin,
         iframe_url = iframe_url,
-        api_url = api_url,
-        ws_url = ws_url,
-        feature = {
-            session_type = get_req("session_type"),
-            history_mode = get_req("history_mode"),
-            show_admin = get_req("show_admin") ~= "false",
-            allow_select_model = get_req("allow_select_model") == "true",
-            start_nav_open = get_req("start_nav_open") == "true",
-            hide_nav_bar = get_req("hide_nav_bar") == "true",
-            disable_right_panel = get_req("disable_right_panel") == "true",
-        },
-        customization = {
-            custom_css = get_req("custom_css"),
-            css_variables = get_req_json("css_variables"),
-            i18n = {
-                app = {
-                    title = get_req("app_title"),
-                    icon = get_req("app_icon"),
-                    appName = get_req("app_name"),
-                },
-            },
-            icons = get_req_json_any("icons"),
-        },
         login_path = get_req("login_path"),
+
+        env = {
+            APP_API_URL = api_url,
+            APP_AUTH_API_URL = api_url,
+            APP_WEBSOCKET_URL = ws_url,
+        },
+        routePrefix = non_empty_or_nil(api_url),
+        axiosDefaults = axios_defaults,
+        theming = {
+            global = global_scope,
+            host = host_scope,
+            children = children_scope,
+        },
+        hostConfig = host_config,
     }
 
     local body, err = json.encode(config)

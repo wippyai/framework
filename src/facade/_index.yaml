@@ -33,7 +33,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.12
+    default: https://web-host.wippy.ai/webcomponents-1.0.18
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -146,11 +146,11 @@ entries:
         path: .default
     default: /login.html
 
-  # Theming
+  # Theming — global scope (applied to both host and children)
   - name: custom_css
     kind: ns.requirement
     meta:
-      description: Custom CSS injected into iframe
+      description: "Global CSS: applied to host chrome AND child iframes"
     targets:
       - entry: wippy.facade:custom_css
         path: .default
@@ -159,18 +159,129 @@ entries:
   - name: css_variables
     kind: ns.requirement
     meta:
-      description: CSS custom properties as JSON object (key-value pairs mapped to --key:value)
+      description: "Global CSS variables as JSON: applied to host AND children (e.g. {\"--p-primary\":\"#6366f1\"})"
     targets:
       - entry: wippy.facade:css_variables
         path: .default
     default: "{}"
 
-  - name: icons
+  - name: icon_sets
     kind: ns.requirement
     meta:
-      description: Custom Iconify icons as JSON object ({name:{body,width,height}})
+      description: "Global Iconify icon sets as JSON ({prefix:{name:{body,width,height}}}). e.g. {\"custom\":{\"logo\":{...}}}"
     targets:
-      - entry: wippy.facade:icons
+      - entry: wippy.facade:icon_sets
+        path: .default
+    default: "{}"
+
+  # Theming — host scope (applied to host chrome ONLY, not children)
+  - name: host_custom_css
+    kind: ns.requirement
+    meta:
+      description: "Host-only CSS: sidebar, chat, nav — NOT applied to child iframes"
+    targets:
+      - entry: wippy.facade:host_custom_css
+        path: .default
+    default: ""
+
+  - name: host_css_variables
+    kind: ns.requirement
+    meta:
+      description: "Host-only CSS variables as JSON: override global vars for host chrome only"
+    targets:
+      - entry: wippy.facade:host_css_variables
+        path: .default
+    default: "{}"
+
+  - name: host_icon_sets
+    kind: ns.requirement
+    meta:
+      description: "Host-only Iconify icon sets as JSON ({prefix:{name:{body,width,height}}}). Host chrome only."
+    targets:
+      - entry: wippy.facade:host_icon_sets
+        path: .default
+    default: "{}"
+
+  # Theming — children scope (applied to child iframes ONLY, not host)
+  - name: children_custom_css
+    kind: ns.requirement
+    meta:
+      description: "Children-only CSS: applied to child iframes only, NOT to host chrome"
+    targets:
+      - entry: wippy.facade:children_custom_css
+        path: .default
+    default: ""
+
+  - name: children_css_variables
+    kind: ns.requirement
+    meta:
+      description: "Children-only CSS variables as JSON: override global vars for child iframes only"
+    targets:
+      - entry: wippy.facade:children_css_variables
+        path: .default
+    default: "{}"
+
+  # Additional hostConfig options (JSON)
+  - name: hide_session_selector
+    kind: ns.requirement
+    meta:
+      description: Hide the chat session selector dropdown
+    targets:
+      - entry: wippy.facade:hide_session_selector
+        path: .default
+    default: "false"
+
+  - name: api_routes
+    kind: ns.requirement
+    meta:
+      description: "API route overrides as JSON (e.g. {\"agents\":{\"list\":\"/custom/agents\"}})"
+    targets:
+      - entry: wippy.facade:api_routes
+        path: .default
+    default: "{}"
+
+  - name: additional_nav_items
+    kind: ns.requirement
+    meta:
+      description: "Extra sidebar nav items as JSON array (e.g. [{\"id\":\"x\",\"name\":\"X\",\"title\":\"X\",\"icon\":\"tabler:x\",\"order\":10}])"
+    targets:
+      - entry: wippy.facade:additional_nav_items
+        path: .default
+    default: "[]"
+
+  - name: state_cache
+    kind: ns.requirement
+    meta:
+      description: "Child state LRU cache config as JSON (e.g. {\"maxPages\":50,\"maxSizePerPage\":1048576})"
+    targets:
+      - entry: wippy.facade:state_cache
+        path: .default
+    default: "{}"
+
+  - name: allow_additional_tags
+    kind: ns.requirement
+    meta:
+      description: "HTML sanitizer tag whitelist as JSON (e.g. {\"w-chart\":[\"data\",\"type\"]})"
+    targets:
+      - entry: wippy.facade:allow_additional_tags
+        path: .default
+    default: "{}"
+
+  - name: chat
+    kind: ns.requirement
+    meta:
+      description: "Chat config as JSON (e.g. {\"convertPasteToFile\":{\"enabled\":true,\"minFileSize\":1024,\"allowHtml\":false}})"
+    targets:
+      - entry: wippy.facade:chat
+        path: .default
+    default: "{}"
+
+  - name: axios_defaults
+    kind: ns.requirement
+    meta:
+      description: "Axios HTTP defaults as JSON (e.g. {\"timeout\":30000,\"headers\":{\"X-Custom\":\"value\"}})"
+    targets:
+      - entry: wippy.facade:axios_defaults
         path: .default
     default: "{}"
 
