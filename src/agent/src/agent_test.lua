@@ -1134,6 +1134,97 @@ local function define_tests()
                 test.not_nil(result.result)
             end)
         end)
+
+        describe("Truncation Handling", function()
+            it("should set truncated flag and strip tool_calls when finish_reason is length with tool_calls", function()
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Do something complex")
+
+                local truncation_mock_llm = {
+                    generate = function(messages, options)
+                        return {
+                            result = "I will call the tool with a very long...",
+                            tool_calls = {
+                                {
+                                    id = "call_truncated",
+                                    name = "calculator",
+                                    arguments = {},
+                                    registry_id = "test:calculator"
+                                }
+                            },
+                            tokens = { prompt_tokens = 100, completion_tokens = 8000, total_tokens = 8100 },
+                            finish_reason = "length"
+                        }
+                    end
+                }
+                agent._llm = truncation_mock_llm
+
+                local result = test_agent:step(prompt_builder)
+                test.not_nil(result)
+                test.is_true(result.truncated)
+                test.is_nil(result.tool_calls)
+                test.is_nil(result.delegate_calls)
+
+                agent._llm = nil
+            end)
+
+            it("should not set truncated flag when finish_reason is tool_call with tool_calls", function()
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Calculate something")
+
+                local normal_mock_llm = {
+                    generate = function(messages, options)
+                        return {
+                            result = "I will calculate.",
+                            tool_calls = {
+                                {
+                                    id = "call_normal",
+                                    name = "calculator",
+                                    arguments = { expression = "2+2" },
+                                    registry_id = "test:calculator"
+                                }
+                            },
+                            tokens = { prompt_tokens = 50, completion_tokens = 100, total_tokens = 150 },
+                            finish_reason = "tool_call"
+                        }
+                    end
+                }
+                agent._llm = normal_mock_llm
+
+                local result = test_agent:step(prompt_builder)
+                test.not_nil(result)
+                test.is_nil(result.truncated)
+                test.not_nil(result.tool_calls)
+
+                agent._llm = nil
+            end)
+
+            it("should not set truncated flag when finish_reason is length without tool_calls", function()
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Write a long essay")
+
+                local length_no_tools_mock = {
+                    generate = function(messages, options)
+                        return {
+                            result = "This is a long text that got cut off...",
+                            tool_calls = {},
+                            tokens = { prompt_tokens = 50, completion_tokens = 4096, total_tokens = 4146 },
+                            finish_reason = "length"
+                        }
+                    end
+                }
+                agent._llm = length_no_tools_mock
+
+                local result = test_agent:step(prompt_builder)
+                test.not_nil(result)
+                test.is_nil(result.truncated)
+
+                agent._llm = nil
+            end)
+        end)
     end)
 end
 

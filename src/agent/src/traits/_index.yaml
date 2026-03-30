@@ -41,6 +41,7 @@ entries:
     meta:
       name: Time Aware
       type: agent.trait
+      title: Time Aware
       comment: Adds current time context to agent for time-aware responses with cache stability
       tags:
         - time

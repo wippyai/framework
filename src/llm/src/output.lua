@@ -250,4 +250,15 @@ function output.streamer(pid: string?, topic: string?, buffer_size: number?): (S
     return streamer :: Streamer
 end
 
+-- Message injected into conversation when LLM output is truncated mid-tool-call
+output.TRUNCATION_MSG = "Your previous response was truncated because it exceeded the maximum token limit. The tool calls you attempted were incomplete and have been discarded. Please retry with a shorter response. Break your work into smaller steps if needed."
+
+-- Detect truncated LLM responses that contain incomplete tool calls
+function output.detect_truncation(result)
+    if not result then return false end
+    if result.finish_reason ~= output.FINISH_REASON.LENGTH then return false end
+    if not result.tool_calls or #result.tool_calls == 0 then return false end
+    return true
+end
+
 return output

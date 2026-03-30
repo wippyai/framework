@@ -442,4 +442,78 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
     return results
 end
 
+-- Get usage data grouped by user
+function token_usage_repo.get_usage_by_user(start_time, end_time)
+    if not start_time or type(start_time) ~= "number" then
+        return nil, "Start time is required and must be a number"
+    end
+
+    if not end_time or type(end_time) ~= "number" then
+        return nil, "End time is required and must be a number"
+    end
+
+    local db, err = get_db()
+    if err then
+        return nil, err
+    end
+
+    local query
+    if tostring(db:type()) == "postgres" then
+        query = sql.builder.select(
+                "user_id",
+                "SUM(prompt_tokens) as prompt_tokens",
+                "SUM(completion_tokens) as completion_tokens",
+                "SUM(thinking_tokens) as thinking_tokens",
+                "SUM(cache_read_tokens) as cache_read_tokens",
+                "SUM(cache_write_tokens) as cache_write_tokens",
+                "COUNT(*) as request_count"
+            )
+            :from("token_usage")
+            :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
+                os.date('%c', start_time),
+                os.date('%c', end_time)
+            ))
+            :group_by("user_id")
+            :order_by("(SUM(prompt_tokens) + SUM(completion_tokens) + SUM(thinking_tokens)) DESC")
+    else
+        query = sql.builder.select(
+                "user_id",
+                "SUM(prompt_tokens) as prompt_tokens",
+                "SUM(completion_tokens) as completion_tokens",
+                "SUM(thinking_tokens) as thinking_tokens",
+                "SUM(cache_read_tokens) as cache_read_tokens",
+                "SUM(cache_write_tokens) as cache_write_tokens",
+                "COUNT(*) as request_count"
+            )
+            :from("token_usage")
+            :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
+                time.unix(start_time, 0):format(time.RFC3339),
+                time.unix(end_time, 0):format(time.RFC3339)
+            ))
+            :group_by("user_id")
+            :order_by("(prompt_tokens + completion_tokens + thinking_tokens) DESC")
+    end
+
+    local executor = query:run_with(db)
+    local results, err = executor:query()
+
+    db:release()
+
+    if err then
+        return nil, "Failed to get usage by user: " .. tostring(err)
+    end
+
+    if not results then
+        results = {}
+    end
+
+    for _, user in ipairs(results) do
+        user.total_tokens = (user.prompt_tokens or 0) +
+            (user.completion_tokens or 0) +
+            (user.thinking_tokens or 0)
+    end
+
+    return results
+end
+
 return token_usage_repo

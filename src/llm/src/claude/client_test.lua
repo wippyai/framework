@@ -1249,6 +1249,102 @@ local function define_tests()
                 test.eq(full_content, "Hello")
                 test.eq(#content_chunks, 1)
             end)
+
+            it("should handle SSE events split across chunk boundaries", function()
+                local stream_chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_split","name":"run_script"}}\n\n',
+                    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"scr"}}\n\n' ..
+                    'event: content_block_del',
+                    'ta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"ipt\\": \\"echo"}}\n\n',
+                    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":" hello\\"}"}}\n\nevent: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":8}}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
+                })
+
+                local stream_response = {
+                    stream = mock_stream,
+                    metadata = {}
+                }
+
+                local tool_calls = {}
+
+                local full_content, err, result = claude_client.process_stream(stream_response, {
+                    on_tool_call = function(tool_call)
+                        table.insert(tool_calls, tool_call)
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(#tool_calls, 1)
+                local tc = assert(tool_calls[1])
+                test.eq(tc.id, "call_split")
+                test.eq(tc.name, "run_script")
+                test.eq(tc.arguments.script, "echo hello")
+            end)
+
+            it("should handle chunk containing no complete events", function()
+                local stream_chunks = {
+                    'event: message_sta',
+                    'rt\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+                    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
+                })
+
+                local stream_response = {
+                    stream = mock_stream,
+                    metadata = {}
+                }
+
+                local content_chunks = {}
+
+                local full_content, err, result = claude_client.process_stream(stream_response, {
+                    on_content = function(chunk)
+                        table.insert(content_chunks, chunk)
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(full_content, "OK")
+                test.eq(#content_chunks, 1)
+            end)
         end)
 
         describe("Configuration Edge Cases", function()

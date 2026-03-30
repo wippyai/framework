@@ -30,7 +30,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                test.contains(tostring(response.error_message), "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -48,7 +48,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.contains(tostring(response.error_message), "Messages are required")
             end)
 
             it("should require schema parameter", function()
@@ -63,7 +63,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Schema is required")
+                test.contains(tostring(response.error_message), "Schema is required")
             end)
 
             it("should reject empty messages array", function()
@@ -82,7 +82,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.contains(tostring(response.error_message), "Messages are required")
             end)
         end)
 
@@ -103,7 +103,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Root schema must be an object")
+                test.contains(tostring(response.error_message), "Root schema must be an object")
             end)
 
             it("should require additionalProperties: false", function()
@@ -126,7 +126,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "additionalProperties: false")
+                test.contains(tostring(response.error_message), "additionalProperties: false")
             end)
 
             it("should require all properties in required array", function()
@@ -150,7 +150,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Properties must be marked as required")
+                test.contains(tostring(response.error_message), "Properties must be marked as required")
             end)
 
             it("should require required array when properties exist", function()
@@ -173,7 +173,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Schema must have a required array")
+                test.contains(tostring(response.error_message), "Schema must have a required array")
             end)
 
             it("should handle non-table schema", function()
@@ -189,7 +189,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Schema must be a table")
+                test.contains(tostring(response.error_message), "Schema must be a table")
             end)
 
             it("should accept valid schema", function()
@@ -263,7 +263,7 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(url, "chat/completions")
+                        test.contains(tostring(url), "chat/completions")
 
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "gpt-4o")
@@ -477,7 +477,7 @@ local function define_tests()
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
-                        test.contains(payload.response_format.json_schema.name, "schema_")
+                        test.contains(tostring(payload.response_format.json_schema.name), "schema_")
                         test.gt(string.len(payload.response_format.json_schema.name), 7)
 
                         return {
@@ -736,7 +736,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "content_filtered")
-                test.contains(response.error_message, "I cannot generate that type of content.")
+                test.contains(tostring(response.error_message), "I cannot generate that type of content.")
             end)
 
             it("should handle invalid JSON in response", function()
@@ -789,7 +789,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "model_error")
-                test.contains(response.error_message, "Model failed to return valid JSON")
+                test.contains(tostring(response.error_message), "Model failed to return valid JSON")
             end)
 
             it("should handle missing content in response", function()
@@ -840,7 +840,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "server_error")
-                test.contains(response.error_message, "No content")
+                test.contains(tostring(response.error_message), "No content")
             end)
 
             it("should handle API authentication errors", function()
@@ -888,7 +888,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "authentication_error")
-                test.contains(response.error_message, "Invalid API key")
+                test.contains(tostring(response.error_message), "Invalid API key")
             end)
 
             it("should handle model not found errors", function()
@@ -936,7 +936,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "model_error")
-                test.contains(response.error_message, "does not exist")
+                test.contains(tostring(response.error_message), "does not exist")
             end)
 
             it("should handle invalid response structure", function()
@@ -979,7 +979,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "server_error")
-                test.contains(response.error_message, "Invalid response structure")
+                test.contains(tostring(response.error_message), "Invalid response structure")
             end)
         end)
 
@@ -1004,7 +1004,7 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(url, "https://custom.structured.api/v1/chat/completions")
+                        test.contains(tostring(url), "https://custom.structured.api/v1/chat/completions")
                         test.eq(options.headers["Authorization"], "Bearer custom-structured-key")
                         test.eq(options.timeout, 45)
 

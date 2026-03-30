@@ -84,11 +84,22 @@ function generate.handler(contract_args)
         })
     end
 
+    local endpoint_path = "generateContent"
+    local request_options = { timeout = contract_args.timeout }
+
+    if contract_args.stream and contract_args.stream.reply_to then
+        endpoint_path = "streamGenerateContent"
+        request_options.stream = true
+        request_options.stream_reply_to = contract_args.stream.reply_to
+        request_options.stream_topic = contract_args.stream.topic
+        request_options.stream_buffer_size = contract_args.stream.buffer_size
+    end
+
     local response = client_instance:request({
-        endpoint_path = "generateContent",
+        endpoint_path = endpoint_path,
         model = contract_args.model,
         payload = payload,
-        options = { timeout = contract_args.timeout }
+        options = request_options
     })
 
     if response.status_code < 200 or response.status_code >= 300 then

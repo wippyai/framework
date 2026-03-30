@@ -176,7 +176,7 @@ function openai_mapper.map_messages(contract_messages, options)
             -- The prompt builder interleaves them: call_A, result_A, call_B, result_B
             local function_calls_found = {}
             local function_results_found = {}
-            local scan_end = i
+            local scan_end = i - 1
             local j = i
             while j <= #contract_messages do
                 local current_msg = contract_messages[j]
@@ -535,19 +535,16 @@ function openai_mapper.map_success_response(openai_response, context)
         response.metadata.reasoning_details = openai_response.reasoning_details
     end
 
+    local mapped_tool_calls = {}
     if choice.message.tool_calls and #choice.message.tool_calls > 0 then
-        response.result = {
-            content = choice.message.content or "",
-            tool_calls = openai_mapper.map_tool_calls(choice.message.tool_calls, context.tool_name_map)
-        }
-        response.finish_reason = output.FINISH_REASON.TOOL_CALL
-    else
-        response.result = {
-            content = choice.message.content or "",
-            tool_calls = {}
-        }
-        response.finish_reason = openai_mapper.map_finish_reason(choice.finish_reason)
+        mapped_tool_calls = openai_mapper.map_tool_calls(choice.message.tool_calls, context.tool_name_map)
     end
+
+    response.result = {
+        content = choice.message.content or "",
+        tool_calls = mapped_tool_calls
+    }
+    response.finish_reason = openai_mapper.map_finish_reason(choice.finish_reason)
 
     response.tokens = openai_mapper.map_tokens(openai_response.usage)
     return response

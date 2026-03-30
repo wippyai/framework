@@ -147,7 +147,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.contains(response.error_message, "Schema must be a table")
+                tests.contains(tostring(response.error_message), "Schema must be a table")
             end)
 
             it("should require root schema type to be object", function()
@@ -177,7 +177,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.contains(response.error_message, "Root schema type must be `object`")
+                tests.contains(tostring(response.error_message), "Root schema type must be `object`")
             end)
 
             it("should accept valid object schema", function()
@@ -315,7 +315,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.contains(response.error_message, "Root schema type must be `object`")
+                tests.contains(tostring(response.error_message), "Root schema type must be `object`")
             end)
 
             it("should handle schema with missing type field", function()
@@ -346,7 +346,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.contains(response.error_message, "Root schema type must be `object`")
+                tests.contains(tostring(response.error_message), "Root schema type must be `object`")
             end)
 
             it("should accept schema with nested objects", function()
@@ -1548,7 +1548,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "model_error")
-                tests.contains(response.error_message, "Model failed to return valid JSON")
+                tests.contains(tostring(response.error_message), "Model failed to return valid JSON")
             end)
 
             it("should handle API authentication errors", function()
@@ -1619,7 +1619,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "authentication_error")
-                tests.contains(response.error_message, "API key is invalid")
+                tests.contains(tostring(response.error_message), "API key is invalid")
             end)
 
             it("should handle contract retrieval errors", function()
@@ -1672,7 +1672,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Failed to get client contract")
+                tests.contains(tostring(response.error_message), "Failed to get client contract")
             end)
 
             it("should handle client binding errors", function()
@@ -1734,7 +1734,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Failed to open client binding")
+                tests.contains(tostring(response.error_message), "Failed to open client binding")
             end)
 
             it("should handle response mapping errors", function()
@@ -1808,7 +1808,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Invalid response structure")
+                tests.contains(tostring(response.error_message), "Invalid response structure")
             end)
 
             it("should handle rate limit errors", function()
@@ -1879,7 +1879,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "rate_limit_exceeded")
-                tests.contains(response.error_message, "Rate limit")
+                tests.contains(tostring(response.error_message), "Rate limit")
             end)
         end)
 

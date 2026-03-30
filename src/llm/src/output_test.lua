@@ -286,6 +286,63 @@ local function define_tests()
             test.is_false(sent)
             test.eq(#sent_messages, 1) -- Still just one message
         end)
+
+        describe("Truncation Detection", function()
+            it("should detect truncation when finish_reason is LENGTH with tool_calls", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.LENGTH,
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    }
+                }
+                test.is_true(output.detect_truncation(result))
+            end)
+
+            it("should not detect truncation when finish_reason is LENGTH without tool_calls", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.LENGTH,
+                    tool_calls = {}
+                }
+                test.is_false(output.detect_truncation(result))
+            end)
+
+            it("should not detect truncation when finish_reason is STOP with tool_calls", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.STOP,
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    }
+                }
+                test.is_false(output.detect_truncation(result))
+            end)
+
+            it("should not detect truncation when finish_reason is TOOL_CALL with tool_calls", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.TOOL_CALL,
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    }
+                }
+                test.is_false(output.detect_truncation(result))
+            end)
+
+            it("should not detect truncation for nil result", function()
+                test.is_false(output.detect_truncation(nil))
+            end)
+
+            it("should not detect truncation when tool_calls is nil", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.LENGTH,
+                    tool_calls = nil
+                }
+                test.is_false(output.detect_truncation(result))
+            end)
+
+            it("should have a non-empty truncation message", function()
+                test.not_nil(output.TRUNCATION_MSG)
+                test.is_true(#output.TRUNCATION_MSG > 0)
+            end)
+        end)
     end)
 end
 

@@ -183,6 +183,27 @@ local function define_tests()
             test.is_true(found_test_models >= 2)
         end)
 
+        it("should get usage by user", function()
+            local start_time = test_data.base_time - 7200 -- 2 hours ago
+            local end_time = test_data.base_time + 3600   -- 1 hour from now
+
+            local user_usage, err = token_usage_repo.get_usage_by_user(start_time, end_time)
+
+            test.is_nil(err)
+            test.not_nil(user_usage)
+
+            -- There should be at least our two test users
+            local found_test_users = 0
+            for _, u in ipairs(user_usage) do
+                if u.user_id == test_data.user_id or u.user_id == test_data.user_id2 then
+                    found_test_users = found_test_users + 1
+                    test.is_true(u.total_tokens > 0)
+                    test.is_true(u.request_count > 0)
+                end
+            end
+            test.is_true(found_test_users >= 2)
+        end)
+
         it("should handle validation errors", function()
             -- Missing user_id
             local record, err = token_usage_repo.create(nil, test_data.model_id, 100, 50)

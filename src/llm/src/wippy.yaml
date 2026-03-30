@@ -10,6 +10,8 @@ keywords:
   - claude
   - openai
   - google
+  - bedrock
+  - aws
 exclude_meta:
   type:
     - test

@@ -160,8 +160,8 @@ local function define_tests()
                 local user_msg = result.messages[1]
                 test.eq(user_msg.role, "user")
                 local first_content = user_msg.content[1] :: any
-                test.contains(first_content.text, "Hello")
-                test.contains(first_content.text, "<developer-instruction>Be concise</developer-instruction>")
+                test.contains(tostring(first_content.text), "Hello")
+                test.contains(tostring(first_content.text), "<developer-instruction>Be concise</developer-instruction>")
             end)
 
             it("should convert function calls to assistant tool_use format", function()
@@ -315,7 +315,7 @@ local function define_tests()
                 local tools = { { name = "tool1" } }
                 local result, error = mapper.map_tool_choice("invalid_tool", tools)
                 test.is_nil(result)
-                test.contains(error, "not found")
+                test.contains(tostring(error), "not found")
             end)
 
             it("should return nil when no tools available", function()
@@ -497,6 +497,34 @@ local function define_tests()
                 test.eq(image_content.type, "image")
                 test.eq(image_content.source.type, "url")
                 test.eq(image_content.source.url, "https://example.com/image.jpg")
+            end)
+        end)
+
+        describe("Streaming Finish Reason Preservation", function()
+            it("should preserve LENGTH finish_reason when streaming response has tool_calls", function()
+                local client_result = {
+                    content = "I will call the tool...",
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, {}, nil, "max_tokens", {})
+                test.eq(result.finish_reason, output.FINISH_REASON.LENGTH)
+            end)
+
+            it("should map tool_use to TOOL_CALL for normal streaming tool calls", function()
+                local client_result = {
+                    content = "",
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, {}, nil, "tool_use", {})
+                test.eq(result.finish_reason, output.FINISH_REASON.TOOL_CALL)
             end)
         end)
     end)

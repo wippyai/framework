@@ -41,20 +41,39 @@
         <div class="facade-loader__text">Loading...</div>
     </div>
 </div>
-<script>
-    (async function () {
-        var STORAGE_KEY = '@wippy_token_info';
-        var appEl = document.getElementById('app');
+<script type="module">
+    const STORAGE_KEY = '@wippy_token_info';
+    const appEl = document.getElementById('app');
 
-        function showError(title, detail) {
-            appEl.innerHTML =
-                '<div class="facade-error">' +
-                    '<div class="facade-error__title">' + title + '</div>' +
-                    (detail ? '<div class="facade-error__detail">' + detail + '</div>' : '') +
-                    '<button class="facade-error__retry" onclick="location.reload()">Retry</button>' +
-                '</div>';
+    function showError(title, detail) {
+        appEl.innerHTML =
+            '<div class="facade-error">' +
+                '<div class="facade-error__title">' + title + '</div>' +
+                (detail ? '<div class="facade-error__detail">' + detail + '</div>' : '') +
+                '<button class="facade-error__retry" onclick="location.reload()">Retry</button>' +
+            '</div>';
+    }
+
+    try {
+        const res = await fetch('/api/public/facade/config');
+        if (!res.ok) {
+            showError('Failed to load configuration', 'Server returned ' + res.status + '. Check that the backend is running.');
+            throw new Error('config fetch failed: ' + res.status);
         }
+        const cfg = await res.json();
 
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (!stored) { window.location.href = cfg.login_path || '/login.html'; throw new Error('no token'); }
+
+        let token;
+        try { token = JSON.parse(stored).token; }
+        catch { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
+
+        const apiUrl = cfg.api_url || window.location.origin;
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = cfg.ws_url || (wsProto + '//' + window.location.host);
+
+        let mod;
         try {
             var res = await fetch('/api/public/facade/config');
             if (!res.ok) {
@@ -136,7 +155,48 @@
         } catch (err) {
             console.error('Facade initialization failed:', err);
         }
-    })();
+
+        if (typeof window.initWippyApp !== 'function') {
+            showError('Frontend bundle error', 'initWippyApp not found after loading module. The bundle may be incompatible.');
+            throw new Error('initWippyApp not found');
+        }
+
+        const events = window.initWippyApp({
+            auth: { token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
+            feature: {
+                session: { type: cfg.feature.session_type },
+                history: cfg.feature.history_mode,
+                env: { APP_API_URL: apiUrl, APP_WEBSOCKET_URL: wsUrl },
+                routePrefix: apiUrl,
+                showAdmin: cfg.feature.show_admin,
+                allowSelectModel: cfg.feature.allow_select_model,
+                startNavOpen: cfg.feature.start_nav_open,
+                hideNavBar: cfg.feature.hide_nav_bar,
+                disableRightPanel: cfg.feature.disable_right_panel,
+            },
+            customization: {
+                customCSS: cfg.customization.custom_css || '',
+                cssVariables: cfg.customization.css_variables || {},
+                i18n: cfg.customization.i18n || {},
+                icons: cfg.customization.icons || {},
+            },
+        }, '#app');
+
+        const loginPath = cfg.login_path || '/login.html';
+
+        events.on('authExpired', () => {
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = loginPath;
+        });
+
+        events.on('error', (err) => {
+            console.error('Wippy critical error:', err);
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = loginPath;
+        });
+    } catch (err) {
+        console.error('Facade initialization failed:', err);
+    }
 </script>
 </body>
 </html>

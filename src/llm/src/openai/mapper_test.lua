@@ -100,8 +100,8 @@ local function define_tests()
                 test.eq(#openai_messages, 1)
                 local b64_content = openai_messages[1].content :: any
                 test.eq(b64_content[1].type, "image_url")
-                test.contains(b64_content[1].image_url.url, "data:image/jpeg;base64,")
-                test.contains(b64_content[1].image_url.url, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
+                test.contains(tostring(b64_content[1].image_url.url), "data:image/jpeg;base64,")
+                test.contains(tostring(b64_content[1].image_url.url), "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
             end)
 
             it("should consolidate function_call messages into assistant message", function()
@@ -314,6 +314,53 @@ local function define_tests()
                 test.eq(openai_messages[3].tool_call_id, "call_Y")
 
                 test.eq(openai_messages[4].role, "user")
+            end)
+
+            it("should preserve user messages after assistant without tool calls", function()
+                local contract_messages = {
+                    {
+                        role = "user",
+                        content = {{ type = "text", text = "Do you see this file?" }}
+                    },
+                    {
+                        role = "assistant",
+                        content = {{ type = "text", text = "Yes, I see the file." }}
+                    },
+                    {
+                        role = "user",
+                        content = {{ type = "text", text = "Build me a data model" }}
+                    },
+                    {
+                        role = "assistant",
+                        content = {{ type = "text", text = "Sure, here is the model." }}
+                    },
+                    {
+                        role = "user",
+                        content = {{ type = "text", text = "Use your tools" }}
+                    }
+                }
+
+                local openai_messages = openai_mapper.map_messages(contract_messages)
+
+                test.eq(#openai_messages, 5)
+
+                test.eq(openai_messages[1].role, "user")
+                local u1 = openai_messages[1].content :: any
+                test.eq(u1[1].text, "Do you see this file?")
+
+                test.eq(openai_messages[2].role, "assistant")
+                test.eq(openai_messages[2].content, "Yes, I see the file.")
+
+                test.eq(openai_messages[3].role, "user")
+                local u2 = openai_messages[3].content :: any
+                test.eq(u2[1].text, "Build me a data model")
+
+                test.eq(openai_messages[4].role, "assistant")
+                test.eq(openai_messages[4].content, "Sure, here is the model.")
+
+                test.eq(openai_messages[5].role, "user")
+                local u3 = openai_messages[5].content :: any
+                test.eq(u3[1].text, "Use your tools")
             end)
 
             it("should skip function_call messages without id", function()
@@ -540,7 +587,7 @@ local function define_tests()
                 local choice, error = openai_mapper.map_tool_choice("nonexistent_tool", test_tools)
 
                 test.is_nil(choice)
-                test.contains(error, "not found")
+                test.contains(tostring(error), "not found")
             end)
 
             it("should default to auto for nil input", function()
@@ -920,8 +967,8 @@ local function define_tests()
 
                 test.is_false(contract_response.success)
                 test.eq(contract_response.error, "content_filtered")
-                test.contains(contract_response.error_message, "refused")
-                test.contains(contract_response.error_message, "I cannot assist with that request.")
+                test.contains(tostring(contract_response.error_message), "refused")
+                test.contains(tostring(contract_response.error_message), "I cannot assist with that request.")
             end)
         end)
 
@@ -977,6 +1024,62 @@ local function define_tests()
                 test.eq(contract_response.error, "server_error")
                 test.eq(contract_response.error_message, "Unknown OpenAI error")
                 test.not_nil(contract_response.metadata)
+            end)
+        end)
+
+        describe("Finish Reason Preservation", function()
+            it("should preserve LENGTH finish_reason when response has tool_calls", function()
+                local openai_response = {
+                    choices = {
+                        {
+                            message = {
+                                content = "I will call...",
+                                tool_calls = {
+                                    {
+                                        id = "call_1",
+                                        type = "function",
+                                        ["function"] = {
+                                            name = "test_tool",
+                                            arguments = "{}"
+                                        }
+                                    }
+                                }
+                            },
+                            finish_reason = "length"
+                        }
+                    },
+                    usage = { prompt_tokens = 100, completion_tokens = 4096, total_tokens = 4196 }
+                }
+
+                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
+                test.eq(result.finish_reason, "length")
+            end)
+
+            it("should map tool_calls finish_reason to TOOL_CALL normally", function()
+                local openai_response = {
+                    choices = {
+                        {
+                            message = {
+                                content = "",
+                                tool_calls = {
+                                    {
+                                        id = "call_1",
+                                        type = "function",
+                                        ["function"] = {
+                                            name = "test_tool",
+                                            arguments = "{}"
+                                        }
+                                    }
+                                }
+                            },
+                            finish_reason = "tool_calls"
+                        }
+                    },
+                    usage = { prompt_tokens = 50, completion_tokens = 100, total_tokens = 150 }
+                }
+
+                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
+                test.eq(result.finish_reason, "tool_call")
             end)
         end)
     end)

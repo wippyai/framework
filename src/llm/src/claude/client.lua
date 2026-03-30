@@ -236,6 +236,7 @@ function claude_client.process_stream(stream_response, callbacks)
     local finish_reason = nil
     local usage = {}
     local content_blocks = {}
+    local leftover = ""
 
     while true do
         local chunk, err = stream_response.stream:read()
@@ -253,7 +254,31 @@ function claude_client.process_stream(stream_response, callbacks)
             goto continue
         end
 
-        for event_type, data_json in chunk:gmatch("event: ([^\n]+)\ndata: ([^\n]+)") do
+        if leftover ~= "" then
+            chunk = leftover .. chunk
+            leftover = ""
+        end
+
+        local last_boundary = 0
+        local pos = 1
+        while true do
+            local found = chunk:find("\n\n", pos, true)
+            if not found then break end
+            last_boundary = found + 1
+            pos = found + 2
+        end
+
+        if last_boundary == 0 then
+            leftover = chunk
+            goto continue
+        end
+
+        local complete = chunk:sub(1, last_boundary)
+        if last_boundary < #chunk then
+            leftover = chunk:sub(last_boundary + 1)
+        end
+
+        for event_type, data_json in complete:gmatch("event: ([^\n]+)\ndata: ([^\n]+)") do
             local data, decode_err = json.decode(tostring(data_json))
             if decode_err or not data then
                 goto continue_event

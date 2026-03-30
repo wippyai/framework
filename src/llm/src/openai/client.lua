@@ -286,28 +286,49 @@ function openai_client.process_stream(stream_response, callbacks)
     local on_error = callbacks.on_error or function(...) end
     local on_done = callbacks.on_done or function(...) end
 
-    -- Process each streamed chunk
+    local leftover = ""
+
     while true do
         local chunk, err = stream_response.stream:read()
 
-        -- Handle read errors
         if err then
             on_error(err)
             return nil, err
         end
 
-        -- End of stream
         if not chunk then
             break
         end
 
-        -- Skip empty chunks
         if chunk == "" then
             goto continue
         end
 
-        -- Check for errors in the chunk
-        local error_json = chunk:match('data:%s*({.-"error":.-)%s*\n')
+        if leftover ~= "" then
+            chunk = leftover .. chunk
+            leftover = ""
+        end
+
+        local last_boundary = 0
+        local pos = 1
+        while true do
+            local found = chunk:find("\n\n", pos, true)
+            if not found then break end
+            last_boundary = found + 1
+            pos = found + 2
+        end
+
+        if last_boundary == 0 then
+            leftover = chunk
+            goto continue
+        end
+
+        local complete = chunk:sub(1, last_boundary)
+        if last_boundary < #chunk then
+            leftover = chunk:sub(last_boundary + 1)
+        end
+
+        local error_json = complete:match('data:%s*({.-"error":.-)%s*\n')
         if error_json then
             local parsed_error, parse_err = json.decode(tostring(error_json))
             if not parse_err and parsed_error and parsed_error.error then
@@ -322,8 +343,7 @@ function openai_client.process_stream(stream_response, callbacks)
             end
         end
 
-        -- Process each data line in the chunk
-        for data_line in chunk:gmatch('data:%s*(.-)%s*\n') do
+        for data_line in complete:gmatch('data:%s*(.-)%s*\n') do
             -- Skip empty data lines
             if data_line == "" then
                 goto continue_line

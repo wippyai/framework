@@ -448,7 +448,7 @@ function llm.generate(prompt_input, options)
         end
 
         -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
+        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
         if usage_id then
             normalized.usage_record = { usage_id = usage_id }
         end
@@ -583,7 +583,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         end
 
         -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
+        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
         if usage_id then
             normalized.usage_record = { usage_id = usage_id }
         end
@@ -707,7 +707,7 @@ function llm.embed(text, options)
         end
 
         -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
+        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
         if usage_id then
             normalized.usage_record = { usage_id = usage_id }
         end

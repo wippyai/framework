@@ -45,7 +45,7 @@ local function define_tests()
 
                 local result, err = compress.to_size("gpt-4o-mini", "content", 10)
                 test.is_nil(result)
-                test.contains(err, "too small")
+                test.contains(tostring(err), "too small")
             end)
 
             it("should reject target size too large", function()
@@ -60,7 +60,7 @@ local function define_tests()
 
                 local result, err = compress.to_size("small-model", "content", 5000)
                 test.is_nil(result)
-                test.contains(err, "too large")
+                test.contains(tostring(err), "too large")
             end)
         end)
 
@@ -98,7 +98,7 @@ local function define_tests()
                 compress._llm = {
                     generate = function(prompt, options)
                         generate_called = true
-                        test.contains(prompt, "exactly 100 characters")
+                        test.contains(tostring(prompt), "exactly 100 characters")
                         test.eq(options.model, "gpt-4o-mini")
 
                         -- Check for direct compression (not synthesis)
@@ -140,7 +140,7 @@ local function define_tests()
                 local result, err = compress.to_size("gpt-4o-mini", long_content, 100)
 
                 test.is_nil(result)
-                test.contains(err, "Direct compression failed")
+                test.contains(tostring(err), "Direct compression failed")
             end)
 
             it("should handle empty response", function()
@@ -240,7 +240,7 @@ local function define_tests()
                 local result, err = compress.to_size("small-model", huge_content, 200)
 
                 test.is_nil(result)
-                test.contains(err, "Failed to create text splitter")
+                test.contains(tostring(err), "Failed to create text splitter")
             end)
         end)
 
@@ -263,7 +263,7 @@ local function define_tests()
                         if generate_calls == 1 then
                             return { result = string.rep("x", 150) }, nil  -- Too long
                         else
-                            test.contains(prompt, "shorten")
+                            test.contains(tostring(prompt), "shorten")
                             return { result = string.rep("y", 98) }, nil   -- Close to target
                         end
                     end
@@ -401,7 +401,7 @@ local function define_tests()
                 local feasible, err = compress.can_compress("small-model", large_content, 5000)  -- 5000 chars target
 
                 test.is_false(feasible)
-                test.contains(err, "exceeds model output limit")
+                test.contains(tostring(err), "exceeds model output limit")
             end)
         end)
 
@@ -415,7 +415,7 @@ local function define_tests()
 
                 local result, err = compress.to_size("unknown-model", "content", 100)
                 test.is_nil(result)
-                test.contains(err, "Model not found")
+                test.contains(tostring(err), "Model not found")
             end)
         end)
 
