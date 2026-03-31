@@ -2298,7 +2298,59 @@ local function define_tests()
                 tests.eq(result.finish_reason, "tool_call")
             end)
         end)
+
+        describe("Error Response Mapping", function()
+            it("should return structured error for 429 rate limit", function()
+                local response, err = mapper.map_error_response({
+                    status_code = 429,
+                    message = "Rate limited"
+                })
+                tests.eq(response.error, "rate_limit_exceeded")
+                tests.not_nil(err)
+                tests.eq(err:kind(), "RateLimited")
+                tests.eq(err:retryable(), true)
+            end)
+
+            it("should return structured error for 500 server error", function()
+                local response, err = mapper.map_error_response({
+                    status_code = 500,
+                    message = "Internal error"
+                })
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.eq(err:retryable(), true)
+            end)
+
+            it("should return non-retryable for 401 auth error", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 401,
+                    message = "Invalid credentials"
+                })
+                tests.not_nil(err)
+                tests.eq(err:kind(), "PermissionDenied")
+                tests.eq(err:retryable(), false)
+            end)
+
+            it("should return non-retryable for 404 model not found", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 404,
+                    message = "Model not found"
+                })
+                tests.not_nil(err)
+                tests.eq(err:kind(), "NotFound")
+                tests.eq(err:retryable(), false)
+            end)
+
+            it("should handle nil error", function()
+                local response, err = mapper.map_error_response(nil)
+                tests.eq(response.error, "server_error")
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.eq(err:retryable(), true)
+            end)
+        end)
     end)
 end
 
 return tests.run_cases(define_tests)
+

@@ -75,6 +75,35 @@ output.ERROR_TYPE = {
     NETWORK_ERROR = "network_error"
 }
 
+-- Map LLM error types to structured error kinds and retryable flags
+output.ERROR_KIND_MAP = {
+    [output.ERROR_TYPE.RATE_LIMIT]      = { kind = "RateLimited", retryable = true },
+    [output.ERROR_TYPE.SERVER_ERROR]    = { kind = "Unavailable",  retryable = true },
+    [output.ERROR_TYPE.TIMEOUT]         = { kind = "Timeout",      retryable = true },
+    [output.ERROR_TYPE.NETWORK_ERROR]   = { kind = "Unavailable",  retryable = true },
+    [output.ERROR_TYPE.INVALID_REQUEST] = { kind = "Invalid",      retryable = false },
+    [output.ERROR_TYPE.AUTHENTICATION]  = { kind = "PermissionDenied", retryable = false },
+    [output.ERROR_TYPE.MODEL_ERROR]     = { kind = "NotFound",     retryable = false },
+    [output.ERROR_TYPE.CONTEXT_LENGTH]  = { kind = "Invalid",      retryable = false },
+    [output.ERROR_TYPE.CONTENT_FILTER]  = { kind = "Invalid",      retryable = false },
+}
+
+-- Build a structured error from an error response table
+function output.to_structured_error(error_response)
+    if not error_response or error_response.success ~= false then
+        return nil
+    end
+    local mapping = output.ERROR_KIND_MAP[error_response.error]
+    local kind = mapping and mapping.kind or "Unknown"
+    local retryable = mapping and mapping.retryable or false
+    return errors.new({
+        message = error_response.error_message or error_response.error or "LLM error",
+        kind = kind,
+        retryable = retryable,
+        details = error_response.metadata,
+    })
+end
+
 -- Finish/stop reason constants
 output.FINISH_REASON = {
     STOP = "stop",               -- Normal completion

@@ -83,6 +83,55 @@ local function define_tests()
                 test.eq(mapper.map_error_response({}).error, output.ERROR_TYPE.SERVER_ERROR)
                 test.eq(mapper.map_error_response({ random_field = "value" }).error, output.ERROR_TYPE.SERVER_ERROR)
             end)
+
+            it("should return structured error as second value", function()
+                local response, err = mapper.map_error_response({
+                    error = { type = "rate_limit_error", message = "Rate limited" }
+                })
+                test.eq(response.error, output.ERROR_TYPE.RATE_LIMIT)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should mark authentication errors as non-retryable", function()
+                local response, err = mapper.map_error_response({
+                    error = { type = "authentication_error", message = "Invalid key" }
+                })
+                test.eq(response.error, output.ERROR_TYPE.AUTHENTICATION)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.eq(err:retryable(), false)
+            end)
+
+            it("should mark overloaded as retryable", function()
+                local response, err = mapper.map_error_response({
+                    error = { type = "overloaded_error", message = "API overloaded" }
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should mark 429 status as retryable", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 429,
+                    message = "Too many requests"
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should mark 404 as non-retryable", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 404,
+                    message = "Model not found"
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.eq(err:retryable(), false)
+            end)
         end)
 
         describe("Token Usage Mapping", function()

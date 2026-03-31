@@ -552,23 +552,25 @@ end
 
 function openai_mapper.map_error_response(openai_error)
     if not openai_error then
-        return {
+        local response = {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
             error_message = "Unknown OpenAI error",
             metadata = {}
         }
+        return response, output.to_structured_error(response)
     end
 
     local error_message = openai_error.message or "OpenAI API error"
     local error_type = map_error_type(openai_error.status_code, error_message)
 
-    return {
+    local response = {
         success = false,
         error = error_type,
         error_message = error_message,
         metadata = openai_error.metadata or {}
     }
+    return response, output.to_structured_error(response)
 end
 
 -- Standardize content to a simple string (for assistant and tool messages)

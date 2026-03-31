@@ -141,9 +141,9 @@ function structured_output_handler.handler(contract_args)
     )
 
     if request_err then
-        local error_response = structured_output_handler._mapper.map_error_response(request_err)
+        local error_response, structured_err = structured_output_handler._mapper.map_error_response(request_err)
         error_response.success = false
-        return error_response
+        return error_response, structured_err
     end
 
     if not response or not response.content then

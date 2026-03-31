@@ -320,6 +320,9 @@ local function define_tests()
                             with_context = function(self, context)
                                 return self
                             end,
+                            with_options = function(self, opts)
+                                return self
+                            end,
                             open = function(self, binding_id)
                                 return nil, "Binding initialization failed"
                             end
@@ -332,6 +335,209 @@ local function define_tests()
                 test.is_nil(instance)
                 test.not_nil(err)
                 test.not_nil(err:match("Failed to open provider binding"))
+            end)
+        end)
+
+        describe("retry options", function()
+            it("should pass retry from provider options via with_options", function()
+                local captured_options = nil
+                local captured_context = nil
+
+                providers._contract = {
+                    get = function(contract_id)
+                        return {
+                            with_context = function(self, context)
+                                captured_context = context
+                                return self
+                            end,
+                            with_options = function(self, opts)
+                                captured_options = opts
+                                return self
+                            end,
+                            open = function(self, binding_id)
+                                return { _binding_id = binding_id }, nil
+                            end
+                        }, nil
+                    end
+                }
+
+                local instance, err = providers.open("wippy.llm.provider:openai", {
+                    retry = { max_attempts = 3, initial_delay = 100 }
+                })
+
+                test.is_nil(err)
+                assert(instance)
+                test.not_nil(captured_options)
+                test.not_nil(captured_options.retry)
+                test.eq(captured_options.retry.max_attempts, 3)
+                test.eq(captured_options.retry.initial_delay, 100)
+                test.is_nil(captured_context.retry)
+            end)
+
+            it("should pass retry from driver base options via with_options", function()
+                local captured_options = nil
+                local captured_context = nil
+
+                -- Provider entry with retry in driver options
+                local provider_with_retry = {
+                    id = "wippy.llm.provider:openai",
+                    kind = "registry.entry",
+                    meta = { type = "llm.provider", name = "openai", title = "OpenAI" },
+                    data = {
+                        driver = {
+                            id = "wippy.llm.binding:openai_driver",
+                            options = {
+                                api_key_env = "OPENAI_API_KEY",
+                                retry = { max_attempts = 5, initial_delay = 200 }
+                            }
+                        }
+                    }
+                }
+
+                providers._registry = {
+                    get = function(id)
+                        if id == "wippy.llm.provider:openai" then
+                            return provider_with_retry, nil
+                        end
+                        return nil, "not found"
+                    end
+                }
+
+                providers._contract = {
+                    get = function(contract_id)
+                        return {
+                            with_context = function(self, context)
+                                captured_context = context
+                                return self
+                            end,
+                            with_options = function(self, opts)
+                                captured_options = opts
+                                return self
+                            end,
+                            open = function(self, binding_id)
+                                return { _binding_id = binding_id }, nil
+                            end
+                        }, nil
+                    end
+                }
+
+                local instance, err = providers.open("wippy.llm.provider:openai")
+
+                test.is_nil(err)
+                assert(instance)
+                test.not_nil(captured_options)
+                test.eq(captured_options.retry.max_attempts, 5)
+                test.is_nil(captured_context.retry)
+                test.eq(captured_context.api_key_env, "OPENAI_API_KEY")
+            end)
+
+            it("should not call with_options when no retry defined", function()
+                local options_called = false
+
+                providers._contract = {
+                    get = function(contract_id)
+                        return {
+                            with_context = function(self, context)
+                                return self
+                            end,
+                            with_options = function(self, opts)
+                                options_called = true
+                                return self
+                            end,
+                            open = function(self, binding_id)
+                                return { _binding_id = binding_id }, nil
+                            end
+                        }, nil
+                    end
+                }
+
+                local instance, err = providers.open("wippy.llm.provider:openai")
+
+                test.is_nil(err)
+                assert(instance)
+                test.is_false(options_called)
+            end)
+
+            it("should allow context override to add retry to provider without it", function()
+                local captured_options = nil
+
+                providers._contract = {
+                    get = function(contract_id)
+                        return {
+                            with_context = function(self, context)
+                                return self
+                            end,
+                            with_options = function(self, opts)
+                                captured_options = opts
+                                return self
+                            end,
+                            open = function(self, binding_id)
+                                return { _binding_id = binding_id }, nil
+                            end
+                        }, nil
+                    end
+                }
+
+                local instance, err = providers.open("wippy.llm.provider:openai", {
+                    retry = { max_attempts = 2 }
+                })
+
+                test.is_nil(err)
+                assert(instance)
+                test.not_nil(captured_options)
+                test.eq(captured_options.retry.max_attempts, 2)
+            end)
+
+            it("should let context override retry override driver base retry", function()
+                local captured_options = nil
+
+                local provider_with_retry = {
+                    id = "wippy.llm.provider:openai",
+                    kind = "registry.entry",
+                    meta = { type = "llm.provider", name = "openai", title = "OpenAI" },
+                    data = {
+                        driver = {
+                            id = "wippy.llm.binding:openai_driver",
+                            options = {
+                                retry = { max_attempts = 5, initial_delay = 200 }
+                            }
+                        }
+                    }
+                }
+
+                providers._registry = {
+                    get = function(id)
+                        if id == "wippy.llm.provider:openai" then
+                            return provider_with_retry, nil
+                        end
+                        return nil, "not found"
+                    end
+                }
+
+                providers._contract = {
+                    get = function(contract_id)
+                        return {
+                            with_context = function(self, context)
+                                return self
+                            end,
+                            with_options = function(self, opts)
+                                captured_options = opts
+                                return self
+                            end,
+                            open = function(self, binding_id)
+                                return { _binding_id = binding_id }, nil
+                            end
+                        }, nil
+                    end
+                }
+
+                local instance, err = providers.open("wippy.llm.provider:openai", {
+                    retry = { max_attempts = 10 }
+                })
+
+                test.is_nil(err)
+                assert(instance)
+                test.eq(captured_options.retry.max_attempts, 10)
             end)
         end)
     end)

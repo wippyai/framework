@@ -104,11 +104,12 @@ end
 
 function mapper.map_error_response(claude_error)
     if not claude_error then
-        return {
+        local response = {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
             error_message = "Unknown error"
         }
+        return response, output.to_structured_error(response)
     end
 
     local error_type = output.ERROR_TYPE.SERVER_ERROR
@@ -124,12 +125,13 @@ function mapper.map_error_response(claude_error)
         error_message = claude_error.message
     end
 
-    return {
+    local response = {
         success = false,
         error = error_type,
         error_message = error_message,
         metadata = claude_error.metadata or {}
     }
+    return response, output.to_structured_error(response)
 end
 
 function mapper.map_tokens(claude_usage)

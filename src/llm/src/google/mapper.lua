@@ -371,23 +371,25 @@ end
 
 function mapper.map_error_response(google_error)
     if not google_error then
-        return {
+        local response = {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
             error_message = "Unknown Google error",
             metadata = {}
         }
+        return response, output.to_structured_error(response)
     end
 
     local error_message = google_error.message or "Google API error"
     local error_type = map_error_type(google_error.status_code, error_message)
 
-    return {
+    local response = {
         success = false,
         error = error_type,
         error_message = error_message,
         metadata = google_error.metadata or {}
     }
+    return response, output.to_structured_error(response)
 end
 
 -- Standardize content to a simple string (for instructions)

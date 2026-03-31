@@ -1025,6 +1025,37 @@ local function define_tests()
                 test.eq(contract_response.error_message, "Unknown OpenAI error")
                 test.not_nil(contract_response.metadata)
             end)
+
+            it("should return structured error as second value for 429", function()
+                local response, err = openai_mapper.map_error_response({
+                    status_code = 429,
+                    message = "Rate limited"
+                })
+                test.eq(response.error, "rate_limit_exceeded")
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should return non-retryable error for 401", function()
+                local response, err = openai_mapper.map_error_response({
+                    status_code = 401,
+                    message = "Invalid API key"
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.eq(err:retryable(), false)
+            end)
+
+            it("should return retryable error for 500", function()
+                local _, err = openai_mapper.map_error_response({
+                    status_code = 500,
+                    message = "Internal server error"
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.eq(err:retryable(), true)
+            end)
         end)
 
         describe("Finish Reason Preservation", function()
