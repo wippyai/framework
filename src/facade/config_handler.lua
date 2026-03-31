@@ -51,11 +51,11 @@ local function non_empty_or_nil(s: string): string?
     return s
 end
 
-local function non_empty_map_or_nil(m: {[string]: any}): {[string]: any}?
-    if next(m) == nil then
+local function non_empty_map_or_nil(m: any): {[string]: any}?
+    if not m or type(m) ~= "table" or next(m) == nil then
         return nil
     end
-    return m
+    return m :: {[string]: any}
 end
 
 -- Build a theming scope from requirement name prefixes.
