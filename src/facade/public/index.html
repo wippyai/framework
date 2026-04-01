@@ -123,6 +123,106 @@
 
             var loginPath = cfg.login_path || '/login.html';
 
+            // Embedded log receiver — listens to globalEvents 'log' emitted by module.js.
+            // Console transport always active; Sentry loaded from CDN if PUBLIC_SENTRY_DSN is set.
+            (function () {
+                var states = {};
+                var transports = [];
+
+                function sourceKey(s) { return (s.layer || 'child') + ':' + (s.resourceId || 'unknown'); }
+                function getState(key) {
+                    if (!states[key]) states[key] = { bc: [], ctx: {}, tags: {} };
+                    return states[key];
+                }
+
+                // Console transport
+                transports.push({ handle: function (e) {
+                    var pfx = '[' + e.source.layer + (e.source.resourceId ? ':' + (e.source.resourceType || 'unknown') + ':' + e.source.resourceId : '') + ']';
+                    var msg = pfx + ' ' + e.message;
+                    var meta = {};
+                    if (e.callerStack) meta.callerStack = e.callerStack;
+                    if (e.extra) meta.extra = e.extra;
+                    if (Object.keys(e.tags).length) meta.tags = e.tags;
+                    if (Object.keys(e.contexts).length) meta.contexts = e.contexts;
+                    var hasMeta = Object.keys(meta).length > 0;
+                    if (e.subAction === 'captureException' && e.error) {
+                        var err = new Error(e.error.message); err.name = e.error.name;
+                        if (e.error.stack) err.stack = e.error.stack;
+                        console.error(msg, err, hasMeta ? meta : '');
+                        return;
+                    }
+                    var args = hasMeta ? [msg, meta] : [msg];
+                    if (e.level <= 3) console.error.apply(console, args);
+                    else if (e.level <= 4) console.warn.apply(console, args);
+                    else if (e.level <= 6) console.info.apply(console, args);
+                    else console.debug.apply(console, args);
+                }});
+
+                function handleLog(m) {
+                    var d = m.data, src = m.source || { layer: 'child' };
+                    if (!d || typeof d !== 'object') return;
+                    var sk = sourceKey(src), st = getState(sk);
+
+                    switch (m.subAction) {
+                        case 'addBreadcrumb': st.bc.push(d); if (st.bc.length > 100) st.bc.shift(); break;
+                        case 'setContext': if (d.name) { if (d.data === null) delete st.ctx[d.name]; else st.ctx[d.name] = d.data; } break;
+                        case 'setTag': if (d.key) { if (d.value === null) delete st.tags[d.key]; else st.tags[d.key] = d.value; } break;
+                        case 'log': case 'captureException': case 'captureMessage':
+                            var entry = {
+                                subAction: m.subAction, level: d.level != null ? d.level : 6,
+                                message: d.message || '', timestamp: m.timestamp || Date.now(),
+                                source: src, breadcrumbs: st.bc.slice(),
+                                contexts: Object.assign({}, st.ctx), tags: Object.assign({}, st.tags),
+                            };
+                            if (m.callerStack) entry.callerStack = m.callerStack;
+                            if (d.extra) entry.extra = d.extra;
+                            if (m.subAction === 'captureException') {
+                                entry.error = { name: d.name || 'Error', message: d.message || '', stack: d.stack };
+                                if (d.level == null) entry.level = 3;
+                            }
+                            for (var i = 0; i < transports.length; i++) transports[i].handle(entry);
+                            break;
+                    }
+                }
+
+                // Listen to log events from module.js globalEvents
+                events.on('log', handleLog);
+
+                // Sentry: load from CDN if PUBLIC_SENTRY_DSN is present
+                import('/api/public/env/public.js').then(function (envMod) {
+                    var pubEnv = envMod.default || envMod.__WIPPY_ENV__ || {};
+                    if (pubEnv.PUBLIC_SENTRY_DSN) {
+                        import('https://esm.sh/@sentry/browser').then(function (Sentry) {
+                            Sentry.init({ dsn: pubEnv.PUBLIC_SENTRY_DSN, environment: pubEnv.PUBLIC_SENTRY_ENV || undefined });
+                            transports.push({ handle: function (e) {
+                                Sentry.withScope(function (scope) {
+                                    scope.setTag('wippy.layer', e.source.layer);
+                                    if (e.source.resourceId) scope.setTag('wippy.resourceId', e.source.resourceId);
+                                    if (e.source.resourceType) scope.setTag('wippy.resourceType', e.source.resourceType);
+                                    if (e.source.nestingDepth != null) scope.setTag('wippy.nestingDepth', String(e.source.nestingDepth));
+                                    Object.keys(e.tags).forEach(function (k) { scope.setTag(k, e.tags[k]); });
+                                    scope.setContext('wippy', e.source);
+                                    Object.keys(e.contexts).forEach(function (k) { scope.setContext(k, e.contexts[k]); });
+                                    function bcLevel(l) { return l <= 1 ? 'fatal' : l <= 3 ? 'error' : l <= 4 ? 'warning' : l <= 6 ? 'info' : 'debug'; }
+                                    e.breadcrumbs.forEach(function (bc) { Sentry.addBreadcrumb({ category: bc.category, message: bc.message, data: bc.data, level: bcLevel(bc.level != null ? bc.level : 6), type: bc.type, timestamp: bc.timestamp ? bc.timestamp / 1000 : undefined }); });
+                                    if (e.extra) scope.setExtras(e.extra);
+                                    if (e.subAction === 'captureException' && e.error) {
+                                        var err = new Error(e.error.message); err.name = e.error.name;
+                                        if (e.error.stack) err.stack = e.error.stack;
+                                        else if (e.callerStack) err.stack = e.callerStack;
+                                        Sentry.captureException(err);
+                                    } else {
+                                        if (e.callerStack) scope.setExtra('callerStack', e.callerStack);
+                                        var lvl = e.level <= 1 ? 'fatal' : e.level <= 3 ? 'error' : e.level <= 4 ? 'warning' : e.level <= 6 ? 'info' : 'debug';
+                                        Sentry.captureMessage(e.message, lvl);
+                                    }
+                                });
+                            }});
+                        }).catch(function (err) { console.warn('Sentry CDN load failed:', err); });
+                    }
+                }).catch(function () { /* env endpoint unavailable */ });
+            })();
+
             events.on('authExpired', function () {
                 localStorage.removeItem(STORAGE_KEY);
                 window.location.href = loginPath;
