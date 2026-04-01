@@ -152,6 +152,7 @@
                         return;
                     }
                     var args = hasMeta ? [msg, meta] : [msg];
+                    if (e.callerStack) args.push('\n' + e.callerStack);
                     if (e.level <= 3) console.error.apply(console, args);
                     else if (e.level <= 4) console.warn.apply(console, args);
                     else if (e.level <= 6) console.info.apply(console, args);
