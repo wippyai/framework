@@ -89,6 +89,7 @@ entries:
     source: file://usage_tracker.lua
     modules:
       - security
+      - ctx
     imports:
       token_usage_repo: wippy.usage:token_usage_repo
     method: track_usage

@@ -312,8 +312,10 @@ local function define_tests()
 
             -- Create mock usage tracker
             mock_usage_tracker = {
+                last_model_id = nil,
                 track_usage = function(self, model_id, prompt_tokens, completion_tokens, thinking_tokens,
                                        cache_read_tokens, cache_write_tokens, options)
+                    self.last_model_id = model_id
                     return "usage_" .. tostring(math.random(1000, 9999))
                 end
             }
@@ -338,6 +340,7 @@ local function define_tests()
                 test.is_nil(err)
                 test.eq(result.result, "Mock response from OpenAI")
                 test.eq(result.tokens.prompt_tokens, 20)
+                test.eq(mock_usage_tracker.last_model_id, "gpt-4o")
             end)
 
             it("should resolve model by class name", function()
@@ -346,6 +349,7 @@ local function define_tests()
                 test.is_nil(err)
                 test.eq(result.result, "Mock response from Claude")
                 test.eq(result.tokens.thinking_tokens, 5)
+                test.eq(mock_usage_tracker.last_model_id, "claude-4-sonnet")
             end)
 
             it("should resolve model using class: syntax", function()
@@ -353,6 +357,7 @@ local function define_tests()
 
                 test.is_nil(err)
                 test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_usage_tracker.last_model_id, "gpt-4o")
             end)
 
             it("should fail for unknown model or class", function()

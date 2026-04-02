@@ -51,27 +51,27 @@ local function non_empty_or_nil(s: string): string?
     return s
 end
 
-local function non_empty_map_or_nil(m: {[string]: any}): {[string]: any}?
-    if next(m) == nil then
+local function non_empty_map_or_nil(m: any): {[string]: any}?
+    if not m or type(m) ~= "table" or next(m) == nil then
         return nil
     end
-    return m
+    return m :: {[string]: any}
 end
 
 -- Build a theming scope from requirement name prefixes.
 -- Each scope can have: customCSS, cssVariables, iconSets.
 local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?): {[string]: any}?
-    local customCSS = non_empty_or_nil(get_req(css_req))
-    local cssVariables = non_empty_map_or_nil(get_req_json(vars_req))
-    local iconSets = icon_sets_req and non_empty_map_or_nil(get_req_json_any(icon_sets_req)) or nil
+    local custom_css = non_empty_or_nil(get_req(css_req))
+    local css_vars = non_empty_map_or_nil(get_req_json(vars_req))
+    local icon_sets = icon_sets_req and non_empty_map_or_nil(get_req_json_any(icon_sets_req)) or nil
 
-    if not customCSS and not cssVariables and not iconSets then
+    if not custom_css and not css_vars and not icon_sets then
         return nil
     end
     return {
-        customCSS = customCSS,
-        cssVariables = cssVariables,
-        iconSets = iconSets,
+        customCSS = custom_css,
+        cssVariables = css_vars,
+        iconSets = icon_sets,
     }
 end
 
@@ -124,8 +124,7 @@ local function handler()
         },
     }
 
-    -- hostConfig
-    local hostConfig: {[string]: any} = {
+    local host_config: {[string]: any} = {
         session = { type = non_empty_or_nil(get_req("session_type")) },
         history = non_empty_or_nil(get_req("history_mode")),
         showAdmin = get_req("show_admin") ~= "false",
@@ -136,33 +135,31 @@ local function handler()
         hideSessionSelector = get_req("hide_session_selector") == "true",
     }
 
-    -- Optional JSON hostConfig fields
     local api_routes = non_empty_map_or_nil(get_req_json_any("api_routes"))
     if api_routes then
-        hostConfig.apiRoutes = api_routes
+        host_config.apiRoutes = api_routes
     end
 
     local additional_nav = non_empty_map_or_nil(get_req_json_any("additional_nav_items"))
     if additional_nav then
-        hostConfig.additionalNavItems = additional_nav
+        host_config.additionalNavItems = additional_nav
     end
 
     local state_cache = non_empty_map_or_nil(get_req_json_any("state_cache"))
     if state_cache then
-        hostConfig.stateCache = state_cache
+        host_config.stateCache = state_cache
     end
 
     local additional_tags = non_empty_map_or_nil(get_req_json_any("allow_additional_tags"))
     if additional_tags then
-        hostConfig.allowAdditionalTags = additional_tags
+        host_config.allowAdditionalTags = additional_tags
     end
 
     local chat_config = non_empty_map_or_nil(get_req_json_any("chat"))
     if chat_config then
-        hostConfig.chat = chat_config
+        host_config.chat = chat_config
     end
 
-    -- axiosDefaults (optional, top-level)
     local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
 
     local config = {
@@ -171,7 +168,6 @@ local function handler()
         iframe_url = iframe_url,
         login_path = get_req("login_path"),
 
-        -- AppConfig fields (wippy-context-2.0)
         env = {
             APP_API_URL = api_url,
             APP_AUTH_API_URL = api_url,
@@ -184,7 +180,7 @@ local function handler()
             host = host_scope,
             children = children_scope,
         },
-        hostConfig = hostConfig,
+        hostConfig = host_config,
     }
 
     local body, err = json.encode(config)

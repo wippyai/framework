@@ -124,7 +124,7 @@ local function define_tests()
                 local b64_parts = google_messages[1].parts :: any
                 tests.not_nil(b64_parts[1].inlineData)
                 tests.eq(b64_parts[1].inlineData.mimeType, "image/jpeg")
-                tests.contains(b64_parts[1].inlineData.data, "iVBORw0KGgo")
+                tests.contains(tostring(b64_parts[1].inlineData.data), "iVBORw0KGgo")
             end)
 
             it("should convert function_call messages to model with functionCall", function()
@@ -677,8 +677,8 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
-                tests.contains(error, "nonexistent_tool")
+                tests.contains(tostring(error), "not found")
+                tests.contains(tostring(error), "nonexistent_tool")
             end)
 
             it("should handle empty tools array with specific tool name", function()
@@ -686,7 +686,7 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
+                tests.contains(tostring(error), "not found")
             end)
 
             it("should handle nil tools array with specific tool name", function()
@@ -694,7 +694,7 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
+                tests.contains(tostring(error), "not found")
             end)
 
             it("should be case-sensitive for tool names", function()
@@ -702,7 +702,7 @@ local function define_tests()
 
                 tests.is_nil(config)
                 tests.not_nil(error)
-                tests.contains(error, "not found")
+                tests.contains(tostring(error), "not found")
             end)
 
             it("should handle tool name with exact match", function()
@@ -905,12 +905,16 @@ local function define_tests()
             it("should map Google function calls to contract format", function()
                 local google_function_calls = {
                     {
-                        name = "get_weather",
-                        args = { location = "New York", units = "celsius" }
+                        functionCall = {
+                            name = "get_weather",
+                            args = { location = "New York", units = "celsius" }
+                        }
                     },
                     {
-                        name = "calculate",
-                        args = { expression = "2+2" }
+                        functionCall = {
+                            name = "calculate",
+                            args = { expression = "2+2" }
+                        }
                     }
                 }
 
@@ -922,19 +926,19 @@ local function define_tests()
                 tests.eq(contract_tool_calls[1].arguments.location, "New York")
                 tests.eq(contract_tool_calls[1].arguments.units, "celsius")
                 tests.not_nil(contract_tool_calls[1].id)
-                tests.contains(contract_tool_calls[1].id, "get_weather_")
+                tests.contains(tostring(contract_tool_calls[1].id), "get_weather_")
 
                 tests.eq(contract_tool_calls[2].name, "calculate")
                 tests.eq(contract_tool_calls[2].arguments.expression, "2+2")
                 tests.not_nil(contract_tool_calls[2].id)
-                tests.contains(contract_tool_calls[2].id, "calculate_")
+                tests.contains(tostring(contract_tool_calls[2].id), "calculate_")
             end)
 
             it("should generate unique IDs for each tool call", function()
                 local google_function_calls = {
-                    { name = "tool1", args = {} },
-                    { name = "tool2", args = {} },
-                    { name = "tool3", args = {} }
+                    { functionCall = { name = "tool1", args = {} } },
+                    { functionCall = { name = "tool2", args = {} } },
+                    { functionCall = { name = "tool3", args = {} } }
                 }
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
@@ -943,7 +947,7 @@ local function define_tests()
 
                 local ids = {}
                 for _, call in ipairs(contract_tool_calls) do
-                    tests.is_nil(ids[call.id]) -- ID should be unique
+                    tests.is_nil(ids[call.id])
                     ids[call.id] = true
                 end
             end)
@@ -951,8 +955,10 @@ local function define_tests()
             it("should handle empty args", function()
                 local google_function_calls = {
                     {
-                        name = "no_args_tool",
-                        args = {}
+                        functionCall = {
+                            name = "no_args_tool",
+                            args = {}
+                        }
                     }
                 }
 
@@ -967,8 +973,10 @@ local function define_tests()
             it("should handle nil args", function()
                 local google_function_calls = {
                     {
-                        name = "nil_args_tool",
-                        args = nil
+                        functionCall = {
+                            name = "nil_args_tool",
+                            args = nil
+                        }
                     }
                 }
 
@@ -983,16 +991,18 @@ local function define_tests()
             it("should handle complex nested arguments", function()
                 local google_function_calls = {
                     {
-                        name = "complex_tool",
-                        args = {
-                            simple = "value",
-                            nested = {
-                                key1 = "value1",
-                                key2 = {
-                                    deep = "nested"
-                                }
-                            },
-                            array = { "item1", "item2", "item3" }
+                        functionCall = {
+                            name = "complex_tool",
+                            args = {
+                                simple = "value",
+                                nested = {
+                                    key1 = "value1",
+                                    key2 = {
+                                        deep = "nested"
+                                    }
+                                },
+                                array = { "item1", "item2", "item3" }
+                            }
                         }
                     }
                 }
@@ -1022,8 +1032,9 @@ local function define_tests()
             it("should handle function call with only name", function()
                 local google_function_calls = {
                     {
-                        name = "simple_tool"
-                        -- No args field
+                        functionCall = {
+                            name = "simple_tool"
+                        }
                     }
                 }
 
@@ -1038,15 +1049,17 @@ local function define_tests()
             it("should handle various argument types", function()
                 local google_function_calls = {
                     {
-                        name = "typed_args",
-                        args = {
-                            string_arg = "text",
-                            number_arg = 42,
-                            float_arg = 3.14,
-                            bool_arg = true,
-                            null_arg = nil,
-                            array_arg = {1, 2, 3},
-                            object_arg = { key = "value" }
+                        functionCall = {
+                            name = "typed_args",
+                            args = {
+                                string_arg = "text",
+                                number_arg = 42,
+                                float_arg = 3.14,
+                                bool_arg = true,
+                                null_arg = nil,
+                                array_arg = {1, 2, 3},
+                                object_arg = { key = "value" }
+                            }
                         }
                     }
                 }
@@ -1065,29 +1078,29 @@ local function define_tests()
 
             it("should generate ID with timestamp component", function()
                 local google_function_calls = {
-                    { name = "test_tool", args = {} }
+                    { functionCall = { name = "test_tool", args = {} } }
                 }
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
                 tests.eq(#contract_tool_calls, 1)
-                -- ID format: name_timestamp
                 local id = contract_tool_calls[1].id
-                tests.contains(id, "test_tool_")
+                tests.contains(tostring(id), "test_tool_")
             end)
 
             it("should handle function call with missing name gracefully", function()
                 local google_function_calls = {
                     {
-                        args = { key = "value" }
-                        -- Missing name
+                        functionCall = {
+                            args = { key = "value" }
+                        }
                     }
                 }
 
                 local contract_tool_calls = mapper.map_tool_calls(google_function_calls)
 
                 tests.eq(#contract_tool_calls, 1)
-                tests.contains(contract_tool_calls[1].id, "func_")
+                tests.contains(tostring(contract_tool_calls[1].id), "func_")
                 tests.eq(contract_tool_calls[1].arguments.key, "value")
             end)
         end)
@@ -1578,7 +1591,7 @@ local function define_tests()
                 end)
 
                 tests.is_false(success)
-                tests.contains(error, "Invalid Google response structure")
+                tests.contains(tostring(error), "Invalid Google response structure")
             end)
 
             it("should error on empty candidates array", function()
@@ -1591,7 +1604,7 @@ local function define_tests()
                 end)
 
                 tests.is_false(success)
-                tests.contains(error, "Invalid Google response structure")
+                tests.contains(tostring(error), "Invalid Google response structure")
             end)
 
             it("should error on nil candidates", function()
@@ -2244,7 +2257,100 @@ local function define_tests()
                 tests.eq(result, "Text with type")
             end)
         end)
+
+        describe("Finish Reason Preservation", function()
+            it("should preserve LENGTH when finishReason is MAX_TOKENS with tool_calls", function()
+                local google_response = {
+                    candidates = {
+                        {
+                            content = {
+                                parts = {
+                                    { text = "I will call..." },
+                                    { functionCall = { name = "test_tool", args = {} } }
+                                }
+                            },
+                            finishReason = "MAX_TOKENS"
+                        }
+                    },
+                    usageMetadata = { promptTokenCount = 100, candidatesTokenCount = 8000, totalTokenCount = 8100 }
+                }
+
+                local result = mapper.map_success_response(google_response)
+                tests.eq(result.finish_reason, "length")
+            end)
+
+            it("should map STOP to TOOL_CALL when tool_calls are present", function()
+                local google_response = {
+                    candidates = {
+                        {
+                            content = {
+                                parts = {
+                                    { functionCall = { name = "test_tool", args = {} } }
+                                }
+                            },
+                            finishReason = "STOP"
+                        }
+                    },
+                    usageMetadata = { promptTokenCount = 50, candidatesTokenCount = 100, totalTokenCount = 150 }
+                }
+
+                local result = mapper.map_success_response(google_response)
+                tests.eq(result.finish_reason, "tool_call")
+            end)
+        end)
+
+        describe("Error Response Mapping", function()
+            it("should return structured error for 429 rate limit", function()
+                local response, err = mapper.map_error_response({
+                    status_code = 429,
+                    message = "Rate limited"
+                })
+                tests.eq(response.error, "rate_limit_exceeded")
+                tests.not_nil(err)
+                tests.eq(err:kind(), "RateLimited")
+                tests.eq(err:retryable(), true)
+            end)
+
+            it("should return structured error for 500 server error", function()
+                local response, err = mapper.map_error_response({
+                    status_code = 500,
+                    message = "Internal error"
+                })
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.eq(err:retryable(), true)
+            end)
+
+            it("should return non-retryable for 401 auth error", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 401,
+                    message = "Invalid credentials"
+                })
+                tests.not_nil(err)
+                tests.eq(err:kind(), "PermissionDenied")
+                tests.eq(err:retryable(), false)
+            end)
+
+            it("should return non-retryable for 404 model not found", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 404,
+                    message = "Model not found"
+                })
+                tests.not_nil(err)
+                tests.eq(err:kind(), "NotFound")
+                tests.eq(err:retryable(), false)
+            end)
+
+            it("should handle nil error", function()
+                local response, err = mapper.map_error_response(nil)
+                tests.eq(response.error, "server_error")
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.eq(err:retryable(), true)
+            end)
+        end)
     end)
 end
 
 return tests.run_cases(define_tests)
+

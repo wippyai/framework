@@ -185,12 +185,16 @@ function mapper.map_messages(contract_messages, options)
                 and json.decode(msg.function_call.arguments)
                 or msg.function_call.arguments
 
-            table.insert(processed_messages, { role = "model", parts = {
+            local part = {
                 functionCall = {
                     name = msg.function_call.name,
                     args = next(arguments or {}) ~= nil and arguments or nil
                 }
-            } })
+            }
+            if msg.function_call.provider_metadata and msg.function_call.provider_metadata.thought_signature then
+                part.thoughtSignature = msg.function_call.provider_metadata.thought_signature
+            end
+            table.insert(processed_messages, { role = "model", parts = part })
             i = i + 1
         else
             -- Skip unknown message types
@@ -255,18 +259,25 @@ function mapper.map_options(contract_options)
     }
 end
 
-function mapper.map_tool_calls(function_calls)
-    if not function_calls then
+function mapper.map_tool_calls(content_parts)
+    if not content_parts or #content_parts == 0 then
         return {}
     end
 
     local contract_tool_calls = {}
-    for i, function_call in ipairs(function_calls) do
-        contract_tool_calls[i] = {
-            id = (function_call.name or "func") .. "_" .. time.now():unix(),
-            name = function_call.name,
-            arguments = function_call.args or {},
-        }
+    for i, content_part in ipairs(content_parts) do
+        if content_part.functionCall then
+            contract_tool_calls[i] = {
+                id = (content_part.functionCall.name or "func") .. "_" .. time.now():unix(),
+                name = content_part.functionCall.name,
+                arguments = content_part.functionCall.args or {},
+            }
+            if content_part.thoughtSignature then
+                contract_tool_calls[i].provider_metadata = {
+                    thought_signature = content_part.thoughtSignature
+                }
+            end
+        end
     end
 
     return contract_tool_calls
@@ -327,7 +338,7 @@ function mapper.map_success_response(google_response)
             if content_part.text then
                 content = content .. content_part.text
             elseif content_part.functionCall then
-                table.insert(tool_calls, content_part.functionCall)
+                table.insert(tool_calls, content_part)
             end
         end
     end
@@ -336,18 +347,21 @@ function mapper.map_success_response(google_response)
         success = true,
         metadata = google_response.metadata or {}
     }
+    local mapped_tool_calls = {}
     if #tool_calls > 0 then
-        response.result = {
-            content = content,
-            tool_calls = mapper.map_tool_calls(tool_calls)
-        }
+        mapped_tool_calls = mapper.map_tool_calls(tool_calls)
+    end
+
+    response.result = {
+        content = content,
+        tool_calls = mapped_tool_calls
+    }
+
+    local mapped_reason = mapper.map_finish_reason(candidate.finishReason or "UNKNOWN")
+    if #tool_calls > 0 and mapped_reason == output.FINISH_REASON.STOP then
         response.finish_reason = output.FINISH_REASON.TOOL_CALL
     else
-        response.result = {
-            content = content,
-            tool_calls = {}
-        }
-        response.finish_reason = mapper.map_finish_reason(candidate.finishReason or "UNKNOWN")
+        response.finish_reason = mapped_reason
     end
 
     response.tokens = mapper.map_tokens(google_response.usageMetadata)
@@ -357,23 +371,25 @@ end
 
 function mapper.map_error_response(google_error)
     if not google_error then
-        return {
+        local response = {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
             error_message = "Unknown Google error",
             metadata = {}
         }
+        return response, output.to_structured_error(response)
     end
 
     local error_message = google_error.message or "Google API error"
     local error_type = map_error_type(google_error.status_code, error_message)
 
-    return {
+    local response = {
         success = false,
         error = error_type,
         error_message = error_message,
         metadata = google_error.metadata or {}
     }
+    return response, output.to_structured_error(response)
 end
 
 -- Standardize content to a simple string (for instructions)

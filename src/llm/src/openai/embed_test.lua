@@ -22,7 +22,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                test.contains(tostring(response.error_message), "Model is required")
             end)
 
             it("should require input parameter", function()
@@ -34,7 +34,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Input is required")
+                test.contains(tostring(response.error_message), "Input is required")
             end)
 
             it("should accept string input", function()
@@ -152,7 +152,7 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(url, "/embeddings")
+                        test.contains(tostring(url), "/embeddings")
 
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "text-embedding-3-small")
@@ -447,7 +447,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "model_error")
-                test.contains(response.error_message, "does not exist")
+                test.contains(tostring(response.error_message), "does not exist")
             end)
 
             it("should handle authentication errors", function()
@@ -487,7 +487,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "authentication_error")
-                test.contains(response.error_message, "Invalid API key")
+                test.contains(tostring(response.error_message), "Invalid API key")
             end)
 
             it("should handle rate limit errors", function()
@@ -527,7 +527,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "rate_limit_exceeded")
-                test.contains(response.error_message, "Rate limit exceeded")
+                test.contains(tostring(response.error_message), "Rate limit exceeded")
             end)
 
             it("should handle server errors", function()
@@ -567,7 +567,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "server_error")
-                test.contains(response.error_message, "Internal server error")
+                test.contains(tostring(response.error_message), "Internal server error")
             end)
 
             it("should handle empty response", function()
@@ -602,7 +602,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "server_error")
-                test.contains(response.error_message, "Invalid or empty response")
+                test.contains(tostring(response.error_message), "Invalid or empty response")
             end)
 
             it("should handle malformed response data", function()
@@ -639,7 +639,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "server_error")
-                test.contains(response.error_message, "Invalid or empty response")
+                test.contains(tostring(response.error_message), "Invalid or empty response")
             end)
         end)
 
@@ -739,7 +739,7 @@ local function define_tests()
 
                 embed_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(url, "https://custom.openai.proxy/v1/embeddings")
+                        test.contains(tostring(url), "https://custom.openai.proxy/v1/embeddings")
 
                         return {
                             status_code = 200,

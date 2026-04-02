@@ -92,16 +92,27 @@ function providers.open(provider_id, context_overrides)
         final_context[k] = v
     end
 
+    -- Separate call options (retry, etc.) from context options
+    local call_options = {}
+    if final_context.retry then
+        call_options.retry = final_context.retry
+        final_context.retry = nil
+    end
+
     -- Get the base provider contract using injected contract module
     local provider_contract, err = providers._contract.get(CONTRACT_ID)
     if err then
         return nil, "Failed to get provider contract: " .. tostring(err)
     end
 
-    -- Open the binding with merged context
-    local instance, err = provider_contract
-        :with_context(final_context)
-        :open(tostring(binding_id))
+    -- Build the chain: context first, then call options if present
+    local chain = provider_contract:with_context(final_context)
+    if next(call_options) then
+        chain = chain:with_options(call_options)
+    end
+
+    -- Open the binding
+    local instance, err = chain:open(tostring(binding_id))
 
     if err then
         return nil, "Failed to open provider binding: " .. tostring(err)

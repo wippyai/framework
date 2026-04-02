@@ -83,6 +83,55 @@ local function define_tests()
                 test.eq(mapper.map_error_response({}).error, output.ERROR_TYPE.SERVER_ERROR)
                 test.eq(mapper.map_error_response({ random_field = "value" }).error, output.ERROR_TYPE.SERVER_ERROR)
             end)
+
+            it("should return structured error as second value", function()
+                local response, err = mapper.map_error_response({
+                    error = { type = "rate_limit_error", message = "Rate limited" }
+                })
+                test.eq(response.error, output.ERROR_TYPE.RATE_LIMIT)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should mark authentication errors as non-retryable", function()
+                local response, err = mapper.map_error_response({
+                    error = { type = "authentication_error", message = "Invalid key" }
+                })
+                test.eq(response.error, output.ERROR_TYPE.AUTHENTICATION)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.eq(err:retryable(), false)
+            end)
+
+            it("should mark overloaded as retryable", function()
+                local response, err = mapper.map_error_response({
+                    error = { type = "overloaded_error", message = "API overloaded" }
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should mark 429 status as retryable", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 429,
+                    message = "Too many requests"
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:retryable(), true)
+            end)
+
+            it("should mark 404 as non-retryable", function()
+                local _, err = mapper.map_error_response({
+                    status_code = 404,
+                    message = "Model not found"
+                })
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.eq(err:retryable(), false)
+            end)
         end)
 
         describe("Token Usage Mapping", function()
@@ -160,8 +209,8 @@ local function define_tests()
                 local user_msg = result.messages[1]
                 test.eq(user_msg.role, "user")
                 local first_content = user_msg.content[1] :: any
-                test.contains(first_content.text, "Hello")
-                test.contains(first_content.text, "<developer-instruction>Be concise</developer-instruction>")
+                test.contains(tostring(first_content.text), "Hello")
+                test.contains(tostring(first_content.text), "<developer-instruction>Be concise</developer-instruction>")
             end)
 
             it("should convert function calls to assistant tool_use format", function()
@@ -315,7 +364,7 @@ local function define_tests()
                 local tools = { { name = "tool1" } }
                 local result, error = mapper.map_tool_choice("invalid_tool", tools)
                 test.is_nil(result)
-                test.contains(error, "not found")
+                test.contains(tostring(error), "not found")
             end)
 
             it("should return nil when no tools available", function()
@@ -497,6 +546,34 @@ local function define_tests()
                 test.eq(image_content.type, "image")
                 test.eq(image_content.source.type, "url")
                 test.eq(image_content.source.url, "https://example.com/image.jpg")
+            end)
+        end)
+
+        describe("Streaming Finish Reason Preservation", function()
+            it("should preserve LENGTH finish_reason when streaming response has tool_calls", function()
+                local client_result = {
+                    content = "I will call the tool...",
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, {}, nil, "max_tokens", {})
+                test.eq(result.finish_reason, output.FINISH_REASON.LENGTH)
+            end)
+
+            it("should map tool_use to TOOL_CALL for normal streaming tool calls", function()
+                local client_result = {
+                    content = "",
+                    tool_calls = {
+                        { id = "call_1", name = "test_tool", arguments = {} }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, {}, nil, "tool_use", {})
+                test.eq(result.finish_reason, output.FINISH_REASON.TOOL_CALL)
             end)
         end)
     end)

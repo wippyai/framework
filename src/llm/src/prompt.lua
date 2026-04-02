@@ -16,10 +16,15 @@ type ContentPart = {
     source: ImageSource?,
 }
 
+type FunctionCallOptions = {
+    provider_metadata: table?,
+}
+
 type FunctionCall = {
     name: string,
     arguments: string,
     id: string?,
+    provider_metadata: table?,
 }
 
 type Message = {
@@ -39,7 +44,7 @@ type PromptBuilder = {
     add_assistant: (self: any, content: string, meta: table?) -> PromptBuilder,
     add_developer: (self: any, content: string, meta: table?) -> PromptBuilder,
     add_message: (self: any, role: string, content_parts: {ContentPart}, name: string?, metadata: table?) -> PromptBuilder,
-    add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?) -> PromptBuilder,
+    add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?) -> PromptBuilder,
     add_function_result: (self: any, name: string, content: any, function_call_id: string?) -> PromptBuilder,
     add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
     get_messages: (self: any) -> {Message},
@@ -284,7 +289,7 @@ function prompt.new(messages: {Message}?)
     end
 
     -- Add a function call by assistant
-    builder.add_function_call = function(self: any, function_name: string, arguments: string, function_call_id: string?)
+    builder.add_function_call = function(self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?)
         if function_name and arguments then
             local message = {
                 role = prompt.ROLE.FUNCTION_CALL,
@@ -297,6 +302,10 @@ function prompt.new(messages: {Message}?)
 
             if function_call_id then
                 message.function_call.id = function_call_id
+            end
+
+            if options and options.provider_metadata then
+                message.function_call.provider_metadata = options.provider_metadata
             end
 
             table.insert(self.messages, message)

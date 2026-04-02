@@ -169,7 +169,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0.7,
-                        max_tokens = 200
+                        max_tokens = 2048
                     }
                 }
 
@@ -555,6 +555,7 @@ local function define_tests()
                 tests.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
+                assert(response.result.tool_calls and response.result.tool_calls[1])
                 tests.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
                 tests.eq(response.result.tool_calls[1].name, "get_weather")
                 tests.not_nil(response.result.tool_calls[1].arguments.location, "Missing location argument")
@@ -605,7 +606,7 @@ local function define_tests()
                     tool_choice = "none",
                     options = {
                         temperature = 0,
-                        max_tokens = 50
+                        max_tokens = 2048
                     }
                 }
 
@@ -681,6 +682,7 @@ local function define_tests()
                 tests.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
+                assert(response.result.tool_calls and response.result.tool_calls[1])
                 tests.is_true(#response.result.tool_calls > 0, "Expected tool call")
                 tests.eq(response.result.tool_calls[1].name, "get_weather")
                 tests.eq(response.finish_reason, "tool_call")
@@ -740,6 +742,7 @@ local function define_tests()
                 tests.is_true(#initial_response.result.tool_calls > 0, "Expected tool call")
 
                 local tool_call = initial_response.result.tool_calls[1]
+                assert(tool_call)
 
                 -- Second request: provide tool result
                 local continuation_args = {
@@ -819,7 +822,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 100
+                        max_tokens = 2048
                     }
                 }
 
@@ -928,7 +931,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 100
+                        max_tokens = 2048
                     }
                 }
 
@@ -992,7 +995,7 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 50
+                        max_tokens = 2048
                     }
                 }
 
@@ -1608,6 +1611,7 @@ local function define_tests()
                 tests.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
+                assert(response.result.tool_calls and response.result.tool_calls[1])
                 tests.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
                 tests.eq(response.result.tool_calls[1].name, "get_weather")
                 tests.not_nil(response.result.tool_calls[1].arguments.location, "Missing location argument")
@@ -1733,6 +1737,7 @@ local function define_tests()
                 tests.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
+                assert(response.result.tool_calls and response.result.tool_calls[1])
                 tests.is_true(#response.result.tool_calls > 0, "Expected tool call")
                 tests.eq(response.result.tool_calls[1].name, "get_weather")
                 tests.eq(response.finish_reason, "tool_call")

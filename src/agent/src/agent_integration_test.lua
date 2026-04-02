@@ -371,7 +371,9 @@ Be concise but ALWAYS use the tools when requested.]],
             agent._llm = nil
             agent._prompt = nil
             agent._contract = nil
-            package.loaded.tool_caller = nil
+            if package and package.loaded then
+                package.loaded.tool_caller = nil
+            end
 
             -- Check environment
             local openai_key = env.get("OPENAI_API_KEY")

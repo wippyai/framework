@@ -25,7 +25,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                test.contains(tostring(response.error_message), "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -37,7 +37,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.contains(tostring(response.error_message), "Messages are required")
             end)
 
             it("should reject empty messages array", function()
@@ -50,7 +50,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.contains(tostring(response.error_message), "Messages are required")
             end)
         end)
 
@@ -70,7 +70,7 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(url, "chat/completions")
+                        test.contains(tostring(url), "chat/completions")
 
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "gpt-4o-mini")
@@ -611,7 +611,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "authentication_error")
-                test.contains(response.error_message, "Invalid API key")
+                test.contains(tostring(response.error_message), "Invalid API key")
             end)
 
             it("should handle model not found errors", function()
@@ -653,7 +653,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "model_error")
-                test.contains(response.error_message, "does not exist")
+                test.contains(tostring(response.error_message), "does not exist")
             end)
 
             it("should handle context length errors", function()
@@ -695,7 +695,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "context_length_exceeded")
-                test.contains(response.error_message, "context length")
+                test.contains(tostring(response.error_message), "context length")
             end)
 
             it("should handle rate limit errors", function()
@@ -737,7 +737,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "rate_limit_exceeded")
-                test.contains(response.error_message, "Rate limit")
+                test.contains(tostring(response.error_message), "Rate limit")
             end)
 
             it("should handle invalid response structure", function()
@@ -774,7 +774,7 @@ local function define_tests()
 
                 test.is_false(response.success)
                 test.eq(response.error, "server_error")
-                test.contains(response.error_message, "Invalid OpenAI response structure")
+                test.contains(tostring(response.error_message), "Invalid OpenAI response structure")
             end)
         end)
 
@@ -800,7 +800,7 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(url, "https://custom.openai.proxy/v1/chat/completions")
+                        test.contains(tostring(url), "https://custom.openai.proxy/v1/chat/completions")
                         test.eq(options.headers["Authorization"], "Bearer custom-key")
                         test.eq(options.headers["OpenAI-Organization"], "org-custom")
 

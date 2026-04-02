@@ -17,3 +17,91 @@ entries:
         value: wippy.terminal:host
       - name: env_storage
         value: app:env_storage
+
+  # Memory store for retry test state sharing
+  - name: test_store
+    kind: store.memory
+    meta:
+      comment: Shared state for retry integration tests
+    max_size: 100
+    cleanup_interval: "1m"
+
+  # Flaky generate: fails first 2 times, succeeds on 3rd
+  - name: flaky_generate
+    kind: function.lua
+    source: file://flaky_generate.lua
+    method: handler
+    modules:
+      - store
+    imports:
+      output: wippy.llm:output
+
+  # Permanent fail generate: always returns auth error
+  - name: permanent_fail_generate
+    kind: function.lua
+    source: file://permanent_fail_generate.lua
+    method: handler
+    modules:
+      - store
+    imports:
+      output: wippy.llm:output
+
+  # Flaky provider: binding with transient failures
+  - name: flaky_driver
+    kind: contract.binding
+    meta:
+      comment: Flaky LLM driver for retry testing
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: app:flaky_generate
+      - contract: wippy.llm:provider
+        methods:
+          status: app:flaky_generate
+
+  - name: flaky_provider
+    kind: registry.entry
+    meta:
+      type: llm.provider
+      name: flaky
+      title: Flaky Test Provider
+    driver:
+      id: app:flaky_driver
+      options: {}
+
+  # Permanent fail provider: always returns non-retryable error
+  - name: permanent_fail_driver
+    kind: contract.binding
+    meta:
+      comment: Always-failing LLM driver for retry testing
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: app:permanent_fail_generate
+      - contract: wippy.llm:provider
+        methods:
+          status: app:permanent_fail_generate
+
+  - name: permanent_fail_provider
+    kind: registry.entry
+    meta:
+      type: llm.provider
+      name: permanent_fail
+      title: Permanent Fail Test Provider
+    driver:
+      id: app:permanent_fail_driver
+      options: {}
+
+  # Retry integration test
+  - name: retry_integration_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: llm.retry
+    source: file://retry_integration_test.lua
+    method: run
+    modules:
+      - store
+    imports:
+      test: wippy.test:test
+      providers: wippy.llm.discovery:providers

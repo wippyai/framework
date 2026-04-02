@@ -323,6 +323,28 @@ entries:
       output: 15
 ```
 
+#### Bedrock Model Registration
+
+Use `wippy.llm.claude.bedrock:provider` and the Bedrock model ID (inference profile format for newer models):
+
+```yaml
+entries:
+  - name: claude-haiku-bedrock
+    kind: registry.entry
+    meta:
+      type: llm.model
+      name: claude-haiku-bedrock
+      title: Claude Haiku 4.5 (Bedrock)
+      class: [fast]
+      capabilities: [generate, tool_use, structured_output]
+      priority: 100
+    providers:
+      - id: wippy.llm.claude.bedrock:provider
+        provider_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    max_tokens: 200000
+    output_tokens: 8192
+```
+
 ### Model Classes
 
 ```yaml
@@ -338,7 +360,8 @@ entries:
 
 ## Providers
 
-- `wippy.llm.claude` - Anthropic Claude
+- `wippy.llm.claude` - Anthropic Claude (direct API)
+- `wippy.llm.claude.bedrock` - AWS Bedrock (Claude models via SigV4)
 - `wippy.llm.openai` - OpenAI (also compatible with OpenRouter, LM Studio)
 - `wippy.llm.google.vertex` - Google Vertex AI
 - `wippy.llm.google.generative_ai` - Google Generative AI (Gemini)
@@ -358,10 +381,20 @@ OPENAI_ORGANIZATION
 OPENAI_BASE_URL
 OPENAI_TIMEOUT
 
+# AWS Bedrock
+AWS_ACCESS_KEY_ID           # optional, for local dev
+AWS_SECRET_ACCESS_KEY       # optional, for local dev
+AWS_SESSION_TOKEN           # optional, for temporary credentials
+AWS_REGION                  # default: us-east-1
+BEDROCK_BASE_URL            # override endpoint
+BEDROCK_TIMEOUT             # default: 600
+
 # Google
 GOOGLE_CREDENTIALS          # service account JSON
 GOOGLE_API_KEY              # for Generative AI
 ```
+
+In ECS/EKS pods, AWS credentials are resolved automatically from the container metadata endpoint. No env vars needed in production.
 
 ## Contracts
 
@@ -373,7 +406,8 @@ GOOGLE_API_KEY              # for Generative AI
 
 ## Subnamespaces
 
-- `wippy.llm.claude` - Claude provider
+- `wippy.llm.claude` - Claude provider (direct API)
+- `wippy.llm.claude.bedrock` - AWS Bedrock provider
 - `wippy.llm.openai` - OpenAI provider
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
 - `wippy.llm.discovery` - Model and provider discovery

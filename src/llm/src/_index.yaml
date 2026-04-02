@@ -44,6 +44,18 @@ entries:
         path: ".storage"
       - entry: wippy.llm.google.env:google_credentials
         path: ".storage"
+      - entry: wippy.llm.claude.bedrock:aws_region
+        path: ".storage"
+      - entry: wippy.llm.claude.bedrock:aws_access_key_id
+        path: ".storage"
+      - entry: wippy.llm.claude.bedrock:aws_secret_access_key
+        path: ".storage"
+      - entry: wippy.llm.claude.bedrock:aws_session_token
+        path: ".storage"
+      - entry: wippy.llm.claude.bedrock:base_url
+        path: ".storage"
+      - entry: wippy.llm.claude.bedrock:timeout
+        path: ".storage"
     default: "wippy.llm.env:envs"
 
   - name: process_host
@@ -55,6 +67,11 @@ entries:
         path: ".meta.default_host"
       - entry: wippy.llm.google.oauth2:token_refresher.service
         path: ".host"
+      - entry: wippy.llm.claude.bedrock:credential_refresher
+        path: ".meta.default_host"
+      - entry: wippy.llm.claude.bedrock:credential_refresher.service
+        path: ".host"
+    default: "wippy.terminal:host"
 
   # Dependencies
   - name: dep.wippy.test

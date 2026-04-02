@@ -37,6 +37,7 @@ entries:
     imports:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
+      output: wippy.llm:output
 
   # wippy.agent:agent_integration_test
   - name: agent_integration_test
@@ -62,6 +63,7 @@ entries:
     imports:
       prompt: wippy.llm:prompt
       agent: wippy.agent:agent
+      output: wippy.llm:output
       compiler: wippy.agent.compiler:compiler
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
@@ -88,6 +90,7 @@ entries:
     imports:
       prompt: wippy.llm:prompt
       agent: wippy.agent:agent
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 
@@ -115,6 +118,7 @@ entries:
       agent: wippy.agent:agent
       agent_registry: wippy.agent.discovery:registry
       llm: wippy.llm:llm
+      output: wippy.llm:output
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
     method: run_tests
@@ -139,6 +143,7 @@ entries:
       agent: wippy.agent:agent
       agent_registry: wippy.agent.discovery:registry
       compiler: wippy.agent.compiler:compiler
+      output: wippy.llm:output
 
   # wippy.agent:context_test
   - name: context_test

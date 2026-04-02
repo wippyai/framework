@@ -1,11 +1,11 @@
-local claude_client = require("claude_client")
+local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
 local hash = require("hash")
 
 local structured_output_handler = {
-    _client = claude_client,
+    _client = bedrock_client,
     _mapper = mapper,
     _output = output
 }
@@ -107,50 +107,40 @@ function structured_output_handler.handler(contract_args)
 
     local claude_tools, _ = structured_output_handler._mapper.map_tools({structured_tool})
 
-    local tool_choice = {
-        type = "tool",
-        name = "structured_output"
-    }
-
-    local claude_payload = {
-        model = contract_args.model,
+    local bedrock_payload = {
         messages = mapped_messages.messages,
         tools = claude_tools,
-        tool_choice = tool_choice,
+        tool_choice = { type = "tool", name = "structured_output" },
         max_tokens = mapped_options.max_tokens or 2000
     }
 
     if mapped_messages.system then
-        claude_payload.system = mapped_messages.system
+        bedrock_payload.system = mapped_messages.system
     end
 
     for k, v in pairs(mapped_options) do
         if k ~= "max_tokens" then
-            claude_payload[k] = v
+            bedrock_payload[k] = v
         end
     end
 
-    local request_options = {
-        timeout = contract_args.timeout
-    }
-
     local response, request_err = structured_output_handler._client.request(
-        structured_output_handler._client.ENDPOINTS.MESSAGES,
-        claude_payload,
-        request_options
+        contract_args.model,
+        bedrock_payload,
+        { timeout = contract_args.timeout }
     )
 
     if request_err then
-        local error_response, structured_err = structured_output_handler._mapper.map_error_response(request_err)
+        local error_response = structured_output_handler._mapper.map_error_response(request_err)
         error_response.success = false
-        return error_response, structured_err
+        return error_response
     end
 
     if not response or not response.content then
         return {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Invalid response structure from Claude",
+            error_message = "Invalid response structure from Bedrock",
             metadata = response and response.metadata or {}
         }
     end
@@ -167,7 +157,7 @@ function structured_output_handler.handler(contract_args)
         return {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Claude failed to use the structured_output tool",
+            error_message = "Model failed to use the structured_output tool",
             metadata = response.metadata or {}
         }
     end
