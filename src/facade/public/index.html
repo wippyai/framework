@@ -228,20 +228,14 @@
                 }).catch(function () { /* env endpoint unavailable */ });
             })();
 
-            events.on('authExpired', function () {
-                localStorage.removeItem(STORAGE_KEY);
-                window.location.href = loginPath;
-            });
-
-            events.on('error', function (err) {
-                console.error('Wippy critical error:', err);
-                localStorage.removeItem(STORAGE_KEY);
-                window.location.href = loginPath;
-            });
-        } catch (err) {
-            console.error('Facade initialization failed:', err);
-        }
-    })();
+        events.on('error', function (err) {
+            console.error('Wippy critical error:', err);
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = loginPath;
+        });
+    } catch (err) {
+        console.error('Facade initialization failed:', err);
+    }
 </script>
 </body>
 </html>
