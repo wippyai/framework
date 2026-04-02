@@ -112,7 +112,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.18"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.19"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
