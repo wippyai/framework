@@ -92,10 +92,10 @@ local function define_tests()
                 })
 
                 test.is_true(response.success)
-                test.not_nil(response.result.data)
-                test.eq(response.result.data.name, "John")
-                test.eq(response.result.data.age, 30)
-                test.eq(response.result.data.city, "NYC")
+                test.not_nil((response :: any).result.data)
+                test.eq((response :: any).result.data.name, "John")
+                test.eq((response :: any).result.data.age, 30)
+                test.eq((response :: any).result.data.city, "NYC")
             end)
 
             it("should send forced tool_choice in payload", function()
@@ -130,9 +130,9 @@ local function define_tests()
                     }
                 })
 
-                test.not_nil(captured_payload.toolConfig)
-                test.not_nil(captured_payload.toolConfig.toolChoice)
-                test.eq(captured_payload.toolConfig.toolChoice.tool.name, "structured_output")
+                test.not_nil((captured_payload :: any).toolConfig)
+                test.not_nil((captured_payload :: any).toolConfig.toolChoice)
+                test.eq((captured_payload :: any).toolConfig.toolChoice.tool.name, "structured_output")
             end)
 
             it("should handle missing tool_use in response", function()

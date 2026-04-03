@@ -230,52 +230,47 @@ function bedrock_client.converse_stream(model_id, payload, options)
 end
 
 -- Parse eventstream headers from binary header block
-local function parse_eventstream_headers(buf, headers_length)
-    local headers = {}
-    local pos = 1
+local function parse_eventstream_headers(buf: string, headers_length: integer): {[string]: string}
+    local headers: {[string]: string} = {}
+    local pos: integer = 1
     while pos <= headers_length do
-        local name_len = string.byte(buf, pos)
+        local name_len: integer = string.byte(buf, pos) :: integer
         pos = pos + 1
         local name = buf:sub(pos, pos + name_len - 1)
         pos = pos + name_len
-        local header_type = string.byte(buf, pos)
+        local header_type: integer = string.byte(buf, pos) :: integer
         pos = pos + 1
 
         if header_type == 7 then
-            -- String type
-            local val_len = string.unpack(">I2", buf, pos)
+            local val_len: integer = string.unpack(">I2", buf, pos) :: integer
             pos = pos + 2
             local value = buf:sub(pos, pos + val_len - 1)
             pos = pos + val_len
             headers[name] = value
         else
-            -- Skip other header types
             break
         end
     end
     return headers
 end
 
--- Parse a single AWS eventstream message from a binary buffer
--- Returns: payload, headers, bytes consumed
-local function parse_eventstream_message(buf)
+local function parse_eventstream_message(buf: string): (string?, {[string]: string}?, integer)
     if #buf < 12 then
         return nil, nil, 0
     end
 
-    local total_length = string.unpack(">I4", buf, 1)
-    local headers_length = string.unpack(">I4", buf, 5)
+    local total_length: integer = string.unpack(">I4", buf, 1) :: integer
+    local headers_length: integer = string.unpack(">I4", buf, 5) :: integer
 
-    if #buf < total_length then
+    if #buf < (total_length :: number) then
         return nil, nil, 0
     end
 
-    -- Parse headers
     local headers_buf = buf:sub(13, 12 + headers_length)
     local headers = parse_eventstream_headers(headers_buf, headers_length)
 
-    local payload_offset = 13 + headers_length
-    local payload_length = total_length - 12 - headers_length - 4
+    local payload_offset: integer = 13 + headers_length
+    local payload_length: integer = total_length - 12 - headers_length - 4
 
     if payload_length <= 0 then
         return "", headers, total_length
@@ -351,11 +346,11 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     end
 
     callbacks = callbacks or {}
-    local on_content = callbacks.on_content or function() end
-    local on_tool_call = callbacks.on_tool_call or function() end
-    local on_thinking = callbacks.on_thinking or function() end
-    local on_error = callbacks.on_error or function() end
-    local on_done = callbacks.on_done or function() end
+    local on_content = callbacks.on_content or function(_chunk: string) end
+    local on_tool_call = callbacks.on_tool_call or function(_info: any) end
+    local on_thinking = callbacks.on_thinking or function(_chunk: string) end
+    local on_error = callbacks.on_error or function(_info: any) end
+    local on_done = callbacks.on_done or function(_result: any) end
 
     local full_content = ""
     local tool_calls = {}
@@ -400,12 +395,13 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             local delta = data.delta or {}
 
             if delta.text then
-                full_content = full_content .. delta.text
-                on_content(delta.text)
+                local text_chunk = tostring(delta.text)
+                full_content = full_content .. text_chunk
+                on_content(text_chunk)
             elseif delta.reasoningContent then
                 local rc = delta.reasoningContent
                 if rc.text then
-                    on_thinking(rc.text)
+                    on_thinking(tostring(rc.text))
                     if thinking_blocks[index] then
                         thinking_blocks[index].thinking = thinking_blocks[index].thinking .. rc.text
                     end

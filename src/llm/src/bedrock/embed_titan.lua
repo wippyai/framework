@@ -3,16 +3,17 @@ local embed_titan = {}
 -- Build InvokeModel payload for Amazon Titan Embed Text models
 -- Titan accepts a single text per request, returns a single embedding vector
 function embed_titan.build_payload(text, options)
-    local payload = {
+    local opts = options or {}
+    local payload: {[string]: any} = {
         inputText = text
     }
 
-    if options and options.dimensions then
-        payload.dimensions = options.dimensions
+    if opts.dimensions then
+        payload.dimensions = opts.dimensions
     end
 
-    if options and options.normalize ~= nil then
-        payload.normalize = options.normalize
+    if opts.normalize ~= nil then
+        payload.normalize = opts.normalize
     end
 
     return payload

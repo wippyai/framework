@@ -38,10 +38,10 @@ local function define_tests()
 
             status_handler.handler({})
 
-            test.not_nil(captured_payload.messages)
-            test.eq(captured_payload.messages[1].content[1].text, "ping")
-            test.not_nil(captured_payload.inferenceConfig)
-            test.eq(captured_payload.inferenceConfig.maxTokens, 1)
+            test.not_nil((captured_payload :: any).messages)
+            test.eq((captured_payload :: any).messages[1].content[1].text, "ping")
+            test.not_nil((captured_payload :: any).inferenceConfig)
+            test.eq((captured_payload :: any).inferenceConfig.maxTokens, 1)
         end)
 
         it("should return unhealthy on connection failure", function()

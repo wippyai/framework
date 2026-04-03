@@ -80,9 +80,9 @@ local function define_tests()
                     options = { temperature = 0.5, max_tokens = 500 }
                 })
 
-                test.not_nil(captured_payload.inferenceConfig)
-                test.eq(captured_payload.inferenceConfig.temperature, 0.5)
-                test.eq(captured_payload.inferenceConfig.maxTokens, 500)
+                test.not_nil((captured_payload :: any).inferenceConfig)
+                test.eq((captured_payload :: any).inferenceConfig.temperature, 0.5)
+                test.eq((captured_payload :: any).inferenceConfig.maxTokens, 500)
             end)
 
             it("should map response correctly", function()
@@ -137,8 +137,8 @@ local function define_tests()
                     }
                 })
 
-                test.not_nil(captured_payload.system)
-                test.eq(captured_payload.system[1].text, "Be helpful")
+                test.not_nil((captured_payload :: any).system)
+                test.eq((captured_payload :: any).system[1].text, "Be helpful")
             end)
         end)
 
@@ -172,9 +172,9 @@ local function define_tests()
                     }
                 })
 
-                test.not_nil(captured_payload.toolConfig)
-                test.not_nil(captured_payload.toolConfig.tools)
-                test.eq(#captured_payload.toolConfig.tools, 1)
+                test.not_nil((captured_payload :: any).toolConfig)
+                test.not_nil((captured_payload :: any).toolConfig.tools)
+                test.eq(#(captured_payload :: any).toolConfig.tools, 1)
             end)
 
             it("should map tool calls in response", function()

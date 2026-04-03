@@ -19,7 +19,8 @@ local function detect_model_family(model_id)
 end
 
 local function embed_with_titan(client, model_id, input, options)
-    local texts = type(input) == "table" and input or { input }
+    local texts
+    if type(input) == "table" then texts = input else texts = { input } end
     local all_embeddings = {}
     local total_tokens = 0
 
@@ -47,7 +48,8 @@ local function embed_with_titan(client, model_id, input, options)
 end
 
 local function embed_with_cohere(client, model_id, input, options)
-    local texts = type(input) == "table" and input or { input }
+    local texts
+    if type(input) == "table" then texts = input else texts = { input } end
     local payload = embed_cohere.build_payload(texts, options)
     local response, err = client.invoke(model_id, payload, { timeout = options and options.timeout })
 
@@ -95,15 +97,15 @@ function embed_handler.handler(contract_args)
         }
     end
 
+    local model_id = contract_args.model
+    local input = contract_args.input
     local options = contract_args.options or {}
     local result, err
 
     if family == "titan" then
-        result, err = embed_with_titan(
-            embed_handler._client, contract_args.model, contract_args.input, options)
+        result, err = embed_with_titan(embed_handler._client, model_id, input, options)
     elseif family == "cohere" then
-        result, err = embed_with_cohere(
-            embed_handler._client, contract_args.model, contract_args.input, options)
+        result, err = embed_with_cohere(embed_handler._client, model_id, input, options)
     end
 
     if err then
@@ -124,7 +126,7 @@ function embed_handler.handler(contract_args)
             success = false,
             error = error_type,
             error_message = err.message or "Embedding request failed",
-            metadata = err.metadata or {}
+            metadata = (err :: any).metadata or {}
         }
     end
 

@@ -137,9 +137,10 @@ local function define_tests()
                 test.is_true(response.success, "Structured output failed: " .. (response.error_message or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.data)
-                test.eq(response.result.data.name, "John Doe")
-                test.eq(response.result.data.age, 30)
-                test.eq(response.result.data.city, "NYC")
+                local data = (response :: any).result.data
+                test.eq(data.name, "John Doe")
+                test.eq(data.age, 30)
+                test.eq(data.city, "NYC")
             end)
         end)
 

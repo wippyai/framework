@@ -12,7 +12,7 @@ local function define_tests()
 
                 test.eq(#result.messages, 1)
                 test.eq(result.messages[1].role, "user")
-                test.eq(result.messages[1].content[1].text, "Hello")
+                test.eq((result.messages[1].content[1] :: any).text, "Hello")
                 test.is_nil(result.system)
             end)
 
@@ -24,7 +24,7 @@ local function define_tests()
 
                 test.eq(#result.messages, 1)
                 test.not_nil(result.system)
-                test.eq(result.system[1].text, "You are helpful")
+                test.eq((result.system[1] :: any).text, "You are helpful")
             end)
 
             it("should map function_call to assistant toolUse", function()
@@ -42,9 +42,10 @@ local function define_tests()
 
                 test.eq(#result.messages, 2)
                 test.eq(result.messages[2].role, "assistant")
-                test.not_nil(result.messages[2].content[1].toolUse)
-                test.eq(result.messages[2].content[1].toolUse.name, "get_weather")
-                test.eq(result.messages[2].content[1].toolUse.toolUseId, "call_123")
+                local tool_use_block = result.messages[2].content[1] :: any
+                test.not_nil(tool_use_block.toolUse)
+                test.eq(tool_use_block.toolUse.name, "get_weather")
+                test.eq(tool_use_block.toolUse.toolUseId, "call_123")
             end)
 
             it("should map function_result to user toolResult", function()
@@ -63,8 +64,9 @@ local function define_tests()
 
                 test.eq(#result.messages, 3)
                 test.eq(result.messages[3].role, "user")
-                test.not_nil(result.messages[3].content[1].toolResult)
-                test.eq(result.messages[3].content[1].toolResult.toolUseId, "call_1")
+                local tool_result_block = result.messages[3].content[1] :: any
+                test.not_nil(tool_result_block.toolResult)
+                test.eq(tool_result_block.toolResult.toolUseId, "call_1")
             end)
 
             it("should consolidate consecutive same-role messages", function()
@@ -75,8 +77,8 @@ local function define_tests()
 
                 test.eq(#result.messages, 1)
                 test.eq(#result.messages[1].content, 2)
-                test.eq(result.messages[1].content[1].text, "First")
-                test.eq(result.messages[1].content[2].text, "Second")
+                test.eq((result.messages[1].content[1] :: any).text, "First")
+                test.eq((result.messages[1].content[2] :: any).text, "Second")
             end)
 
             it("should handle string content in user messages", function()
@@ -85,7 +87,7 @@ local function define_tests()
                 })
 
                 test.eq(#result.messages, 1)
-                test.eq(result.messages[1].content[1].text, "Plain text")
+                test.eq((result.messages[1].content[1] :: any).text, "Plain text")
             end)
 
             it("should map developer messages to system blocks", function()
@@ -97,8 +99,8 @@ local function define_tests()
 
                 test.not_nil(result.system)
                 test.eq(#result.system, 2)
-                test.eq(result.system[1].text, "System prompt")
-                test.eq(result.system[2].text, "Developer instruction")
+                test.eq((result.system[1] :: any).text, "System prompt")
+                test.eq((result.system[2] :: any).text, "Developer instruction")
             end)
 
             it("should preserve thinking blocks in function_call messages", function()
@@ -116,9 +118,11 @@ local function define_tests()
                 })
 
                 test.eq(#result.messages[2].content, 2)
-                test.not_nil(result.messages[2].content[1].reasoningContent)
-                test.eq(result.messages[2].content[1].reasoningContent.reasoningText.text, "Let me think...")
-                test.not_nil(result.messages[2].content[2].toolUse)
+                local reasoning_block = result.messages[2].content[1] :: any
+                test.not_nil(reasoning_block.reasoningContent)
+                test.eq(reasoning_block.reasoningContent.reasoningText.text, "Let me think...")
+                local tool_block = result.messages[2].content[2] :: any
+                test.not_nil(tool_block.toolUse)
             end)
         end)
 
@@ -187,7 +191,7 @@ local function define_tests()
                 test.eq(config.temperature, 0.7)
                 test.eq(config.maxTokens, 1000)
                 test.eq(config.topP, 0.9)
-                test.eq(config.stopSequences[1], "END")
+                test.eq((config :: any).stopSequences[1], "END")
             end)
 
             it("should map thinking_effort to additionalModelRequestFields", function()

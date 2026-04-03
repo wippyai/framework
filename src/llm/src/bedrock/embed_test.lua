@@ -97,7 +97,7 @@ local function define_tests()
                     options = { dimensions = 256 }
                 })
 
-                test.eq(captured_payload.dimensions, 256)
+                test.eq((captured_payload :: any).dimensions, 256)
             end)
 
             it("should handle v1 model", function()
@@ -179,7 +179,7 @@ local function define_tests()
                     options = { dimensions = 512 }
                 })
 
-                test.eq(captured_payload.output_dimension, 512)
+                test.eq((captured_payload :: any).output_dimension, 512)
             end)
 
             it("should handle embeddings_by_type response", function()
@@ -218,7 +218,7 @@ local function define_tests()
                     options = { input_type = "search_query" }
                 })
 
-                test.eq(captured_payload.input_type, "search_query")
+                test.eq((captured_payload :: any).input_type, "search_query")
             end)
 
             it("should handle cohere v3 model", function()

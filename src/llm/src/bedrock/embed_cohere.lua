@@ -3,19 +3,19 @@ local embed_cohere = {}
 -- Build InvokeModel payload for Cohere Embed models
 -- Cohere supports batch (up to 96 texts) and requires input_type
 function embed_cohere.build_payload(texts, options)
-    local payload = {
+    local opts = options or {}
+    local payload: {[string]: any} = {
         texts = texts,
-        input_type = (options and options.input_type) or "search_document",
+        input_type = opts.input_type or "search_document",
         embedding_types = { "float" }
     }
 
-    if options and options.dimensions then
-        -- Cohere v4 uses output_dimension, v3 ignores it (fixed 1024)
-        payload.output_dimension = options.dimensions
+    if opts.dimensions then
+        payload.output_dimension = opts.dimensions
     end
 
-    if options and options.truncate then
-        payload.truncate = options.truncate
+    if opts.truncate then
+        payload.truncate = opts.truncate
     end
 
     return payload
