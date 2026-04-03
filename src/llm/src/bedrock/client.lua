@@ -5,7 +5,6 @@ local env = require("env")
 local ctx = require("ctx")
 local sigv4 = require("sigv4")
 local credentials = require("bedrock_credentials")
-local claude_client = require("claude_client")
 
 local bedrock_client = {}
 
@@ -15,7 +14,6 @@ bedrock_client._ctx = ctx
 bedrock_client._sigv4 = sigv4
 bedrock_client._credentials = credentials
 
-bedrock_client.ANTHROPIC_VERSION = "bedrock-2023-05-31"
 bedrock_client.SERVICE = "bedrock"
 
 local function resolve_config()
@@ -46,7 +44,6 @@ local function resolve_config()
         base_url = resolve_string("base_url", "BEDROCK_BASE_URL")
             or ("https://bedrock-runtime." .. region .. ".amazonaws.com"),
         timeout = tonumber(resolve_string("timeout", "BEDROCK_TIMEOUT")) or 600,
-        anthropic_version = resolve_string("anthropic_version") or bedrock_client.ANTHROPIC_VERSION,
         headers = ctx_all.headers
     }
 end
@@ -65,16 +62,10 @@ local function extract_response_metadata(http_response)
             or http_response.headers["x-amz-request-id"],
     }
 
-    -- Extract rate limit headers (Bedrock uses x-amzn-bedrock-* prefix)
     local rate_limits = {}
     for header, value in pairs(http_response.headers) do
         if header:match("^x%-amzn%-bedrock") then
             local key = header:gsub("x%-amzn%-bedrock%-", ""):gsub("%-", "_")
-            rate_limits[key] = tonumber(value) or value
-        end
-        -- Also capture standard Anthropic rate limit headers (Bedrock may forward them)
-        if header:match("^anthropic%-ratelimit") then
-            local key = header:gsub("anthropic%-ratelimit%-", ""):gsub("%-", "_")
             rate_limits[key] = tonumber(value) or value
         end
     end
@@ -121,18 +112,9 @@ local function parse_error_response(http_response)
     return error_info
 end
 
-function bedrock_client.invoke_path(model_id)
-    return "/model/" .. model_id .. "/invoke"
-end
-
-function bedrock_client.invoke_stream_path(model_id)
-    return "/model/" .. model_id .. "/invoke-with-response-stream"
-end
-
--- Make a signed request to Bedrock Runtime
-function bedrock_client.request(model_id, payload, options)
+-- Make a signed POST request to a bedrock-runtime path
+local function signed_request(path, payload, options)
     options = options or {}
-    local method = options.method or "POST"
     local config = resolve_config()
 
     local creds, creds_err = bedrock_client._credentials.resolve()
@@ -143,23 +125,11 @@ function bedrock_client.request(model_id, payload, options)
         }
     end
 
-    local path
-    if options.stream then
-        path = bedrock_client.invoke_stream_path(model_id)
-    else
-        path = bedrock_client.invoke_path(model_id)
-    end
-
     local full_url = config.base_url .. path
     local host = extract_host(config.base_url)
 
-    if payload then
-        payload.anthropic_version = config.anthropic_version
-    end
-
     local body = ""
-    if method == "POST" or method == "PUT" or method == "PATCH" then
-        payload = payload or {}
+    if payload then
         body = json.encode(payload)
     end
 
@@ -175,7 +145,7 @@ function bedrock_client.request(model_id, payload, options)
     end
 
     local signed_headers, sign_err = bedrock_client._sigv4.sign_request({
-        method = method,
+        method = "POST",
         host = host,
         uri = path,
         headers = headers,
@@ -239,34 +209,85 @@ function bedrock_client.request(model_id, payload, options)
     return parsed
 end
 
--- Parse a single AWS eventstream message from a binary buffer.
--- Returns: payload string, bytes consumed, or nil and error.
+-- InvokeModel: POST /model/{modelId}/invoke
+function bedrock_client.invoke(model_id, payload, options)
+    local path = "/model/" .. model_id .. "/invoke"
+    return signed_request(path, payload, options)
+end
+
+-- Converse: POST /model/{modelId}/converse
+function bedrock_client.converse(model_id, payload, options)
+    local path = "/model/" .. model_id .. "/converse"
+    return signed_request(path, payload, options)
+end
+
+-- ConverseStream: POST /model/{modelId}/converse-stream (returns eventstream)
+function bedrock_client.converse_stream(model_id, payload, options)
+    options = options or {}
+    options.stream = true
+    local path = "/model/" .. model_id .. "/converse-stream"
+    return signed_request(path, payload, options)
+end
+
+-- Parse eventstream headers from binary header block
+local function parse_eventstream_headers(buf, headers_length)
+    local headers = {}
+    local pos = 1
+    while pos <= headers_length do
+        local name_len = string.byte(buf, pos)
+        pos = pos + 1
+        local name = buf:sub(pos, pos + name_len - 1)
+        pos = pos + name_len
+        local header_type = string.byte(buf, pos)
+        pos = pos + 1
+
+        if header_type == 7 then
+            -- String type
+            local val_len = string.unpack(">I2", buf, pos)
+            pos = pos + 2
+            local value = buf:sub(pos, pos + val_len - 1)
+            pos = pos + val_len
+            headers[name] = value
+        else
+            -- Skip other header types
+            break
+        end
+    end
+    return headers
+end
+
+-- Parse a single AWS eventstream message from a binary buffer
+-- Returns: payload, headers, bytes consumed
 local function parse_eventstream_message(buf)
     if #buf < 12 then
-        return nil, 0
+        return nil, nil, 0
     end
 
     local total_length = string.unpack(">I4", buf, 1)
     local headers_length = string.unpack(">I4", buf, 5)
 
     if #buf < total_length then
-        return nil, 0
+        return nil, nil, 0
     end
 
-    -- payload sits after prelude (12) + headers, before trailing CRC (4)
+    -- Parse headers
+    local headers_buf = buf:sub(13, 12 + headers_length)
+    local headers = parse_eventstream_headers(headers_buf, headers_length)
+
     local payload_offset = 13 + headers_length
     local payload_length = total_length - 12 - headers_length - 4
 
     if payload_length <= 0 then
-        return "", total_length
+        return "", headers, total_length
     end
 
     local payload = buf:sub(payload_offset, payload_offset + payload_length - 1)
-    return payload, total_length
+    return payload, headers, total_length
 end
 
--- Read all eventstream messages from a binary stream, yielding decoded JSON payloads.
--- Each payload contains a "type" field matching the Claude SSE event types.
+-- Read all eventstream messages from a binary stream
+-- For InvokeModel: events have {"bytes": "base64..."} payload wrapping inner JSON with "type" field
+-- For ConverseStream: events have event type in headers (:event-type) and payload is the body directly
 local function read_eventstream_events(stream)
     local events = {}
     local buf = ""
@@ -285,7 +306,7 @@ local function read_eventstream_events(stream)
         buf = buf .. chunk
 
         while #buf >= 12 do
-            local payload, consumed = parse_eventstream_message(buf)
+            local payload, headers, consumed = parse_eventstream_message(buf)
             if consumed == 0 then
                 break
             end
@@ -296,6 +317,7 @@ local function read_eventstream_events(stream)
                 local decoded, decode_err = json.decode(payload)
                 if not decode_err and decoded then
                     if decoded.bytes then
+                        -- InvokeModel format: inner JSON wrapped in base64
                         local raw = base64.decode(tostring(decoded.bytes))
                         if raw then
                             local inner, inner_err = json.decode(raw)
@@ -304,7 +326,15 @@ local function read_eventstream_events(stream)
                             end
                         end
                     else
-                        table.insert(events, decoded)
+                        -- ConverseStream format: payload is the body, event type in headers
+                        local event_type = headers and headers[":event-type"]
+                        if event_type then
+                            local event = {}
+                            event[event_type] = decoded
+                            table.insert(events, event)
+                        else
+                            table.insert(events, decoded)
+                        end
                     end
                 end
             end
@@ -314,8 +344,8 @@ local function read_eventstream_events(stream)
     return events
 end
 
--- Process Bedrock eventstream, dispatching to the same callbacks as Claude SSE.
-function bedrock_client.process_stream(stream_response, callbacks)
+-- Process ConverseStream eventstream, dispatching to callbacks
+function bedrock_client.process_converse_stream(stream_response, callbacks)
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -340,61 +370,61 @@ function bedrock_client.process_stream(stream_response, callbacks)
         return nil, stream_err
     end
 
-    for _, data in ipairs(events) do
-        local event_type = data.type
+    for _, event in ipairs(events) do
+        -- Converse stream events use top-level keys instead of a "type" field
+        if event.messageStart then
+            -- Nothing to extract at message start for Converse
+        elseif event.contentBlockStart then
+            local data = event.contentBlockStart
+            local index = data.contentBlockIndex or 0
+            local start_block = data.start or {}
 
-        if event_type == "message_start" then
-            if data.message and data.message.usage then
-                usage = data.message.usage
-            end
-        elseif event_type == "content_block_start" then
-            if data.index ~= nil and data.content_block then
-                content_blocks[data.index] = data.content_block
+            content_blocks[index] = start_block
 
-                if data.content_block.type == "thinking" then
-                    thinking_blocks[data.index] = {
-                        type = "thinking",
-                        thinking = data.content_block.thinking or "",
-                        signature = data.content_block.signature or ""
-                    }
-                end
+            if start_block.toolUse then
+                tool_calls[index] = {
+                    id = start_block.toolUse.toolUseId or "",
+                    name = start_block.toolUse.name or "",
+                    partial_json = ""
+                }
+            elseif start_block.reasoningContent then
+                thinking_blocks[index] = {
+                    type = "thinking",
+                    thinking = "",
+                    signature = ""
+                }
             end
-        elseif event_type == "content_block_delta" then
-            local index = data.index or 0
+        elseif event.contentBlockDelta then
+            local data = event.contentBlockDelta
+            local index = data.contentBlockIndex or 0
             local delta = data.delta or {}
 
-            if delta.type == "text_delta" then
-                local text_chunk = delta.text or ""
-                full_content = full_content .. text_chunk
-                on_content(text_chunk)
-            elseif delta.type == "thinking_delta" then
-                local thinking_chunk = delta.thinking or ""
-                on_thinking(thinking_chunk)
-
-                if thinking_blocks[index] then
-                    thinking_blocks[index].thinking = thinking_blocks[index].thinking .. thinking_chunk
+            if delta.text then
+                full_content = full_content .. delta.text
+                on_content(delta.text)
+            elseif delta.reasoningContent then
+                local rc = delta.reasoningContent
+                if rc.text then
+                    on_thinking(rc.text)
+                    if thinking_blocks[index] then
+                        thinking_blocks[index].thinking = thinking_blocks[index].thinking .. rc.text
+                    end
                 end
-            elseif delta.type == "signature_delta" then
-                local signature_chunk = delta.signature or ""
-
-                if thinking_blocks[index] then
-                    thinking_blocks[index].signature = thinking_blocks[index].signature .. signature_chunk
+                if rc.signature then
+                    if thinking_blocks[index] then
+                        thinking_blocks[index].signature = thinking_blocks[index].signature .. rc.signature
+                    end
                 end
-            elseif delta.type == "input_json_delta" then
-                if not tool_calls[index] then
-                    tool_calls[index] = { partial_json = "" }
+            elseif delta.toolUse then
+                if tool_calls[index] then
+                    tool_calls[index].partial_json = tool_calls[index].partial_json .. (delta.toolUse.input or "")
                 end
-                tool_calls[index].partial_json = tool_calls[index].partial_json .. (delta.partial_json or "")
             end
-        elseif event_type == "content_block_stop" then
-            local index = data.index or 0
+        elseif event.contentBlockStop then
+            local index = (event.contentBlockStop.contentBlockIndex or 0)
 
-            if content_blocks[index] and content_blocks[index].type == "tool_use" then
-                local json_str = ""
-                if tool_calls[index] and tool_calls[index].partial_json then
-                    json_str = tool_calls[index].partial_json
-                end
-
+            if tool_calls[index] and tool_calls[index].partial_json then
+                local json_str = tool_calls[index].partial_json
                 local arguments = {}
                 if json_str ~= "" then
                     local parsed_args, parse_err = json.decode(json_str)
@@ -403,55 +433,25 @@ function bedrock_client.process_stream(stream_response, callbacks)
                     end
                 end
 
-                local tool_call = {
-                    id = content_blocks[index].id or "",
-                    name = content_blocks[index].name or "",
+                tool_calls[index] = {
+                    id = tool_calls[index].id,
+                    name = tool_calls[index].name,
                     arguments = arguments
                 }
-
-                tool_calls[index] = tool_call
-                on_tool_call(tool_call)
+                on_tool_call(tool_calls[index])
             end
-        elseif event_type == "message_delta" then
-            if data.delta then
-                finish_reason = data.delta.stop_reason
+        elseif event.messageStop then
+            finish_reason = event.messageStop.stopReason
+        elseif event.metadata then
+            if event.metadata.usage then
+                usage = event.metadata.usage
             end
-            if data.usage then
-                for k, v in pairs(data.usage) do
-                    usage[k] = v
-                end
-            end
-        elseif event_type == "message_stop" then
-            local final_tool_calls = {}
-            for _, tool_call in pairs(tool_calls) do
-                if type(tool_call) == "table" and tool_call.id then
-                    table.insert(final_tool_calls, tool_call)
-                end
-            end
-
-            local final_thinking_blocks = {}
-            for _, thinking_block in pairs(thinking_blocks) do
-                if type(thinking_block) == "table" and thinking_block.type == "thinking" then
-                    table.insert(final_thinking_blocks, thinking_block)
-                end
-            end
-
-            local result = {
-                content = full_content,
-                tool_calls = final_tool_calls,
-                thinking = final_thinking_blocks,
-                finish_reason = finish_reason,
-                usage = usage,
-                metadata = stream_response.metadata or {}
-            }
-
-            on_done(result)
-            return full_content, nil, result
-        elseif event_type == "error" then
-            if data.error then
-                on_error(data.error)
-                return nil, data.error.message
-            end
+        elseif event.internalServerException or event.modelStreamErrorException
+            or event.validationException or event.throttlingException then
+            local exc = event.internalServerException or event.modelStreamErrorException
+                or event.validationException or event.throttlingException
+            on_error({ message = exc.message or "Stream error" })
+            return nil, exc.message or "Stream error"
         end
     end
 
