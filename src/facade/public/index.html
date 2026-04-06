@@ -5,53 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <title>Wippy</title>
+    <script src="@wippy-fe/loading.js"></script>
     <style>
-        .facade-loader {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            height: 100vh; gap: 16px; font-family: system-ui, -apple-system, sans-serif;
+        #facade-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; z-index: 99999;
+            height: 100vh; height: 100dvh;
+            transition: opacity 0.12s ease-out;
         }
-        .facade-loader__spinner {
-            width: 28px; height: 28px;
-            border: 2.5px solid rgba(128,128,128,0.15);
-            border-top-color: rgba(128,128,128,0.5);
-            border-radius: 50%;
-            animation: facade-spin 0.7s linear infinite;
-        }
-        .facade-loader__text { font-size: 13px; color: rgba(128,128,128,0.6); }
-        .facade-error {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            height: 100vh; gap: 12px; padding: 24px; text-align: center;
-            font-family: system-ui, -apple-system, sans-serif;
-        }
-        .facade-error__title { font-size: 15px; font-weight: 600; }
-        .facade-error__detail { font-size: 13px; opacity: 0.6; max-width: 420px; word-break: break-word; }
-        .facade-error__retry {
-            margin-top: 8px; padding: 6px 18px; font-size: 13px;
-            background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2);
-            border-radius: 6px; cursor: pointer; color: inherit;
-        }
-        .facade-error__retry:hover { background: rgba(128,128,128,0.18); }
-        @keyframes facade-spin { to { transform: rotate(360deg); } }
+        #facade-overlay.fade-out { opacity: 0; pointer-events: none; }
     </style>
 </head>
 <body>
-<div id="app">
-    <div class="facade-loader">
-        <div class="facade-loader__spinner"></div>
-        <div class="facade-loader__text">Loading...</div>
-    </div>
+<div id="app"></div>
+<div id="facade-overlay">
+    <wippy-loading title="Loading..."></wippy-loading>
 </div>
-<script type="module">
+<script>
+    (async function () {
     var STORAGE_KEY = '@wippy_token_info';
-    var appEl = document.getElementById('app');
+    var overlay = document.getElementById('facade-overlay');
+
+    function hideOverlay() {
+        overlay.classList.add('fade-out');
+        setTimeout(function () { overlay.remove(); }, 150);
+    }
 
     function showError(title, detail) {
-        appEl.innerHTML =
-            '<div class="facade-error">' +
-                '<div class="facade-error__title">' + title + '</div>' +
-                (detail ? '<div class="facade-error__detail">' + detail + '</div>' : '') +
-                '<button class="facade-error__retry" onclick="location.reload()">Retry</button>' +
-            '</div>';
+        var el = document.createElement('wippy-error');
+        el.setAttribute('title', title);
+        if (detail) el.setAttribute('message', detail);
+        overlay.textContent = '';
+        overlay.appendChild(el);
     }
 
     try {
@@ -122,10 +106,8 @@
 
         var loginPath = cfg.login_path || '/login.html';
 
-        events.on('authExpired', function () {
-            localStorage.removeItem(STORAGE_KEY);
-            window.location.href = loginPath;
-        });
+        // Hide overlay when initial route resolves and page starts rendering
+        events.on('load', hideOverlay);
 
             // Embedded log receiver — listens to globalEvents 'log' emitted by module.js.
             // Console transport always active; Sentry loaded from CDN if PUBLIC_SENTRY_DSN is set.
@@ -228,6 +210,11 @@
                 }).catch(function () { /* env endpoint unavailable */ });
             })();
 
+        events.on('authExpired', function () {
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = loginPath;
+        });
+
         events.on('error', function (err) {
             console.error('Wippy critical error:', err);
             localStorage.removeItem(STORAGE_KEY);
@@ -236,6 +223,7 @@
     } catch (err) {
         console.error('Facade initialization failed:', err);
     }
+    })();
 </script>
 </body>
 </html>
