@@ -325,7 +325,7 @@ entries:
 
 #### Bedrock Model Registration
 
-Use `wippy.llm.claude.bedrock:provider` and the Bedrock model ID (inference profile format for newer models):
+Use `wippy.llm.bedrock:provider` and the Bedrock model ID (inference profile format for newer models):
 
 ```yaml
 entries:
@@ -339,7 +339,7 @@ entries:
       capabilities: [generate, tool_use, structured_output]
       priority: 100
     providers:
-      - id: wippy.llm.claude.bedrock:provider
+      - id: wippy.llm.bedrock:provider
         provider_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     max_tokens: 200000
     output_tokens: 8192
@@ -361,7 +361,7 @@ entries:
 ## Providers
 
 - `wippy.llm.claude` - Anthropic Claude (direct API)
-- `wippy.llm.claude.bedrock` - AWS Bedrock (Claude models via SigV4)
+- `wippy.llm.bedrock` - AWS Bedrock (Converse API for text generation, InvokeModel for embeddings)
 - `wippy.llm.openai` - OpenAI (also compatible with OpenRouter, LM Studio)
 - `wippy.llm.google.vertex` - Google Vertex AI
 - `wippy.llm.google.generative_ai` - Google Generative AI (Gemini)
@@ -407,7 +407,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 ## Subnamespaces
 
 - `wippy.llm.claude` - Claude provider (direct API)
-- `wippy.llm.claude.bedrock` - AWS Bedrock provider
+- `wippy.llm.bedrock` - AWS Bedrock provider
 - `wippy.llm.openai` - OpenAI provider
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
 - `wippy.llm.discovery` - Model and provider discovery

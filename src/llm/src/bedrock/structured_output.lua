@@ -2,7 +2,6 @@ local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
-local hash = require("hash")
 
 local structured_output_handler = {
     _client = bedrock_client,
@@ -11,19 +10,19 @@ local structured_output_handler = {
 }
 
 local function validate_schema(schema)
-    local errors = {}
+    local schema_errors = {}
 
     if not schema or type(schema) ~= "table" then
-        table.insert(errors, "Schema must be a table")
-        return false, errors
+        table.insert(schema_errors, "Schema must be a table")
+        return false, schema_errors
     end
 
     if schema.type ~= "object" then
-        table.insert(errors, "Root schema must be type 'object'")
+        table.insert(schema_errors, "Root schema must be type 'object'")
     end
 
     if schema.additionalProperties ~= false then
-        table.insert(errors, "Root schema must have 'additionalProperties: false' for reliable structured output")
+        table.insert(schema_errors, "Root schema must have 'additionalProperties: false' for reliable structured output")
     end
 
     if schema.properties and type(schema.properties) == "table" then
@@ -33,7 +32,7 @@ local function validate_schema(schema)
         end
 
         if not schema.required or type(schema.required) ~= "table" then
-            table.insert(errors, "Schema must have 'required' array when properties are defined")
+            table.insert(schema_errors, "Schema must have 'required' array when properties are defined")
         else
             local missing = {}
             for _, prop_name in ipairs(property_names) do
@@ -50,12 +49,12 @@ local function validate_schema(schema)
             end
 
             if #missing > 0 then
-                table.insert(errors, "All properties must be marked as required: " .. table.concat(missing, ", "))
+                table.insert(schema_errors, "All properties must be marked as required: " .. table.concat(missing, ", "))
             end
         end
     end
 
-    return #errors == 0, errors
+    return #schema_errors == 0, schema_errors
 end
 
 function structured_output_handler.handler(contract_args)
@@ -96,37 +95,47 @@ function structured_output_handler.handler(contract_args)
         }
     end
 
-    local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped = structured_output_handler._mapper.map_messages(contract_args.messages)
+    local inference_config, additional_fields = structured_output_handler._mapper.map_options(contract_args.options or {})
 
+    if not inference_config.maxTokens then
+        inference_config.maxTokens = 2000
+    end
+
+    -- Build tool for structured output extraction
     local structured_tool = {
-        name = "structured_output",
-        description = "Generate structured output matching the required schema. Use this tool to return data in the exact format specified.",
-        schema = contract_args.schema
+        toolSpec = {
+            name = "structured_output",
+            description = "Generate structured output matching the required schema. Use this tool to return data in the exact format specified.",
+            inputSchema = {
+                json = contract_args.schema
+            }
+        }
     }
 
-    local claude_tools, _ = structured_output_handler._mapper.map_tools({structured_tool})
-
-    local bedrock_payload = {
-        messages = mapped_messages.messages,
-        tools = claude_tools,
-        tool_choice = { type = "tool", name = "structured_output" },
-        max_tokens = mapped_options.max_tokens or 2000
+    local converse_payload = {
+        messages = mapped.messages,
+        toolConfig = {
+            tools = { structured_tool },
+            toolChoice = { tool = { name = "structured_output" } }
+        }
     }
 
-    if mapped_messages.system then
-        bedrock_payload.system = mapped_messages.system
+    if mapped.system then
+        converse_payload.system = mapped.system
     end
 
-    for k, v in pairs(mapped_options) do
-        if k ~= "max_tokens" then
-            bedrock_payload[k] = v
-        end
+    if next(inference_config) then
+        converse_payload.inferenceConfig = inference_config
     end
 
-    local response, request_err = structured_output_handler._client.request(
+    if next(additional_fields) then
+        converse_payload.additionalModelRequestFields = additional_fields
+    end
+
+    local response, request_err = structured_output_handler._client.converse(
         contract_args.model,
-        bedrock_payload,
+        converse_payload,
         { timeout = contract_args.timeout }
     )
 
@@ -136,7 +145,9 @@ function structured_output_handler.handler(contract_args)
         return error_response
     end
 
-    if not response or not response.content then
+    -- Extract tool_use block from response
+    if not response or not response.output or not response.output.message
+        or not response.output.message.content then
         return {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
@@ -145,15 +156,15 @@ function structured_output_handler.handler(contract_args)
         }
     end
 
-    local tool_use_block = nil
-    for _, block in ipairs(response.content) do
-        if block.type == "tool_use" and block.name == "structured_output" then
-            tool_use_block = block
+    local tool_use_input = nil
+    for _, block in ipairs(response.output.message.content) do
+        if block.toolUse and block.toolUse.name == "structured_output" then
+            tool_use_input = block.toolUse.input
             break
         end
     end
 
-    if not tool_use_block then
+    if not tool_use_input then
         return {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
@@ -162,19 +173,10 @@ function structured_output_handler.handler(contract_args)
         }
     end
 
-    if not tool_use_block.input then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Tool use block does not contain input",
-            metadata = response.metadata or {}
-        }
-    end
-
     return {
         success = true,
         result = {
-            data = tool_use_block.input
+            data = tool_use_input
         },
         tokens = structured_output_handler._mapper.map_tokens(response.usage),
         finish_reason = "stop",

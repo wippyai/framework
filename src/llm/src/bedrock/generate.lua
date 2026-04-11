@@ -1,7 +1,6 @@
 local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
-local json = require("json")
 
 local generate_handler = {
     _client = bedrock_client,
@@ -28,7 +27,7 @@ local function handle_streaming(stream_response, context, stream_config)
     local finish_reason = nil
     local final_usage = nil
 
-    local stream_content, stream_err, stream_result = generate_handler._client.process_stream(stream_response, {
+    local stream_content, stream_err, stream_result = generate_handler._client.process_converse_stream(stream_response, {
         on_content = function(chunk)
             streamer:buffer_content(chunk)
             full_content = full_content .. chunk
@@ -99,80 +98,81 @@ function generate_handler.handler(contract_args)
 
     local context = {
         model = contract_args.model,
-        has_tools = (contract_args.tools and #contract_args.tools > 0),
         name_to_id_map = {}
     }
 
-    local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped = generate_handler._mapper.map_messages(contract_args.messages)
+    local inference_config, additional_fields = generate_handler._mapper.map_options(contract_args.options or {})
 
-    local bedrock_payload = {
-        messages = mapped_messages.messages,
-        max_tokens = mapped_options.max_tokens or 2000
+    -- Set default max_tokens if not specified
+    if not inference_config.maxTokens then
+        inference_config.maxTokens = 2000
+    end
+
+    local converse_payload = {
+        messages = mapped.messages
     }
 
-    if mapped_messages.system then
-        bedrock_payload.system = mapped_messages.system
+    if mapped.system then
+        converse_payload.system = mapped.system
     end
 
-    for k, v in pairs(mapped_options) do
-        if k ~= "max_tokens" then
-            bedrock_payload[k] = v
-        end
+    if next(inference_config) then
+        converse_payload.inferenceConfig = inference_config
     end
 
+    if next(additional_fields) then
+        converse_payload.additionalModelRequestFields = additional_fields
+    end
+
+    -- Tool support
     if contract_args.tools and #contract_args.tools > 0 then
-        local claude_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
-        local tool_choice, tool_choice_error = generate_handler._mapper.map_tool_choice(
-            contract_args.tool_choice,
-            claude_tools
-        )
+        local converse_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
 
-        if tool_choice_error then
-            return {
-                success = false,
-                error = output.ERROR_TYPE.INVALID_REQUEST,
-                error_message = tool_choice_error,
-                metadata = {}
+        if converse_tools then
+            converse_payload.toolConfig = {
+                tools = converse_tools
             }
-        end
 
-        if #claude_tools > 0 then
-            bedrock_payload.tools = claude_tools
+            local tool_choice = generate_handler._mapper.map_tool_choice(
+                contract_args.tool_choice,
+                converse_tools
+            )
             if tool_choice then
-                bedrock_payload.tool_choice = tool_choice
+                converse_payload.toolConfig.toolChoice = tool_choice
             end
         end
 
         context.name_to_id_map = name_to_id_map
-        context.has_tools = true
     end
 
-    local request_options = {
-        timeout = contract_args.timeout or 600
-    }
-
-    local stream_config = nil
+    -- Streaming path
     if contract_args.stream and contract_args.stream.reply_to then
-        request_options.stream = true
-        stream_config = contract_args.stream
+        local stream_response, stream_err = generate_handler._client.converse_stream(
+            contract_args.model,
+            converse_payload,
+            { timeout = contract_args.timeout or 600 }
+        )
+
+        if stream_err then
+            return generate_handler._mapper.map_error_response(stream_err)
+        end
+
+        return handle_streaming(stream_response, context, contract_args.stream)
     end
 
-    local response, request_err = generate_handler._client.request(
+    -- Non-streaming path
+    local response, request_err = generate_handler._client.converse(
         contract_args.model,
-        bedrock_payload,
-        request_options
+        converse_payload,
+        { timeout = contract_args.timeout or 600 }
     )
 
     if request_err then
         return generate_handler._mapper.map_error_response(request_err)
     end
 
-    if stream_config then
-        return handle_streaming(response, context, stream_config)
-    else
-        return generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
-    end
+    return generate_handler._mapper.format_success_response(response, context.name_to_id_map)
 end
 
 return generate_handler
