@@ -317,7 +317,8 @@ function mapper.map_tools(contract_tools)
                     }
                 }
             })
-            name_to_id_map[tool.name] = tool.id or tool.registry_id
+            -- Always set a truthy value so tool-name lookups work even when id is missing
+            name_to_id_map[tool.name] = tool.id or tool.registry_id or tool.name
         end
     end
 
@@ -396,8 +397,70 @@ function mapper.map_options(contract_options)
     return inference_config, additional_fields
 end
 
--- Extract content from Converse response
-function mapper.extract_response_content(converse_response)
+-- Try to parse a text block as an embedded tool call.
+-- Some models (Llama 3.3 on Bedrock, etc.) return tool calls as JSON inside a
+-- text content block instead of using native Converse toolUse blocks.
+-- Known formats:
+--   {"type": "function", "name": "X", "parameters": {...}}
+--   {"name": "X", "arguments": {...}}
+--   {"name": "X", "parameters": {...}}
+--   {"type": "function", "function": {"name": "X", "arguments": {...}}}
+--   <tool_call>{...}</tool_call>
+--   <function_call>{...}</function_call>
+local function parse_text_tool_call(text, tool_names)
+    if not text or text == "" or not tool_names or next(tool_names) == nil then
+        return nil
+    end
+
+    local stripped = text:gsub("^%s+", ""):gsub("%s+$", "")
+
+    -- Strip common tag wrappers
+    local unwrapped = stripped:match("^<tool_call>%s*(.-)%s*</tool_call>$")
+        or stripped:match("^<function_call>%s*(.-)%s*</function_call>$")
+        or stripped
+
+    -- Extract the first top-level JSON object (models sometimes add prose before/after)
+    local json_str = unwrapped:match("^(%b{})")
+    if not json_str then
+        -- Try to find a JSON object anywhere in the text
+        local start_idx = unwrapped:find("{", 1, true)
+        if start_idx then
+            json_str = unwrapped:sub(start_idx):match("^(%b{})")
+        end
+    end
+
+    if not json_str then
+        return nil
+    end
+
+    local parsed, decode_err = json.decode(json_str :: string)
+    if decode_err or type(parsed) ~= "table" then
+        return nil
+    end
+
+    -- Format: {"type": "function", "function": {"name": "X", "arguments": {...}}}
+    if parsed.type == "function" and type(parsed["function"]) == "table" then
+        local fn = parsed["function"] :: any
+        if fn.name and tool_names[fn.name] then
+            return { name = fn.name, arguments = fn.arguments or fn.parameters or {} }
+        end
+    end
+
+    -- Format: {"type": "function", "name": "X", "parameters": {...}} (Llama 3.3)
+    -- Format: {"name": "X", "arguments": {...}} or {"name": "X", "parameters": {...}}
+    if parsed.name and tool_names[parsed.name] then
+        return {
+            name = parsed.name,
+            arguments = parsed.arguments or parsed.parameters or parsed.input or {}
+        }
+    end
+
+    return nil
+end
+
+-- Extract content from Converse response.
+-- `tool_names` is an optional set (name -> id) used to detect text-embedded tool calls.
+function mapper.extract_response_content(converse_response, tool_names)
     local content_text = ""
     local tool_calls = {}
     local thinking_blocks = {}
@@ -412,9 +475,12 @@ function mapper.extract_response_content(converse_response)
         }
     end
 
+    local text_blocks = {}
+
     for _, block in ipairs(converse_response.output.message.content) do
         if block.text then
             content_text = content_text .. block.text
+            table.insert(text_blocks, block.text)
         elseif block.toolUse then
             table.insert(tool_calls, {
                 id = block.toolUse.toolUseId or "",
@@ -427,6 +493,24 @@ function mapper.extract_response_content(converse_response)
                 thinking = block.reasoningContent.reasoningText.text or "",
                 signature = block.reasoningContent.reasoningText.signature or ""
             })
+        end
+    end
+
+    -- Fallback: if tools were requested but no native toolUse blocks came back,
+    -- try to parse tool calls out of text content (Llama 3.3 on Bedrock quirk).
+    if #tool_calls == 0 and tool_names and next(tool_names) ~= nil then
+        for _, text in ipairs(text_blocks) do
+            local parsed = parse_text_tool_call(text, tool_names)
+            if parsed then
+                table.insert(tool_calls, {
+                    id = "tooluse_" .. tostring(math.random(100000, 999999)),
+                    name = parsed.name,
+                    arguments = parsed.arguments
+                })
+                -- Clear the content_text since the "content" was actually the tool call
+                content_text = ""
+                break
+            end
         end
     end
 
@@ -463,13 +547,18 @@ end
 
 -- Format a full success response from Converse API response
 function mapper.format_success_response(converse_response, name_to_id_map)
-    local extracted = mapper.extract_response_content(converse_response)
+    local extracted = mapper.extract_response_content(converse_response, name_to_id_map)
     local tokens = mapper.map_tokens(converse_response.usage)
     local finish_reason = mapper.map_finish_reason(converse_response.stopReason)
     local thinking_content = extract_thinking_text(extracted.thinking_blocks)
 
     if tokens and thinking_content ~= "" then
         tokens.thinking_tokens = approximate_token_count(thinking_content)
+    end
+
+    -- If fallback parser recovered tool calls from text, treat it as tool_call stop
+    if #extracted.tool_calls > 0 and finish_reason ~= "tool_call" then
+        finish_reason = "tool_call"
     end
 
     local result = {

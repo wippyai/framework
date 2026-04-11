@@ -113,11 +113,13 @@ function structured_output_handler.handler(contract_args)
         }
     }
 
+    -- Use toolChoice.any with a single tool: equivalent to forcing that tool,
+    -- but compatible with models that reject specific tool choice (e.g. Mistral).
     local converse_payload = {
         messages = mapped.messages,
         toolConfig = {
             tools = { structured_tool },
-            toolChoice = { tool = { name = "structured_output" } }
+            toolChoice = { any = table.create(0, 1) }
         }
     }
 
@@ -145,21 +147,17 @@ function structured_output_handler.handler(contract_args)
         return error_response
     end
 
-    -- Extract tool_use block from response
-    if not response or not response.output or not response.output.message
-        or not response.output.message.content then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Invalid response structure from Bedrock",
-            metadata = response and response.metadata or {}
-        }
-    end
+    -- Extract tool_use block from response (mapper handles text-JSON fallback
+    -- for models that return tool calls as text instead of native toolUse blocks)
+    local extracted = structured_output_handler._mapper.extract_response_content(
+        response,
+        { structured_output = true }
+    )
 
     local tool_use_input = nil
-    for _, block in ipairs(response.output.message.content) do
-        if block.toolUse and block.toolUse.name == "structured_output" then
-            tool_use_input = block.toolUse.input
+    for _, tc in ipairs(extracted.tool_calls) do
+        if tc.name == "structured_output" then
+            tool_use_input = tc.arguments
             break
         end
     end
@@ -169,7 +167,7 @@ function structured_output_handler.handler(contract_args)
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
             error_message = "Model failed to use the structured_output tool",
-            metadata = response.metadata or {}
+            metadata = response and response.metadata or {}
         }
     end
 

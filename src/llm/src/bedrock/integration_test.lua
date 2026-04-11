@@ -338,6 +338,58 @@ local function define_tests()
                 test.eq(response.finish_reason, "tool_call")
             end)
 
+            it("should recover tool calls from text-embedded JSON (Llama 3.3 fallback)", function()
+                if not RUN_INTEGRATION_TESTS then return end
+                local response = generate_handler.handler({
+                    model = "us.meta.llama3-3-70b-instruct-v1:0",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "What is the weather in SF? Use get_weather tool." } } }
+                    },
+                    tools = {
+                        {
+                            name = "get_weather",
+                            description = "Get weather",
+                            schema = {
+                                type = "object",
+                                properties = { location = { type = "string" } },
+                                required = { "location" }
+                            }
+                        }
+                    },
+                    options = { temperature = 0, max_tokens = 200 }
+                })
+                test.is_true(response.success, "Llama 3.3 fallback failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.eq(#response.result.tool_calls, 1)
+                test.eq(response.result.tool_calls[1].name, "get_weather")
+            end)
+
+            it("should do structured output with Mistral Pixtral (toolChoice.any)", function()
+                if not RUN_INTEGRATION_TESTS then return end
+                local response = structured_output_handler.handler({
+                    model = MISTRAL_MODEL,
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Extract: Bob is 45 from Tokyo" } } }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = {
+                            name = { type = "string" },
+                            age = { type = "number" },
+                            city = { type = "string" }
+                        },
+                        required = { "name", "age", "city" },
+                        additionalProperties = false
+                    },
+                    options = { temperature = 0, max_tokens = 200 }
+                })
+                test.is_true(response.success, "Mistral structured output failed: " .. (response.error_message or "unknown"))
+                assert(response.success)
+                test.eq((response.result.data :: any).name, "Bob")
+                test.eq((response.result.data :: any).age, 45)
+                test.eq((response.result.data :: any).city, "Tokyo")
+            end)
+
             it("should make tool calls with Llama 4 Maverick", function()
                 if not RUN_INTEGRATION_TESTS then return end
                 local response = generate_handler.handler({

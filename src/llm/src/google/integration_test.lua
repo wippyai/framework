@@ -814,7 +814,7 @@ local function define_tests()
                                     source = {
                                         type = "url",
                                         mime_type = "image/jpeg",
-                                        url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                                        url = "https://storage.googleapis.com/generativeai-downloads/images/scones.jpg"
                                     }
                                 }
                             }
@@ -922,7 +922,7 @@ local function define_tests()
                                     source = {
                                         type = "url",
                                         mime_type = "image/jpeg",
-                                        url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                                        url = "https://storage.googleapis.com/generativeai-downloads/images/scones.jpg"
                                     }
                                 },
                                 { type = "text", text = "Describe the main elements you can see." }
@@ -1776,7 +1776,7 @@ local function define_tests()
                                     source = {
                                         type = "url",
                                         mime_type = "image/jpeg",
-                                        url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                                        url = "https://storage.googleapis.com/generativeai-downloads/images/scones.jpg"
                                     }
                                 }
                             }
@@ -1883,7 +1883,7 @@ local function define_tests()
                                     source = {
                                         type = "url",
                                         mime_type = "image/jpeg",
-                                        url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                                        url = "https://storage.googleapis.com/generativeai-downloads/images/scones.jpg"
                                     }
                                 },
                                 { type = "text", text = "Describe what you see in detail." }

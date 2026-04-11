@@ -132,7 +132,9 @@ local function define_tests()
 
                 test.not_nil((captured_payload :: any).toolConfig)
                 test.not_nil((captured_payload :: any).toolConfig.toolChoice)
-                test.eq((captured_payload :: any).toolConfig.toolChoice.tool.name, "structured_output")
+                test.not_nil((captured_payload :: any).toolConfig.toolChoice.any)
+                test.eq(#(captured_payload :: any).toolConfig.tools, 1)
+                test.eq((captured_payload :: any).toolConfig.tools[1].toolSpec.name, "structured_output")
             end)
 
             it("should handle missing tool_use in response", function()

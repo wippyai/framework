@@ -289,6 +289,89 @@ local function define_tests()
                 test.eq(extracted.tool_calls[1].id, "call_1")
             end)
 
+            it("should parse Llama 3.3 text-embedded tool call", function()
+                local extracted = mapper.extract_response_content({
+                    output = {
+                        message = {
+                            role = "assistant",
+                            content = {
+                                { text = '{"type": "function", "name": "get_weather", "parameters": {"location": "SF"}}' }
+                            }
+                        }
+                    }
+                }, { get_weather = "tool_1" })
+
+                test.eq(#extracted.tool_calls, 1)
+                test.eq(extracted.tool_calls[1].name, "get_weather")
+                test.eq((extracted.tool_calls[1].arguments :: any).location, "SF")
+                test.eq(extracted.content, "")
+            end)
+
+            it("should parse name+arguments text format tool call", function()
+                local extracted = mapper.extract_response_content({
+                    output = {
+                        message = {
+                            role = "assistant",
+                            content = {
+                                { text = '{"name": "search", "arguments": {"query": "hello"}}' }
+                            }
+                        }
+                    }
+                }, { search = "tool_1" })
+
+                test.eq(#extracted.tool_calls, 1)
+                test.eq(extracted.tool_calls[1].name, "search")
+                test.eq((extracted.tool_calls[1].arguments :: any).query, "hello")
+            end)
+
+            it("should parse <tool_call> wrapped format", function()
+                local extracted = mapper.extract_response_content({
+                    output = {
+                        message = {
+                            role = "assistant",
+                            content = {
+                                { text = '<tool_call>{"name": "search", "arguments": {"q": "foo"}}</tool_call>' }
+                            }
+                        }
+                    }
+                }, { search = "tool_1" })
+
+                test.eq(#extracted.tool_calls, 1)
+                test.eq(extracted.tool_calls[1].name, "search")
+            end)
+
+            it("should NOT parse text as tool call when tool name doesn't match", function()
+                local extracted = mapper.extract_response_content({
+                    output = {
+                        message = {
+                            role = "assistant",
+                            content = {
+                                { text = '{"name": "unknown_tool", "arguments": {}}' }
+                            }
+                        }
+                    }
+                }, { real_tool = "tool_1" })
+
+                test.eq(#extracted.tool_calls, 0)
+                test.eq(extracted.content, '{"name": "unknown_tool", "arguments": {}}')
+            end)
+
+            it("should NOT parse text when no tools were provided", function()
+                local extracted = mapper.extract_response_content({
+                    output = {
+                        message = {
+                            role = "assistant",
+                            content = {
+                                { text = '{"name": "something"}' }
+                            }
+                        }
+                    }
+                })
+
+                test.eq(#extracted.tool_calls, 0)
+                test.eq(extracted.content, '{"name": "something"}')
+            end)
+
             it("should extract reasoning content", function()
                 local extracted = mapper.extract_response_content({
                     output = {
