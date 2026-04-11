@@ -236,6 +236,43 @@ local function define_tests()
 
                 test.is_true(response.success)
             end)
+
+            it("should handle cohere v4 with us. inference profile prefix", function()
+                embed_handler._client = {
+                    invoke = function(model_id, payload, options)
+                        test.eq(model_id, "us.cohere.embed-v4:0")
+                        return {
+                            embeddings = { float = { { 0.1, 0.2, 0.3 } } },
+                            response_type = "embeddings_by_type"
+                        }
+                    end
+                }
+
+                local response = embed_handler.handler({
+                    model = "us.cohere.embed-v4:0",
+                    input = "test"
+                })
+
+                test.is_true(response.success)
+                test.eq(#response.result.embeddings, 1)
+                test.eq(#response.result.embeddings[1], 3)
+            end)
+
+            it("should handle global. inference profile prefix", function()
+                embed_handler._client = {
+                    invoke = function(model_id, payload, options)
+                        test.eq(model_id, "global.cohere.embed-v4:0")
+                        return { embeddings = { { 0.5, 0.6 } }, response_type = "embeddings_floats" }
+                    end
+                }
+
+                local response = embed_handler.handler({
+                    model = "global.cohere.embed-v4:0",
+                    input = "test"
+                })
+
+                test.is_true(response.success)
+            end)
         end)
 
         describe("Error Handling", function()

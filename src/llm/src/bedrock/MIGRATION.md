@@ -156,6 +156,60 @@ The wire protocol is slightly different — ConverseStream uses the same binary 
 
 The error handling is unchanged. HTTP status codes map to contract error types the same way.
 
+## Tested Model Compatibility
+
+The following was verified against real AWS Bedrock in `us-east-1`:
+
+### Text Generation (Converse API)
+
+| Model | Generate | Tool Calling | Structured Output | Thinking |
+|-------|----------|--------------|-------------------|----------|
+| Claude Haiku 4.5 | ✅ | ✅ | ✅ | ✅ |
+| Claude Sonnet 4.5 | ✅ | ✅ | ✅ | ✅ |
+| Claude Sonnet 4.6 | ✅ | ✅ | ✅ | ✅ |
+| Claude 3.5 Haiku | ✅ | ✅ | ✅ | ❌ (model) |
+| Llama 4 Scout | ✅ | ✅ | ✅ | ❌ (model) |
+| Llama 4 Maverick | ✅ | ✅ | ✅ | ❌ (model) |
+| Llama 3.3 70B | ✅ | ⚠️ see notes | ❌ | ❌ (model) |
+| DeepSeek R1 | ✅ | ❌ (model) | ❌ | native (in text) |
+| Mistral Pixtral Large | ✅ | ✅ | ⚠️ see notes | ❌ (model) |
+| Nova Micro | ✅ | ✅ | ✅ | ❌ (model) |
+| Nova Lite | ✅ | ✅ | ✅ | ❌ (model) |
+| Nova Pro | ✅ | ✅ | ✅ | ❌ (model) |
+
+### Embeddings (InvokeModel)
+
+| Model | Batch | Custom Dimensions |
+|-------|-------|-------------------|
+| `amazon.titan-embed-text-v1` | sequential | fixed 1536 |
+| `amazon.titan-embed-text-v2:0` | sequential | 256 / 512 / 1024 |
+| `cohere.embed-english-v3` | native (≤96) | fixed 1024 |
+| `cohere.embed-multilingual-v3` | native (≤96) | fixed 1024 |
+| `cohere.embed-v4:0` / `us.cohere.embed-v4:0` | native (≤96) | 256 / 512 / 1024 / 1536 |
+
+Cross-region inference profile prefixes (`us.`, `global.`, `eu.`) are supported for embedding model IDs — detected by substring match, not anchored.
+
+### Known AWS Bedrock Model Limitations
+
+These are AWS/model-side limitations, not framework bugs:
+
+- **Llama 3.3 70B on Bedrock** returns tool calls as plain-text JSON inside a `text` content block, not as a proper `toolUse` block. Use Llama 4 Scout or Maverick if you need tool calling on an open-source model.
+- **Mistral Pixtral Large** supports tool calling but rejects `toolChoice.tool` (forced specific tool selection) with a `ValidationException`. This means `structured_output` fails on Mistral Pixtral — the handler uses forced tool choice to guarantee schema adherence. Use a different model for structured output.
+- **DeepSeek R1** does not support tool calling via Converse API. Use for pure text generation only. Its native reasoning appears inside the regular text output.
+- **Non-Claude models** do not support the `thinking_effort` contract option. The parameter maps to `additionalModelRequestFields.thinking` which will be ignored or error on non-Claude models.
+
+### Features Verified End-to-End
+
+- SigV4 request signing
+- Converse API for text generation (all 12 model families listed above)
+- ConverseStream (binary eventstream with `:event-type` header parsing)
+- Tool calling with `toolConfig`
+- Forced tool choice (structured output)
+- Extended thinking via `additionalModelRequestFields.thinking` (Claude)
+- `inferenceConfig` parameters: `maxTokens`, `temperature`, `topP`, `stopSequences`
+- Error mapping (400, 401, 403, 404, 429, 500)
+- Cross-region inference profile model IDs
+
 ## What Stayed the Same
 
 - SigV4 request signing

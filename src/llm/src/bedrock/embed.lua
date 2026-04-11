@@ -10,9 +10,11 @@ local embed_handler = {
 }
 
 local function detect_model_family(model_id)
-    if model_id:match("^amazon%.titan%-embed") or model_id:match("^amazon%.nova.*embed") then
+    -- Cross-region inference profiles have a prefix like "us.", "global.", "eu."
+    -- Match the family anywhere in the ID after optional prefix
+    if model_id:match("amazon%.titan%-embed") or model_id:match("amazon%.nova.*embed") then
         return "titan"
-    elseif model_id:match("^cohere%.embed") then
+    elseif model_id:match("cohere%.embed") then
         return "cohere"
     end
     return nil
