@@ -1,9 +1,7 @@
 local bedrock_client = require("bedrock_client")
-local mapper = require("mapper")
 
 local status_handler = {
-    _client = bedrock_client,
-    _mapper = mapper
+    _client = bedrock_client
 }
 
 function status_handler.handler(contract_args)
@@ -11,12 +9,14 @@ function status_handler.handler(contract_args)
 
     local payload = {
         messages = {
-            { role = "user", content = "ping" }
+            { role = "user", content = { { text = "ping" } } }
         },
-        max_tokens = 1
+        inferenceConfig = {
+            maxTokens = 1
+        }
     }
 
-    local response, request_err = status_handler._client.request(
+    local response, request_err = status_handler._client.converse(
         model,
         payload,
         { timeout = 15 }
@@ -35,7 +35,7 @@ function status_handler.handler(contract_args)
         elseif request_err.status_code == 401 or request_err.status_code == 403 then
             status = "unhealthy"
             message = request_err.message or "Authentication failed"
-        elseif request_err.status_code and request_err.status_code >= 500 and request_err.status_code < 600 then
+        elseif request_err.status_code >= 500 and request_err.status_code < 600 then
             status = "degraded"
             message = "Service experiencing issues"
         end
