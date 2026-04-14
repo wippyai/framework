@@ -121,28 +121,31 @@
                     return states[key];
                 }
 
-                // Console transport
+                // Console transport (colored tags, inline data)
+                var TAG_STYLES = {
+                    host: 'color:#fff;background:#6366f1;padding:1px 4px;border-radius:3px;font-weight:600',
+                    child: 'color:#fff;background:#0ea5e9;padding:1px 4px;border-radius:3px;font-weight:600',
+                };
                 transports.push({ handle: function (e) {
-                    var pfx = '[' + e.source.layer + (e.source.resourceId ? ':' + (e.source.resourceType || 'unknown') + ':' + e.source.resourceId : '') + ']';
-                    var msg = pfx + ' ' + e.message;
-                    var meta = {};
-                    if (e.callerStack) meta.callerStack = e.callerStack;
-                    if (e.extra) meta.extra = e.extra;
-                    if (Object.keys(e.tags).length) meta.tags = e.tags;
-                    if (Object.keys(e.contexts).length) meta.contexts = e.contexts;
-                    var hasMeta = Object.keys(meta).length > 0;
+                    var label = e.source.layer + (e.source.resourceId ? ':' + (e.source.resourceType || 'unknown') + ':' + e.source.resourceId : '');
+                    var style = TAG_STYLES[e.source.layer] || TAG_STYLES.child;
+                    var msg = '%c' + label + '%c ' + e.message;
+                    var inline = [msg, style, ''];
+                    if (e.extra && Object.keys(e.extra).length) inline.push(e.extra);
+                    if (Object.keys(e.tags).length) inline.push(e.tags);
+                    if (Object.keys(e.contexts).length) inline.push(e.contexts);
                     if (e.subAction === 'captureException' && e.error) {
                         var err = new Error(e.error.message); err.name = e.error.name;
                         if (e.error.stack) err.stack = e.error.stack;
-                        console.error(msg, err, hasMeta ? meta : '');
+                        inline.push(err);
+                        console.error.apply(console, inline);
                         return;
                     }
-                    var args = hasMeta ? [msg, meta] : [msg];
-                    if (e.callerStack) args.push('\n' + e.callerStack);
-                    if (e.level <= 3) console.error.apply(console, args);
-                    else if (e.level <= 4) console.warn.apply(console, args);
-                    else if (e.level <= 6) console.info.apply(console, args);
-                    else console.debug.apply(console, args);
+                    if (e.callerStack) inline.push('\n' + e.callerStack);
+                    if (e.level <= 3) console.error.apply(console, inline);
+                    else if (e.level <= 4) console.warn.apply(console, inline);
+                    else if (e.level <= 6) console.info.apply(console, inline);
+                    else console.debug.apply(console, inline);
                 }});
 
                 function handleLog(m) {
