@@ -33,14 +33,13 @@ function usage_tracker.track_usage(model_id, prompt_tokens, completion_tokens, t
 
     options = options or {}
 
+    local user_id = "system"
     local actor = security.actor()
-    if not actor then
-        return nil, "No security actor available"
-    end
-
-    local user_id = actor:id()
-    if not user_id then
-        return nil, "Invalid security actor"
+    if actor then
+        local actor_id = actor:id()
+        if actor_id and actor_id ~= "" then
+            user_id = actor_id
+        end
     end
 
     local context_id = options.context_id

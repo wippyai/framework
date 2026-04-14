@@ -9,7 +9,19 @@ Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loa
 3. Checks `localStorage` for an auth token, redirects to `login_path` if missing
 4. Loads the Web Host bundle from CDN (`facade_url + '/module.js'`)
 5. Calls `initWippyApp()` with the full AppConfig (wippy-context-2.0 format)
-6. Shows inline loader/error UI during initialization (no external CSS dependencies)
+6. Shows `<wippy-loading>` / `<wippy-error>` during initialization (vendored from Wippy Web Host CDN)
+
+## Vendored CDN files
+
+`public/@wippy-fe/` contains files copied from the Wippy Web Host CDN. These are loaded before the CDN URL is known (pre-config-fetch), so they must be vendored locally.
+
+**After every Wippy Web Host version bump**, run:
+
+```
+make sync
+```
+
+This downloads fresh copies from the CDN. Update `WEB_HOST_CDN` in the Makefile when the version changes.
 
 ## Derived values
 
@@ -35,7 +47,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.18` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.21` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 
 ### App Identity
@@ -177,9 +189,9 @@ Only override what differs from defaults.
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.18",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.21",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.18/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.21/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "env": {
     "APP_API_URL": "http://localhost:8085",
@@ -221,7 +233,7 @@ fetch /api/public/facade/config
 
 The backend returns config in wippy-context-2.0 shape. `index.html` only adds `$schema` (from `facade_url`), `auth` (from localStorage), and `context` (empty default). All other fields pass through from the backend unchanged.
 
-If any step fails (config fetch, CDN import, missing `initWippyApp`), the page shows a styled error message with a Retry button. No external CSS is required for the loader/error UI.
+If any step fails (config fetch, CDN import, missing `initWippyApp`), the page shows a themed `<wippy-error>` screen with title and details. No external CSS is required — both `<wippy-loading>` and `<wippy-error>` are self-contained web components with Shadow DOM styles.
 
 ## Publishing
 
