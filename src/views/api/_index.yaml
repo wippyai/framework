@@ -93,3 +93,27 @@ entries:
       func: public_url
       method: GET
       path: /pages/public/{id}
+    - name: list_routes
+      kind: function.lua
+      meta:
+        comment: Returns mountRoute → pageId map for pages claiming top-level URLs
+        description: Pages mount route listing endpoint
+        router: api_router
+      source: file://list_routes.lua
+      imports:
+        page_registry: wippy.views:page_registry
+      method: handler
+      modules:
+        - http
+      pool:
+        size: 4
+        workers: 4
+    - name: list_routes.endpoint
+      kind: http.endpoint
+      meta:
+        comment: Endpoint that lists all accessible mount routes
+        description: View pages mount routes listing endpoint
+        router: api_router
+      func: list_routes
+      method: GET
+      path: /pages/routes

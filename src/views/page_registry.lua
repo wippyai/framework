@@ -39,6 +39,7 @@ type PageInfo = {
     kind: string,
     url: string?,
     internal: string?,
+    mount_route: string?,
 }
 
 type PageDetail = PageInfo & {
@@ -134,6 +135,7 @@ local function extract_page_info(entry)
         internal = meta.internal or "",
         kind = kind,
         config_overrides = meta.config_overrides,
+        mount_route = meta.mountRoute,
     }
 
     if kind == "component" then
@@ -211,6 +213,7 @@ function pages.get(page_id)
         kind = kind,
         content_type = entry.meta.content_type or "text/html",
         config_overrides = entry.meta.config_overrides,
+        mount_route = entry.meta.mountRoute,
     }
 
     if kind == "template" then
@@ -275,6 +278,143 @@ function pages.resolve_base_url(page)
     end
 
     return base_url
+end
+
+-- Mount route v1 syntax validator.
+-- Canonical forms:
+--   /:part(.*)*                root mount
+--   /<literal>/:part(.*)*      prefix mount (one or more literal segments)
+--   /<lit1>/<lit2>/:part(.*)*  nested prefix mount
+-- Literal segments: lowercase alphanumerics plus hyphens.
+-- The `:part` param name matches the gen-2-chat frontend convention.
+local MOUNT_ROUTE_SUFFIX = "/:part(.*)*"
+
+local function validate_mount_route_syntax(route)
+    if type(route) ~= "string" or #route < #MOUNT_ROUTE_SUFFIX then
+        return false
+    end
+
+    -- Required catch-all suffix
+    local tail = route:sub(-#MOUNT_ROUTE_SUFFIX)
+    if tail ~= MOUNT_ROUTE_SUFFIX then
+        return false
+    end
+
+    -- Everything before the suffix is the literal prefix
+    local prefix = route:sub(1, #route - #MOUNT_ROUTE_SUFFIX)
+
+    -- Root mount: "/:part(.*)*" → prefix is empty, legal
+    if prefix == "" then
+        return true
+    end
+
+    -- Must start with /
+    if prefix:sub(1, 1) ~= "/" then
+        return false
+    end
+
+    -- Parse segments: each must match [a-z0-9-]+, joined by single /
+    local rebuilt = ""
+    for segment in prefix:gmatch("/([^/]+)") do
+        if not segment:match("^[a-z0-9%-]+$") then
+            return false
+        end
+        rebuilt = rebuilt .. "/" .. segment
+    end
+
+    -- Ensure rebuilt prefix matches input (catches trailing slash, //, etc.)
+    return rebuilt == prefix
+end
+
+-- Build an error message for an invalid-syntax mountRoute.
+local function mount_route_syntax_error(page_id, route)
+    return string.format(
+        '[views] page "%s" has invalid mountRoute "%s"'
+        .. ' — v1 only supports "/<literal>/:part(.*)*" and "/:part(.*)*".'
+        .. ' Literal segments must be lowercase alphanumerics plus hyphens.'
+        .. ' Use ":part" (not ":pathMatch") to match the gen-2-chat system-route convention.',
+        tostring(page_id), tostring(route)
+    )
+end
+
+-- Build an error message for a conflicting mountRoute claimed by two pages.
+local function mount_route_conflict_error(route, page_a, page_b)
+    return string.format(
+        '[views] mount route conflict: pages "%s" and "%s" both claim "%s".'
+        .. ' Mount routes must be unique across all registered view.page entries.'
+        .. ' Remove mountRoute from one of the pages, pick a different path,'
+        .. ' or override in the top-level app by re-declaring the page id with a different mountRoute.',
+        tostring(page_a), tostring(page_b), tostring(route)
+    )
+end
+
+-- Validate all mountRoute fields in a page list.
+-- Returns (routes_map, issues_list).
+-- routes_map is a map from mountRoute → page_id (only populated for valid, non-conflicting entries).
+-- issues_list is an array of error message strings.
+--
+-- Nil / missing mountRoute is silently skipped (pages without the field are fine).
+-- Any non-nil, non-string value (number, boolean, table) is treated as a syntax
+-- error — we refuse to silently swallow `mountRoute: false` or `mountRoute: 42`
+-- because that would hide typos in the YAML.
+function pages.validate_mount_routes(all_pages)
+    local routes_map = {}
+    local issues = {}
+    local seen = {}  -- route → page_id (first-seen)
+
+    if type(all_pages) ~= "table" then
+        return routes_map, issues
+    end
+
+    for _, page in ipairs(all_pages) do
+        local mr = page.mount_route
+        if mr ~= nil and mr ~= "" then
+            if type(mr) ~= "string" or not validate_mount_route_syntax(mr) then
+                table.insert(issues, mount_route_syntax_error(page.id, mr))
+            else
+                local page_id = page.id
+                if type(page_id) ~= "string" or page_id == "" then
+                    -- Defensive: a page entry without a valid id would otherwise
+                    -- collide with other id-less entries on the first dup check.
+                    table.insert(issues, string.format(
+                        '[views] page with mountRoute "%s" is missing a valid id.',
+                        tostring(mr)
+                    ))
+                else
+                    local previous = seen[mr]
+                    if previous and previous ~= page_id then
+                        table.insert(issues, mount_route_conflict_error(mr, page_id, previous))
+                    else
+                        seen[mr] = page_id
+                        routes_map[mr] = page_id
+                    end
+                end
+            end
+        end
+    end
+
+    return routes_map, issues
+end
+
+-- Find mount routes across all pages.
+-- Returns (routes_map, error_string).
+-- On validation failure, routes_map is nil and error_string is a newline-joined
+-- list of every issue found (syntax errors AND conflicts).
+function pages.find_mount_routes()
+    local all_pages, err = pages.find_all()
+    if err then
+        return nil, err
+    end
+    if not all_pages or #all_pages == 0 then
+        return {}
+    end
+
+    local routes_map, issues = pages.validate_mount_routes(all_pages)
+    if #issues > 0 then
+        return nil, table.concat(issues, "\n")
+    end
+
+    return routes_map
 end
 
 -- Check if the current actor can access a page

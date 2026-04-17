@@ -136,9 +136,6 @@ local function handler()
     }
 
     local api_routes = non_empty_map_or_nil(get_req_json_any("api_routes"))
-    if api_routes then
-        host_config.apiRoutes = api_routes
-    end
 
     local additional_nav = non_empty_map_or_nil(get_req_json_any("additional_nav_items"))
     if additional_nav then
@@ -174,6 +171,7 @@ local function handler()
             APP_WEBSOCKET_URL = ws_url,
         },
         routePrefix = non_empty_or_nil(api_url),
+        apiRoutes = api_routes,
         axiosDefaults = axios_defaults,
         theming = {
             global = global_scope,
