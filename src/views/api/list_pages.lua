@@ -57,7 +57,7 @@ local function handler()
                 internal = type(page.internal) == "string" and page.internal or "",
                 hidden = page.inline and 1 or 0,
                 configOverrides = page.config_overrides :: {[string]: any}?,
-                mountRoute = type(page.mount_route) == "string" and page.mount_route or nil,
+                mountRoute = page.mount_route :: string?,
             }
 
             table.insert(pages, page_info)
