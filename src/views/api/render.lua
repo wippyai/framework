@@ -92,7 +92,7 @@ local function handler()
                             primevue = css.prime_vue or false,
                             markdown = css.markdown or false,
                             customCss = css.custom_css or false,
-                            customVariabled = css.custom_variables or false,
+                            customVariables = css.custom_variables or false,
                         },
                         tailwindConfig = proxy.tailwind_config or false,
                         resizeObserver = proxy.resize_observer or false,

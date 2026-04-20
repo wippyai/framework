@@ -28,6 +28,10 @@ entries:
           path: .meta.router
         - entry: wippy.views.api:public_url.endpoint
           path: .meta.router
+        - entry: wippy.views.api:list_routes
+          path: .meta.router
+        - entry: wippy.views.api:list_routes.endpoint
+          path: .meta.router
     - name: public_api_url
       kind: env.variable
       meta:

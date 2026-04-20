@@ -405,7 +405,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 2)
                 tests.eq(google_tools[1].name, "get_weather")
@@ -435,7 +435,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 1)
                 tests.is_nil(google_tools[1].parameters.properties.count.multipleOf)
@@ -457,7 +457,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 1)
                 tests.is_nil(google_tools[1].parameters.examples)
@@ -487,7 +487,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 1)
                 tests.is_nil(google_tools[1].parameters.properties.nested.multipleOf)
@@ -530,7 +530,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 1)
                 tests.eq(google_tools[1].name, "valid_tool")
@@ -570,7 +570,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 1)
                 local params = google_tools[1].parameters
@@ -618,7 +618,7 @@ local function define_tests()
                     }
                 }
 
-                local google_tools = mapper.map_tools(contract_tools)
+                local google_tools = mapper.map_tools(contract_tools) :: any
 
                 tests.eq(#google_tools, 1)
                 local address = google_tools[1].parameters.properties.address

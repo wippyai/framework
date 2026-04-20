@@ -17,6 +17,7 @@ type PageResponse = {
     internal: string,
     hidden: number,
     configOverrides: {[string]: any}?,
+    mountRoute: string?,
 }
 
 local function handler()
@@ -56,6 +57,7 @@ local function handler()
                 internal = type(page.internal) == "string" and page.internal or "",
                 hidden = page.inline and 1 or 0,
                 configOverrides = page.config_overrides :: {[string]: any}?,
+                mountRoute = page.mount_route :: string?,
             }
 
             table.insert(pages, page_info)

@@ -466,6 +466,321 @@ local function define_tests()
                 test.eq(page.kind, "template")
             end)
         end)
+
+        test.describe("mount routes — pure validator", function()
+            test.it("valid: root mount /:part(.*)*", function()
+                local map, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/:part(.*)*" },
+                })
+                test.eq(#issues, 0)
+                test.eq(map["/:part(.*)*"], "ns:a")
+            end)
+
+            test.it("valid: single-segment prefix", function()
+                local map, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/keeper/:part(.*)*" },
+                })
+                test.eq(#issues, 0)
+                test.eq(map["/keeper/:part(.*)*"], "ns:a")
+            end)
+
+            test.it("valid: nested prefix", function()
+                local map, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/admin/users/:part(.*)*" },
+                })
+                test.eq(#issues, 0)
+                test.eq(map["/admin/users/:part(.*)*"], "ns:a")
+            end)
+
+            test.it("valid: hyphens in segments", function()
+                local map, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/my-app/sub-page/:part(.*)*" },
+                })
+                test.eq(#issues, 0)
+                test.eq(map["/my-app/sub-page/:part(.*)*"], "ns:a")
+            end)
+
+            test.it("valid: ignores pages without mount_route", function()
+                local map, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/foo/:part(.*)*" },
+                    { id = "ns:b" },
+                    { id = "ns:c", mount_route = "" },
+                })
+                test.eq(#issues, 0)
+                test.eq(map["/foo/:part(.*)*"], "ns:a")
+            end)
+
+            test.it("invalid: missing catch-all tail", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/keeper" },
+                })
+                test.eq(#issues, 1)
+                test.is_true(issues[1]:find("invalid mountRoute") ~= nil)
+            end)
+
+            test.it("invalid: alternative param name :pathMatch", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/:pathMatch(.*)*" },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("invalid: custom named params", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/user/:id" },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("invalid: trailing slash after catch-all", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/foo/:part(.*)*/" },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("invalid: uppercase segments rejected", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/Admin/:part(.*)*" },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("invalid: double slash rejected", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "//foo/:part(.*)*" },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("invalid: underscore in segment rejected", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/my_app/:part(.*)*" },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("duplicate: two pages claiming same route", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/keeper/:part(.*)*" },
+                    { id = "ns:b", mount_route = "/keeper/:part(.*)*" },
+                })
+                test.eq(#issues, 1)
+                test.is_true(issues[1]:find("conflict") ~= nil)
+                test.is_true(issues[1]:find("ns:a") ~= nil)
+                test.is_true(issues[1]:find("ns:b") ~= nil)
+            end)
+
+            test.it("duplicate: same page id listed twice is idempotent", function()
+                local map, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/foo/:part(.*)*" },
+                    { id = "ns:a", mount_route = "/foo/:part(.*)*" },
+                })
+                test.eq(#issues, 0)
+                test.eq(map["/foo/:part(.*)*"], "ns:a")
+            end)
+
+            test.it("duplicate: reports all conflicts, not just first", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = "/x/:part(.*)*" },
+                    { id = "ns:b", mount_route = "/x/:part(.*)*" },
+                    { id = "ns:c", mount_route = "/y/:part(.*)*" },
+                    { id = "ns:d", mount_route = "/y/:part(.*)*" },
+                })
+                test.eq(#issues, 2)
+            end)
+
+            test.it("empty list returns empty map and no issues", function()
+                local map, issues = page_registry.validate_mount_routes({})
+                test.eq(#issues, 0)
+                local count = 0
+                for _ in pairs(map) do
+                    count = count + 1
+                end
+                test.eq(count, 0)
+            end)
+
+            test.it("nil input returns empty map", function()
+                local map, issues = page_registry.validate_mount_routes(nil)
+                test.eq(#issues, 0)
+                test.not_nil(map)
+            end)
+
+            test.it("invalid type: boolean mount_route surfaces error", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = false },
+                })
+                -- `false` is not nil and not an empty string; the type check
+                -- catches it and emits a clear syntax error so YAML typos
+                -- (e.g. `mountRoute: false`) don't silently drop.
+                test.eq(#issues, 1)
+                test.is_true(issues[1]:find("invalid mountRoute") ~= nil)
+            end)
+
+            test.it("invalid type: number mount_route surfaces error", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = 42 },
+                })
+                test.eq(#issues, 1)
+                test.is_true(issues[1]:find("invalid mountRoute") ~= nil)
+            end)
+
+            test.it("invalid type: table mount_route surfaces error", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "ns:a", mount_route = { "/foo" } },
+                })
+                test.eq(#issues, 1)
+            end)
+
+            test.it("missing id with valid mount_route surfaces error", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { mount_route = "/foo/:part(.*)*" },
+                })
+                test.eq(#issues, 1)
+                test.is_true(issues[1]:find("missing a valid id") ~= nil)
+            end)
+
+            test.it("empty id with valid mount_route surfaces error", function()
+                local _, issues = page_registry.validate_mount_routes({
+                    { id = "", mount_route = "/foo/:part(.*)*" },
+                })
+                test.eq(#issues, 1)
+            end)
+        end)
+
+        test.describe("mount routes — registry integration", function()
+            local MR_IDS = {
+                "mr_home", "mr_keeper", "mr_admin", "mr_no_mount",
+            }
+
+            local function setup_mr_pages()
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                changes:create({
+                    id = NS .. "mr_home",
+                    kind = "registry.entry",
+                    meta = {
+                        type = "view.page",
+                        name = "home",
+                        title = "Home",
+                        announced = true,
+                        public = true,
+                        mountRoute = "/:part(.*)*",
+                        url = "https://cdn.example.com/home/index.html",
+                    },
+                })
+                changes:create({
+                    id = NS .. "mr_keeper",
+                    kind = "registry.entry",
+                    meta = {
+                        type = "view.page",
+                        name = "keeper",
+                        title = "Keeper",
+                        announced = true,
+                        public = true,
+                        mountRoute = "/keeper/:part(.*)*",
+                        url = "https://cdn.example.com/keeper/index.html",
+                    },
+                })
+                changes:create({
+                    id = NS .. "mr_admin",
+                    kind = "registry.entry",
+                    meta = {
+                        type = "view.page",
+                        name = "admin-users",
+                        title = "Admin Users",
+                        announced = true,
+                        public = true,
+                        mountRoute = "/admin/users/:part(.*)*",
+                        url = "https://cdn.example.com/admin/users/index.html",
+                    },
+                })
+                changes:create({
+                    id = NS .. "mr_no_mount",
+                    kind = "registry.entry",
+                    meta = {
+                        type = "view.page",
+                        name = "plain",
+                        title = "Plain",
+                        announced = true,
+                        public = true,
+                        url = "https://cdn.example.com/plain/index.html",
+                    },
+                })
+                changes:apply()
+            end
+
+            local function teardown_mr_pages()
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                for _, name in ipairs(MR_IDS) do
+                    changes:delete(NS .. name)
+                end
+                changes:apply()
+            end
+
+            test.before_each(function()
+                setup_mr_pages()
+            end)
+            test.after_each(function()
+                teardown_mr_pages()
+            end)
+
+            test.it("find_all exposes mount_route when present", function()
+                local all, err = page_registry.find_all()
+                test.is_nil(err)
+                local found = {}
+                for _, page in ipairs(all) do
+                    if page.id:find("^" .. NS .. "mr_") then
+                        found[page.id] = page.mount_route
+                    end
+                end
+                test.eq(found[NS .. "mr_home"], "/:part(.*)*")
+                test.eq(found[NS .. "mr_keeper"], "/keeper/:part(.*)*")
+                test.eq(found[NS .. "mr_admin"], "/admin/users/:part(.*)*")
+            end)
+
+            test.it("find_all returns nil mount_route when not set", function()
+                local all, err = page_registry.find_all()
+                test.is_nil(err)
+                for _, page in ipairs(all) do
+                    if page.id == NS .. "mr_no_mount" then
+                        test.is_nil(page.mount_route)
+                        return
+                    end
+                end
+                test.ok(false, "mr_no_mount not found")
+            end)
+
+            test.it("get returns mount_route on page detail", function()
+                local page, err = page_registry.get(NS .. "mr_keeper")
+                test.is_nil(err)
+                test.eq(page.mount_route, "/keeper/:part(.*)*")
+            end)
+
+            test.it("get returns nil mount_route when not set", function()
+                local page, err = page_registry.get(NS .. "mr_no_mount")
+                test.is_nil(err)
+                test.is_nil(page.mount_route)
+            end)
+
+            test.it("find_mount_routes returns full map for valid state", function()
+                local routes, err = page_registry.find_mount_routes()
+                test.is_nil(err)
+                routes = test.not_nil(routes)
+                test.eq(routes["/:part(.*)*"], NS .. "mr_home")
+                test.eq(routes["/keeper/:part(.*)*"], NS .. "mr_keeper")
+                test.eq(routes["/admin/users/:part(.*)*"], NS .. "mr_admin")
+            end)
+
+            test.it("find_mount_routes excludes pages without mount_route", function()
+                local routes, err = page_registry.find_mount_routes()
+                test.is_nil(err)
+                for _, pid in pairs(routes) do
+                    test.is_true(pid ~= NS .. "mr_no_mount")
+                end
+            end)
+        end)
     end)
 end
 

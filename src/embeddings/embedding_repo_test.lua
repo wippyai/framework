@@ -254,7 +254,7 @@ local function define_tests()
             test.is_nil(err)
             test.ok(#results > 0)
 
-            local entry_id = results[1].entry_id
+            local entry_id = (results :: any)[1].entry_id
 
             local delete_result, del_err = embedding_repo.delete_by_entry(entry_id)
             test.is_nil(del_err)
