@@ -205,7 +205,7 @@ function claude_client.request(endpoint_path, payload, options)
         }
     end
 
-    local parsed, parse_err = json.decode(response.body)
+    local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
         return nil, {
             status_code = response.status_code,

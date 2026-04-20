@@ -244,7 +244,7 @@ function openai_client.request(endpoint_path, payload, options)
     end
 
     -- Parse non-streaming response
-    local parsed, parse_err = json.decode(response.body)
+    local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
         local parse_error = {
             status_code = response.status_code,

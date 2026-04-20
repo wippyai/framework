@@ -285,7 +285,7 @@ function client.request(method, url, http_options)
 
     if response.status_code < 200 or response.status_code >= 300 then
         if http_options.stream and response.stream and not response.body then
-            local body_data = response.stream:read()
+            local body_data = response.stream:read(4096)
             response.body = body_data
         end
         local parsed_error = parse_error_response(response)
@@ -297,7 +297,7 @@ function client.request(method, url, http_options)
         return handle_stream_response(response, http_options)
     end
 
-    local parsed, parse_err = json.decode(response.body)
+    local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
         local parse_error = {
             status_code = response.status_code,

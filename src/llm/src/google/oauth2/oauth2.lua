@@ -45,7 +45,7 @@ function oauth2.get_token()
         return nil, "Failed to retrieve OAuth2 token: " .. tostring(err)
     end
 
-    return json.decode(response.body)
+    return json.decode(response.body or "")
 end
 
 return oauth2

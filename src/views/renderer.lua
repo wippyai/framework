@@ -24,7 +24,7 @@ function renderer.get_page_data(page, params, query)
 
     -- Use the functions module to call the data function
     local executor = funcs.new()
-    local result, err = executor:call(page.data_func, context)
+    local result, err = executor:call(page.data_func :: string, context)
 
     if err then
         -- Return nil for data, and the error message as the second value
@@ -111,7 +111,7 @@ function renderer.render(page_id, params, query)
     end
 
     -- Render the template using the correctly built context
-    local content, render_err = tmpl:render(page.template_name, render_context)
+    local content, render_err = tmpl:render(page.template_name :: string, render_context)
 
     -- IMPORTANT: Release the template resource now that we're done with it
     tmpl:release()
