@@ -80,11 +80,16 @@
             console.warn('Failed to load import map:', e);
         }
 
-        // Now safe to load modules — import map is already in the DOM
+        // Now safe to load modules — import map is already in the DOM.
+        // `cfg.module_file` is "/module.js" (compat) or "/managed-layout.js"
+        // (managed). Both entries set the same `window.initWippyApp` symbol;
+        // the rendered shell is the only difference. Backend normalizes
+        // unknown modes to "compat", so the fallback below is purely defensive.
+        var moduleFile = cfg.module_file || '/module.js';
         try {
-            await import(cfg.facade_url + '/module.js');
+            await import(cfg.facade_url + moduleFile);
         } catch (importErr) {
-            showError('Failed to load frontend bundle', 'Could not load ' + cfg.facade_url + '/module.js — ' + importErr.message);
+            showError('Failed to load frontend bundle', 'Could not load ' + cfg.facade_url + moduleFile + ' — ' + importErr.message);
             throw importErr;
         }
 

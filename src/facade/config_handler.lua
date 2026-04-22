@@ -83,6 +83,17 @@ local function handler()
 
     local facade_url = get_req("fe_facade_url")
     local entry_path = get_req("fe_entry_path")
+    local fe_mode = get_req("fe_mode")
+
+    -- Normalize mode: anything other than "managed" falls back to compat.
+    if fe_mode ~= "managed" then
+        fe_mode = "compat"
+    end
+
+    -- Module filename loaded by index.html. `compat` keeps the historical
+    -- module.js (full Wippy host chrome); `managed` loads managed-layout.js
+    -- (declarative multi-panel host via hostConfig.layout).
+    local module_file = fe_mode == "managed" and "/managed-layout.js" or "/module.js"
 
     local iframe_origin: string? = ""
     if facade_url ~= "" then
@@ -164,6 +175,8 @@ local function handler()
         iframe_origin = iframe_origin,
         iframe_url = iframe_url,
         login_path = get_req("login_path"),
+        mode = fe_mode,
+        module_file = module_file,
 
         env = {
             APP_API_URL = api_url,

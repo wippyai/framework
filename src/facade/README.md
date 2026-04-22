@@ -7,9 +7,28 @@ Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loa
 1. `index.html` is served as a static file via `http.static`
 2. On load, it fetches `GET /api/public/facade/config` to get runtime configuration
 3. Checks `localStorage` for an auth token, redirects to `login_path` if missing
-4. Loads the Web Host bundle from CDN (`facade_url + '/module.js'`)
-5. Calls `initWippyApp()` with the full AppConfig (wippy-context-2.0 format)
+4. Loads the Web Host bundle from CDN — picks the module file based on `fe_mode`:
+   - `compat` (default) → `module.js` — full Wippy host chrome
+   - `managed` → `managed-layout.js` — declarative multi-panel host driven by `hostConfig.layout`
+5. Calls `window.initWippyApp(config)` — both entries expose the same symbol; the mounted shell is the only difference
 6. Shows `<wippy-loading>` / `<wippy-error>` during initialization (vendored from Wippy Web Host CDN)
+
+## Modes
+
+| Mode | Entry loaded | Mounted shell | Use case |
+|---|---|---|---|
+| `compat` _(default)_ | `module.js` | Full Wippy chrome (sidebar + chat + pages + right panel) | Backwards-compatible — existing facades keep working unchanged |
+| `managed` | `managed-layout.js` | Declarative multi-panel layout — no default chrome, every panel declared via `hostConfig.layout` | IDE-style apps, dashboards, Adobe-style multi-pane tools |
+
+Both entries expose the same `window.initWippyApp(config, rootContainer?)` signature — the parent integration code does not change between modes. Set via the `fe_mode` requirement; unknown values normalize to `compat`.
+
+### When to switch to `managed` mode
+
+- You want a multi-panel app with separator-drag resizing
+- You want to embed a custom panel configuration driven by config (not by the standard sidebar/chat layout)
+- You want breakpoint-responsive layouts (desktop vs mobile)
+
+Leave `fe_mode` at `compat` unless you have a specific reason to opt in — the managed shell omits every piece of default Wippy chrome (no sidebar, no chat wrapper, no right panel) and expects the declaration to provide equivalents.
 
 ## Vendored CDN files
 
@@ -49,6 +68,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 |---|---|---|
 | `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.23` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
+| `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 
 ### App Identity
 
