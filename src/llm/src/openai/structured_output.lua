@@ -9,17 +9,15 @@ local structured_output_handler = {
     _mapper = openai_mapper
 }
 
--- Generate a unique name for a schema based on its structure
 local function _generate_schema_name(schema)
     local schema_str = json.encode(schema)
     local digest, err = hash.sha256(schema_str)
     if err then
         return nil, "Failed to generate schema name: " .. tostring(err)
     end
-    return "schema_" .. digest:sub(1,16), nil
+    return "schema_" .. digest:sub(1, 16), nil
 end
 
--- Validate schema meets OpenAI requirements
 local function _validate_schema(schema)
     local errors = {}
 
@@ -58,7 +56,6 @@ local function _validate_schema(schema)
                     table.insert(missing_required, prop_name)
                 end
             end
-
             if #missing_required > 0 then
                 table.insert(errors, "Properties must be marked as required: " .. table.concat(missing_required, ", "))
             end
@@ -69,7 +66,6 @@ local function _validate_schema(schema)
 end
 
 function structured_output_handler.handler(contract_args)
-    -- Validate required arguments
     if not contract_args.model then
         return {
             success = false,
@@ -97,7 +93,6 @@ function structured_output_handler.handler(contract_args)
         }
     end
 
-    -- Validate the schema
     local schema_valid, schema_errors = _validate_schema(contract_args.schema)
     if not schema_valid then
         return {
@@ -108,7 +103,6 @@ function structured_output_handler.handler(contract_args)
         }
     end
 
-    -- Generate a schema name if not provided
     local schema_name = contract_args.schema_name
     if not schema_name then
         local name, err = _generate_schema_name(contract_args.schema)
@@ -123,13 +117,17 @@ function structured_output_handler.handler(contract_args)
         schema_name = name
     end
 
-    -- Build OpenAI payload
-    local openai_payload = {
+    local instructions = structured_output_handler._mapper.extract_instructions(contract_args.messages)
+    local input_items = structured_output_handler._mapper.map_messages(contract_args.messages, {
+        model = contract_args.model
+    })
+
+    local payload = {
         model = contract_args.model,
-        messages = contract_args.messages,
-        response_format = {
-            type = "json_schema",
-            json_schema = {
+        input = input_items,
+        text = {
+            format = {
+                type = "json_schema",
                 name = schema_name,
                 schema = contract_args.schema,
                 strict = true
@@ -137,73 +135,67 @@ function structured_output_handler.handler(contract_args)
         }
     }
 
-    -- Use mapper for options mapping
-    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options)
-    for key, value in pairs(mapped_options) do
-        openai_payload[key] = value
+    if instructions and instructions ~= "" then
+        payload.instructions = instructions
     end
 
-    -- Make the request
+    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options)
+    for key, value in pairs(mapped_options) do
+        payload[key] = value
+    end
+
     local request_options = {
         timeout = contract_args.timeout
     }
 
-    -- Perform the request to OpenAI
-    local response, err = structured_output_handler._client.request(
-        "/chat/completions",
-        openai_payload,
-        request_options
-    )
+    local response, err = structured_output_handler._client.request("/responses", payload, request_options)
 
-    -- Handle request errors
     if err then
         return structured_output_handler._mapper.map_error_response(err)
     end
 
-    -- Check response validity
-    if not response or not response.choices or #response.choices == 0 then
+    if not response or not response.output then
         return {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Invalid response structure from OpenAI",
+            error_message = "Invalid response structure from OpenAI Responses API",
             metadata = response and response.metadata or {}
         }
     end
 
-    -- Extract the first choice
-    local first_choice = response.choices[1]
-    if not first_choice or not first_choice.message then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Invalid choice structure in OpenAI response",
-            metadata = response.metadata or {}
-        }
+    local content_text = nil
+    local refusal = nil
+    for _, item in ipairs(response.output) do
+        if item.type == "message" and item.content then
+            for _, part in ipairs(item.content) do
+                if part.type == "output_text" and part.text then
+                    content_text = (content_text or "") .. part.text
+                elseif part.type == "refusal" and part.refusal then
+                    refusal = part.refusal
+                end
+            end
+        end
     end
 
-    -- Handle refusal
-    if first_choice.message.refusal then
+    if refusal then
         return {
             success = false,
             error = output.ERROR_TYPE.CONTENT_FILTER,
-            error_message = "Request was refused: " .. first_choice.message.refusal,
+            error_message = "Request was refused: " .. refusal,
             metadata = response.metadata or {}
         }
     end
 
-    -- Validate content exists
-    if not first_choice.message.content then
+    if not content_text or content_text == "" then
         return {
             success = false,
             error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "No content in OpenAI response",
+            error_message = "No content in Responses API response",
             metadata = response.metadata or {}
         }
     end
 
-    -- Parse the JSON content for structured output
-    local structured_data = nil
-    local parsed_content, decode_err = json.decode(tostring(first_choice.message.content))
+    local parsed_content, decode_err = json.decode(tostring(content_text))
     if decode_err then
         return {
             success = false,
@@ -212,20 +204,28 @@ function structured_output_handler.handler(contract_args)
             metadata = response.metadata or {}
         }
     end
-    structured_data = parsed_content
 
-    -- Build contract-compliant success response
-    local final_response = {
+    local has_tool_calls = false
+    for _, item in ipairs(response.output) do
+        if item.type == "function_call" then has_tool_calls = true; break end
+    end
+
+    local meta = response.metadata or {}
+    if response.id then meta.response_id = response.id end
+
+    return {
         success = true,
         result = {
-            data = structured_data
+            data = parsed_content
         },
         tokens = structured_output_handler._mapper.map_tokens(response.usage),
-        finish_reason = structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason),
-        metadata = response.metadata or {}
+        finish_reason = structured_output_handler._mapper.map_finish_reason(
+            response.status,
+            has_tool_calls,
+            response.incomplete_details and response.incomplete_details.reason or nil
+        ),
+        metadata = meta
     }
-
-    return final_response
 end
 
 return structured_output_handler
