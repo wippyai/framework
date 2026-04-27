@@ -47,7 +47,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.23` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.25` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 
 ### App Identity
@@ -189,9 +189,9 @@ Only override what differs from defaults.
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.23",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.25",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.23/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.25/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "env": {
     "APP_API_URL": "http://localhost:8085",
