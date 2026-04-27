@@ -362,7 +362,8 @@ entries:
 
 - `wippy.llm.claude` - Anthropic Claude (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock (Converse API for text generation, InvokeModel for embeddings)
-- `wippy.llm.openai` - OpenAI (also compatible with OpenRouter, LM Studio)
+- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `previous_response_id`, `xhigh`/`minimal` reasoning effort. Use this for `api.openai.com`.
+- `wippy.llm.openai_compat` - OpenAI-compatible Chat Completions (`/v1/chat/completions`) — Ollama, vLLM, llama.cpp, LM Studio, OpenRouter, Together, Groq, Fireworks, DeepInfra, Mistral, DeepSeek, etc. Use this for any non-OpenAI backend that exposes a `/chat/completions` endpoint.
 - `wippy.llm.google.vertex` - Google Vertex AI
 - `wippy.llm.google.generative_ai` - Google Generative AI (Gemini)
 
@@ -375,11 +376,17 @@ ANTHROPIC_API_VERSION       # default: 2023-06-01
 ANTHROPIC_BASE_URL          # default: https://api.anthropic.com
 ANTHROPIC_TIMEOUT           # default: 240
 
-# OpenAI
+# OpenAI (Responses API — wippy.llm.openai)
 OPENAI_API_KEY
 OPENAI_ORGANIZATION
-OPENAI_BASE_URL
-OPENAI_TIMEOUT
+OPENAI_BASE_URL             # default: https://api.openai.com/v1
+OPENAI_TIMEOUT              # default: 600
+
+# OpenAI-compatible (Chat Completions — wippy.llm.openai_compat)
+OPENAI_COMPAT_API_KEY       # may be unused for local Ollama
+OPENAI_COMPAT_BASE_URL      # e.g. http://localhost:11434/v1 for Ollama
+OPENAI_COMPAT_ORGANIZATION
+OPENAI_COMPAT_TIMEOUT       # default: 600
 
 # AWS Bedrock
 AWS_ACCESS_KEY_ID           # optional, for local dev
@@ -393,6 +400,8 @@ BEDROCK_TIMEOUT             # default: 600
 GOOGLE_CREDENTIALS          # service account JSON
 GOOGLE_API_KEY              # for Generative AI
 ```
+
+The two OpenAI providers use independent env vars so you can run real OpenAI (`wippy.llm.openai`) and a local model (`wippy.llm.openai_compat`) side by side without conflicts.
 
 In ECS/EKS pods, AWS credentials are resolved automatically from the container metadata endpoint. No env vars needed in production.
 
@@ -408,7 +417,8 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 - `wippy.llm.claude` - Claude provider (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock provider
-- `wippy.llm.openai` - OpenAI provider
+- `wippy.llm.openai` - OpenAI native (Responses API)
+- `wippy.llm.openai_compat` - OpenAI-compatible (Chat Completions) for Ollama / vLLM / OpenRouter / Together / Groq / etc.
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
 - `wippy.llm.discovery` - Model and provider discovery
 - `wippy.llm.util` - Utilities (text compression)

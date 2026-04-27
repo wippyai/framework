@@ -1,0 +1,361 @@
+version: "1.0"
+namespace: wippy.llm.openai_compat
+
+entries:
+  # wippy.llm.openai_compat:api_key
+  - name: api_key
+    kind: env.variable
+    meta:
+      comment: API key for OpenAI-compatible endpoints (Ollama / vLLM / OpenRouter / etc.)
+      icon: tabler:key
+    variable: OPENAI_COMPAT_API_KEY
+
+  # wippy.llm.openai_compat:base_url
+  - name: base_url
+    kind: env.variable
+    meta:
+      comment: Base URL for OpenAI-compatible endpoint (e.g. http://localhost:11434/v1 for Ollama)
+      icon: tabler:world
+    variable: OPENAI_COMPAT_BASE_URL
+
+  # wippy.llm.openai_compat:client
+  - name: client
+    kind: library.lua
+    meta:
+      comment: HTTP client for OpenAI-compatible Chat Completions endpoints with streaming support
+    source: file://client.lua
+    modules:
+      - json
+      - http_client
+      - env
+      - ctx
+      - security
+
+  # wippy.llm.openai_compat:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Client Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible client covering context resolution, HTTP, streaming, and error parsing
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - client
+        - http
+        - streaming
+        - context
+    source: file://client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      openai_client: wippy.llm.openai_compat:client
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:driver
+  - name: driver
+    kind: contract.binding
+    meta:
+      name: OpenAI-Compatible LLM Driver
+      comment: Driver for OpenAI-compatible Chat Completions endpoints (Ollama, vLLM, OpenRouter, llama.cpp, Together, Groq, etc.)
+      tags:
+        - openai-compat
+        - llm
+        - driver
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: wippy.llm.openai_compat:generate
+      - contract: wippy.llm:embedder
+        methods:
+          embed: wippy.llm.openai_compat:embed
+      - contract: wippy.llm:structured_output
+        methods:
+          structured_output: wippy.llm.openai_compat:structured_output
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.openai_compat:status
+    optional_context:
+      api_key:
+        type: string
+        description: API key (some endpoints like local Ollama may not require one)
+        default_env: OPENAI_COMPAT_API_KEY
+      base_url:
+        type: string
+        description: Base URL of the OpenAI-compatible endpoint
+        default_env: OPENAI_COMPAT_BASE_URL
+        default_value: https://api.openai.com/v1
+      organization:
+        type: string
+        description: Organization ID (rarely used for non-OpenAI backends)
+        default_env: OPENAI_COMPAT_ORGANIZATION
+      timeout:
+        type: integer
+        description: Request timeout in seconds
+        default_env: OPENAI_COMPAT_TIMEOUT
+        default_value: 600
+
+  # wippy.llm.openai_compat:embed
+  - name: embed
+    kind: function.lua
+    meta:
+      comment: Embeddings handler for OpenAI-compatible endpoints (single and batch)
+    source: file://embed.lua
+    imports:
+      openai_client: wippy.llm.openai_compat:client
+      openai_mapper: wippy.llm.openai_compat:mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 50
+
+  # wippy.llm.openai_compat:embed_test
+  - name: embed_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Embeddings Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible embeddings handler covering single and batch generation
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - embeddings
+        - batch
+        - contract
+    source: file://embed_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      embed_handler: wippy.llm.openai_compat:embed
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:generate
+  - name: generate
+    kind: function.lua
+    meta:
+      comment: Text generation handler for OpenAI-compatible Chat Completions endpoints with streaming and tool calling
+    source: file://generate.lua
+    modules:
+      - json
+    imports:
+      openai_client: wippy.llm.openai_compat:client
+      openai_mapper: wippy.llm.openai_compat:mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 50
+
+  # wippy.llm.openai_compat:generate_test
+  - name: generate_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible text generation handler covering validation, streaming, and tool calling
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - generation
+        - streaming
+        - tools
+        - contract
+    source: file://generate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      generate_handler: wippy.llm.openai_compat:generate
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Integration Tests
+      type: test
+      comment: Integration tests for OpenAI-compatible contract handlers using real API calls when enabled
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - integration-test
+        - api
+        - generation
+        - embeddings
+        - structured-output
+        - status
+        - contract
+    source: file://integration_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      embed_handler: wippy.llm.openai_compat:embed
+      generate_handler: wippy.llm.openai_compat:generate
+      status_handler: wippy.llm.openai_compat:status
+      structured_output_handler: wippy.llm.openai_compat:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Mapper for OpenAI-compatible Chat Completions wire format with error handling, token usage, and reasoning detection
+    source: file://mapper.lua
+    modules:
+      - json
+    imports:
+      output: wippy.llm:output
+
+  # wippy.llm.openai_compat:mapper_test
+  - name: mapper_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Mapper Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible mapper covering tool mapping, options, response mapping, and error handling
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - mapper
+        - tools
+        - options
+        - responses
+    source: file://mapper_test.lua
+    modules:
+      - json
+    imports:
+      openai_mapper: wippy.llm.openai_compat:mapper
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:organization
+  - name: organization
+    kind: env.variable
+    meta:
+      comment: Organization ID for OpenAI-compatible endpoint (rarely used for non-OpenAI backends)
+      icon: tabler:building
+    variable: OPENAI_COMPAT_ORGANIZATION
+
+  # wippy.llm.openai_compat:provider
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: openai-compat
+      type: llm.provider
+      title: OpenAI Compatible
+      comment: Provider for OpenAI-compatible Chat Completions endpoints — Ollama, vLLM, OpenRouter, llama.cpp, Together, Groq, Fireworks, Mistral, etc.
+      tags:
+        - llm
+        - provider
+        - openai-compat
+        - chat-completions
+        - ollama
+        - vllm
+        - openrouter
+    depends_on:
+      - wippy.llm.openai_compat:api_key
+      - wippy.llm.openai_compat:base_url
+      - wippy.llm.openai_compat:organization
+      - wippy.llm.openai_compat:timeout
+    driver:
+      id: wippy.llm.openai_compat:driver
+      options:
+        api_key_env: wippy.llm.openai_compat:api_key
+        base_url_env: wippy.llm.openai_compat:base_url
+        organization_env: wippy.llm.openai_compat:organization
+        timeout_env: wippy.llm.openai_compat:timeout
+
+  # wippy.llm.openai_compat:status
+  - name: status
+    kind: function.lua
+    meta:
+      comment: Status handler for OpenAI-compatible endpoint health checks
+    source: file://status.lua
+    imports:
+      openai_client: wippy.llm.openai_compat:client
+    method: handler
+    pool:
+      max_size: 10
+
+  # wippy.llm.openai_compat:status_test
+  - name: status_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Status Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible status handler covering health checks and connection testing
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+    source: file://status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.openai_compat:status
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:structured_output
+  - name: structured_output
+    kind: function.lua
+    meta:
+      comment: Structured output handler for OpenAI-compatible endpoints with JSON schema validation
+    source: file://structured_output.lua
+    modules:
+      - json
+      - hash
+    imports:
+      openai_client: wippy.llm.openai_compat:client
+      openai_mapper: wippy.llm.openai_compat:mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 25
+
+  # wippy.llm.openai_compat:structured_output_test
+  - name: structured_output_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible structured output handler covering schema validation and JSON parsing
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - structured-output
+        - schema
+        - json
+        - contract
+    source: file://structured_output_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - hash
+    imports:
+      structured_output_handler: wippy.llm.openai_compat:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.openai_compat:timeout
+  - name: timeout
+    kind: env.variable
+    meta:
+      comment: Request timeout in seconds for OpenAI-compatible endpoints
+      icon: tabler:clock
+    variable: OPENAI_COMPAT_TIMEOUT

@@ -30,6 +30,14 @@ entries:
         path: ".storage"
       - entry: wippy.llm.openai:timeout
         path: ".storage"
+      - entry: wippy.llm.openai_compat:api_key
+        path: ".storage"
+      - entry: wippy.llm.openai_compat:base_url
+        path: ".storage"
+      - entry: wippy.llm.openai_compat:organization
+        path: ".storage"
+      - entry: wippy.llm.openai_compat:timeout
+        path: ".storage"
       - entry: wippy.llm.google.env:vertex_base_url
         path: ".storage"
       - entry: wippy.llm.google.env:generative_ai_base_url
