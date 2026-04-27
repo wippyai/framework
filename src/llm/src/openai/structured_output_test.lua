@@ -192,7 +192,7 @@ local function define_tests()
                 test.contains(tostring(response.error_message), "Schema must be a table")
             end)
 
-            it("should accept valid schema", function()
+            it("should pass valid schema", function()
                 structured_output_handler._client._ctx = {
                     all = function()
                         return { api_key = "test-api-key" }
@@ -210,15 +210,18 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "resp_valid",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = {
-                                            content = '{"name":"John","age":30}'
-                                        },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {
+                                            { type = "output_text", text = '{"name":"John","age":30}' }
+                                        }
                                     }
                                 },
-                                usage = { prompt_tokens = 15, completion_tokens = 10, total_tokens = 25 }
+                                usage = { input_tokens = 15, output_tokens = 10, total_tokens = 25 }
                             }),
                             headers = {}
                         }
@@ -263,29 +266,36 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(tostring(url), "chat/completions")
+                        -- Responses API endpoint
+                        test.contains(tostring(url), "/responses")
 
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "gpt-4o")
-                        test.not_nil(payload.response_format)
-                        test.eq(payload.response_format.type, "json_schema")
-                        test.is_true(payload.response_format.json_schema.strict)
-                        test.not_nil(payload.response_format.json_schema.schema)
+                        -- Responses API uses text.format.json_schema instead of response_format.json_schema
+                        test.is_nil(payload.response_format)
+                        test.not_nil(payload.text)
+                        test.not_nil(payload.text.format)
+                        test.eq(payload.text.format.type, "json_schema")
+                        test.is_true(payload.text.format.strict)
+                        test.not_nil(payload.text.format.schema)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "resp_struct_1",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = {
-                                            content = '{"name":"Alice","age":25,"city":"New York"}'
-                                        },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {
+                                            { type = "output_text", text = '{"name":"Alice","age":25,"city":"New York"}' }
+                                        }
                                     }
                                 },
                                 usage = {
-                                    prompt_tokens = 20,
-                                    completion_tokens = 15,
+                                    input_tokens = 20,
+                                    output_tokens = 15,
                                     total_tokens = 35
                                 }
                             }),
@@ -323,6 +333,7 @@ local function define_tests()
                 test.eq(response.tokens.completion_tokens, 15)
                 test.eq(response.tokens.total_tokens, 35)
                 test.eq(response.finish_reason, "stop")
+                test.eq(response.metadata.response_id, "resp_struct_1")
             end)
 
             it("should handle nested object schemas", function()
@@ -341,21 +352,24 @@ local function define_tests()
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
-                        test.not_nil(payload.response_format.json_schema.schema.properties.address)
-                        test.eq(payload.response_format.json_schema.schema.properties.address.type, "object")
+                        test.not_nil(payload.text.format.schema.properties.address)
+                        test.eq(payload.text.format.schema.properties.address.type, "object")
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "resp_nested",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = {
-                                            content = '{"name":"Bob","address":{"street":"123 Main St","city":"Boston"}}'
-                                        },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {
+                                            { type = "output_text", text = '{"name":"Bob","address":{"street":"123 Main St","city":"Boston"}}' }
+                                        }
                                     }
                                 },
-                                usage = { prompt_tokens = 25, completion_tokens = 20, total_tokens = 45 }
+                                usage = { input_tokens = 25, output_tokens = 20, total_tokens = 45 }
                             }),
                             headers = {}
                         }
@@ -414,15 +428,18 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "resp_arr",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = {
-                                            content = '{"name":"Carol","skills":["JavaScript","Python","Go"]}'
-                                        },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {
+                                            { type = "output_text", text = '{"name":"Carol","skills":["JavaScript","Python","Go"]}' }
+                                        }
                                     }
                                 },
-                                usage = { prompt_tokens = 18, completion_tokens = 12, total_tokens = 30 }
+                                usage = { input_tokens = 18, output_tokens = 12, total_tokens = 30 }
                             }),
                             headers = {}
                         }
@@ -477,14 +494,22 @@ local function define_tests()
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
-                        test.contains(tostring(payload.response_format.json_schema.name), "schema_")
-                        test.gt(string.len(payload.response_format.json_schema.name), 7)
+                        test.contains(tostring(payload.text.format.name), "schema_")
+                        test.gt(string.len(payload.text.format.name), 7)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {{ message = { content = '{"test":true}' }, finish_reason = "stop" }},
-                                usage = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 }
+                                id = "r",
+                                status = "completed",
+                                output = {
+                                    {
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = '{"test":true}' } }
+                                    }
+                                },
+                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -525,13 +550,21 @@ local function define_tests()
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
-                        test.eq(payload.response_format.json_schema.name, "custom_schema_name")
+                        test.eq(payload.text.format.name, "custom_schema_name")
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {{ message = { content = '{"value":42}' }, finish_reason = "stop" }},
-                                usage = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 }
+                                id = "r",
+                                status = "completed",
+                                output = {
+                                    {
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = '{"value":42}' } }
+                                    }
+                                },
+                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -576,14 +609,24 @@ local function define_tests()
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.temperature, 0.2)
-                        test.eq(payload.max_tokens, 200)
+                        -- Responses API uses max_output_tokens
+                        test.eq(payload.max_output_tokens, 200)
+                        test.is_nil(payload.max_tokens)
                         test.eq(payload.top_p, 0.8)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {{ message = { content = '{"test":true}' }, finish_reason = "stop" }},
-                                usage = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 }
+                                id = "r",
+                                status = "completed",
+                                output = {
+                                    {
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = '{"test":true}' } }
+                                    }
+                                },
+                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -630,24 +673,33 @@ local function define_tests()
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "o1-mini")
-                        test.eq(payload.reasoning_effort, "high")
-                        test.eq(payload.max_completion_tokens, 150)
+                        -- Responses API: reasoning.effort and max_output_tokens
+                        test.not_nil(payload.reasoning)
+                        test.eq(payload.reasoning.effort, "high")
+                        test.eq(payload.max_output_tokens, 150)
+                        test.is_nil(payload.reasoning_effort)
                         test.is_nil(payload.max_tokens)
+                        test.is_nil(payload.max_completion_tokens)
                         test.is_nil(payload.temperature)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "resp_reason_struct",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = { content = '{"result":"structured thinking"}' },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {
+                                            { type = "output_text", text = '{"result":"structured thinking"}' }
+                                        }
                                     }
                                 },
                                 usage = {
-                                    prompt_tokens = 25,
-                                    completion_tokens = 30,
-                                    completion_tokens_details = { reasoning_tokens = 15 },
+                                    input_tokens = 25,
+                                    output_tokens = 30,
+                                    output_tokens_details = { reasoning_tokens = 15 },
                                     total_tokens = 70
                                 }
                             }),
@@ -704,15 +756,18 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "resp_refusal",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = {
-                                            refusal = "I cannot generate that type of content."
-                                        },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {
+                                            { type = "refusal", refusal = "I cannot generate that type of content." }
+                                        }
                                     }
                                 },
-                                usage = { prompt_tokens = 15, completion_tokens = 8, total_tokens = 23 }
+                                usage = { input_tokens = 15, output_tokens = 8, total_tokens = 23 }
                             }),
                             headers = {}
                         }
@@ -757,15 +812,16 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "r",
+                                status = "completed",
+                                output = {
                                     {
-                                        message = {
-                                            content = 'invalid json {'
-                                        },
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = "invalid json {" } }
                                     }
                                 },
-                                usage = { prompt_tokens = 15, completion_tokens = 10, total_tokens = 25 }
+                                usage = { input_tokens = 15, output_tokens = 10, total_tokens = 25 }
                             }),
                             headers = {}
                         }
@@ -810,13 +866,17 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {
+                                id = "r",
+                                status = "completed",
+                                -- output is present but message has no content parts
+                                output = {
                                     {
-                                        message = {},
-                                        finish_reason = "stop"
+                                        type = "message",
+                                        role = "assistant",
+                                        content = {}
                                     }
                                 },
-                                usage = { prompt_tokens = 15, completion_tokens = 0, total_tokens = 15 }
+                                usage = { input_tokens = 15, output_tokens = 0, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -956,7 +1016,7 @@ local function define_tests()
                     post = function(url, options)
                         return {
                             status_code = 200,
-                            body = json.encode({}), -- Empty response
+                            body = json.encode({}), -- Empty response, no output[]
                             headers = {}
                         }
                     end
@@ -1004,15 +1064,23 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(tostring(url), "https://custom.structured.api/v1/chat/completions")
+                        test.contains(tostring(url), "https://custom.structured.api/v1/responses")
                         test.eq(options.headers["Authorization"], "Bearer custom-structured-key")
                         test.eq(options.timeout, 45)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {{ message = { content = '{"success":true}' }, finish_reason = "stop" }},
-                                usage = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 }
+                                id = "r",
+                                status = "completed",
+                                output = {
+                                    {
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = '{"success":true}' } }
+                                    }
+                                },
+                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -1060,8 +1128,16 @@ local function define_tests()
                         return {
                             status_code = 200,
                             body = json.encode({
-                                choices = {{ message = { content = '{"value":123}' }, finish_reason = "stop" }},
-                                usage = { prompt_tokens = 8, completion_tokens = 4, total_tokens = 12 }
+                                id = "r",
+                                status = "completed",
+                                output = {
+                                    {
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = '{"value":123}' } }
+                                    }
+                                },
+                                usage = { input_tokens = 8, output_tokens = 4, total_tokens = 12 }
                             }),
                             headers = {}
                         }

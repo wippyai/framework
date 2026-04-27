@@ -22,18 +22,24 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                -- Responses API: system → instructions (separate field), user/assistant → input items
+                local instructions = openai_mapper.extract_instructions(contract_messages)
+                test.eq(instructions, "You are a helpful assistant")
 
-                test.eq(#openai_messages, 3)
-                test.eq(openai_messages[1].role, "system")
-                local sys_content = openai_messages[1].content :: any
-                test.eq(sys_content[1].type, "text")
-                test.eq(sys_content[1].text, "You are a helpful assistant")
-                test.eq(openai_messages[2].role, "user")
-                local usr_content = openai_messages[2].content :: any
+                local input_items = openai_mapper.map_messages(contract_messages)
+                test.eq(#input_items, 2)
+
+                test.eq(input_items[1].type, "message")
+                test.eq(input_items[1].role, "user")
+                local usr_content = input_items[1].content :: any
+                test.eq(usr_content[1].type, "input_text")
                 test.eq(usr_content[1].text, "Hello")
-                test.eq(openai_messages[3].role, "assistant")
-                test.eq(openai_messages[3].content, "Hi there!")
+
+                test.eq(input_items[2].type, "message")
+                test.eq(input_items[2].role, "assistant")
+                local asst_content = input_items[2].content :: any
+                test.eq(asst_content[1].type, "output_text")
+                test.eq(asst_content[1].text, "Hi there!")
             end)
 
             it("should convert string content to processed format", function()
@@ -44,11 +50,11 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                local msg_content = openai_messages[1].content :: any
-                test.eq(msg_content[1].type, "text")
+                test.eq(#input_items, 1)
+                local msg_content = input_items[1].content :: any
+                test.eq(msg_content[1].type, "input_text")
                 test.eq(msg_content[1].text, "Simple string message")
             end)
 
@@ -69,13 +75,13 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                local img_content = openai_messages[1].content :: any
-                test.eq(img_content[1].type, "text")
-                test.eq(img_content[2].type, "image_url")
-                test.eq(img_content[2].image_url.url, "https://example.com/image.jpg")
+                test.eq(#input_items, 1)
+                local img_content = input_items[1].content :: any
+                test.eq(img_content[1].type, "input_text")
+                test.eq(img_content[2].type, "input_image")
+                test.eq(img_content[2].image_url, "https://example.com/image.jpg")
             end)
 
             it("should convert base64 image content with mime type", function()
@@ -95,16 +101,17 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                local b64_content = openai_messages[1].content :: any
-                test.eq(b64_content[1].type, "image_url")
-                test.contains(tostring(b64_content[1].image_url.url), "data:image/jpeg;base64,")
-                test.contains(tostring(b64_content[1].image_url.url), "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
+                test.eq(#input_items, 1)
+                local b64_content = input_items[1].content :: any
+                test.eq(b64_content[1].type, "input_image")
+                test.contains(tostring(b64_content[1].image_url), "data:image/jpeg;base64,")
+                test.contains(tostring(b64_content[1].image_url), "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
             end)
 
-            it("should consolidate function_call messages into assistant message", function()
+            it("should emit function_call messages as standalone items", function()
+                -- Responses API: each function_call is its own top-level item, not nested under an assistant message.
                 local contract_messages = {
                     {
                         role = "function_call",
@@ -124,23 +131,21 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                test.eq(openai_messages[1].role, "assistant")
-                test.eq(openai_messages[1].content, "")
-                local tool_calls = openai_messages[1].tool_calls :: any
-                test.eq(#tool_calls, 2)
+                test.eq(#input_items, 2)
 
-                test.eq(tool_calls[1].id, "call_123")
-                test.eq(tool_calls[1].type, "function")
-                test.eq(tool_calls[1]["function"].name, "get_weather")
-
-                local args1 = json.decode(tostring(tool_calls[1]["function"].arguments))
+                test.eq(input_items[1].type, "function_call")
+                test.eq(input_items[1].call_id, "call_123")
+                test.eq(input_items[1].name, "get_weather")
+                local args1 = json.decode(tostring(input_items[1].arguments))
                 test.eq(args1.location, "New York")
 
-                test.eq(tool_calls[2].id, "call_456")
-                test.eq(tool_calls[2]["function"].name, "calculate")
+                test.eq(input_items[2].type, "function_call")
+                test.eq(input_items[2].call_id, "call_456")
+                test.eq(input_items[2].name, "calculate")
+                local args2 = json.decode(tostring(input_items[2].arguments))
+                test.eq(args2.expression, "2+2")
             end)
 
             it("should handle interleaved function_call and function_result after assistant", function()
@@ -180,28 +185,31 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                -- Responses API: user msg, assistant msg, fc(AAA), fco(AAA), fc(BBB), fco(BBB)
+                local input_items = openai_mapper.map_messages(contract_messages)
+                test.eq(#input_items, 6)
 
-                -- user, assistant(tool_calls=[AAA,BBB]), tool(AAA), tool(BBB)
-                test.eq(#openai_messages, 4)
+                test.eq(input_items[1].type, "message")
+                test.eq(input_items[1].role, "user")
 
-                test.eq(openai_messages[1].role, "user")
+                test.eq(input_items[2].type, "message")
+                test.eq(input_items[2].role, "assistant")
 
-                test.eq(openai_messages[2].role, "assistant")
-                local tool_calls = openai_messages[2].tool_calls :: any
-                test.eq(#tool_calls, 2)
-                test.eq(tool_calls[1].id, "call_AAA")
-                test.eq(tool_calls[1]["function"].name, "ListContainers")
-                test.eq(tool_calls[2].id, "call_BBB")
-                test.eq(tool_calls[2]["function"].name, "ListImages")
+                test.eq(input_items[3].type, "function_call")
+                test.eq(input_items[3].call_id, "call_AAA")
+                test.eq(input_items[3].name, "ListContainers")
 
-                test.eq(openai_messages[3].role, "tool")
-                test.eq(openai_messages[3].tool_call_id, "call_AAA")
-                test.eq(openai_messages[3].content, "3 containers found")
+                test.eq(input_items[4].type, "function_call_output")
+                test.eq(input_items[4].call_id, "call_AAA")
+                test.eq(input_items[4].output, "3 containers found")
 
-                test.eq(openai_messages[4].role, "tool")
-                test.eq(openai_messages[4].tool_call_id, "call_BBB")
-                test.eq(openai_messages[4].content, "5 images found")
+                test.eq(input_items[5].type, "function_call")
+                test.eq(input_items[5].call_id, "call_BBB")
+                test.eq(input_items[5].name, "ListImages")
+
+                test.eq(input_items[6].type, "function_call_output")
+                test.eq(input_items[6].call_id, "call_BBB")
+                test.eq(input_items[6].output, "5 images found")
             end)
 
             it("should handle three interleaved tool calls after assistant", function()
@@ -243,28 +251,30 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                -- Responses API: empty assistant msg dropped, then fc/fco x3, then final assistant msg
+                local input_items = openai_mapper.map_messages(contract_messages)
+                test.eq(#input_items, 7)
 
-                -- assistant(tool_calls=[1,2,3]), tool(1), tool(2), tool(3), assistant
-                test.eq(#openai_messages, 5)
+                test.eq(input_items[1].type, "function_call")
+                test.eq(input_items[1].call_id, "call_1")
+                test.eq(input_items[2].type, "function_call_output")
+                test.eq(input_items[2].call_id, "call_1")
 
-                test.eq(openai_messages[1].role, "assistant")
-                local tc = openai_messages[1].tool_calls :: any
-                test.eq(#tc, 3)
-                test.eq(tc[1].id, "call_1")
-                test.eq(tc[2].id, "call_2")
-                test.eq(tc[3].id, "call_3")
+                test.eq(input_items[3].type, "function_call")
+                test.eq(input_items[3].call_id, "call_2")
+                test.eq(input_items[4].type, "function_call_output")
+                test.eq(input_items[4].call_id, "call_2")
 
-                test.eq(openai_messages[2].role, "tool")
-                test.eq(openai_messages[2].tool_call_id, "call_1")
-                test.eq(openai_messages[3].role, "tool")
-                test.eq(openai_messages[3].tool_call_id, "call_2")
-                test.eq(openai_messages[4].role, "tool")
-                test.eq(openai_messages[4].tool_call_id, "call_3")
+                test.eq(input_items[5].type, "function_call")
+                test.eq(input_items[5].call_id, "call_3")
+                test.eq(input_items[6].type, "function_call_output")
+                test.eq(input_items[6].call_id, "call_3")
 
-                test.eq(openai_messages[5].role, "assistant")
-                test.eq(openai_messages[5].content, "Here are the results.")
-                test.is_nil(openai_messages[5].tool_calls)
+                test.eq(input_items[7].type, "message")
+                test.eq(input_items[7].role, "assistant")
+                local final_content = input_items[7].content :: any
+                test.eq(final_content[1].type, "output_text")
+                test.eq(final_content[1].text, "Here are the results.")
             end)
 
             it("should handle interleaved calls followed by user message", function()
@@ -297,23 +307,21 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
+                -- empty assistant dropped, fc(X), fco(X), fc(Y), fco(Y), user
+                test.eq(#input_items, 5)
 
-                -- assistant(tool_calls=[X,Y]), tool(X), tool(Y), user
-                test.eq(#openai_messages, 4)
+                test.eq(input_items[1].type, "function_call")
+                test.eq(input_items[1].call_id, "call_X")
+                test.eq(input_items[2].type, "function_call_output")
+                test.eq(input_items[2].call_id, "call_X")
+                test.eq(input_items[3].type, "function_call")
+                test.eq(input_items[3].call_id, "call_Y")
+                test.eq(input_items[4].type, "function_call_output")
+                test.eq(input_items[4].call_id, "call_Y")
 
-                test.eq(openai_messages[1].role, "assistant")
-                local tc = openai_messages[1].tool_calls :: any
-                test.eq(#tc, 2)
-                test.eq(tc[1].id, "call_X")
-                test.eq(tc[2].id, "call_Y")
-
-                test.eq(openai_messages[2].role, "tool")
-                test.eq(openai_messages[2].tool_call_id, "call_X")
-                test.eq(openai_messages[3].role, "tool")
-                test.eq(openai_messages[3].tool_call_id, "call_Y")
-
-                test.eq(openai_messages[4].role, "user")
+                test.eq(input_items[5].type, "message")
+                test.eq(input_items[5].role, "user")
             end)
 
             it("should preserve user messages after assistant without tool calls", function()
@@ -340,26 +348,27 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
+                test.eq(#input_items, 5)
 
-                test.eq(#openai_messages, 5)
-
-                test.eq(openai_messages[1].role, "user")
-                local u1 = openai_messages[1].content :: any
+                test.eq(input_items[1].role, "user")
+                local u1 = input_items[1].content :: any
                 test.eq(u1[1].text, "Do you see this file?")
 
-                test.eq(openai_messages[2].role, "assistant")
-                test.eq(openai_messages[2].content, "Yes, I see the file.")
+                test.eq(input_items[2].role, "assistant")
+                local a1 = input_items[2].content :: any
+                test.eq(a1[1].text, "Yes, I see the file.")
 
-                test.eq(openai_messages[3].role, "user")
-                local u2 = openai_messages[3].content :: any
+                test.eq(input_items[3].role, "user")
+                local u2 = input_items[3].content :: any
                 test.eq(u2[1].text, "Build me a data model")
 
-                test.eq(openai_messages[4].role, "assistant")
-                test.eq(openai_messages[4].content, "Sure, here is the model.")
+                test.eq(input_items[4].role, "assistant")
+                local a2 = input_items[4].content :: any
+                test.eq(a2[1].text, "Sure, here is the model.")
 
-                test.eq(openai_messages[5].role, "user")
-                local u3 = openai_messages[5].content :: any
+                test.eq(input_items[5].role, "user")
+                local u3 = input_items[5].content :: any
                 test.eq(u3[1].text, "Use your tools")
             end)
 
@@ -375,12 +384,11 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
-
-                test.eq(#openai_messages, 0)
+                local input_items = openai_mapper.map_messages(contract_messages)
+                test.eq(#input_items, 0)
             end)
 
-            it("should convert function_result messages to tool messages", function()
+            it("should convert function_result messages to function_call_output items", function()
                 local contract_messages = {
                     {
                         role = "function_result",
@@ -390,14 +398,13 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                local msg = openai_messages[1] :: any
-                test.eq(msg.role, "tool")
-                test.eq(msg.content, "The weather is sunny")
-                test.eq(msg.tool_call_id, "call_123")
-                test.eq(msg.name, "get_weather")
+                test.eq(#input_items, 1)
+                local item = input_items[1] :: any
+                test.eq(item.type, "function_call_output")
+                test.eq(item.call_id, "call_123")
+                test.eq(item.output, "The weather is sunny")
             end)
 
             it("should handle string content in function_result", function()
@@ -409,14 +416,15 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                test.eq(openai_messages[1].role, "tool")
-                test.eq(openai_messages[1].content, "Simple string result")
+                test.eq(#input_items, 1)
+                test.eq(input_items[1].type, "function_call_output")
+                test.eq(input_items[1].output, "Simple string result")
             end)
 
-            it("should convert developer messages to system messages", function()
+            it("should fold developer messages into instructions", function()
+                -- Responses API: developer/system messages → instructions field
                 local contract_messages = {
                     {
                         role = "developer",
@@ -424,16 +432,14 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local instructions = openai_mapper.extract_instructions(contract_messages)
+                test.eq(instructions, "Debug: Use detailed explanations")
 
-                test.eq(#openai_messages, 1)
-                test.eq(openai_messages[1].role, "system")
-                local dev_content = openai_messages[1].content :: any
-                test.eq(dev_content[1].type, "text")
-                test.eq(dev_content[1].text, "Debug: Use detailed explanations")
+                local input_items = openai_mapper.map_messages(contract_messages)
+                test.eq(#input_items, 0)
             end)
 
-            it("should handle developer messages for o1-mini with no previous user message", function()
+            it("should handle developer messages for o-series models with no previous user message", function()
                 local contract_messages = {
                     {
                         role = "developer",
@@ -441,13 +447,11 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages, { model = "o1-mini" })
+                local instructions = openai_mapper.extract_instructions(contract_messages)
+                test.eq(instructions, "Be precise")
 
-                test.eq(#openai_messages, 1)
-                test.eq(openai_messages[1].role, "system")
-                local o1_content = openai_messages[1].content :: any
-                test.eq(o1_content[1].type, "text")
-                test.eq(o1_content[1].text, "Be precise")
+                local input_items = openai_mapper.map_messages(contract_messages, { model = "o1-mini" })
+                test.eq(#input_items, 0)
             end)
 
             it("should skip unknown message roles", function()
@@ -462,17 +466,17 @@ local function define_tests()
                     }
                 }
 
-                local openai_messages = openai_mapper.map_messages(contract_messages)
+                local input_items = openai_mapper.map_messages(contract_messages)
 
-                test.eq(#openai_messages, 1)
-                test.eq(openai_messages[1].role, "user")
-                local kept_content = openai_messages[1].content :: any
+                test.eq(#input_items, 1)
+                test.eq(input_items[1].role, "user")
+                local kept_content = input_items[1].content :: any
                 test.eq(kept_content[1].text, "This should be kept")
             end)
         end)
 
         describe("Tool Mapping", function()
-            it("should map contract tools to OpenAI format", function()
+            it("should map contract tools to Responses API format", function()
                 local contract_tools = {
                     {
                         name = "get_weather",
@@ -499,30 +503,45 @@ local function define_tests()
                     }
                 }
 
-                local openai_tools, tool_map = openai_mapper.map_tools(contract_tools)
+                local tools, tool_map = openai_mapper.map_tools(contract_tools)
 
-                test.eq(#openai_tools, 2)
-                test.eq(openai_tools[1].type, "function")
-                test.eq(openai_tools[1]["function"].name, "get_weather")
-                test.eq(openai_tools[1]["function"].description, "Get weather information")
-                test.eq(openai_tools[1]["function"].parameters.type, "object")
-                test.eq(openai_tools[1]["function"].parameters.properties.location.type, "string")
+                -- Responses API: name, description, parameters live at the top level (no nested .function)
+                test.eq(#tools, 2)
+                test.eq(tools[1].type, "function")
+                test.eq(tools[1].name, "get_weather")
+                test.eq(tools[1].description, "Get weather information")
+                test.eq(tools[1].parameters.type, "object")
+                test.eq(tools[1].parameters.properties.location.type, "string")
+                test.is_nil(tools[1]["function"])
+                -- strict defaults to false (back-compat with non-strict schemas)
+                test.eq(tools[1].strict, false)
 
                 test.not_nil(tool_map["get_weather"])
                 test.not_nil(tool_map["calculate"])
             end)
 
-            it("should handle empty tools array", function()
-                local openai_tools, tool_map = openai_mapper.map_tools({})
+            it("should set strict true when explicitly requested", function()
+                local tools, _ = openai_mapper.map_tools({
+                    {
+                        name = "f",
+                        description = "d",
+                        schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
+                    }
+                }, { strict_default = true })
+                test.eq(tools[1].strict, true)
+            end)
 
-                test.is_nil(openai_tools)
+            it("should handle empty tools array", function()
+                local tools, tool_map = openai_mapper.map_tools({})
+
+                test.is_nil(tools)
                 test.is_nil(next(tool_map))
             end)
 
             it("should handle nil tools", function()
-                local openai_tools, tool_map = openai_mapper.map_tools(nil)
+                local tools, tool_map = openai_mapper.map_tools(nil)
 
-                test.is_nil(openai_tools)
+                test.is_nil(tools)
                 test.is_nil(next(tool_map))
             end)
 
@@ -539,10 +558,10 @@ local function define_tests()
                     }
                 }
 
-                local openai_tools, tool_map = openai_mapper.map_tools(contract_tools)
+                local tools, tool_map = openai_mapper.map_tools(contract_tools)
 
-                test.eq(#openai_tools, 1)
-                test.eq(openai_tools[1]["function"].name, "valid_tool")
+                test.eq(#tools, 1)
+                test.eq(tools[1].name, "valid_tool")
                 test.not_nil(tool_map["valid_tool"])
                 test.is_nil(tool_map["invalid_tool"])
             end)
@@ -578,9 +597,12 @@ local function define_tests()
             it("should map specific tool name", function()
                 local choice, error = openai_mapper.map_tool_choice("get_weather", test_tools)
 
+                -- Responses API tool_choice: { type = "function", name = "..." } (no nested .function)
                 test.is_nil(error)
-                test.eq(choice.type, "function")
-                test.eq(choice["function"].name, "get_weather")
+                local c = choice :: any
+                test.eq(c.type, "function")
+                test.eq(c.name, "get_weather")
+                test.is_nil(c["function"])
             end)
 
             it("should error on non-existent tool", function()
@@ -599,112 +621,133 @@ local function define_tests()
         end)
 
         describe("Options Mapping", function()
-            it("should map standard options", function()
+            it("should map standard options (Responses API supports temperature, top_p, max_output_tokens, user)", function()
                 local contract_options = {
                     temperature = 0.7,
                     max_tokens = 150,
                     top_p = 0.9,
+                    user = "test-user"
+                }
+
+                local opts = openai_mapper.map_options(contract_options)
+
+                test.eq(opts.temperature, 0.7)
+                -- Responses API uses max_output_tokens (not max_tokens / max_completion_tokens)
+                test.eq(opts.max_output_tokens, 150)
+                test.is_nil(opts.max_tokens)
+                test.is_nil(opts.max_completion_tokens)
+                test.eq(opts.top_p, 0.9)
+                test.eq(opts.user, "test-user")
+            end)
+
+            it("should ignore Chat-Completions-only sampling options (frequency_penalty, presence_penalty, stop, seed)", function()
+                -- Responses API does not accept these — verify they are filtered out by the mapper.
+                local contract_options = {
                     frequency_penalty = 0.5,
                     presence_penalty = 0.3,
                     stop_sequences = {"STOP", "END"},
                     seed = 42,
-                    user = "test-user"
+                    max_tokens = 100
                 }
 
-                local openai_options = openai_mapper.map_options(contract_options)
+                local opts = openai_mapper.map_options(contract_options)
 
-                test.eq(openai_options.temperature, 0.7)
-                test.eq(openai_options.max_tokens, 150)
-                test.eq(openai_options.top_p, 0.9)
-                test.eq(openai_options.frequency_penalty, 0.5)
-                test.eq(openai_options.presence_penalty, 0.3)
-                test.not_nil(openai_options.stop)
-                test.eq(#openai_options.stop, 2)
-                test.eq(openai_options.stop[1], "STOP")
-                test.eq(openai_options.stop[2], "END")
-                test.eq(openai_options.seed, 42)
-                test.eq(openai_options.user, "test-user")
+                test.eq(opts.max_output_tokens, 100)
+                test.is_nil(opts.frequency_penalty)
+                test.is_nil(opts.presence_penalty)
+                test.is_nil(opts.stop)
+                test.is_nil(opts.stop_sequences)
+                test.is_nil(opts.seed)
             end)
 
-            it("should handle reasoning model options", function()
+            it("should handle reasoning model options (reasoning.effort, no temperature/top_p)", function()
                 local contract_options = {
                     reasoning_model_request = true,
                     thinking_effort = 50,
                     max_tokens = 100,
-                    temperature = 0.5 -- Should be ignored for reasoning models
+                    temperature = 0.5,  -- Should be ignored for reasoning models
+                    top_p = 0.9         -- Should be ignored for reasoning models
                 }
 
-                local openai_options = openai_mapper.map_options(contract_options)
+                local opts = openai_mapper.map_options(contract_options)
 
-                test.eq(openai_options.max_completion_tokens, 100)
-                test.is_nil(openai_options.max_tokens)
-                test.eq(openai_options.reasoning_effort, "medium")
-                test.is_nil(openai_options.temperature)
+                test.eq(opts.max_output_tokens, 100)
+                test.is_nil(opts.max_tokens)
+                test.is_nil(opts.max_completion_tokens)
+                local reasoning = opts.reasoning :: any
+                test.eq(reasoning.effort, "medium")
+                test.is_nil(opts.reasoning_effort)
+                test.is_nil(opts.temperature)
+                test.is_nil(opts.top_p)
             end)
 
-            it("should map thinking effort levels correctly", function()
+            it("should map thinking effort levels including minimal and xhigh", function()
                 local test_cases = {
-                    { effort = 10, expected = "low" },
-                    { effort = 24, expected = "low" },
-                    { effort = 25, expected = "medium" },
-                    { effort = 50, expected = "medium" },
-                    { effort = 74, expected = "medium" },
-                    { effort = 75, expected = "high" },
-                    { effort = 100, expected = "high" }
+                    { effort = 0,   expected = "minimal" },
+                    { effort = 10,  expected = "low" },
+                    { effort = 24,  expected = "low" },
+                    { effort = 25,  expected = "medium" },
+                    { effort = 50,  expected = "medium" },
+                    { effort = 59,  expected = "medium" },
+                    { effort = 60,  expected = "high" },
+                    { effort = 89,  expected = "high" },
+                    { effort = 90,  expected = "xhigh" },
+                    { effort = 100, expected = "xhigh" }
                 }
 
                 for _, case in ipairs(test_cases) do
-                    local contract_options = {
+                    local opts = openai_mapper.map_options({
                         reasoning_model_request = true,
                         thinking_effort = case.effort
-                    }
-
-                    local openai_options = openai_mapper.map_options(contract_options)
-
-                    test.eq(openai_options.reasoning_effort, case.expected)
+                    })
+                    local reasoning = opts.reasoning :: any
+                    test.eq(reasoning.effort, case.expected)
                 end
             end)
 
-            it("should handle nil options", function()
-                local openai_options = openai_mapper.map_options(nil)
+            it("should forward Responses-API-specific options: previous_response_id, store, parallel_tool_calls", function()
+                local opts = openai_mapper.map_options({
+                    previous_response_id = "resp_abc",
+                    store = false,
+                    parallel_tool_calls = false
+                })
+                test.eq(opts.previous_response_id, "resp_abc")
+                test.eq(opts.store, false)
+                test.eq(opts.parallel_tool_calls, false)
+            end)
 
-                test.is_nil(next(openai_options))
+            it("should handle nil options", function()
+                local opts = openai_mapper.map_options(nil)
+
+                test.is_nil(next(opts))
             end)
 
             it("should handle empty options", function()
-                local openai_options = openai_mapper.map_options({})
+                local opts = openai_mapper.map_options({})
 
-                test.is_nil(next(openai_options))
+                test.is_nil(next(opts))
             end)
         end)
 
         describe("Tool Calls Response Mapping", function()
-            it("should map OpenAI tool calls to contract format", function()
-                local openai_tool_calls = {
+            it("should map Responses API function_call items to contract format", function()
+                -- map_tool_calls now consumes function_call items from output[]
+                local function_call_items = {
                     {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "get_weather",
-                            arguments = '{"location": "New York", "units": "celsius"}'
-                        }
+                        type = "function_call",
+                        call_id = "call_123",
+                        name = "get_weather",
+                        arguments = '{"location": "New York", "units": "celsius"}'
                     },
                     {
-                        id = "call_456",
-                        type = "function",
-                        ["function"] = {
-                            name = "calculate",
-                            arguments = '{"expression": "2+2"}'
-                        }
+                        type = "function_call",
+                        call_id = "call_456",
+                        name = "calculate",
+                        arguments = '{"expression": "2+2"}'
                     }
                 }
 
-                local tool_name_map = {
-                    ["get_weather"] = { name = "get_weather" },
-                    ["calculate"] = { name = "calculate" }
-                }
-
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
+                local contract_tool_calls = openai_mapper.map_tool_calls(function_call_items)
 
                 test.eq(#contract_tool_calls, 2)
 
@@ -725,18 +768,16 @@ local function define_tests()
             end)
 
             it("should handle invalid JSON arguments", function()
-                local openai_tool_calls = {
+                local function_call_items = {
                     {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "test_tool",
-                            arguments = 'invalid json {'
-                        }
+                        type = "function_call",
+                        call_id = "call_123",
+                        name = "test_tool",
+                        arguments = 'invalid json {'
                     }
                 }
 
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
+                local contract_tool_calls = openai_mapper.map_tool_calls(function_call_items)
 
                 test.eq(#contract_tool_calls, 1)
                 local tc = contract_tool_calls[1]
@@ -749,18 +790,16 @@ local function define_tests()
             end)
 
             it("should handle empty arguments", function()
-                local openai_tool_calls = {
+                local function_call_items = {
                     {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "test_tool",
-                            arguments = ""
-                        }
+                        type = "function_call",
+                        call_id = "call_123",
+                        name = "test_tool",
+                        arguments = ""
                     }
                 }
 
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
+                local contract_tool_calls = openai_mapper.map_tool_calls(function_call_items)
 
                 test.eq(#contract_tool_calls, 1)
                 local tc = contract_tool_calls[1]
@@ -771,158 +810,171 @@ local function define_tests()
             end)
 
             it("should handle nil tool calls", function()
-                local contract_tool_calls = openai_mapper.map_tool_calls(nil, {})
+                local contract_tool_calls = openai_mapper.map_tool_calls(nil)
 
                 test.eq(#contract_tool_calls, 0)
             end)
         end)
 
         describe("Finish Reason Mapping", function()
-            it("should map all OpenAI finish reasons correctly", function()
+            -- Responses API signature: map_finish_reason(status, has_tool_calls, incomplete_reason)
+            it("should map all Responses API status values correctly", function()
                 local test_cases = {
-                    { openai = "stop", expected = "stop" },
-                    { openai = "length", expected = "length" },
-                    { openai = "content_filter", expected = "filtered" },
-                    { openai = "tool_calls", expected = "tool_call" },
-                    { openai = "unknown_reason", expected = "error" },
-                    { openai = nil, expected = "error" }
+                    { status = "completed", has_tool_calls = false, incomplete_reason = nil, expected = "stop" },
+                    { status = "completed", has_tool_calls = true,  incomplete_reason = nil, expected = "tool_call" },
+                    { status = "incomplete", has_tool_calls = false, incomplete_reason = "max_output_tokens", expected = "length" },
+                    { status = "incomplete", has_tool_calls = false, incomplete_reason = "content_filter", expected = "filtered" },
+                    { status = "incomplete", has_tool_calls = false, incomplete_reason = nil, expected = "length" },
+                    { status = "failed",    has_tool_calls = false, incomplete_reason = nil, expected = "error" },
+                    { status = "cancelled", has_tool_calls = false, incomplete_reason = nil, expected = "error" }
                 }
 
                 for _, case in ipairs(test_cases) do
-                    local result = openai_mapper.map_finish_reason(case.openai)
+                    local result = openai_mapper.map_finish_reason(case.status, case.has_tool_calls, case.incomplete_reason)
                     test.eq(result, case.expected)
                 end
+            end)
+
+            it("should default to stop when status is unknown", function()
+                test.eq(openai_mapper.map_finish_reason(nil, false, nil), "stop")
+                test.eq(openai_mapper.map_finish_reason("weird", false, nil), "stop")
+            end)
+
+            it("should prefer incomplete reason over tool_call when truncated mid-call", function()
+                -- A response that hit max_output_tokens while emitting a function_call
+                -- must surface as length, not tool_call (the tool args may be truncated).
+                test.eq(openai_mapper.map_finish_reason("incomplete", true, "max_output_tokens"), "length")
+                test.eq(openai_mapper.map_finish_reason("incomplete", true, "content_filter"), "filtered")
             end)
         end)
 
         describe("Token Usage Mapping", function()
-            it("should map standard token usage", function()
-                local openai_usage = {
-                    prompt_tokens = 100,
-                    completion_tokens = 50,
+            it("should map standard token usage (input_tokens / output_tokens)", function()
+                local usage = {
+                    input_tokens = 100,
+                    output_tokens = 50,
                     total_tokens = 150
                 }
 
-                local contract_tokens = openai_mapper.map_tokens(openai_usage)
+                local tokens = openai_mapper.map_tokens(usage)
 
-                test.eq(contract_tokens.prompt_tokens, 100)
-                test.eq(contract_tokens.completion_tokens, 50)
-                test.eq(contract_tokens.total_tokens, 150)
-                test.eq(contract_tokens.cache_creation_input_tokens, 0)
-                test.eq(contract_tokens.cache_read_input_tokens, 0)
-                test.eq(contract_tokens.thinking_tokens, 0)
+                test.eq(tokens.prompt_tokens, 100)
+                test.eq(tokens.completion_tokens, 50)
+                test.eq(tokens.total_tokens, 150)
+                test.eq(tokens.cache_creation_input_tokens, 0)
+                test.eq(tokens.cache_read_input_tokens, 0)
+                test.eq(tokens.thinking_tokens, 0)
             end)
 
-            it("should map reasoning tokens (thinking tokens)", function()
-                local openai_usage = {
-                    prompt_tokens = 100,
-                    completion_tokens = 80,
+            it("should map reasoning tokens from output_tokens_details", function()
+                local usage = {
+                    input_tokens = 100,
+                    output_tokens = 80,
                     total_tokens = 200,
-                    completion_tokens_details = {
+                    output_tokens_details = {
                         reasoning_tokens = 20
                     }
                 }
 
-                local contract_tokens = openai_mapper.map_tokens(openai_usage)
+                local tokens = openai_mapper.map_tokens(usage)
 
-                test.eq(contract_tokens.thinking_tokens, 20)
-                test.eq(contract_tokens.prompt_tokens, 100)
-                test.eq(contract_tokens.completion_tokens, 80)
-                test.eq(contract_tokens.total_tokens, 200)
+                test.eq(tokens.thinking_tokens, 20)
+                test.eq(tokens.prompt_tokens, 100)
+                test.eq(tokens.completion_tokens, 80)
+                test.eq(tokens.total_tokens, 200)
             end)
 
-            it("should map cache tokens", function()
-                local openai_usage = {
-                    prompt_tokens = 100,
-                    completion_tokens = 50,
+            it("should map cache tokens from input_tokens_details", function()
+                local usage = {
+                    input_tokens = 100,
+                    output_tokens = 50,
                     total_tokens = 150,
-                    prompt_tokens_details = {
+                    input_tokens_details = {
                         cached_tokens = 30
                     }
                 }
 
-                local contract_tokens = openai_mapper.map_tokens(openai_usage)
+                local tokens = openai_mapper.map_tokens(usage)
 
-                test.eq(contract_tokens.cache_read_input_tokens, 30)
-                test.eq(contract_tokens.cache_creation_input_tokens, 70)
-                test.eq(contract_tokens.prompt_tokens, 70) -- adjusted: total minus cached
-                test.eq(contract_tokens.completion_tokens, 50)
+                test.eq(tokens.cache_read_input_tokens, 30)
+                test.eq(tokens.cache_creation_input_tokens, 70)
+                test.eq(tokens.prompt_tokens, 70) -- adjusted: input_tokens minus cached
+                test.eq(tokens.completion_tokens, 50)
             end)
 
             it("should handle nil usage", function()
-                local contract_tokens = openai_mapper.map_tokens(nil)
+                local tokens = openai_mapper.map_tokens(nil)
 
-                test.is_nil(contract_tokens)
+                test.is_nil(tokens)
             end)
 
             it("should handle partial usage data", function()
-                local openai_usage = {
-                    prompt_tokens = 50
+                local usage = {
+                    input_tokens = 50
                     -- Missing other fields
                 }
 
-                local contract_tokens = openai_mapper.map_tokens(openai_usage)
+                local tokens = openai_mapper.map_tokens(usage)
 
-                test.eq(contract_tokens.prompt_tokens, 50)
-                test.eq(contract_tokens.completion_tokens, 0)
-                test.eq(contract_tokens.total_tokens, 0)
-                test.eq(contract_tokens.thinking_tokens, 0)
+                test.eq(tokens.prompt_tokens, 50)
+                test.eq(tokens.completion_tokens, 0)
+                test.eq(tokens.total_tokens, 50)
+                test.eq(tokens.thinking_tokens, 0)
             end)
         end)
 
         describe("Success Response Mapping", function()
             it("should map text-only response", function()
-                local openai_response = {
-                    choices = {
+                local api_response = {
+                    id = "resp_text",
+                    status = "completed",
+                    output = {
                         {
-                            message = {
-                                content = "Hello, world!"
-                            },
-                            finish_reason = "stop"
+                            type = "message",
+                            role = "assistant",
+                            content = { { type = "output_text", text = "Hello, world!" } }
                         }
                     },
                     usage = {
-                        prompt_tokens = 10,
-                        completion_tokens = 5,
+                        input_tokens = 10,
+                        output_tokens = 5,
                         total_tokens = 15
                     },
                     metadata = { request_id = "req_test123" }
                 }
 
                 local context = { tool_name_map = {} }
-                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
+                local response = openai_mapper.map_success_response(api_response, context) :: any
 
-                test.is_true(contract_response.success)
-                test.eq(contract_response.result.content, "Hello, world!")
-                test.not_nil(contract_response.result.tool_calls)
-                test.eq(#contract_response.result.tool_calls, 0)
-                test.eq(contract_response.finish_reason, "stop")
-                test.eq(contract_response.tokens.prompt_tokens, 10)
+                test.is_true(response.success)
+                test.eq(response.result.content, "Hello, world!")
+                test.not_nil(response.result.tool_calls)
+                test.eq(#response.result.tool_calls, 0)
+                test.eq(response.finish_reason, "stop")
+                test.eq(response.tokens.prompt_tokens, 10)
+                test.eq(response.metadata.response_id, "resp_text")
             end)
 
             it("should map tool call response", function()
-                local openai_response = {
-                    choices = {
+                local api_response = {
+                    id = "resp_tool",
+                    status = "completed",
+                    output = {
                         {
-                            message = {
-                                content = "I'll help with that.",
-                                tool_calls = {
-                                    {
-                                        id = "call_123",
-                                        type = "function",
-                                        ["function"] = {
-                                            name = "calculate",
-                                            arguments = '{"expression": "2+2"}'
-                                        }
-                                    }
-                                }
-                            },
-                            finish_reason = "tool_calls"
+                            type = "message",
+                            role = "assistant",
+                            content = { { type = "output_text", text = "I'll help with that." } }
+                        },
+                        {
+                            type = "function_call",
+                            call_id = "call_123",
+                            name = "calculate",
+                            arguments = '{"expression": "2+2"}'
                         }
                     },
                     usage = {
-                        prompt_tokens = 20,
-                        completion_tokens = 10,
+                        input_tokens = 20,
+                        output_tokens = 10,
                         total_tokens = 30
                     },
                     metadata = { request_id = "req_tool123" }
@@ -934,41 +986,71 @@ local function define_tests()
                     }
                 }
 
-                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
+                local response = openai_mapper.map_success_response(api_response, context) :: any
 
-                test.is_true(contract_response.success)
-                test.eq(contract_response.result.content, "I'll help with that.")
-                local tc = contract_response.result.tool_calls :: any
+                test.is_true(response.success)
+                test.eq(response.result.content, "I'll help with that.")
+                local tc = response.result.tool_calls :: any
                 test.eq(#tc, 1)
                 test.eq(tc[1].name, "calculate")
-                test.eq(contract_response.finish_reason, "tool_call")
+                test.eq(response.finish_reason, "tool_call")
             end)
 
             it("should handle refusal responses", function()
-                local openai_response = {
-                    choices = {
+                local api_response = {
+                    id = "resp_refusal",
+                    status = "completed",
+                    output = {
                         {
-                            message = {
-                                refusal = "I cannot assist with that request."
-                            },
-                            finish_reason = "stop"
+                            type = "message",
+                            role = "assistant",
+                            content = {
+                                { type = "refusal", refusal = "I cannot assist with that request." }
+                            }
                         }
                     },
                     usage = {
-                        prompt_tokens = 15,
-                        completion_tokens = 8,
+                        input_tokens = 15,
+                        output_tokens = 8,
                         total_tokens = 23
                     },
                     metadata = { request_id = "req_refusal123" }
                 }
 
                 local context = { tool_name_map = {} }
-                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
+                local response = openai_mapper.map_success_response(api_response, context) :: any
 
-                test.is_false(contract_response.success)
-                test.eq(contract_response.error, "content_filtered")
-                test.contains(tostring(contract_response.error_message), "refused")
-                test.contains(tostring(contract_response.error_message), "I cannot assist with that request.")
+                test.is_false(response.success)
+                test.eq(response.error, "content_filtered")
+                test.contains(tostring(response.error_message), "refused")
+                test.contains(tostring(response.error_message), "I cannot assist with that request.")
+            end)
+
+            it("should collect reasoning summary into metadata.thinking", function()
+                local api_response = {
+                    id = "resp_reason",
+                    status = "completed",
+                    output = {
+                        {
+                            type = "reasoning",
+                            id = "rs_1",
+                            summary = {
+                                { type = "summary_text", text = "step1" },
+                                { type = "summary_text", text = " step2" }
+                            }
+                        },
+                        {
+                            type = "message",
+                            role = "assistant",
+                            content = { { type = "output_text", text = "ok" } }
+                        }
+                    },
+                    usage = { input_tokens = 1, output_tokens = 1, output_tokens_details = { reasoning_tokens = 42 } }
+                }
+
+                local response = openai_mapper.map_success_response(api_response, { tool_name_map = {} }) :: any
+                test.eq(response.metadata.thinking, "step1 step2")
+                test.eq(response.tokens.thinking_tokens, 42)
             end)
         end)
 
@@ -982,16 +1064,16 @@ local function define_tests()
                 }
 
                 for _, case in ipairs(test_cases) do
-                    local openai_error = {
+                    local api_error = {
                         status_code = case.status,
                         message = case.message
                     }
 
-                    local contract_response = openai_mapper.map_error_response(openai_error)
+                    local response = openai_mapper.map_error_response(api_error)
 
-                    test.is_false(contract_response.success)
-                    test.eq(contract_response.error, case.error_type)
-                    test.eq(contract_response.error_message, case.message)
+                    test.is_false(response.success)
+                    test.eq(response.error, case.error_type)
+                    test.eq(response.error_message, case.message)
                 end
             end)
 
@@ -1005,25 +1087,25 @@ local function define_tests()
                 }
 
                 for _, case in ipairs(test_cases) do
-                    local openai_error = {
+                    local api_error = {
                         status_code = 400,
                         message = case.message
                     }
 
-                    local contract_response = openai_mapper.map_error_response(openai_error)
+                    local response = openai_mapper.map_error_response(api_error)
 
-                    test.is_false(contract_response.success)
-                    test.eq(contract_response.error, case.error_type)
+                    test.is_false(response.success)
+                    test.eq(response.error, case.error_type)
                 end
             end)
 
             it("should handle nil error", function()
-                local contract_response = openai_mapper.map_error_response(nil)
+                local response = openai_mapper.map_error_response(nil)
 
-                test.is_false(contract_response.success)
-                test.eq(contract_response.error, "server_error")
-                test.eq(contract_response.error_message, "Unknown OpenAI error")
-                test.not_nil(contract_response.metadata)
+                test.is_false(response.success)
+                test.eq(response.error, "server_error")
+                test.eq(response.error_message, "Unknown OpenAI error")
+                test.not_nil(response.metadata)
             end)
 
             it("should return structured error as second value for 429", function()
@@ -1059,57 +1141,48 @@ local function define_tests()
         end)
 
         describe("Finish Reason Preservation", function()
-            it("should preserve LENGTH finish_reason when response has tool_calls", function()
-                local openai_response = {
-                    choices = {
+            it("should preserve LENGTH finish_reason when response is incomplete with tool_calls", function()
+                -- Responses API: status=incomplete + function_call items still surfaces as length, not tool_call
+                local api_response = {
+                    id = "resp_length",
+                    status = "incomplete",
+                    incomplete_details = { reason = "max_output_tokens" },
+                    output = {
                         {
-                            message = {
-                                content = "I will call...",
-                                tool_calls = {
-                                    {
-                                        id = "call_1",
-                                        type = "function",
-                                        ["function"] = {
-                                            name = "test_tool",
-                                            arguments = "{}"
-                                        }
-                                    }
-                                }
-                            },
-                            finish_reason = "length"
+                            type = "message",
+                            role = "assistant",
+                            content = { { type = "output_text", text = "I will call..." } }
+                        },
+                        {
+                            type = "function_call",
+                            call_id = "call_1",
+                            name = "test_tool",
+                            arguments = "{}"
                         }
                     },
-                    usage = { prompt_tokens = 100, completion_tokens = 4096, total_tokens = 4196 }
+                    usage = { input_tokens = 100, output_tokens = 4096, total_tokens = 4196 }
                 }
 
-                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
+                local result = openai_mapper.map_success_response(api_response, { tool_name_map = {} })
                 test.eq(result.finish_reason, "length")
             end)
 
-            it("should map tool_calls finish_reason to TOOL_CALL normally", function()
-                local openai_response = {
-                    choices = {
+            it("should map status=completed with function_call items to TOOL_CALL", function()
+                local api_response = {
+                    id = "resp_tc",
+                    status = "completed",
+                    output = {
                         {
-                            message = {
-                                content = "",
-                                tool_calls = {
-                                    {
-                                        id = "call_1",
-                                        type = "function",
-                                        ["function"] = {
-                                            name = "test_tool",
-                                            arguments = "{}"
-                                        }
-                                    }
-                                }
-                            },
-                            finish_reason = "tool_calls"
+                            type = "function_call",
+                            call_id = "call_1",
+                            name = "test_tool",
+                            arguments = "{}"
                         }
                     },
-                    usage = { prompt_tokens = 50, completion_tokens = 100, total_tokens = 150 }
+                    usage = { input_tokens = 50, output_tokens = 100, total_tokens = 150 }
                 }
 
-                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
+                local result = openai_mapper.map_success_response(api_response, { tool_name_map = {} })
                 test.eq(result.finish_reason, "tool_call")
             end)
         end)

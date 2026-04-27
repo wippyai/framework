@@ -427,12 +427,8 @@ function openai_mapper.map_tool_calls(function_call_items)
 end
 
 function openai_mapper.map_finish_reason(status, has_tool_calls, incomplete_reason)
-    if has_tool_calls then
-        return output.FINISH_REASON.TOOL_CALL
-    end
-    if status == "completed" then
-        return output.FINISH_REASON.STOP
-    end
+    -- Truncated / filtered responses must surface as length / filtered even
+    -- when function_call items were partially produced.
     if status == "incomplete" then
         if incomplete_reason == "content_filter" then
             return output.FINISH_REASON.CONTENT_FILTER
@@ -441,6 +437,12 @@ function openai_mapper.map_finish_reason(status, has_tool_calls, incomplete_reas
     end
     if status == "failed" or status == "cancelled" then
         return output.FINISH_REASON.ERROR
+    end
+    if has_tool_calls then
+        return output.FINISH_REASON.TOOL_CALL
+    end
+    if status == "completed" then
+        return output.FINISH_REASON.STOP
     end
     return output.FINISH_REASON.STOP
 end
@@ -481,6 +483,9 @@ end
 function openai_mapper.map_success_response(api_response, context)
     if not api_response then
         error("Invalid Responses API response: nil")
+    end
+    if not api_response.output then
+        error("Invalid Responses API response structure: missing output")
     end
 
     local messages, function_calls, reasoning_items = partition_output(api_response.output)
