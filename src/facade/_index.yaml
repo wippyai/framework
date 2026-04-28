@@ -33,7 +33,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.23
+    default: https://web-host.wippy.ai/webcomponents-1.0.25
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -43,6 +43,19 @@ entries:
       - entry: wippy.facade:fe_entry_path
         path: .default
     default: /iframe.html
+
+  - name: fe_mode
+    kind: ns.requirement
+    meta:
+      description: |
+        Frontend bundle mode. `compat` (default) loads module.js and renders
+        the standard Wippy host (sidebar + chat + pages + right panel).
+        `managed` loads managed-layout.js and renders a declarative
+        multi-panel host defined by hostConfig.layout — no default chrome.
+    targets:
+      - entry: wippy.facade:fe_mode
+        path: .default
+    default: compat
 
   # App identity
   - name: app_title
