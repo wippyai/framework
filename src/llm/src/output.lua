@@ -90,10 +90,36 @@ output.ERROR_KIND_MAP = {
     [output.ERROR_TYPE.CONTENT_FILTER]  = { kind = errors.INVALID,          retryable = false },
 }
 
+type StructuredError = any
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+type ErrorContract = {
+    model: string?,
+    _provider_id: string?,
+}
+type ErrorBuilder = {
+    _operation: string,
+    _provider: string?,
+    _contract: ErrorContract?,
+    _classifier: ClassifyError?,
+    _kind: string?,
+    _message: string?,
+    _details: table?,
+    _http_err: any?,
+    _has_http_err: boolean?,
+    classifier:    (self: ErrorBuilder, fn: ClassifyError) -> ErrorBuilder,
+    with_contract: (self: ErrorBuilder, contract_args: ErrorContract) -> ErrorBuilder,
+    kind:          (self: ErrorBuilder, k: string) -> ErrorBuilder,
+    message:       (self: ErrorBuilder, m: string) -> ErrorBuilder,
+    details:       (self: ErrorBuilder, d: table) -> ErrorBuilder,
+    from:          (self: ErrorBuilder, http_err: any?) -> ErrorBuilder,
+    build:         (self: ErrorBuilder) -> StructuredError,
+}
+type ErrorBuilderFactory = (arg: ErrorContract?) -> ErrorBuilder
+
 -- Internal: turn (kind, message, details) into a stdlib `errors` value
 -- and log at the single observability point.
-local function build_error(kind_type, message, details)
-    local mapping = output.ERROR_KIND_MAP[kind_type] or
+local function build_error(kind_type: string?, message: string?, details: table?): StructuredError
+    local mapping = output.ERROR_KIND_MAP[kind_type or output.ERROR_TYPE.SERVER_ERROR] or
         { kind = errors.UNKNOWN, retryable = false }
 
     details = details or {}
@@ -108,9 +134,9 @@ local function build_error(kind_type, message, details)
     logger:error("llm provider error", {
         kind = mapping.kind,
         retryable = mapping.retryable,
-        provider = details.provider,
-        operation = details.operation,
-        model = details.model,
+        provider = (details :: any).provider,
+        operation = (details :: any).operation,
+        model = (details :: any).model,
         message = message,
         details = details
     })
@@ -121,56 +147,57 @@ end
 local ErrorBuilder = {}
 ErrorBuilder.__index = ErrorBuilder
 
-function ErrorBuilder:with_contract(contract_args)
-    self._contract = contract_args
-    return self
+function ErrorBuilder:with_contract(contract_args: ErrorContract): ErrorBuilder
+    (self :: any)._contract = contract_args
+    return self :: any
 end
 
-function ErrorBuilder:classifier(fn)
-    self._classifier = fn
-    return self
+function ErrorBuilder:classifier(fn: ClassifyError): ErrorBuilder
+    (self :: any)._classifier = fn
+    return self :: any
 end
 
-function ErrorBuilder:kind(k)
-    self._kind = k
-    return self
+function ErrorBuilder:kind(k: string): ErrorBuilder
+    (self :: any)._kind = k
+    return self :: any
 end
 
-function ErrorBuilder:message(m)
-    self._message = m
-    return self
+function ErrorBuilder:message(m: string): ErrorBuilder
+    (self :: any)._message = m
+    return self :: any
 end
 
-function ErrorBuilder:details(d)
-    self._details = d
-    return self
+function ErrorBuilder:details(d: table): ErrorBuilder
+    (self :: any)._details = d
+    return self :: any
 end
 
-function ErrorBuilder:from(http_err)
-    self._http_err = http_err
-    self._has_http_err = true  -- distinguishes :from(nil) from "never called"
-    return self
+function ErrorBuilder:from(http_err: any?): ErrorBuilder
+    (self :: any)._http_err = http_err
+    (self :: any)._has_http_err = true  -- distinguishes :from(nil) from "never called"
+    return self :: any
 end
 
-function ErrorBuilder:build()
+function ErrorBuilder:build(): StructuredError
+    local s = self :: any
     -- Snapshot per-call state, then reset so the builder is reusable.
-    local kind_type = self._kind
-    local message = self._message
-    local details = self._details
-    local http_err = self._http_err
-    local has_http_err = self._has_http_err
+    local kind_type    = s._kind
+    local message      = s._message
+    local details      = s._details
+    local http_err     = s._http_err
+    local has_http_err = s._has_http_err
 
-    self._kind = nil
-    self._message = nil
-    self._details = nil
-    self._http_err = nil
-    self._has_http_err = false
+    s._kind         = nil
+    s._message      = nil
+    s._details      = nil
+    s._http_err     = nil
+    s._has_http_err = false
 
     local merged_details = {}
 
     -- 1. Provider-specific classifier on HTTP / transport error if `:from(...)` was called.
-    if has_http_err and self._classifier then
-        local c_kind, c_message, c_details = self._classifier(http_err)
+    if has_http_err and s._classifier then
+        local c_kind, c_message, c_details = s._classifier(http_err)
         kind_type = kind_type or c_kind
         message   = message   or c_message
         if c_details then
@@ -184,37 +211,43 @@ function ErrorBuilder:build()
     end
 
     -- 3. Builder-level context (provider / operation / model from contract).
-    merged_details.provider  = self._provider
-    merged_details.operation = self._operation
-    if self._contract and self._contract.model then
-        merged_details.model = self._contract.model
+    (merged_details :: any).provider  = s._provider
+    (merged_details :: any).operation = s._operation
+    if s._contract and s._contract.model then
+        (merged_details :: any).model = s._contract.model
     end
 
     return build_error(kind_type or output.ERROR_TYPE.SERVER_ERROR, message, merged_details)
 end
 
-local function builder_factory(operation)
-    return function(arg)
-        arg = arg or {}
+local function builder_factory(operation: string): ErrorBuilderFactory
+    return function(arg: ErrorContract?): ErrorBuilder
+        local a = arg or {}
         local self = {
             _operation = operation,
-            _provider = arg._provider_id,
-            _contract = arg,
+            _provider = a._provider_id,
+            _contract = a,
             _classifier = nil,
             _kind = nil,
             _message = nil,
             _details = nil,
-            _http_err = nil
+            _http_err = nil,
+            _has_http_err = false,
         }
-        return setmetatable(self, ErrorBuilder)
+        return setmetatable(self, ErrorBuilder) :: ErrorBuilder
     end
 end
 
 output.errors = {
-    generate = builder_factory("generate"),
+    generate          = builder_factory("generate"),
     structured_output = builder_factory("structured_output"),
-    embed = builder_factory("embed"),
-    status = builder_factory("status")
+    embed             = builder_factory("embed"),
+    status            = builder_factory("status"),
+} :: {
+    generate:          ErrorBuilderFactory,
+    structured_output: ErrorBuilderFactory,
+    embed:             ErrorBuilderFactory,
+    status:            ErrorBuilderFactory,
 }
 
 -- Finish/stop reason constants
