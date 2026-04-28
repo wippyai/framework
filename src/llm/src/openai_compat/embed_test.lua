@@ -18,7 +18,7 @@ local function define_tests()
                     input = "Test input text"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -31,7 +31,7 @@ local function define_tests()
                     model = "text-embedding-3-small"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -79,7 +79,7 @@ local function define_tests()
                     input = "Test input string"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.not_nil(response.result.embeddings)
@@ -129,7 +129,7 @@ local function define_tests()
                     input = { "First text", "Second text" }
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.not_nil(response.result.embeddings)
@@ -187,7 +187,7 @@ local function define_tests()
                     input = "Test embedding input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.not_nil(response.result)
@@ -245,7 +245,7 @@ local function define_tests()
                     }
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(#response.result.embeddings[1], 2)
@@ -288,7 +288,7 @@ local function define_tests()
                     }
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -346,7 +346,7 @@ local function define_tests()
                     input = { "First text", "Second text", "Third text" }
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(type(response.result.embeddings), "table")
@@ -401,7 +401,7 @@ local function define_tests()
                     input = { "Text one", "Text two" }
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(#response.result.embeddings, 2)
@@ -445,7 +445,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -486,7 +486,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -527,7 +527,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -568,7 +568,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -604,7 +604,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -642,7 +642,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response, err = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -685,7 +685,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -724,7 +724,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -765,7 +765,7 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -807,7 +807,7 @@ local function define_tests()
                     timeout = 60
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -850,7 +850,7 @@ local function define_tests()
                     input = "Single text input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(type(response.result.embeddings), "table")
@@ -895,7 +895,7 @@ local function define_tests()
                     input = { "Text one", "Text two" }
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(type(response.result.embeddings), "table")

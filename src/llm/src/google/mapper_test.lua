@@ -1442,7 +1442,7 @@ local function define_tests()
                 tests.eq(#contract_response.result.tool_calls, 0)
                 tests.eq(contract_response.finish_reason, "stop")
                 tests.eq(contract_response.tokens.prompt_tokens, 10)
-                tests.eq((contract_err:details() :: any).request_id, "req_test123")
+                tests.eq(contract_response.metadata.request_id, "req_test123")
             end)
 
             it("should map tool call response", function()
@@ -1649,8 +1649,8 @@ local function define_tests()
                 local contract_response = mapper.map_success_response(google_response)
 
                 tests.is_true(contract_response.success)
-                tests.not_nil((contract_err:details() :: any))
-                tests.is_nil(next((contract_err:details() :: any)))
+                tests.not_nil(contract_response.metadata)
+                tests.is_nil(next(contract_response.metadata))
             end)
 
             it("should handle missing usage metadata", function()
@@ -1767,9 +1767,9 @@ local function define_tests()
                 local contract_response = mapper.map_success_response(google_response)
 
                 tests.is_true(contract_response.success)
-                tests.eq((contract_err:details() :: any).request_id, "req_123")
-                tests.eq((contract_err:details() :: any).model_version, "gemini-2.5-pro-001")
-                tests.eq((contract_err:details() :: any).custom_field, "custom_value")
+                tests.eq(contract_response.metadata.request_id, "req_123")
+                tests.eq(contract_response.metadata.model_version, "gemini-2.5-pro-001")
+                tests.eq(contract_response.metadata.custom_field, "custom_value")
             end)
 
             it("should handle missing finishReason", function()
@@ -1942,13 +1942,12 @@ local function define_tests()
                 tests.eq(contract_err:message(), "Something went wrong")
             end)
 
-            it("should preserve metadata from error", function()
+            it("should preserve request_id from error metadata", function()
                 local google_error = {
                     status_code = 429,
                     message = "Rate limit exceeded",
                     metadata = {
                         request_id = "req_error_123",
-                        retry_after = 60
                     }
                 }
 
@@ -1956,10 +1955,9 @@ local function define_tests()
 
                 tests.not_nil(contract_err)
                 tests.eq((contract_err:details() :: any).request_id, "req_error_123")
-                tests.eq((contract_err:details() :: any).retry_after, 60)
             end)
 
-            it("should handle missing metadata in error", function()
+            it("should populate provider/operation in details even without metadata", function()
                 local google_error = {
                     status_code = 400,
                     message = "Bad request"
@@ -1968,8 +1966,10 @@ local function define_tests()
                 local contract_err = map_error_response(google_error)
 
                 tests.not_nil(contract_err)
-                tests.not_nil((contract_err:details() :: any))
-                tests.is_nil(next((contract_err:details() :: any)))
+                local d = (contract_err:details() :: any)
+                tests.eq(d.provider, "google")
+                tests.eq(d.operation, "generate")
+                tests.eq(d.status_code, 400)
             end)
 
             it("should prioritize message patterns over status code", function()
@@ -2309,18 +2309,18 @@ local function define_tests()
 
         describe("Error Response Mapping", function()
             it("should return structured error for 429 rate limit", function()
-                local response, err = map_error_response({
+                local err = map_error_response({
                     status_code = 429,
                     message = "Rate limited"
                 })
-                tests.eq(response.error, "rate_limit_exceeded")
+                tests.eq(err:kind(), "RateLimited")
                 tests.not_nil(err)
                 tests.eq(err:kind(), "RateLimited")
                 tests.eq(err:retryable(), true)
             end)
 
             it("should return structured error for 500 server error", function()
-                local response, err = map_error_response({
+                local err = map_error_response({
                     status_code = 500,
                     message = "Internal error"
                 })
@@ -2330,7 +2330,7 @@ local function define_tests()
             end)
 
             it("should return non-retryable for 401 auth error", function()
-                local _, err = map_error_response({
+                local err = map_error_response({
                     status_code = 401,
                     message = "Invalid credentials"
                 })
@@ -2340,7 +2340,7 @@ local function define_tests()
             end)
 
             it("should return non-retryable for 404 model not found", function()
-                local _, err = map_error_response({
+                local err = map_error_response({
                     status_code = 404,
                     message = "Model not found"
                 })
@@ -2350,8 +2350,8 @@ local function define_tests()
             end)
 
             it("should handle nil error", function()
-                local response, err = map_error_response(nil)
-                tests.eq(response.error, "server_error")
+                local err = map_error_response(nil)
+                tests.eq(err:kind(), "Unavailable")
                 tests.not_nil(err)
                 tests.eq(err:kind(), "Unavailable")
                 tests.eq(err:retryable(), true)

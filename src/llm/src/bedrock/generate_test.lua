@@ -229,7 +229,7 @@ local function define_tests()
 
                 test.is_nil(response)
                 test.not_nil(err)
-                test.not_nil(response.error)
+                test.eq(err:kind(), "Invalid")
             end)
 
             it("should handle rate limiting", function()

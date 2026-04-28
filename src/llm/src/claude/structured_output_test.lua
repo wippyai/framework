@@ -28,7 +28,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -47,7 +47,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -63,7 +63,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -83,7 +83,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -105,7 +105,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -129,7 +129,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -154,7 +154,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -178,7 +178,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -195,7 +195,7 @@ local function define_tests()
                     schema = "not a table"
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -253,7 +253,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -330,7 +330,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.not_nil(response.result)
@@ -412,7 +412,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(response.result.data.name, "Carol")
@@ -476,7 +476,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(response.result.data.name, "David")
@@ -541,7 +541,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(response.result.data.status, "success")
@@ -606,7 +606,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -678,7 +678,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(response.result.data.result, "structured thinking")
@@ -728,7 +728,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.eq(err:kind(), "Invalid")
                 test.eq(err:message(), "Invalid model specified")
@@ -779,7 +779,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -834,7 +834,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -878,7 +878,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -928,7 +928,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.eq(err:kind(), "PermissionDenied")
                 test.eq(err:message(), "Invalid API key")
@@ -978,7 +978,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.eq(err:kind(), "RateLimited")
                 test.eq(err:message(), "Rate limit exceeded")
@@ -1040,7 +1040,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.is_true(response.result.data.success)
@@ -1096,7 +1096,7 @@ local function define_tests()
                     timeout = 60
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
             end)
@@ -1169,7 +1169,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(tool_validated)
                 test.is_true(response.success)
@@ -1248,7 +1248,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.is_true(response.result.data.extracted)
@@ -1318,7 +1318,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 -- Verify contract compliance
                 test.is_true(response.success)
@@ -1370,7 +1370,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.eq(err:kind(), "PermissionDenied")
                 test.contains(err:message(), "API key is required")
@@ -1408,7 +1408,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.eq(err:kind(), "Unavailable")
                 test.eq(err:message(), "Connection failed")
@@ -1450,7 +1450,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.eq(err:kind(), "Unavailable")
                 test.contains(err:message(), "Failed to parse Claude response")
@@ -1503,7 +1503,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_nil(response)
                 test.not_nil(err)
@@ -1582,7 +1582,7 @@ local function define_tests()
                     end
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(response.result.data.user.profile.name, "Deep Nester")
@@ -1653,7 +1653,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 test.eq(#response.result.data.users, 2)
@@ -1719,7 +1719,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 local meta = assert(response.metadata)
@@ -1794,7 +1794,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_true(tool_choice_validated)
                 test.is_true(response.success)

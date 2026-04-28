@@ -1084,7 +1084,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args)
 
                 test.is_false(response.success, "Expected error for invalid schema")
                 test.eq(response.error, "invalid_request")

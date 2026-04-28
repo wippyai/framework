@@ -148,25 +148,28 @@ end
 
 function ErrorBuilder:from(http_err)
     self._http_err = http_err
+    self._has_http_err = true  -- distinguishes :from(nil) from "never called"
     return self
 end
 
 function ErrorBuilder:build()
     -- Snapshot per-call state, then reset so the builder is reusable.
     local kind_type = self._kind
-    local message   = self._message
-    local details   = self._details
-    local http_err  = self._http_err
+    local message = self._message
+    local details = self._details
+    local http_err = self._http_err
+    local has_http_err = self._has_http_err
 
-    self._kind     = nil
-    self._message  = nil
-    self._details  = nil
+    self._kind = nil
+    self._message = nil
+    self._details = nil
     self._http_err = nil
+    self._has_http_err = false
 
     local merged_details = {}
 
-    -- 1. Provider-specific classifier on HTTP / transport error if given.
-    if http_err and self._classifier then
+    -- 1. Provider-specific classifier on HTTP / transport error if `:from(...)` was called.
+    if has_http_err and self._classifier then
         local c_kind, c_message, c_details = self._classifier(http_err)
         kind_type = kind_type or c_kind
         message   = message   or c_message
