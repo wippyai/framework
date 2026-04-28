@@ -53,6 +53,29 @@
         try { token = JSON.parse(stored).token; }
         catch (e) { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
 
+        if (Array.isArray(cfg.extraScripts) && cfg.extraScripts.length) {
+            await Promise.all(cfg.extraScripts.map(function (entry) {
+                return new Promise(function (resolve) {
+                    var attrs = typeof entry === 'string' ? { src: entry } : (entry || {});
+                    if (!attrs.src) { resolve(); return; }
+                    var s = document.createElement('script');
+                    s.src = attrs.src;
+                    if (attrs.type) s.type = attrs.type;
+                    if (attrs.async) s.async = true;
+                    if (attrs.defer) s.defer = true;
+                    if (attrs.noModule) s.noModule = true;
+                    if (attrs.crossorigin) s.crossOrigin = attrs.crossorigin;
+                    if (attrs.integrity) s.integrity = attrs.integrity;
+                    s.onload = function () { resolve(); };
+                    s.onerror = function () {
+                        console.warn('Failed to load extra script:', attrs.src);
+                        resolve();
+                    };
+                    document.head.appendChild(s);
+                });
+            }));
+        }
+
         // Fallback env URLs if backend didn't provide them
         if (!cfg.env.APP_API_URL) {
             cfg.env.APP_API_URL = window.location.origin;

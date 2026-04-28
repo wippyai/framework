@@ -58,6 +58,13 @@ local function non_empty_map_or_nil(m: any): {[string]: any}?
     return m :: {[string]: any}
 end
 
+local function non_empty_array_or_nil(a: any): {any}?
+    if not a or type(a) ~= "table" or #a == 0 then
+        return nil
+    end
+    return a :: {any}
+end
+
 -- Build a theming scope from requirement name prefixes.
 -- Each scope can have: customCSS, cssVariables, iconSets.
 local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?): {[string]: any}?
@@ -169,6 +176,7 @@ local function handler()
     end
 
     local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
+    local extra_scripts = non_empty_array_or_nil(get_req_json_any("extra_scripts"))
 
     local config = {
         facade_url = facade_url,
@@ -186,6 +194,7 @@ local function handler()
         routePrefix = non_empty_or_nil(api_url),
         apiRoutes = api_routes,
         axiosDefaults = axios_defaults,
+        extraScripts = extra_scripts,
         theming = {
             global = global_scope,
             host = host_scope,
