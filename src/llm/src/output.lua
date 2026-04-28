@@ -195,10 +195,11 @@ end
 
 local function builder_factory(operation)
     return function(arg)
+        arg = arg or {}
         local self = {
             _operation = operation,
-            _provider = provider,
-            _contract = arg._provider_id,
+            _provider = arg._provider_id,
+            _contract = arg,
             _classifier = nil,
             _kind = nil,
             _message = nil,

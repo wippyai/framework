@@ -3,7 +3,7 @@ local output = require("output")
 local tests = require("test")
 
 local function map_error_response(google_error)
-    return output.errors.generate("google")
+    return output.errors.generate({ _provider_id = "google" })
         :classifier(mapper.classify_error)
         :from(google_error)
         :build()

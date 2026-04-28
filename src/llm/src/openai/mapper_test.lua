@@ -1134,7 +1134,7 @@ local function define_tests()
                     metadata = { request_id = "req_refusal123" }
                 }
 
-                local err_builder = output.errors.generate("openai")
+                local err_builder = output.errors.generate({ _provider_id = "openai" })
                     :classifier(openai_mapper.classify_error)
                 local context = { tool_name_map = {}, err = err_builder }
                 local response, err = openai_mapper.map_success_response(api_response, context)
@@ -1254,8 +1254,7 @@ local function define_tests()
             -- (kind, retryable, details with provider/operation/model) all flow through.
 
             it("should build a structured error with provider context for HTTP errors", function()
-                local err = output.errors.generate("openai")
-                    :with_contract({ model = "gpt-5.4" })
+                local err = output.errors.generate({ _provider_id = "openai", model = "gpt-5.4" })
                     :classifier(openai_mapper.classify_error)
                     :from({ status_code = 401, message = "Invalid API key" })
                     :build()
@@ -1271,8 +1270,7 @@ local function define_tests()
             end)
 
             it("should build a structured error with explicit kind/message", function()
-                local err = output.errors.generate("openai")
-                    :with_contract({ model = "gpt-5.4" })
+                local err = output.errors.generate({ _provider_id = "openai", model = "gpt-5.4" })
                     :kind(output.ERROR_TYPE.INVALID_REQUEST)
                     :message("Model is required")
                     :build()
@@ -1285,7 +1283,7 @@ local function define_tests()
             end)
 
             it("should mark 429 as retryable through the builder", function()
-                local err = output.errors.generate("openai")
+                local err = output.errors.generate({ _provider_id = "openai" })
                     :classifier(openai_mapper.classify_error)
                     :from({ status_code = 429, message = "Rate limited" })
                     :build()
@@ -1294,7 +1292,7 @@ local function define_tests()
             end)
 
             it("should reset per-call state between :build() calls", function()
-                local err = output.errors.generate("openai"):with_contract({ model = "m" })
+                local err = output.errors.generate({ _provider_id = "openai", model = "m" })
 
                 local e1 = err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("first"):build()
                 test.eq(e1:message(), "first")

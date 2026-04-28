@@ -963,7 +963,7 @@ local function define_tests()
                     metadata = { request_id = "req_refusal123" }
                 }
 
-                local err_builder = output.errors.generate("openai_compat")
+                local err_builder = output.errors.generate({ _provider_id = "openai_compat" })
                     :classifier(openai_mapper.classify_error)
                 local context = { tool_name_map = {}, err = err_builder }
                 local contract_response, err = openai_mapper.map_success_response(openai_response, context)
@@ -1042,8 +1042,7 @@ local function define_tests()
 
         describe("Error Builder Integration", function()
             it("should build a structured error with provider context for HTTP errors", function()
-                local err = output.errors.generate("openai_compat")
-                    :with_contract({ model = "llama-3.3" })
+                local err = output.errors.generate({ _provider_id = "openai_compat", model = "llama-3.3" })
                     :classifier(openai_mapper.classify_error)
                     :from({ status_code = 401, message = "Invalid API key" })
                     :build()
@@ -1059,7 +1058,7 @@ local function define_tests()
             end)
 
             it("should mark 429 as retryable through the builder", function()
-                local err = output.errors.generate("openai_compat")
+                local err = output.errors.generate({ _provider_id = "openai_compat" })
                     :classifier(openai_mapper.classify_error)
                     :from({ status_code = 429, message = "Rate limited" })
                     :build()
