@@ -19,19 +19,19 @@ local function _generate_schema_name(schema)
 end
 
 local function _validate_schema(schema)
-    local errors = {}
+    local errs = {}
 
     if not schema or type(schema) ~= "table" then
-        table.insert(errors, "Schema must be a table")
-        return false, errors
+        table.insert(errs, "Schema must be a table")
+        return false, errs
     end
 
     if schema.type ~= "object" then
-        table.insert(errors, "Root schema must be an object type")
+        table.insert(errs, "Root schema must be an object type")
     end
 
     if schema.additionalProperties ~= false then
-        table.insert(errors, "Root schema must have additionalProperties: false")
+        table.insert(errs, "Root schema must have additionalProperties: false")
     end
 
     if schema.properties then
@@ -41,7 +41,7 @@ local function _validate_schema(schema)
         end
 
         if not schema.required then
-            table.insert(errors, "Schema must have a required array listing all properties")
+            table.insert(errs, "Schema must have a required array listing all properties")
         else
             local missing_required = {}
             for _, prop_name in ipairs(properties) do
@@ -57,62 +57,45 @@ local function _validate_schema(schema)
                 end
             end
             if #missing_required > 0 then
-                table.insert(errors, "Properties must be marked as required: " .. table.concat(missing_required, ", "))
+                table.insert(errs, "Properties must be marked as required: " .. table.concat(missing_required, ", "))
             end
         end
     end
 
-    return #errors == 0, errors
+    return #errs == 0, errs
 end
 
 function structured_output_handler.handler(contract_args)
+    local err = output.errors.structured_output("openai")
+        :with_contract(contract_args)
+        :classifier(structured_output_handler._mapper.classify_error)
+
     if not contract_args.model then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Model is required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Messages are required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     if not contract_args.schema then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Schema is required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Schema is required"):build()
     end
 
     local schema_valid, schema_errors = _validate_schema(contract_args.schema)
     if not schema_valid then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Invalid schema: " .. table.concat(schema_errors, "; "),
-            metadata = {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Invalid schema: " .. table.concat(schema_errors, "; "))
+            :details({ schema_errors = schema_errors })
+            :build()
     end
 
     local schema_name = contract_args.schema_name
     if not schema_name then
-        local name, err = _generate_schema_name(contract_args.schema)
-        if err then
-            return {
-                success = false,
-                error = output.ERROR_TYPE.SERVER_ERROR,
-                error_message = err,
-                metadata = {}
-            }
+        local name, name_err = _generate_schema_name(contract_args.schema)
+        if name_err then
+            return nil, err:kind(output.ERROR_TYPE.SERVER_ERROR):message(name_err):build()
         end
         schema_name = name
     end
@@ -148,19 +131,18 @@ function structured_output_handler.handler(contract_args)
         timeout = contract_args.timeout
     }
 
-    local response, err = structured_output_handler._client.request("/responses", payload, request_options)
+    local response, req_err = structured_output_handler._client.request("/responses", payload, request_options)
 
-    if err then
-        return structured_output_handler._mapper.map_error_response(err)
+    if req_err then
+        return nil, err:from(req_err):build()
     end
 
     if not response or not response.output then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Invalid response structure from OpenAI Responses API",
-            metadata = response and response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Invalid response structure from OpenAI Responses API")
+            :details(response and response.metadata or nil)
+            :build()
     end
 
     local content_text = nil
@@ -178,31 +160,28 @@ function structured_output_handler.handler(contract_args)
     end
 
     if refusal then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.CONTENT_FILTER,
-            error_message = "Request was refused: " .. refusal,
-            metadata = response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.CONTENT_FILTER)
+            :message("Request was refused: " .. refusal)
+            :details({ response_id = response.id, refusal = refusal })
+            :build()
     end
 
     if not content_text or content_text == "" then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "No content in Responses API response",
-            metadata = response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("No content in Responses API response")
+            :details({ response_id = response.id })
+            :build()
     end
 
     local parsed_content, decode_err = json.decode(tostring(content_text))
     if decode_err then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.MODEL_ERROR,
-            error_message = "Model failed to return valid JSON: " .. decode_err,
-            metadata = response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Model failed to return valid JSON: " .. decode_err)
+            :details({ response_id = response.id, raw_content = content_text })
+            :build()
     end
 
     local has_tool_calls = false

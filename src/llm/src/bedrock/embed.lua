@@ -1,4 +1,5 @@
 local bedrock_client = require("bedrock_client")
+local mapper = require("mapper")
 local output = require("output")
 local embed_titan = require("embed_titan")
 local embed_cohere = require("embed_cohere")
@@ -71,32 +72,24 @@ local function embed_with_cohere(client, model_id, input, options)
 end
 
 function embed_handler.handler(contract_args)
+    local err_b = output.errors.embed("bedrock")
+        :with_contract(contract_args)
+        :classifier(mapper.classify_error)
+
     if not contract_args.model then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Model is required",
-            metadata = {}
-        }
+        return nil, err_b:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.input then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Input is required",
-            metadata = {}
-        }
+        return nil, err_b:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Input is required"):build()
     end
 
     local family = detect_model_family(contract_args.model)
     if not family then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.MODEL_ERROR,
-            error_message = "Unsupported embedding model family: " .. contract_args.model,
-            metadata = {}
-        }
+        return nil, err_b
+            :kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Unsupported embedding model family: " .. contract_args.model)
+            :build()
     end
 
     local model_id = contract_args.model
@@ -111,25 +104,10 @@ function embed_handler.handler(contract_args)
     end
 
     if err then
-        local error_type = output.ERROR_TYPE.SERVER_ERROR
-        if err.status_code then
-            if err.status_code == 401 or err.status_code == 403 then
-                error_type = output.ERROR_TYPE.AUTHENTICATION
-            elseif err.status_code == 404 then
-                error_type = output.ERROR_TYPE.MODEL_ERROR
-            elseif err.status_code == 429 then
-                error_type = output.ERROR_TYPE.RATE_LIMIT
-            elseif err.status_code == 400 then
-                error_type = output.ERROR_TYPE.INVALID_REQUEST
-            end
-        end
-
-        return {
-            success = false,
-            error = error_type,
-            error_message = err.message or "Embedding request failed",
-            metadata = (err :: any).metadata or {}
-        }
+        return nil, err_b
+            :from(err)
+            :details({ family = family })
+            :build()
     end
 
     return {

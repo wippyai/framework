@@ -10,30 +10,33 @@ local function define_tests()
 
         describe("Contract Validation", function()
             it("should require model parameter", function()
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } }
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Model is required")
             end)
 
             it("should require messages parameter", function()
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Messages are required")
             end)
 
             it("should reject empty messages array", function()
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "us.anthropic.claude-haiku-4-5-20251001-v1:0",
                     messages = {}
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
             end)
         end)
 
@@ -219,12 +222,13 @@ local function define_tests()
                     end
                 }
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "invalid-model",
                     messages = { { role = "user", content = { { type = "text", text = "Hello" } } } }
                 })
 
-                test.is_false(response.success)
+                test.is_nil(response)
+                test.not_nil(err)
                 test.not_nil(response.error)
             end)
 
@@ -235,13 +239,14 @@ local function define_tests()
                     end
                 }
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "test-model",
                     messages = { { role = "user", content = { { type = "text", text = "Hello" } } } }
                 })
 
-                test.is_false(response.success)
-                test.eq(response.error, "rate_limit_exceeded")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
             end)
         end)
     end)

@@ -102,36 +102,33 @@ local function collapse_cache_positions(system_positions, message_positions)
     return final_system, final_message
 end
 
-function mapper.map_error_response(claude_error)
+function mapper.classify_error(claude_error)
     if not claude_error then
-        local response = {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Unknown error"
-        }
-        return response, output.to_structured_error(response)
+        return output.ERROR_TYPE.SERVER_ERROR, "Unknown Claude error", nil
     end
 
-    local error_type = output.ERROR_TYPE.SERVER_ERROR
-    local error_message = "Unknown Claude API error"
+    local kind = output.ERROR_TYPE.SERVER_ERROR
+    local message = "Unknown Claude API error"
 
     if claude_error.error and claude_error.error.type then
-        error_type = mapper.CLAUDE_ERROR_TYPE_MAP[claude_error.error.type] or output.ERROR_TYPE.SERVER_ERROR
-        error_message = claude_error.error.message or claude_error.message or error_message
+        kind = mapper.CLAUDE_ERROR_TYPE_MAP[claude_error.error.type] or output.ERROR_TYPE.SERVER_ERROR
+        message = claude_error.error.message or claude_error.message or message
     elseif claude_error.status_code then
-        error_type = mapper.HTTP_STATUS_MAP[claude_error.status_code] or output.ERROR_TYPE.SERVER_ERROR
-        error_message = claude_error.message or error_message
+        kind = mapper.HTTP_STATUS_MAP[claude_error.status_code] or output.ERROR_TYPE.SERVER_ERROR
+        message = claude_error.message or message
     elseif claude_error.message then
-        error_message = claude_error.message
+        message = claude_error.message
     end
 
-    local response = {
-        success = false,
-        error = error_type,
-        error_message = error_message,
-        metadata = claude_error.metadata or {}
+    local details = {
+        status_code = claude_error.status_code,
+        type        = claude_error.error and claude_error.error.type
     }
-    return response, output.to_structured_error(response)
+    if claude_error.metadata then
+        if claude_error.metadata.request_id then details.request_id = claude_error.metadata.request_id end
+    end
+
+    return kind, message, details
 end
 
 function mapper.map_tokens(claude_usage)

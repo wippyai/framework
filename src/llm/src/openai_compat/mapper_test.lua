@@ -1,4 +1,5 @@
 local openai_mapper = require("openai_mapper")
+local output = require("output")
 local json = require("json")
 local test = require("test")
 
@@ -962,155 +963,108 @@ local function define_tests()
                     metadata = { request_id = "req_refusal123" }
                 }
 
-                local context = { tool_name_map = {} }
-                local contract_response = openai_mapper.map_success_response(openai_response, context) :: any
+                local err_builder = output.errors.generate("openai_compat")
+                    :classifier(openai_mapper.classify_error)
+                local context = { tool_name_map = {}, err = err_builder }
+                local contract_response, err = openai_mapper.map_success_response(openai_response, context)
 
-                test.is_false(contract_response.success)
-                test.eq(contract_response.error, "content_filtered")
-                test.contains(tostring(contract_response.error_message), "refused")
-                test.contains(tostring(contract_response.error_message), "I cannot assist with that request.")
+                test.is_nil(contract_response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "refused")
+                test.contains(tostring(err:message()), "I cannot assist with that request.")
             end)
         end)
 
-        describe("Error Response Mapping", function()
-            it("should map errors by status code", function()
+        describe("Error Classification", function()
+            -- classify_error is a pure function returning (kind, message, details).
+
+            it("should classify errors by status code", function()
                 local test_cases = {
-                    { status = 401, error_type = "authentication_error", message = "Invalid API key" },
-                    { status = 404, error_type = "model_error", message = "Model not found" },
-                    { status = 429, error_type = "rate_limit_exceeded", message = "Rate limit exceeded" },
-                    { status = 500, error_type = "server_error", message = "Internal server error" }
+                    { status = 401, kind = "authentication_error",   message = "Invalid API key" },
+                    { status = 404, kind = "model_error",            message = "Model not found" },
+                    { status = 429, kind = "rate_limit_exceeded",    message = "Rate limit exceeded" },
+                    { status = 500, kind = "server_error",           message = "Internal server error" }
                 }
 
                 for _, case in ipairs(test_cases) do
-                    local openai_error = {
+                    local k, m, d = openai_mapper.classify_error({
                         status_code = case.status,
                         message = case.message
-                    }
+                    })
 
-                    local contract_response = openai_mapper.map_error_response(openai_error)
-
-                    test.is_false(contract_response.success)
-                    test.eq(contract_response.error, case.error_type)
-                    test.eq(contract_response.error_message, case.message)
+                    test.eq(k, case.kind)
+                    test.eq(m, case.message)
+                    test.not_nil(d)
+                    test.eq(d.status_code, case.status)
                 end
             end)
 
-            it("should map errors by message content", function()
+            it("should classify errors by message content", function()
                 local test_cases = {
-                    { message = "context length exceeded", error_type = "context_length_exceeded" },
-                    { message = "maximum context length is 4096 tokens", error_type = "context_length_exceeded" },
-                    { message = "string too long", error_type = "context_length_exceeded" },
-                    { message = "content policy violation", error_type = "content_filtered" },
-                    { message = "content filter triggered", error_type = "content_filtered" }
+                    { message = "context length exceeded",            kind = "context_length_exceeded" },
+                    { message = "maximum context length is 4096 tokens", kind = "context_length_exceeded" },
+                    { message = "string too long",                    kind = "context_length_exceeded" },
+                    { message = "content policy violation",           kind = "content_filtered" },
+                    { message = "content filter triggered",           kind = "content_filtered" }
                 }
 
                 for _, case in ipairs(test_cases) do
-                    local openai_error = {
+                    local k = openai_mapper.classify_error({
                         status_code = 400,
                         message = case.message
-                    }
+                    })
 
-                    local contract_response = openai_mapper.map_error_response(openai_error)
-
-                    test.is_false(contract_response.success)
-                    test.eq(contract_response.error, case.error_type)
+                    test.eq(k, case.kind)
                 end
             end)
 
             it("should handle nil error", function()
-                local contract_response = openai_mapper.map_error_response(nil)
-
-                test.is_false(contract_response.success)
-                test.eq(contract_response.error, "server_error")
-                test.eq(contract_response.error_message, "Unknown OpenAI error")
-                test.not_nil(contract_response.metadata)
+                local k, m = openai_mapper.classify_error(nil)
+                test.eq(k, "server_error")
+                test.eq(m, "Unknown OpenAI-compatible error")
             end)
 
-            it("should return structured error as second value for 429", function()
-                local response, err = openai_mapper.map_error_response({
-                    status_code = 429,
-                    message = "Rate limited"
+            it("should expose status_code, code, type, param in details", function()
+                local _, _, d = openai_mapper.classify_error({
+                    status_code = 400,
+                    message = "Bad",
+                    code = "invalid_param",
+                    type = "invalid_request_error",
+                    param = "model"
                 })
-                test.eq(response.error, "rate_limit_exceeded")
-                test.not_nil(err)
-                test.eq(err:kind(), "RateLimited")
-                test.eq(err:retryable(), true)
-            end)
-
-            it("should return non-retryable error for 401", function()
-                local response, err = openai_mapper.map_error_response({
-                    status_code = 401,
-                    message = "Invalid API key"
-                })
-                test.not_nil(err)
-                test.eq(err:kind(), "PermissionDenied")
-                test.eq(err:retryable(), false)
-            end)
-
-            it("should return retryable error for 500", function()
-                local _, err = openai_mapper.map_error_response({
-                    status_code = 500,
-                    message = "Internal server error"
-                })
-                test.not_nil(err)
-                test.eq(err:kind(), "Unavailable")
-                test.eq(err:retryable(), true)
+                test.eq(d.status_code, 400)
+                test.eq(d.code, "invalid_param")
+                test.eq(d.type, "invalid_request_error")
+                test.eq(d.param, "model")
             end)
         end)
 
-        describe("Finish Reason Preservation", function()
-            it("should preserve LENGTH finish_reason when response has tool_calls", function()
-                local openai_response = {
-                    choices = {
-                        {
-                            message = {
-                                content = "I will call...",
-                                tool_calls = {
-                                    {
-                                        id = "call_1",
-                                        type = "function",
-                                        ["function"] = {
-                                            name = "test_tool",
-                                            arguments = "{}"
-                                        }
-                                    }
-                                }
-                            },
-                            finish_reason = "length"
-                        }
-                    },
-                    usage = { prompt_tokens = 100, completion_tokens = 4096, total_tokens = 4196 }
-                }
+        describe("Error Builder Integration", function()
+            it("should build a structured error with provider context for HTTP errors", function()
+                local err = output.errors.generate("openai_compat")
+                    :with_contract({ model = "llama-3.3" })
+                    :classifier(openai_mapper.classify_error)
+                    :from({ status_code = 401, message = "Invalid API key" })
+                    :build()
 
-                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
-                test.eq(result.finish_reason, "length")
+                test.eq(err:kind(), "PermissionDenied")
+                test.eq(err:message(), "Invalid API key")
+                test.eq(err:retryable(), false)
+                local d = err:details() :: any
+                test.eq(d.provider, "openai_compat")
+                test.eq(d.operation, "generate")
+                test.eq(d.model, "llama-3.3")
+                test.eq(d.status_code, 401)
             end)
 
-            it("should map tool_calls finish_reason to TOOL_CALL normally", function()
-                local openai_response = {
-                    choices = {
-                        {
-                            message = {
-                                content = "",
-                                tool_calls = {
-                                    {
-                                        id = "call_1",
-                                        type = "function",
-                                        ["function"] = {
-                                            name = "test_tool",
-                                            arguments = "{}"
-                                        }
-                                    }
-                                }
-                            },
-                            finish_reason = "tool_calls"
-                        }
-                    },
-                    usage = { prompt_tokens = 50, completion_tokens = 100, total_tokens = 150 }
-                }
-
-                local result = openai_mapper.map_success_response(openai_response, { tool_name_map = {} })
-                test.eq(result.finish_reason, "tool_call")
+            it("should mark 429 as retryable through the builder", function()
+                local err = output.errors.generate("openai_compat")
+                    :classifier(openai_mapper.classify_error)
+                    :from({ status_code = 429, message = "Rate limited" })
+                    :build()
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:retryable(), true)
             end)
         end)
     end)

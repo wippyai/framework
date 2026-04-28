@@ -252,6 +252,7 @@ entries:
     source: file://mapper_test.lua
     imports:
       google_mapper: wippy.llm.google:mapper
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 
@@ -299,6 +300,7 @@ entries:
     imports:
       google_config: wippy.llm.google:config
       google_mapper: wippy.llm.google:mapper
+      output: wippy.llm:output
     method: handler
 
   # wippy.llm.google:structured_output_test

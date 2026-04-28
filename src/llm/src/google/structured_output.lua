@@ -1,5 +1,6 @@
 local contract = require("contract")
 local mapper = require("google_mapper")
+local output = require("output")
 local json = require("json")
 local hash = require("hash")
 local config = require("google_config")
@@ -34,43 +35,36 @@ local function _validate_schema(schema)
 end
 
 function structured_output.handler(contract_args)
+    local err = output.errors.structured_output("google")
+        :with_contract(contract_args)
+        :classifier(structured_output._mapper.classify_error)
+
     if not contract_args.model then
-        return structured_output._mapper.map_error_response({
-            message = "Model is required",
-            status_code = 400
-        })
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return structured_output._mapper.map_error_response({
-            message = "Messages are required",
-            status_code = 400
-        })
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     if not contract_args.schema then
-        return structured_output._mapper.map_error_response({
-            message = "Schema is required",
-            status_code = 400
-        })
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Schema is required"):build()
     end
 
     local schema_valid, schema_errors = _validate_schema(contract_args.schema)
     if not schema_valid then
-        return structured_output._mapper.map_error_response({
-            message = "Invalid schema: " .. table.concat(schema_errors, "; "),
-            status_code = 400
-        })
+        return nil, err
+            :kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Invalid schema: " .. table.concat(schema_errors, "; "))
+            :details({ schema_errors = schema_errors })
+            :build()
     end
 
     local schema_name = contract_args.schema_name
     if not schema_name then
-        local name, err = _generate_schema_name(contract_args.schema)
-        if err then
-            return structured_output._mapper.map_error_response({
-                message = err,
-                status_code = 500
-            })
+        local name, name_err = _generate_schema_name(contract_args.schema)
+        if name_err then
+            return nil, err:kind(output.ERROR_TYPE.SERVER_ERROR):message(name_err):build()
         end
         schema_name = name
     end
@@ -98,22 +92,22 @@ function structured_output.handler(contract_args)
         end
     end
 
-    local client_contract, err = structured_output._contract.get(config.CLIENT_CONTRACT_ID)
-    if err then
-        return structured_output._mapper.map_error_response({
-            message = "Failed to get client contract: " .. tostring(err),
-            status_code = 500
-        })
+    local client_contract, contract_err = structured_output._contract.get(config.CLIENT_CONTRACT_ID)
+    if contract_err then
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Failed to get client contract: " .. tostring(contract_err))
+            :build()
     end
 
-    local client_instance, err = client_contract
+    local client_instance, open_err = client_contract
         :with_context(structured_output._ctx.all() or {})
         :open(tostring(structured_output._ctx.get("client_id")))
-    if err then
-        return structured_output._mapper.map_error_response({
-            message = "Failed to open client binding: " .. tostring(err),
-            status_code = 500
-        })
+    if open_err then
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Failed to open client binding: " .. tostring(open_err))
+            :build()
     end
 
     local response = client_instance:request({
@@ -124,7 +118,7 @@ function structured_output.handler(contract_args)
     })
 
     if response.status_code < 200 or response.status_code >= 300 then
-        return structured_output._mapper.map_error_response(response)
+        return nil, err:from(response):build()
     end
 
     local success, mapped_response = pcall(function()
@@ -132,19 +126,18 @@ function structured_output.handler(contract_args)
     end)
 
     if not success then
-        return structured_output._mapper.map_error_response({
-            message = mapped_response or "Failed to process Google response",
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = mapped_response or "Failed to process Google response", status_code = 500 })
+            :build()
     end
 
     local result_table = mapped_response.result or {}
     local structured_data, decode_err = json.decode(tostring(result_table.content or ""))
     if decode_err then
-        return structured_output._mapper.map_error_response({
-            message = "Model failed to return valid JSON: " .. decode_err,
-            status_code = 404
-        })
+        return nil, err
+            :kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Model failed to return valid JSON: " .. decode_err)
+            :build()
     end
 
     mapped_response.result = { data = structured_data }

@@ -10,27 +10,30 @@ local function define_tests()
 
         describe("Contract Validation", function()
             it("should require model parameter", function()
-                local response = embed_handler.handler({ input = "test" })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                local response, err = embed_handler.handler({ input = "test" })
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Model is required")
             end)
 
             it("should require input parameter", function()
-                local response = embed_handler.handler({ model = "amazon.titan-embed-text-v2:0" })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Input is required")
+                local response, err = embed_handler.handler({ model = "amazon.titan-embed-text-v2:0" })
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Input is required")
             end)
 
             it("should reject unsupported model family", function()
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = "unknown.model-v1",
                     input = "test"
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
-                test.contains(response.error_message, "Unsupported")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(err:message(), "Unsupported")
             end)
         end)
 
@@ -283,13 +286,14 @@ local function define_tests()
                     end
                 }
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = "amazon.titan-embed-text-v2:0",
                     input = "test"
                 })
 
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
             end)
 
             it("should handle API errors for Cohere", function()
@@ -299,13 +303,14 @@ local function define_tests()
                     end
                 }
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = "cohere.embed-v4:0",
                     input = "test"
                 })
 
-                test.is_false(response.success)
-                test.eq(response.error, "rate_limit_exceeded")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
             end)
 
             it("should handle auth errors", function()
@@ -315,13 +320,14 @@ local function define_tests()
                     end
                 }
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = "amazon.titan-embed-text-v2:0",
                     input = "test"
                 })
 
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
             end)
         end)
     end)

@@ -204,6 +204,7 @@ entries:
     source: file://embed.lua
     imports:
       bedrock_client: wippy.llm.bedrock:client
+      mapper: wippy.llm.bedrock:mapper
       embed_titan: wippy.llm.bedrock:embed_titan
       embed_cohere: wippy.llm.bedrock:embed_cohere
       output: wippy.llm:output
@@ -340,6 +341,7 @@ entries:
       - json
     imports:
       mapper: wippy.llm.bedrock:mapper
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 

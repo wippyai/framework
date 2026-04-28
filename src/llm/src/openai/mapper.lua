@@ -553,12 +553,16 @@ function openai_mapper.map_success_response(api_response, context)
     local content_text, refusal = collect_message_text(messages)
 
     if refusal then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.CONTENT_FILTER,
-            error_message = "Request was refused: " .. refusal,
-            metadata = api_response.metadata or {}
-        }
+        local err_builder = context and context.err
+        if err_builder then
+            return nil, err_builder
+                :kind(output.ERROR_TYPE.CONTENT_FILTER)
+                :message("Request was refused: " .. refusal)
+                :details({ response_id = api_response.id, refusal = refusal })
+                :build()
+        end
+        -- Fallback when builder not provided — minimal raw error
+        error("Request was refused: " .. refusal)
     end
 
     local response = {
@@ -610,27 +614,28 @@ function openai_mapper.map_success_response(api_response, context)
     return response
 end
 
-function openai_mapper.map_error_response(api_error)
+-- Pure classifier: turn an HTTP / transport error into (kind, message, details).
+-- Consumed by output.errors.<op>(...):classifier(openai_mapper.classify_error):from(err):build()
+function openai_mapper.classify_error(api_error)
     if not api_error then
-        local response = {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Unknown OpenAI error",
-            metadata = {}
-        }
-        return response, output.to_structured_error(response)
+        return output.ERROR_TYPE.SERVER_ERROR, "Unknown OpenAI error", nil
     end
 
-    local error_message = api_error.message or "OpenAI API error"
-    local error_type = map_error_type(api_error.status_code, error_message)
+    local message = api_error.message or "OpenAI API error"
+    local kind    = map_error_type(api_error.status_code, message)
 
-    local response = {
-        success = false,
-        error = error_type,
-        error_message = error_message,
-        metadata = api_error.metadata or {}
+    local details = {
+        status_code = api_error.status_code,
+        code        = api_error.code,
+        type        = api_error.type,
+        param       = api_error.param
     }
-    return response, output.to_structured_error(response)
+    if api_error.metadata then
+        if api_error.metadata.request_id then details.request_id = api_error.metadata.request_id end
+        if api_error.metadata.organization then details.organization = api_error.metadata.organization end
+    end
+
+    return kind, message, details
 end
 
 return openai_mapper

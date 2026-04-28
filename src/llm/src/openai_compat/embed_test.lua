@@ -18,11 +18,12 @@ local function define_tests()
                     input = "Test input text"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Model is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Model is required")
             end)
 
             it("should require input parameter", function()
@@ -30,11 +31,12 @@ local function define_tests()
                     model = "text-embedding-3-small"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Input is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Input is required")
             end)
 
             it("should accept string input", function()
@@ -443,11 +445,12 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
-                test.contains(tostring(response.error_message), "does not exist")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(tostring(err:message()), "does not exist")
             end)
 
             it("should handle authentication errors", function()
@@ -483,11 +486,12 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
-                test.contains(tostring(response.error_message), "Invalid API key")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.contains(tostring(err:message()), "Invalid API key")
             end)
 
             it("should handle rate limit errors", function()
@@ -523,11 +527,12 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "rate_limit_exceeded")
-                test.contains(tostring(response.error_message), "Rate limit exceeded")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.contains(tostring(err:message()), "Rate limit exceeded")
             end)
 
             it("should handle server errors", function()
@@ -563,11 +568,12 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(tostring(response.error_message), "Internal server error")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "Internal server error")
             end)
 
             it("should handle empty response", function()
@@ -598,11 +604,12 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(tostring(response.error_message), "Invalid or empty response")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "Invalid or empty response")
             end)
 
             it("should handle malformed response data", function()
@@ -635,11 +642,12 @@ local function define_tests()
                     input = "Test input"
                 }
 
-                local response = embed_handler.handler(contract_args) :: any
+                local response, err = embed_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(tostring(response.error_message), "Invalid or empty response")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "Invalid or empty response")
             end)
         end)
 

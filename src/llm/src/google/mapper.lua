@@ -369,27 +369,24 @@ function mapper.map_success_response(google_response)
     return response
 end
 
-function mapper.map_error_response(google_error)
+function mapper.classify_error(google_error)
     if not google_error then
-        local response = {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Unknown Google error",
-            metadata = {}
-        }
-        return response, output.to_structured_error(response)
+        return output.ERROR_TYPE.SERVER_ERROR, "Unknown Google error", nil
     end
 
-    local error_message = google_error.message or "Google API error"
-    local error_type = map_error_type(google_error.status_code, error_message)
+    local message = google_error.message or "Google API error"
+    local kind = map_error_type(google_error.status_code, message)
 
-    local response = {
-        success = false,
-        error = error_type,
-        error_message = error_message,
-        metadata = google_error.metadata or {}
+    local details = {
+        status_code = google_error.status_code,
+        code = google_error.code,
+        type = google_error.type
     }
-    return response, output.to_structured_error(response)
+    if google_error.metadata then
+        if google_error.metadata.request_id then details.request_id = google_error.metadata.request_id end
+    end
+
+    return kind, message, details
 end
 
 -- Standardize content to a simple string (for instructions)

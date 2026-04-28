@@ -34,7 +34,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Model is required")
+                tests.eq(err:message(), "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -57,7 +57,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Messages are required")
+                tests.eq(err:message(), "Messages are required")
             end)
 
             it("should reject empty messages array", function()
@@ -81,7 +81,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Messages are required")
+                tests.eq(err:message(), "Messages are required")
             end)
         end)
 
@@ -700,7 +700,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "invalid_request")
-                tests.contains(response.error_message, "not found in tools list")
+                tests.contains(err:message(), "not found in tools list")
             end)
         end)
 
@@ -821,7 +821,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Failed to get client contract")
+                tests.contains(err:message(), "Failed to get client contract")
             end)
 
             it("should handle client binding errors", function()
@@ -879,7 +879,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Failed to open client binding")
+                tests.contains(err:message(), "Failed to open client binding")
             end)
 
             it("should handle API error responses", function()
@@ -946,7 +946,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "authentication_error")
-                tests.contains(response.error_message, "API key is invalid")
+                tests.contains(err:message(), "API key is invalid")
             end)
 
             it("should handle response mapping errors", function()
@@ -1016,7 +1016,7 @@ local function define_tests()
 
                 tests.is_false(response.success)
                 tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Invalid response structure")
+                tests.contains(err:message(), "Invalid response structure")
             end)
         end)
 

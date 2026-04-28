@@ -10,41 +10,45 @@ local function define_tests()
 
         describe("Contract Validation", function()
             it("should require model parameter", function()
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } },
                     schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Model is required")
             end)
 
             it("should require messages parameter", function()
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     model = "test-model",
                     schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
                 })
-                test.is_false(response.success)
-                test.contains(response.error_message, "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err:message(), "Messages are required")
             end)
 
             it("should require schema parameter", function()
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     model = "test-model",
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } }
                 })
-                test.is_false(response.success)
-                test.contains(response.error_message, "Schema is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err:message(), "Schema is required")
             end)
 
             it("should validate schema structure", function()
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     model = "test-model",
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } },
                     schema = { type = "string" }
                 })
-                test.is_false(response.success)
-                test.contains(response.error_message, "type 'object'")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err:message(), "type 'object'")
             end)
         end)
 
@@ -154,7 +158,7 @@ local function define_tests()
                     end
                 }
 
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     model = "test-model",
                     messages = { { role = "user", content = { { type = "text", text = "Extract" } } } },
                     schema = {
@@ -165,8 +169,9 @@ local function define_tests()
                     }
                 })
 
-                test.is_false(response.success)
-                test.contains(response.error_message, "structured_output tool")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err:message(), "structured_output tool")
             end)
         end)
     end)

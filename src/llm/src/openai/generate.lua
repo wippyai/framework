@@ -8,7 +8,7 @@ local generate_handler = {
     _output = output
 }
 
-local function handle_streaming(stream_response, context, stream_config)
+local function handle_streaming(stream_response, context, stream_config, err)
     local streamer, streamer_err = generate_handler._output.streamer(
         tostring(stream_config.reply_to),
         tostring(stream_config.topic),
@@ -16,10 +16,9 @@ local function handle_streaming(stream_response, context, stream_config)
     )
 
     if not streamer then
-        return generate_handler._mapper.map_error_response({
-            message = streamer_err or "Failed to create streamer",
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = streamer_err or "Failed to create streamer", status_code = 500 })
+            :build()
     end
 
     local full_content = ""
@@ -57,8 +56,8 @@ local function handle_streaming(stream_response, context, stream_config)
         end,
 
         on_error = function(error_info)
-            local error_response = generate_handler._mapper.map_error_response(error_info)
-            streamer:send_error(tostring(error_response.error), tostring(error_response.error_message), nil)
+            local e = err:from(error_info):build()
+            streamer:send_error(tostring(e:kind()), tostring(e:message()), nil)
         end,
 
         on_done = function(_)
@@ -67,10 +66,9 @@ local function handle_streaming(stream_response, context, stream_config)
     })
 
     if stream_err then
-        return generate_handler._mapper.map_error_response({
-            message = stream_err,
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = stream_err, status_code = 500 })
+            :build()
     end
 
     local meta = stream_response.metadata or {}
@@ -95,28 +93,23 @@ local function handle_streaming(stream_response, context, stream_config)
 end
 
 function generate_handler.handler(contract_args)
+    local err = output.errors.generate("openai")
+        :with_contract(contract_args)
+        :classifier(generate_handler._mapper.classify_error)
+
     if not contract_args.model then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Model is required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Messages are required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     local context = {
         model = contract_args.model,
         has_tools = (contract_args.tools and #contract_args.tools > 0),
-        tool_name_map = {}
+        tool_name_map = {},
+        err = err
     }
 
     local instructions = generate_handler._mapper.extract_instructions(contract_args.messages)
@@ -153,12 +146,7 @@ function generate_handler.handler(contract_args)
         )
 
         if tool_choice_error then
-            return {
-                success = false,
-                error = output.ERROR_TYPE.INVALID_REQUEST,
-                error_message = tool_choice_error,
-                metadata = {}
-            }
+            return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(tool_choice_error):build()
         end
 
         payload.tools = tools
@@ -184,22 +172,25 @@ function generate_handler.handler(contract_args)
     )
 
     if request_err then
-        return generate_handler._mapper.map_error_response(request_err)
+        return nil, err:from(request_err):build()
     end
 
     if stream_config then
-        return handle_streaming(response, context, stream_config)
+        return handle_streaming(response, context, stream_config, err)
     end
 
-    local success, mapped_response = pcall(function()
+    local success, mapped_response, mapped_err = pcall(function()
         return generate_handler._mapper.map_success_response(response, context)
     end)
 
     if not success then
-        return generate_handler._mapper.map_error_response({
-            message = mapped_response or "Failed to process Responses API response",
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = mapped_response or "Failed to process Responses API response", status_code = 500 })
+            :build()
+    end
+
+    if mapped_err then
+        return nil, mapped_err
     end
 
     return mapped_response

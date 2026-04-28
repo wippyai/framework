@@ -516,12 +516,15 @@ function openai_mapper.map_success_response(openai_response, context)
     end
 
     if choice.message.refusal then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.CONTENT_FILTER,
-            error_message = "Request was refused: " .. choice.message.refusal,
-            metadata = openai_response.metadata or {}
-        }
+        local err_builder = context and context.err
+        if err_builder then
+            return nil, err_builder
+                :kind(output.ERROR_TYPE.CONTENT_FILTER)
+                :message("Request was refused: " .. choice.message.refusal)
+                :details({ refusal = choice.message.refusal })
+                :build()
+        end
+        error("Request was refused: " .. choice.message.refusal)
     end
 
     local response = {
@@ -550,27 +553,29 @@ function openai_mapper.map_success_response(openai_response, context)
     return response
 end
 
-function openai_mapper.map_error_response(openai_error)
+-- Pure classifier: turn an HTTP / transport error into (kind, message, details).
+function openai_mapper.classify_error(openai_error)
     if not openai_error then
-        local response = {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Unknown OpenAI error",
-            metadata = {}
-        }
-        return response, output.to_structured_error(response)
+        return output.ERROR_TYPE.SERVER_ERROR, "Unknown OpenAI-compatible error", nil
     end
 
-    local error_message = openai_error.message or "OpenAI API error"
-    local error_type = map_error_type(openai_error.status_code, error_message)
+    local message = openai_error.message or "OpenAI-compatible API error"
+    local kind    = map_error_type(openai_error.status_code, message)
 
-    local response = {
-        success = false,
-        error = error_type,
-        error_message = error_message,
-        metadata = openai_error.metadata or {}
+    local details = {
+        status_code = openai_error.status_code,
+        code        = openai_error.code,
+        type        = openai_error.type,
+        param       = openai_error.param,
     }
-    return response, output.to_structured_error(response)
+    if openai_error.metadata then
+        if openai_error.metadata.request_id then details.request_id = openai_error.metadata.request_id end
+        if openai_error.metadata.organization then details.organization = openai_error.metadata.organization end
+    end
+    if openai_error.nested_error then details.nested_error = openai_error.nested_error end
+    if openai_error.provider_name then details.upstream_provider = openai_error.provider_name end
+
+    return kind, message, details
 end
 
 -- Standardize content to a simple string (for assistant and tool messages)

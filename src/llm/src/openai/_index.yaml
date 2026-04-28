@@ -235,6 +235,7 @@ entries:
       - json
     imports:
       openai_mapper: wippy.llm.openai:mapper
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 

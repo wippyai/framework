@@ -12,18 +12,16 @@ local generate = {
 }
 
 function generate.handler(contract_args)
+    local err = output.errors.generate("google")
+        :with_contract(contract_args)
+        :classifier(generate._mapper.classify_error)
+
     if not contract_args.model then
-        return generate._mapper.map_error_response({
-            message = "Model is required",
-            status_code = 400
-        })
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return generate._mapper.map_error_response({
-            message = "Messages are required",
-            status_code = 400
-        })
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     local messages, system_instructions = generate._mapper.map_messages(contract_args.messages, {
@@ -56,32 +54,29 @@ function generate.handler(contract_args)
         )
 
         if tool_config_error then
-            return generate._mapper.map_error_response({
-                message = tool_config_error,
-                status_code = 400
-            })
+            return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(tool_config_error):build()
         end
 
         payload.tools = { functionDeclarations = tools }
         payload.toolConfig = { functionCallingConfig = tool_config }
     end
 
-    local client_contract, err = generate._contract.get(config.CLIENT_CONTRACT_ID)
-    if err then
-        return generate._mapper.map_error_response({
-            message = "Failed to get client contract: " .. tostring(err),
-            status_code = 500
-        })
+    local client_contract, contract_err = generate._contract.get(config.CLIENT_CONTRACT_ID)
+    if contract_err then
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Failed to get client contract: " .. tostring(contract_err))
+            :build()
     end
 
-    local client_instance, err = client_contract
+    local client_instance, open_err = client_contract
         :with_context(generate._ctx.all() or {})
         :open(tostring(generate._ctx.get("client_id")))
-    if err then
-        return generate._mapper.map_error_response({
-            message = "Failed to open client binding: " .. tostring(err),
-            status_code = 500
-        })
+    if open_err then
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Failed to open client binding: " .. tostring(open_err))
+            :build()
     end
 
     local endpoint_path = "generateContent"
@@ -103,7 +98,7 @@ function generate.handler(contract_args)
     })
 
     if response.status_code < 200 or response.status_code >= 300 then
-        return generate._mapper.map_error_response(response)
+        return nil, err:from(response):build()
     end
 
     local success, mapped_response = pcall(function()
@@ -111,10 +106,9 @@ function generate.handler(contract_args)
     end)
 
     if not success then
-        return generate._mapper.map_error_response({
-            message = mapped_response or "Failed to process Google response",
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = mapped_response or "Failed to process Google response", status_code = 500 })
+            :build()
     end
 
     return mapped_response

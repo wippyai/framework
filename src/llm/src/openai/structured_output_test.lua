@@ -26,11 +26,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Model is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -44,11 +45,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Messages are required")
             end)
 
             it("should require schema parameter", function()
@@ -59,11 +61,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Schema is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Schema is required")
             end)
 
             it("should reject empty messages array", function()
@@ -78,11 +81,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Messages are required")
             end)
         end)
 
@@ -99,11 +103,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Root schema must be an object")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Root schema must be an object")
             end)
 
             it("should require additionalProperties: false", function()
@@ -122,11 +127,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "additionalProperties: false")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "additionalProperties: false")
             end)
 
             it("should require all properties in required array", function()
@@ -146,11 +152,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Properties must be marked as required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Properties must be marked as required")
             end)
 
             it("should require required array when properties exist", function()
@@ -169,11 +176,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Schema must have a required array")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Schema must have a required array")
             end)
 
             it("should handle non-table schema", function()
@@ -185,11 +193,12 @@ local function define_tests()
                     schema = "not a table"
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Schema must be a table")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Schema must be a table")
             end)
 
             it("should pass valid schema", function()
@@ -244,7 +253,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
             end)
@@ -321,7 +330,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
                 assert(response.result)
@@ -400,7 +409,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
                 assert(response.result)
@@ -465,7 +474,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
                 assert(response.result)
@@ -529,7 +538,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
             end)
@@ -585,7 +594,7 @@ local function define_tests()
                     schema_name = "custom_schema_name"
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
             end)
@@ -651,7 +660,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
             end)
@@ -727,7 +736,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
                 assert(response.result)
@@ -787,11 +796,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "content_filtered")
-                test.contains(tostring(response.error_message), "I cannot generate that type of content.")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "I cannot generate that type of content.")
             end)
 
             it("should handle invalid JSON in response", function()
@@ -841,11 +851,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
-                test.contains(tostring(response.error_message), "Model failed to return valid JSON")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(tostring(err:message()), "Model failed to return valid JSON")
             end)
 
             it("should handle missing content in response", function()
@@ -896,11 +907,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(tostring(response.error_message), "No content")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "No content")
             end)
 
             it("should handle API authentication errors", function()
@@ -944,11 +956,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
-                test.contains(tostring(response.error_message), "Invalid API key")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.contains(tostring(err:message()), "Invalid API key")
             end)
 
             it("should handle model not found errors", function()
@@ -992,11 +1005,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
-                test.contains(tostring(response.error_message), "does not exist")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(tostring(err:message()), "does not exist")
             end)
 
             it("should handle invalid response structure", function()
@@ -1035,11 +1049,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(tostring(response.error_message), "Invalid response structure")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "Invalid response structure")
             end)
         end)
 
@@ -1100,7 +1115,7 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
                 assert(response.result)
@@ -1158,7 +1173,7 @@ local function define_tests()
                     timeout = 60
                 }
 
-                local response = structured_output_handler.handler(contract_args) :: any
+                local response, err = structured_output_handler.handler(contract_args) :: any
 
                 test.is_true(response.success)
             end)

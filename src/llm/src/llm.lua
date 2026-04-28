@@ -199,11 +199,7 @@ local function normalize_response(raw_result)
         metadata = raw_result.metadata or {}
     }
 
-    -- Handle different response types based on contract
-    if raw_result.success == false then
-        -- Error response
-        return nil, raw_result.error_message or raw_result.error or "Unknown error"
-    elseif raw_result.result then
+    if raw_result.result then
         if type(raw_result.result) == "table" then
             if raw_result.result.content ~= nil then
                 -- Generation response with content + tool_calls
@@ -373,10 +369,9 @@ function llm.generate(prompt_input, options)
         -- Call provider contract directly with standard format
         local raw_result, err = (provider_instance as any):generate(contract_args)
         if err then
-            return nil, err
+            return nil, err:message()
         end
 
-        -- Normalize response
         local normalized, norm_err = normalize_response(raw_result)
         if norm_err then
             return nil, norm_err
@@ -435,7 +430,7 @@ function llm.generate(prompt_input, options)
         -- Call provider contract
         local raw_result, err = (provider_instance as any):generate(contract_args)
         if err then
-            return nil, err
+            return nil, err:message()
         end
 
         -- Normalize response
@@ -507,7 +502,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         -- Call provider contract directly with standard format
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
         if err then
-            return nil, err
+            return nil, err:message()
         end
 
         -- Normalize response
@@ -567,10 +562,9 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         -- Merge user options (can override provider defaults)
         merge_user_options(contract_args, options, {"model", "schema"})
 
-        -- Call provider contract
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
         if err then
-            return nil, err
+            return nil, err:message()
         end
 
         -- Normalize response
@@ -628,10 +622,9 @@ function llm.embed(text, options)
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id"})
 
-        -- Call provider contract directly with standard format
         local raw_result, err = (provider_instance as any):embed(contract_args)
         if err then
-            return nil, err
+            return nil, err:message()
         end
 
         -- Normalize response
@@ -691,10 +684,9 @@ function llm.embed(text, options)
         -- Merge user options (can override provider defaults)
         merge_user_options(contract_args, options, {"model", "dimensions"})
 
-        -- Call provider contract
         local raw_result, err = (provider_instance as any):embed(contract_args)
         if err then
-            return nil, err
+            return nil, err:message()
         end
 
         -- Normalize response

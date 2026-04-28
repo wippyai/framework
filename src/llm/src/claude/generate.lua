@@ -9,7 +9,7 @@ local generate_handler = {
     _output = output
 }
 
-local function handle_streaming(stream_response, context, stream_config)
+local function handle_streaming(stream_response, context, stream_config, err)
     local streamer, streamer_err = generate_handler._output.streamer(
         tostring(stream_config.reply_to),
         tostring(stream_config.topic),
@@ -17,10 +17,9 @@ local function handle_streaming(stream_response, context, stream_config)
     )
 
     if not streamer then
-        return generate_handler._mapper.map_error_response({
-            message = streamer_err or "Failed to create streamer",
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = streamer_err or "Failed to create streamer", status_code = 500 })
+            :build()
     end
 
     local full_content = ""
@@ -28,7 +27,7 @@ local function handle_streaming(stream_response, context, stream_config)
     local finish_reason = nil
     local final_usage = nil
 
-    local stream_content, stream_err, stream_result = generate_handler._client.process_stream(stream_response, {
+    local _, stream_err, stream_result = generate_handler._client.process_stream(stream_response, {
         on_content = function(chunk)
             streamer:buffer_content(chunk)
             full_content = full_content .. chunk
@@ -51,8 +50,8 @@ local function handle_streaming(stream_response, context, stream_config)
         end,
 
         on_error = function(error_info)
-            local error_response = generate_handler._mapper.map_error_response(error_info)
-            streamer:send_error(tostring(error_response.error), tostring(error_response.error_message), nil)
+            local e = err:from(error_info):build()
+            streamer:send_error(tostring(e:kind()), tostring(e:message()), nil)
         end,
 
         on_done = function(result)
@@ -63,10 +62,9 @@ local function handle_streaming(stream_response, context, stream_config)
     })
 
     if stream_err then
-        return generate_handler._mapper.map_error_response({
-            message = stream_err,
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = stream_err, status_code = 500 })
+            :build()
     end
 
     return generate_handler._mapper.format_streaming_response(
@@ -79,22 +77,16 @@ local function handle_streaming(stream_response, context, stream_config)
 end
 
 function generate_handler.handler(contract_args)
+    local err = output.errors.generate("claude")
+        :with_contract(contract_args)
+        :classifier(generate_handler._mapper.classify_error)
+
     if not contract_args.model then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Model is required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Messages are required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     local context = {
@@ -130,12 +122,7 @@ function generate_handler.handler(contract_args)
         )
 
         if tool_choice_error then
-            return {
-                success = false,
-                error = output.ERROR_TYPE.INVALID_REQUEST,
-                error_message = tool_choice_error,
-                metadata = {}
-            }
+            return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(tool_choice_error):build()
         end
 
         if #claude_tools > 0 then
@@ -166,11 +153,11 @@ function generate_handler.handler(contract_args)
     )
 
     if request_err then
-        return generate_handler._mapper.map_error_response(request_err)
+        return nil, err:from(request_err):build()
     end
 
     if stream_config then
-        return handle_streaming(response, context, stream_config)
+        return handle_streaming(response, context, stream_config, err)
     else
         return generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
     end

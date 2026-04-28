@@ -21,11 +21,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Model is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Model is required")
             end)
 
             it("should require messages parameter", function()
@@ -33,11 +34,12 @@ local function define_tests()
                     model = "gpt-4o-mini"
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Messages are required")
             end)
 
             it("should reject empty messages array", function()
@@ -46,11 +48,12 @@ local function define_tests()
                     messages = {}
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Messages are required")
             end)
         end)
 
@@ -607,11 +610,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
-                test.contains(tostring(response.error_message), "Invalid API key")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.contains(tostring(err:message()), "Invalid API key")
             end)
 
             it("should handle model not found errors", function()
@@ -649,11 +653,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
-                test.contains(tostring(response.error_message), "does not exist")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(tostring(err:message()), "does not exist")
             end)
 
             it("should handle context length errors", function()
@@ -691,11 +696,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "context_length_exceeded")
-                test.contains(tostring(response.error_message), "context length")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "context length")
             end)
 
             it("should handle rate limit errors", function()
@@ -733,11 +739,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "rate_limit_exceeded")
-                test.contains(tostring(response.error_message), "Rate limit")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.contains(tostring(err:message()), "Rate limit")
             end)
 
             it("should handle invalid response structure", function()
@@ -770,11 +777,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(tostring(response.error_message), "Invalid OpenAI response structure")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "Invalid OpenAI response structure")
             end)
         end)
 
