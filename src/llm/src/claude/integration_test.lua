@@ -716,11 +716,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success, "Expected error for nonexistent model")
-                test.eq(response.error, "model_error")
-                test.contains(response.error_message, "model")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(err:message(), "model")
             end)
 
             it("should handle authentication errors", function()
@@ -746,10 +747,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success, "Expected authentication error")
-                test.eq(response.error, "authentication_error")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
 
                 -- Restore valid key
                 generate_handler._client._ctx = {
@@ -781,9 +783,10 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_false(response.success, "Expected error for invalid schema")
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Root schema must be type 'object'")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Root schema must be type 'object'")
             end)
         end)
 

@@ -494,7 +494,7 @@ local function define_tests()
             it("should return error for invalid model", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "nonexistent.model-v1:0",
                     messages = {
                         { role = "user", content = { { type = "text", text = "test" } } }
@@ -502,7 +502,8 @@ local function define_tests()
                     options = { max_tokens = 10 }
                 })
 
-                test.is_false(response.success)
+                test.is_nil(response)
+                test.not_nil(err)
                 test.not_nil(response.error)
             end)
         end)

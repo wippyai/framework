@@ -1021,11 +1021,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success, "Expected error for nonexistent model")
-                test.eq(response.error, "model_error")
-                test.contains(tostring(response.error_message), "does not exist")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(tostring(err:message()), "does not exist")
             end)
 
             it("should handle authentication errors", function()
@@ -1051,10 +1052,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_false(response.success, "Expected authentication error")
-                test.eq(response.error, "authentication_error")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
 
                 -- Restore valid key
                 generate_handler._client._ctx = {
@@ -1086,9 +1088,10 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_false(response.success, "Expected error for invalid schema")
-                test.eq(response.error, "invalid_request")
-                test.contains(tostring(response.error_message), "Root schema must be an object")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "Root schema must be an object")
             end)
 
             it("should handle rate limit errors gracefully", function()
