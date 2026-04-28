@@ -91,15 +91,19 @@ local function parse_error_response(http_response)
         error_info.request_id = http_response.headers["x-request-id"]
     end
 
-    if http_response and http_response.body then
-        if http_response.body ~= "" and http_response.body ~= "no body" then
-            local parsed, decode_err = json.decode(http_response.body)
-            if not decode_err and parsed and parsed.error then
-                error_info.message = parsed.error.message or error_info.message
-                error_info.code = parsed.error.code
-                error_info.param = parsed.error.param
-                error_info.type = parsed.error.type
-            end
+    local resp = http_response :: any
+    local error_body = resp and resp.body
+    if resp and resp.stream and (not error_body or error_body == "" or error_body == "no body") then
+        error_body = resp.stream:read(4096)
+    end
+
+    if error_body and error_body ~= "" and error_body ~= "no body" then
+        local parsed, decode_err = json.decode(tostring(error_body))
+        if not decode_err and parsed and parsed.error then
+            error_info.message = parsed.error.message or error_info.message
+            error_info.code = parsed.error.code
+            error_info.param = parsed.error.param
+            error_info.type = parsed.error.type
         end
     end
 

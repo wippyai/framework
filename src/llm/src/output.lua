@@ -123,6 +123,7 @@ local function build_error(kind_type: string?, message: string?, details: table?
         { kind = errors.UNKNOWN, retryable = false }
 
     details = details or {}
+    local d = details :: any
 
     local err = errors.new({
         message = message or "LLM error",
@@ -134,9 +135,9 @@ local function build_error(kind_type: string?, message: string?, details: table?
     logger:error("llm provider error", {
         kind = mapping.kind,
         retryable = mapping.retryable,
-        provider = (details :: any).provider,
-        operation = (details :: any).operation,
-        model = (details :: any).model,
+        provider = d.provider,
+        operation = d.operation,
+        model = d.model,
         message = message,
         details = details
     })
@@ -148,34 +149,40 @@ local ErrorBuilder = {}
 ErrorBuilder.__index = ErrorBuilder
 
 function ErrorBuilder:with_contract(contract_args: ErrorContract): ErrorBuilder
-    (self :: any)._contract = contract_args
-    return self :: any
+    local s = self :: any
+    s._contract = contract_args
+    return s
 end
 
 function ErrorBuilder:classifier(fn: ClassifyError): ErrorBuilder
-    (self :: any)._classifier = fn
-    return self :: any
+    local s = self :: any
+    s._classifier = fn
+    return s
 end
 
 function ErrorBuilder:kind(k: string): ErrorBuilder
-    (self :: any)._kind = k
-    return self :: any
+    local s = self :: any
+    s._kind = k
+    return s
 end
 
 function ErrorBuilder:message(m: string): ErrorBuilder
-    (self :: any)._message = m
-    return self :: any
+    local s = self :: any
+    s._message = m
+    return s
 end
 
 function ErrorBuilder:details(d: table): ErrorBuilder
-    (self :: any)._details = d
-    return self :: any
+    local s = self :: any
+    s._details = d
+    return s
 end
 
 function ErrorBuilder:from(http_err: any?): ErrorBuilder
-    (self :: any)._http_err = http_err
-    (self :: any)._has_http_err = true  -- distinguishes :from(nil) from "never called"
-    return self :: any
+    local s = self :: any
+    s._http_err = http_err
+    s._has_http_err = true  -- distinguishes :from(nil) from "never called"
+    return s
 end
 
 function ErrorBuilder:build(): StructuredError
@@ -211,10 +218,11 @@ function ErrorBuilder:build(): StructuredError
     end
 
     -- 3. Builder-level context (provider / operation / model from contract).
-    (merged_details :: any).provider  = s._provider
-    (merged_details :: any).operation = s._operation
+    local md = merged_details :: any
+    md.provider  = s._provider
+    md.operation = s._operation
     if s._contract and s._contract.model then
-        (merged_details :: any).model = s._contract.model
+        md.model = s._contract.model
     end
 
     return build_error(kind_type or output.ERROR_TYPE.SERVER_ERROR, message, merged_details)

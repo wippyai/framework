@@ -90,36 +90,36 @@ local function parse_error_response(http_response)
 
     }
 
-    -- open router and other providers sometimes store error in various places
-    print("error detected", http_response.body)
-
     -- Add request ID if available
     if http_response and http_response.headers and http_response.headers["x-request-id"] then
         error_info.request_id = http_response.headers["x-request-id"]
     end
 
-    -- Try to parse error body - check for actual content, not just existence
-    if http_response and http_response.body then
-        if http_response.body ~= "" and http_response.body ~= "no body" then
-            local parsed, decode_err = json.decode(http_response.body)
+    local resp = http_response :: any
+    local error_body = resp and resp.body
+    if resp and resp.stream and (not error_body or error_body == "" or error_body == "no body") then
+        error_body = resp.stream:read(4096)
+    end
 
-            if not decode_err and parsed and parsed.error then
-                error_info.message = parsed.error.message or error_info.message
-                error_info.code = parsed.error.code
-                error_info.param = parsed.error.param
-                error_info.type = parsed.error.type
+    if error_body and error_body ~= "" and error_body ~= "no body" then
+        local parsed, decode_err = json.decode(tostring(error_body))
 
-                -- Handle OpenRouter-style nested error metadata
-                if parsed.error.metadata and parsed.error.metadata.raw then
-                    error_info.nested_error = parsed.error.metadata.raw
-                    error_info.provider_name = parsed.error.metadata.provider_name
+        if not decode_err and parsed and parsed.error then
+            error_info.message = parsed.error.message or error_info.message
+            error_info.code = parsed.error.code
+            error_info.param = parsed.error.param
+            error_info.type = parsed.error.type
 
-                    -- Try to parse the nested error for more specific info
-                    local nested_parsed, nested_err = json.decode(tostring(parsed.error.metadata.raw))
-                    if not nested_err and nested_parsed then
-                        if nested_parsed.message then
-                            error_info.detailed_message = nested_parsed.message
-                        end
+            -- Handle OpenRouter-style nested error metadata
+            if parsed.error.metadata and parsed.error.metadata.raw then
+                error_info.nested_error = parsed.error.metadata.raw
+                error_info.provider_name = parsed.error.metadata.provider_name
+
+                -- Try to parse the nested error for more specific info
+                local nested_parsed, nested_err = json.decode(tostring(parsed.error.metadata.raw))
+                if not nested_err and nested_parsed then
+                    if nested_parsed.message then
+                        error_info.detailed_message = nested_parsed.message
                     end
                 end
             end
