@@ -2,7 +2,7 @@ name: Split commits
 
 on:
   push:
-    branches: ['main', '*.*']
+    branches: ['master', '*.*']
 
 concurrency:
   group: split
