@@ -77,9 +77,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
 end
 
 function generate_handler.handler(contract_args)
-    local err = output.errors.generate("claude")
-        :with_contract(contract_args)
-        :classifier(generate_handler._mapper.classify_error)
+    local err = output.errors.generate(contract_args):classifier(generate_handler._mapper.classify_error)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()

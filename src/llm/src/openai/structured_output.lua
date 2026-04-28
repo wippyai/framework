@@ -66,8 +66,7 @@ local function _validate_schema(schema)
 end
 
 function structured_output_handler.handler(contract_args)
-    local err = output.errors.structured_output("openai")
-        :with_contract(contract_args)
+    local err = output.errors.structured_output(contract_args)
         :classifier(structured_output_handler._mapper.classify_error)
 
     if not contract_args.model then

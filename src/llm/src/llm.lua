@@ -262,6 +262,9 @@ local function merge_provider_options(contract_args, provider_info)
             end
         end
     end
+    if provider_info and provider_info.id then
+        contract_args._provider_id = provider_info.id
+    end
 end
 
 -- Merge user options into contract arguments
@@ -365,6 +368,7 @@ function llm.generate(prompt_input, options)
 
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id"})
+        contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
         local raw_result, err = (provider_instance as any):generate(contract_args)
@@ -498,6 +502,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id", "schema"})
+        contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
@@ -621,6 +626,7 @@ function llm.embed(text, options)
 
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id"})
+        contract_args._provider_id = provider_info.id
 
         local raw_result, err = (provider_instance as any):embed(contract_args)
         if err then

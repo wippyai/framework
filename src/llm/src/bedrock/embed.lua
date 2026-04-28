@@ -72,9 +72,7 @@ local function embed_with_cohere(client, model_id, input, options)
 end
 
 function embed_handler.handler(contract_args)
-    local err_b = output.errors.embed("bedrock")
-        :with_contract(contract_args)
-        :classifier(mapper.classify_error)
+    local err_b = output.errors.embed(contract_args):classifier(mapper.classify_error)
 
     if not contract_args.model then
         return nil, err_b:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()

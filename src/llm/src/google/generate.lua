@@ -12,9 +12,7 @@ local generate = {
 }
 
 function generate.handler(contract_args)
-    local err = output.errors.generate("google")
-        :with_contract(contract_args)
-        :classifier(generate._mapper.classify_error)
+    local err = output.errors.generate(contract_args):classifier(generate._mapper.classify_error)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()

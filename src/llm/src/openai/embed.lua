@@ -8,8 +8,7 @@ local embeddings_handler = {
 }
 
 function embeddings_handler.handler(contract_args)
-    local err = output.errors.embed("openai")
-        :with_contract(contract_args)
+    local err = output.errors.embed(contract_args)
         :classifier(embeddings_handler._mapper.classify_error)
 
     if not contract_args.model then

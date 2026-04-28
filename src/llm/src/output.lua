@@ -191,11 +191,11 @@ function ErrorBuilder:build()
 end
 
 local function builder_factory(operation)
-    return function(provider)
+    return function(arg)
         local self = {
             _operation = operation,
             _provider = provider,
-            _contract = nil,
+            _contract = arg._provider_id,
             _classifier = nil,
             _kind = nil,
             _message = nil,

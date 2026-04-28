@@ -35,8 +35,7 @@ local function _validate_schema(schema)
 end
 
 function structured_output.handler(contract_args)
-    local err = output.errors.structured_output("google")
-        :with_contract(contract_args)
+    local err = output.errors.structured_output(contract_args)
         :classifier(structured_output._mapper.classify_error)
 
     if not contract_args.model then
