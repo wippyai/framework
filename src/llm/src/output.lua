@@ -1,4 +1,4 @@
-local logger = require("logger"):named("llm")
+local logger = require("logger")
 
 local output = {}
 
@@ -132,7 +132,8 @@ local function build_error(kind_type: string?, message: string?, details: table?
         details = details
     })
 
-    logger:error("llm provider error", {
+    local log = logger:named("llm")
+    log:error("llm provider error", {
         kind = mapping.kind,
         retryable = mapping.retryable,
         provider = d.provider,
