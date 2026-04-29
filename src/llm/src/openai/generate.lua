@@ -76,6 +76,14 @@ local function handle_streaming(stream_response, context, stream_config, err)
         meta.response_id = stream_result.response_id
     end
 
+    if stream_result and stream_result.response and stream_result.response.output then
+        local thinking_text =
+            generate_handler._mapper.collect_reasoning_text(stream_result.response.output)
+        if thinking_text and thinking_text ~= "" then
+            meta.thinking = thinking_text
+        end
+    end
+
     local has_tool_calls = #tool_calls > 0
     local status = stream_result and stream_result.status or "completed"
     local incomplete_reason = stream_result and stream_result.incomplete_reason or nil

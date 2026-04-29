@@ -362,7 +362,7 @@ entries:
 
 - `wippy.llm.claude` - Anthropic Claude (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock (Converse API for text generation, InvokeModel for embeddings)
-- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `previous_response_id`, `xhigh`/`minimal` reasoning effort. Use this for `api.openai.com`.
+- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `xhigh`/`minimal` reasoning effort. Use this for `api.openai.com`.
 - `wippy.llm.openai_compat` - OpenAI-compatible Chat Completions (`/v1/chat/completions`) — Ollama, vLLM, llama.cpp, LM Studio, OpenRouter, Together, Groq, Fireworks, DeepInfra, Mistral, DeepSeek, etc. Use this for any non-OpenAI backend that exposes a `/chat/completions` endpoint.
 - `wippy.llm.google.vertex` - Google Vertex AI
 - `wippy.llm.google.generative_ai` - Google Generative AI (Gemini)

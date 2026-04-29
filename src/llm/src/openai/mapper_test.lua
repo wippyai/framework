@@ -706,131 +706,13 @@ local function define_tests()
                 end
             end)
 
-            it("should forward Responses-API-specific options: previous_response_id, store, parallel_tool_calls", function()
+            it("should forward Responses-API-specific options: store, parallel_tool_calls", function()
                 local opts = openai_mapper.map_options({
-                    previous_response_id = "resp_abc",
                     store = false,
                     parallel_tool_calls = false
                 })
-                test.eq(opts.previous_response_id, "resp_abc")
                 test.eq(opts.store, false)
                 test.eq(opts.parallel_tool_calls, false)
-            end)
-
-            it("should default reasoning persistence to previous_response (no payload changes)", function()
-                local opts = openai_mapper.map_options({ reasoning_model_request = true })
-                test.is_nil(opts.include)
-                test.is_nil(opts.store)
-            end)
-
-            it("should auto-set store=false and include encrypted_content when persistence=encrypted_content", function()
-                local opts = openai_mapper.map_options({
-                    reasoning_model_request = true,
-                    reasoning_persistence = "encrypted_content"
-                })
-                test.eq(opts.store, false)
-                test.not_nil(opts.include)
-                local found = false
-                for _, v in ipairs(opts.include) do
-                    if v == "reasoning.encrypted_content" then found = true; break end
-                end
-                test.is_true(found)
-            end)
-
-            it("should respect explicit store override even with encrypted_content persistence", function()
-                local opts = openai_mapper.map_options({
-                    reasoning_model_request = true,
-                    reasoning_persistence = "encrypted_content",
-                    store = true
-                })
-                test.eq(opts.store, true)
-            end)
-
-            it("should not set include for persistence=none", function()
-                local opts = openai_mapper.map_options({
-                    reasoning_model_request = true,
-                    reasoning_persistence = "none"
-                })
-                test.is_nil(opts.include)
-            end)
-        end)
-
-        describe("Encrypted Reasoning Persistence", function()
-            it("should attach encrypted_reasoning from output[] to tool_calls.provider_metadata", function()
-                local resp = {
-                    id = "resp_enc_1",
-                    status = "completed",
-                    output = {
-                        {
-                            type = "reasoning",
-                            id = "rs_1",
-                            encrypted_content = "ENCBLOB1",
-                            summary = {}
-                        },
-                        {
-                            type = "function_call",
-                            call_id = "call_xyz",
-                            name = "lookup",
-                            arguments = "{}"
-                        }
-                    },
-                    usage = { input_tokens = 1, output_tokens = 1 }
-                }
-
-                local result = openai_mapper.map_success_response(resp, { tool_name_map = {} }) :: any
-                test.eq(#result.result.tool_calls, 1)
-                local pm = result.result.tool_calls[1].provider_metadata :: any
-                test.not_nil(pm)
-                test.eq(pm.encrypted_reasoning, "ENCBLOB1")
-            end)
-
-            it("should also surface encrypted_reasoning at response.metadata level", function()
-                local resp = {
-                    id = "resp_enc_2",
-                    status = "completed",
-                    output = {
-                        { type = "reasoning", id = "rs_1", encrypted_content = "BLOB", summary = {} },
-                        {
-                            type = "message",
-                            role = "assistant",
-                            content = { { type = "output_text", text = "ok" } }
-                        }
-                    }
-                }
-
-                local result = openai_mapper.map_success_response(resp, { tool_name_map = {} }) :: any
-                test.eq(result.metadata.encrypted_reasoning, "BLOB")
-            end)
-
-            it("should serialize function_call.provider_metadata.encrypted_reasoning into a reasoning input item", function()
-                local items = openai_mapper.map_messages({
-                    {
-                        role = "function_call",
-                        function_call = {
-                            id = "call_1",
-                            name = "f",
-                            arguments = {},
-                            provider_metadata = { encrypted_reasoning = "BLOBX" }
-                        }
-                    }
-                })
-
-                test.eq(#items, 2)
-                test.eq(items[1].type, "reasoning")
-                test.eq(items[1].encrypted_content, "BLOBX")
-                test.eq(items[2].type, "function_call")
-                test.eq(items[2].call_id, "call_1")
-            end)
-
-            it("should not emit a reasoning input item when encrypted_reasoning is missing", function()
-                local items = openai_mapper.map_messages({
-                    {
-                        role = "function_call",
-                        function_call = { id = "call_1", name = "f", arguments = {} }
-                    }
-                })
-                test.eq(#items, 1)
-                test.eq(items[1].type, "function_call")
             end)
 
             it("should handle nil options", function()

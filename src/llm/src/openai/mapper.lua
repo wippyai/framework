@@ -142,7 +142,7 @@ local function encode_arguments(arguments)
     end
     if type(arguments) == "table" then
         if not next(arguments) then
-            return json.encode({ invoke = true })
+            return "{}"
         end
         return json.encode(arguments)
     end
@@ -199,15 +199,6 @@ function openai_mapper.map_messages(contract_messages, options)
                 end
             elseif msg.role == "function_call" then
                 if msg.function_call and msg.function_call.id then
-                    local pm = msg.function_call.provider_metadata
-                    if pm and pm.encrypted_reasoning and pm.encrypted_reasoning ~= "" then
-                        table.insert(items, {
-                            type = "reasoning",
-                            encrypted_content = pm.encrypted_reasoning,
-                            summary = {}
-                        })
-                    end
-
                     table.insert(items, {
                         type = "function_call",
                         call_id = msg.function_call.id,
@@ -302,25 +293,11 @@ local function map_thinking_effort(effort)
     return "xhigh"
 end
 
-openai_mapper.REASONING_PERSISTENCE = {
-    PREVIOUS_RESPONSE = "previous_response",  -- store=true on server, hand off response_id (default)
-    ENCRYPTED_CONTENT = "encrypted_content",  -- store=false, encrypted reasoning travels in messages
-    NONE = "none"                             -- reasoning state not preserved across turns
-}
-
-function openai_mapper.resolve_reasoning_persistence(contract_options)
-    if not contract_options or not contract_options.reasoning_persistence then
-        return openai_mapper.REASONING_PERSISTENCE.PREVIOUS_RESPONSE
-    end
-    return contract_options.reasoning_persistence
-end
-
 function openai_mapper.map_options(contract_options)
     if not contract_options then return {} end
 
     local opts = {}
     local is_reasoning_request = contract_options.reasoning_model_request == true
-    local persistence = openai_mapper.resolve_reasoning_persistence(contract_options)
 
     if contract_options.max_tokens then
         opts.max_output_tokens = contract_options.max_tokens
@@ -330,9 +307,6 @@ function openai_mapper.map_options(contract_options)
         local reasoning = {}
         if contract_options.thinking_effort ~= nil then
             reasoning.effort = map_thinking_effort(contract_options.thinking_effort)
-        end
-        if contract_options.reasoning_summary then
-            reasoning.summary = contract_options.reasoning_summary
         end
         if next(reasoning) then
             opts.reasoning = reasoning
@@ -354,27 +328,8 @@ function openai_mapper.map_options(contract_options)
         opts.parallel_tool_calls = contract_options.parallel_tool_calls
     end
 
-    if contract_options.previous_response_id then
-        opts.previous_response_id = contract_options.previous_response_id
-    end
-
     if contract_options.store ~= nil then
         opts.store = contract_options.store
-    end
-
-    -- Encrypted reasoning persistence: ZDR-style flow where the client carries
-    -- the encrypted reasoning state across turns. Force store=false (server
-    -- discards state) and request the encrypted blob via include[].
-    if persistence == openai_mapper.REASONING_PERSISTENCE.ENCRYPTED_CONTENT then
-        if opts.store == nil then opts.store = false end
-        opts.include = opts.include or {}
-        local already_present = false
-        for _, v in ipairs(opts.include) do
-            if v == "reasoning.encrypted_content" then already_present = true; break end
-        end
-        if not already_present then
-            table.insert(opts.include, "reasoning.encrypted_content")
-        end
     end
 
     return opts
@@ -421,41 +376,35 @@ local function collect_message_text(message_items)
     return text, refusal
 end
 
-local function collect_reasoning_text(reasoning_items)
-    local text = ""
-    for _, item in ipairs(reasoning_items) do
-        if item.summary then
-            for _, part in ipairs(item.summary) do
-                if part.type == "summary_text" and part.text then
-                    text = text .. part.text
+function openai_mapper.collect_reasoning_text(output_items)
+    local thinking = ""
+    if not output_items then
+        return thinking
+    end
+
+    for _, item in ipairs(output_items) do
+        if item.type == "reasoning" then
+            if item.summary then
+                for _, part in ipairs(item.summary) do
+                    if part.type == "summary_text" and part.text then
+                        thinking = thinking .. part.text
+                    end
                 end
             end
-        end
-        if item.content then
-            for _, part in ipairs(item.content) do
-                if part.type == "reasoning_text" and part.text then
-                    text = text .. part.text
+            if item.content then
+                for _, part in ipairs(item.content) do
+                    if part.type == "reasoning_text" and part.text then
+                        thinking = thinking .. part.text
+                    end
                 end
             end
         end
     end
-    return text
+    return thinking
 end
 
-function openai_mapper.map_tool_calls(function_call_items, reasoning_items)
+function openai_mapper.map_tool_calls(function_call_items)
     if not function_call_items then return {} end
-
-    -- Pull encrypted_content blobs out of reasoning items in output order, so
-    -- they can travel back on the next turn attached to function_calls via
-    -- provider_metadata (mirrors Google's thought_signature flow).
-    local encrypted_blobs = {}
-    if reasoning_items then
-        for _, ri in ipairs(reasoning_items) do
-            if ri.encrypted_content and ri.encrypted_content ~= "" then
-                table.insert(encrypted_blobs, ri.encrypted_content)
-            end
-        end
-    end
 
     local result = {}
     for i, item in ipairs(function_call_items) do
@@ -467,22 +416,11 @@ function openai_mapper.map_tool_calls(function_call_items, reasoning_items)
             end
         end
 
-        local entry = {
+        result[i] = {
             id = item.call_id or item.id,
             name = item.name,
             arguments = arguments
         }
-
-        -- Distribute encrypted reasoning blobs across function_calls. Typical
-        -- case: a single reasoning item precedes one or more function_calls;
-        -- we attach the same blob to each so any subset replayed will carry
-        -- the reasoning state.
-        if #encrypted_blobs > 0 then
-            local blob = encrypted_blobs[i] or encrypted_blobs[1]
-            entry.provider_metadata = { encrypted_reasoning = blob }
-        end
-
-        result[i] = entry
     end
     return result
 end
@@ -574,30 +512,12 @@ function openai_mapper.map_success_response(api_response, context)
         response.metadata.response_id = api_response.id
     end
 
-    local thinking = collect_reasoning_text(reasoning_items)
+    local thinking = openai_mapper.collect_reasoning_text(reasoning_items)
     if thinking ~= "" then
         response.metadata.thinking = thinking
     end
 
-    -- Surface encrypted reasoning blobs at response level too, so callers that
-    -- preserve text-only assistant turns (no tool calls) can still hand off
-    -- the reasoning state on the next turn.
-    if reasoning_items then
-        local blobs = {}
-        for _, ri in ipairs(reasoning_items) do
-            if ri.encrypted_content and ri.encrypted_content ~= "" then
-                table.insert(blobs, ri.encrypted_content)
-            end
-        end
-        if #blobs > 0 then
-            response.metadata.encrypted_reasoning = blobs[1]
-            if #blobs > 1 then
-                response.metadata.encrypted_reasoning_items = blobs
-            end
-        end
-    end
-
-    local mapped_tool_calls = openai_mapper.map_tool_calls(function_calls, reasoning_items)
+    local mapped_tool_calls = openai_mapper.map_tool_calls(function_calls)
 
     response.result = {
         content = content_text or "",
