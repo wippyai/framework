@@ -345,7 +345,7 @@ local function define_tests()
                 test.eq(result.temperature, 0.7)
                 test.eq(result.max_tokens, 1000)
                 test.eq(result.top_p, 0.9)
-                test.eq(result.stop_sequences[1], "STOP")
+                test.eq((result.stop_sequences :: {string})[1], "STOP")
             end)
 
             it("should configure thinking when thinking_effort is provided", function()

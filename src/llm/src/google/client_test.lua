@@ -201,9 +201,10 @@ local function define_tests()
                 })
 
                 tests.is_nil(err)
-                tests.eq(response.metadata.model_version, "gemini-2.5-pro-001")
-                tests.eq(response.metadata.response_id, "resp-123")
-                tests.eq(response.metadata.create_time, "2024-01-15T10:30:00Z")
+                local metadata = (response :: any).metadata
+                tests.eq(metadata.model_version, "gemini-2.5-pro-001")
+                tests.eq(metadata.response_id, "resp-123")
+                tests.eq(metadata.create_time, "2024-01-15T10:30:00Z")
             end)
 
             it("should handle response without metadata fields", function()

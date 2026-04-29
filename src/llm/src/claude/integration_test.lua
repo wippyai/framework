@@ -89,9 +89,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.contains(response.result.content, "Integration test successful")
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -123,9 +123,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Haiku reasoning request failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "Haiku reasoning request failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.contains(response.result.content, "160")  -- 120 + 40 = 160 miles
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -157,9 +157,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.contains(response.result.content, "Absolutely")
             end)
@@ -197,9 +197,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -252,9 +252,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Multiple tool calls failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "Multiple tool calls failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -298,9 +298,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.contains(response.result.content, "1")
                 test.contains(response.result.content, "5")
@@ -331,9 +331,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Complex reasoning failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Complex reasoning failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.contains(response.result.content, "10")  -- Answer: 5*4/2 = 10 handshakes
                 test.contains(response.result.content:lower(), "step")  -- Should show reasoning steps
@@ -383,9 +383,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Streaming request failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Streaming request failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in streaming response")
                 test.contains(response.result.content, "1")
@@ -459,9 +459,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Streaming tool call failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Streaming tool call failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -519,9 +519,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Haiku streaming reasoning failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Haiku streaming reasoning failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
                 test.contains(response.result.content, "6")  -- 3 + 5 - 2 = 6
@@ -563,9 +563,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "Structured output failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "Structured output failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 test.not_nil(response.result.data.name, "Missing name in structured output")
@@ -622,9 +622,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "Complex structured output failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "Complex structured output failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 test.not_nil(response.result.data.company_name, "Missing company_name")
@@ -684,9 +684,9 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output_handler.handler(contract_args)
+                local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "Haiku structured reasoning failed: " .. (response.error_message or "unknown error"))
+                test.is_true(response.success, "Haiku structured reasoning failed: " .. (err or "unknown error"))
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 test.not_nil(response.result.data.problem_type, "Missing problem_type")
@@ -814,9 +814,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Large context request failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Large context request failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
                 test.is_true(response.tokens.prompt_tokens > 1000, "Expected many prompt tokens")
@@ -1038,9 +1038,9 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
+                local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Claude 4 text editor failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Claude 4 text editor failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected text editor tool call")

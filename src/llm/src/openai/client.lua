@@ -331,10 +331,11 @@ function openai_client.process_stream(stream_response, callbacks)
                     local key = item.id or item.call_id
                     if key then
                         pending_calls[key] = pending_calls[key] or { arguments = "" }
-                        pending_calls[key].call_id = item.call_id or pending_calls[key].call_id
-                        pending_calls[key].name = item.name or pending_calls[key].name
+                        local entry = pending_calls[key] :: any
+                        entry.call_id = item.call_id or entry.call_id
+                        entry.name = item.name or entry.name
                         if item.arguments and item.arguments ~= "" then
-                            pending_calls[key].arguments = item.arguments
+                            entry.arguments = item.arguments
                         end
                     end
                 end
@@ -369,10 +370,11 @@ function openai_client.process_stream(stream_response, callbacks)
                     local key = item.id or item.call_id
                     if key then
                         pending_calls[key] = pending_calls[key] or { arguments = "" }
-                        pending_calls[key].call_id = item.call_id or pending_calls[key].call_id
-                        pending_calls[key].name = item.name or pending_calls[key].name
+                        local entry = pending_calls[key] :: any
+                        entry.call_id = item.call_id or entry.call_id
+                        entry.name = item.name or entry.name
                         if item.arguments and item.arguments ~= "" then
-                            pending_calls[key].arguments = item.arguments
+                            entry.arguments = item.arguments
                         end
                         emit_call(key)
                     end

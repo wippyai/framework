@@ -152,38 +152,38 @@ ErrorBuilder.__index = ErrorBuilder
 function ErrorBuilder:with_contract(contract_args: ErrorContract): ErrorBuilder
     local s = self :: any
     s._contract = contract_args
-    return s
+    return s :: ErrorBuilder
 end
 
 function ErrorBuilder:classifier(fn: ClassifyError): ErrorBuilder
     local s = self :: any
     s._classifier = fn
-    return s
+    return s :: ErrorBuilder
 end
 
 function ErrorBuilder:kind(k: string): ErrorBuilder
     local s = self :: any
     s._kind = k
-    return s
+    return s :: ErrorBuilder
 end
 
 function ErrorBuilder:message(m: string): ErrorBuilder
     local s = self :: any
     s._message = m
-    return s
+    return s :: ErrorBuilder
 end
 
 function ErrorBuilder:details(d: table): ErrorBuilder
     local s = self :: any
     s._details = d
-    return s
+    return s :: ErrorBuilder
 end
 
 function ErrorBuilder:from(http_err: any?): ErrorBuilder
     local s = self :: any
     s._http_err = http_err
     s._has_http_err = true  -- distinguishes :from(nil) from "never called"
-    return s
+    return s :: ErrorBuilder
 end
 
 function ErrorBuilder:build(): StructuredError
@@ -226,7 +226,7 @@ function ErrorBuilder:build(): StructuredError
         md.model = s._contract.model
     end
 
-    return build_error(kind_type or output.ERROR_TYPE.SERVER_ERROR, message, merged_details)
+    return build_error(kind_type or output.ERROR_TYPE.SERVER_ERROR, message :: string?, merged_details)
 end
 
 local function builder_factory(operation: string): ErrorBuilderFactory

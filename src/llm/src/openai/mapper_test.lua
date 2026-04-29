@@ -513,7 +513,7 @@ local function define_tests()
                 test.eq(tools[1].description, "Get weather information")
                 test.eq(tools[1].parameters.type, "object")
                 test.eq(tools[1].parameters.properties.location.type, "string")
-                test.is_nil(tools[1]["function"])
+                test.is_nil((tools[1] :: any)["function"])
                 -- strict defaults to false (back-compat with non-strict schemas)
                 test.eq(tools[1].strict, false)
 
