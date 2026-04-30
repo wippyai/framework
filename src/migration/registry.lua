@@ -21,6 +21,25 @@ local migrations = {}
 
 migrations._registry = registry
 
+local function migration_timestamp(entry: any): string
+    local meta = entry and entry.meta
+    if type(meta) ~= "table" or meta.timestamp == nil then
+        return ""
+    end
+    return tostring(meta.timestamp)
+end
+
+-- Timestamp is optional. Full id is the deterministic tie-breaker so legacy
+-- migrations without timestamps still run in a stable, inspectable order.
+function migrations.compare(a: any, b: any): boolean
+    local a_time = migration_timestamp(a)
+    local b_time = migration_timestamp(b)
+    if a_time ~= b_time then
+        return a_time < b_time
+    end
+    return tostring(a and a.id or "") < tostring(b and b.id or "")
+end
+
 -- Find migrations in registry based on provided options
 function migrations.find(options: any?): ({MigrationEntry}?, string?)
     local opts = options or {}
@@ -50,12 +69,7 @@ function migrations.find(options: any?): ({MigrationEntry}?, string?)
         return {}
     end
 
-    -- Sort entries by timestamp (ascending)
-    table.sort(entries, function(a: MigrationEntry, b: MigrationEntry): boolean
-        local a_time = a.meta and a.meta.timestamp or ""
-        local b_time = b.meta and b.meta.timestamp or ""
-        return a_time < b_time
-    end)
+    table.sort(entries, migrations.compare)
 
     return entries
 end

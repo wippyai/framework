@@ -39,6 +39,24 @@ local function get_description(migration: any): any
     return ""
 end
 
+local function compare_applied(a: any, b: any): boolean
+    local a_applied_at = tostring(a.applied_at or "")
+    local b_applied_at = tostring(b.applied_at or "")
+    if a_applied_at ~= b_applied_at then
+        return a_applied_at < b_applied_at
+    end
+    return registry_finder.compare(a, b)
+end
+
+local function compare_rollback(a: any, b: any): boolean
+    local a_applied_at = tostring(a.applied_at or "")
+    local b_applied_at = tostring(b.applied_at or "")
+    if a_applied_at ~= b_applied_at then
+        return a_applied_at > b_applied_at
+    end
+    return registry_finder.compare(b.registry_entry or b, a.registry_entry or a)
+end
+
 local Runner = {}
 Runner.__index = Runner
 
@@ -113,15 +131,8 @@ function Runner:find_migrations(options: RunnerOptions?): ({any}?, string?)
         end
     end
 
-    table.sort(applied, function(a, b)
-        return (a.applied_at or "") < (b.applied_at or "")
-    end)
-
-    table.sort(pending, function(a, b)
-        local a_time = a.meta and a.meta.timestamp or ""
-        local b_time = b.meta and b.meta.timestamp or ""
-        return a_time < b_time
-    end)
+    table.sort(applied, compare_applied)
+    table.sort(pending, registry_finder.compare)
 
     local sorted = {}
     for _, m in ipairs(applied) do
@@ -477,9 +488,7 @@ function Runner:rollback(options: RunnerOptions?): any
         end
     end
 
-    table.sort(applied_migrations, function(a, b)
-        return (a.applied_at or "") > (b.applied_at or "")
-    end)
+    table.sort(applied_migrations, compare_rollback)
 
     local allowed_ids = options.allowed_ids or {}
 
