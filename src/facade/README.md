@@ -66,7 +66,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.26` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.27` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 
@@ -145,6 +145,36 @@ Three theming scopes control which layers see which styles:
 
 > **Merge rules:** Host sees `global + host` merged. Children see `global + children` merged. Host-scope styles never leak to children and vice versa. Icons are only in `global` and `host` scopes (children don't get their own icon sets).
 
+### Managed-layout
+
+| Requirement | Default | Config path | Description |
+|---|---|---|---|
+| `host_config_layout` | `{}` | `hostConfig.layout` | Managed-layout `HostLayoutDeclaration` as JSON string. Only relevant when `fe_mode = "managed"`. Empty (default) leaves `hostConfig.layout` unset, so the host falls back to URL-param / parent-SetConfig configuration paths. See [`gen-2-chat/managed-layout.md`](https://github.com/wippyai/gen-2-chat/blob/webcomponents/managed-layout.md) for the schema. |
+
+Example — minimal 2-panel layout:
+
+```yaml
+    - name: fe_mode
+      value: managed
+    - name: host_config_layout
+      value: |
+        {
+          "layouts": {
+            "default": {
+              "direction": "horizontal",
+              "children": [
+                { "panel": "nav", "size": "240px" },
+                { "panel": "main", "size": "1fr", "main": true }
+              ]
+            }
+          },
+          "panels": {
+            "nav":  { "kind": "builtin", "id": "@HOST/nav-sidebar" },
+            "main": { "kind": "page",    "id": "home", "route": "/" }
+          }
+        }
+```
+
 ## Usage
 
 ```yaml
@@ -209,9 +239,9 @@ Only override what differs from defaults.
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.26",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.27",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.26/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.27/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "env": {
     "APP_API_URL": "http://localhost:8085",
