@@ -50,7 +50,7 @@ local function define_tests()
             it("should generate text successfully", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = CLAUDE_MODEL,
                     messages = {
                         { role = "user", content = { { type = "text", text = "Say hi" } } }
@@ -58,7 +58,7 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 32 }
                 })
 
-                test.is_true(response.success, "Generation failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Generation failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.content)
                 test.is_true(#response.result.content > 0)
@@ -69,7 +69,7 @@ local function define_tests()
             it("should respect system messages", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = CLAUDE_MODEL,
                     messages = {
                         { role = "system", content = "Always reply with exactly one word: yes" },
@@ -78,7 +78,7 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 5 }
                 })
 
-                test.is_true(response.success, "Generation failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Generation failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.content)
             end)
@@ -88,7 +88,7 @@ local function define_tests()
             it("should make tool calls", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = CLAUDE_MODEL,
                     messages = {
                         {
@@ -110,7 +110,7 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 200 }
                 })
 
-                test.is_true(response.success, "Tool call failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Tool call failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.tool_calls)
                 test.is_true(#response.result.tool_calls > 0)
@@ -123,7 +123,7 @@ local function define_tests()
             it("should extract structured data", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     model = CLAUDE_MODEL,
                     messages = {
                         {
@@ -144,7 +144,7 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 200 }
                 })
 
-                test.is_true(response.success, "Structured output failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Structured output failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.data)
                 local data = (response :: any).result.data
@@ -176,7 +176,7 @@ local function define_tests()
                     ERROR_TYPE = output.ERROR_TYPE
                 }
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = CLAUDE_MODEL,
                     messages = {
                         { role = "user", content = { { type = "text", text = "Count from 1 to 5" } } }
@@ -201,12 +201,12 @@ local function define_tests()
             it("should generate single embedding", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = TITAN_EMBED_MODEL,
                     input = "Hello world"
                 })
 
-                test.is_true(response.success, "Titan embed failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Titan embed failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.embeddings)
                 test.eq(#response.result.embeddings, 1)
@@ -217,12 +217,12 @@ local function define_tests()
             it("should generate multiple embeddings", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = TITAN_EMBED_MODEL,
                     input = { "First text", "Second text" }
                 })
 
-                test.is_true(response.success, "Titan batch embed failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Titan batch embed failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings, 2)
                 test.is_true(#response.result.embeddings[1] > 0)
@@ -232,13 +232,13 @@ local function define_tests()
             it("should respect dimensions option", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = TITAN_EMBED_MODEL,
                     input = "Test dimensions",
                     options = { dimensions = 256 }
                 })
 
-                test.is_true(response.success, "Titan dimensions failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Titan dimensions failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings[1], 256)
             end)
@@ -248,12 +248,12 @@ local function define_tests()
             it("should generate single embedding", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = COHERE_V3_EMBED_MODEL,
                     input = "Hello world"
                 })
 
-                test.is_true(response.success, "Cohere embed failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Cohere embed failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.not_nil(response.result.embeddings)
                 test.eq(#response.result.embeddings, 1)
@@ -263,12 +263,12 @@ local function define_tests()
             it("should generate batch embeddings", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = COHERE_V3_EMBED_MODEL,
                     input = { "First", "Second", "Third" }
                 })
 
-                test.is_true(response.success, "Cohere batch embed failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Cohere batch embed failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings, 3)
             end)
@@ -277,43 +277,43 @@ local function define_tests()
         describe("Multi-model Text Generation via Converse", function()
             it("should generate with Llama 4 Maverick", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = LLAMA_MODEL,
                     messages = { { role = "user", content = { { type = "text", text = "Say hi in 3 words" } } } },
                     options = { temperature = 0, max_tokens = 30 }
                 })
-                test.is_true(response.success, "Llama failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Llama failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
             end)
 
             it("should generate with Mistral Pixtral Large", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = MISTRAL_MODEL,
                     messages = { { role = "user", content = { { type = "text", text = "Say hi in 3 words" } } } },
                     options = { temperature = 0, max_tokens = 30 }
                 })
-                test.is_true(response.success, "Mistral failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Mistral failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
             end)
 
             it("should generate with Nova Lite", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = NOVA_MODEL,
                     messages = { { role = "user", content = { { type = "text", text = "Say hi in 3 words" } } } },
                     options = { temperature = 0, max_tokens = 30 }
                 })
-                test.is_true(response.success, "Nova failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Nova failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
             end)
 
             it("should make tool calls with Nova Lite", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = NOVA_MODEL,
                     messages = {
                         { role = "user", content = { { type = "text", text = "What is the weather in SF? Use get_weather tool." } } }
@@ -331,7 +331,7 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Nova tool call failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Nova tool call failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "get_weather")
@@ -340,7 +340,7 @@ local function define_tests()
 
             it("should recover tool calls from text-embedded JSON (Llama 3.3 fallback)", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "us.meta.llama3-3-70b-instruct-v1:0",
                     messages = {
                         { role = "user", content = { { type = "text", text = "What is the weather in SF? Use get_weather tool." } } }
@@ -358,7 +358,7 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Llama 3.3 fallback failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Llama 3.3 fallback failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "get_weather")
@@ -366,7 +366,7 @@ local function define_tests()
 
             it("should do structured output with Mistral Pixtral (toolChoice.any)", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = structured_output_handler.handler({
+                local response, err = structured_output_handler.handler({
                     model = MISTRAL_MODEL,
                     messages = {
                         { role = "user", content = { { type = "text", text = "Extract: Bob is 45 from Tokyo" } } }
@@ -383,7 +383,7 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Mistral structured output failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Mistral structured output failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq((response.result.data :: any).name, "Bob")
                 test.eq((response.result.data :: any).age, 45)
@@ -392,7 +392,7 @@ local function define_tests()
 
             it("should make tool calls with Llama 4 Maverick", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = LLAMA_MODEL,
                     messages = {
                         { role = "user", content = { { type = "text", text = "What is the weather in SF? Use get_weather tool." } } }
@@ -410,7 +410,7 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Llama tool call failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Llama tool call failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "get_weather")
@@ -420,7 +420,7 @@ local function define_tests()
         describe("Thinking / Reasoning via Claude", function()
             it("should return thinking blocks when thinking_effort is set", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = CLAUDE_THINKING_MODEL,
                     messages = {
                         { role = "user", content = { { type = "text", text = "What is 17 * 23? Think step by step." } } }
@@ -428,7 +428,7 @@ local function define_tests()
                     options = { thinking_effort = 10, max_tokens = 5000 }
                 })
 
-                test.is_true(response.success, "Thinking failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Thinking failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
                 test.not_nil(response.metadata.thinking_blocks)
@@ -440,11 +440,11 @@ local function define_tests()
         describe("Cohere v4 Embeddings", function()
             it("should generate embeddings with Cohere v4", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = COHERE_V4_EMBED_MODEL,
                     input = "Hello from Cohere v4"
                 })
-                test.is_true(response.success, "Cohere v4 failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Cohere v4 failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings, 1)
                 test.is_true(#response.result.embeddings[1] > 0)
@@ -452,24 +452,24 @@ local function define_tests()
 
             it("should respect Cohere v4 dimensions option", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = COHERE_V4_EMBED_MODEL,
                     input = "Test dimensions",
                     options = { dimensions = 512 }
                 })
-                test.is_true(response.success, "Cohere v4 dim failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Cohere v4 dim failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings[1], 512)
             end)
 
             it("should accept Cohere v4 input_type override", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = COHERE_V4_EMBED_MODEL,
                     input = "search query text",
                     options = { input_type = "search_query" }
                 })
-                test.is_true(response.success, "Cohere v4 input_type failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Cohere v4 input_type failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings, 1)
             end)
@@ -478,11 +478,11 @@ local function define_tests()
         describe("Titan v1 Embeddings", function()
             it("should generate embeddings with Titan v1", function()
                 if not RUN_INTEGRATION_TESTS then return end
-                local response = embed_handler.handler({
+                local response, err = embed_handler.handler({
                     model = TITAN_V1_EMBED_MODEL,
                     input = "Hello from Titan v1"
                 })
-                test.is_true(response.success, "Titan v1 failed: " .. (response.error_message or "unknown"))
+                test.is_true(response.success, "Titan v1 failed: " .. (err or "unknown"))
                 assert(response.success)
                 test.eq(#response.result.embeddings, 1)
                 -- Titan v1 has fixed 1536 dimensions
@@ -494,7 +494,7 @@ local function define_tests()
             it("should return error for invalid model", function()
                 if not RUN_INTEGRATION_TESTS then return end
 
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "nonexistent.model-v1:0",
                     messages = {
                         { role = "user", content = { { type = "text", text = "test" } } }
@@ -502,8 +502,8 @@ local function define_tests()
                     options = { max_tokens = 10 }
                 })
 
-                test.is_false(response.success)
-                test.not_nil(response.error)
+                test.is_nil(response)
+                test.not_nil(err)
             end)
         end)
     end)

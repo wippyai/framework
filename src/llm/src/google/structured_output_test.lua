@@ -13,13 +13,8 @@ local function define_tests()
         describe("Contract Argument Validation", function()
             it("should require model parameter", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -33,22 +28,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Model is required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Model is required")
             end)
 
             it("should require messages parameter", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -60,22 +51,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Messages are required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Messages are required")
             end)
 
             it("should require schema parameter", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -86,22 +73,18 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Schema is required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Schema is required")
             end)
 
             it("should reject empty messages array", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -114,24 +97,20 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Messages are required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Messages are required")
             end)
         end)
 
         describe("Schema Validation", function()
             it("should validate schema is a table", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -143,22 +122,18 @@ local function define_tests()
                     schema = "not a table"
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.contains(tostring(response.error_message), "Schema must be a table")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.contains(tostring(err:message()), "Schema must be a table")
             end)
 
             it("should require root schema type to be object", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -173,11 +148,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.contains(tostring(response.error_message), "Root schema type must be `object`")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.contains(tostring(err:message()), "Root schema type must be `object`")
             end)
 
             it("should accept valid object schema", function()
@@ -266,13 +242,8 @@ local function define_tests()
 
             it("should handle nil schema", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -284,22 +255,18 @@ local function define_tests()
                     schema = nil
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Schema is required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Schema is required")
             end)
 
             it("should handle empty schema table", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -311,22 +278,18 @@ local function define_tests()
                     schema = {}
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.contains(tostring(response.error_message), "Root schema type must be `object`")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.contains(tostring(err:message()), "Root schema type must be `object`")
             end)
 
             it("should handle schema with missing type field", function()
                 structured_output._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -342,11 +305,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.contains(tostring(response.error_message), "Root schema type must be `object`")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.contains(tostring(err:message()), "Root schema type must be `object`")
             end)
 
             it("should accept schema with nested objects", function()
@@ -534,10 +498,10 @@ local function define_tests()
 
                 tests.is_true(response.success)
                 tests.not_nil(response.result)
-                tests.not_nil(response.result.data)
-                tests.eq(response.result.data.name, "Alice")
-                tests.eq(response.result.data.age, 25)
-                tests.eq(response.result.data.city, "New York")
+                tests.not_nil((response :: any).result.data)
+                tests.eq((response :: any).result.data.name, "Alice")
+                tests.eq((response :: any).result.data.age, 25)
+                tests.eq((response :: any).result.data.city, "New York")
                 tests.eq(response.tokens.prompt_tokens, 20)
                 tests.eq(response.tokens.completion_tokens, 15)
                 tests.eq(response.finish_reason, "stop")
@@ -632,9 +596,9 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.eq(response.result.data.name, "Bob")
-                tests.eq(response.result.data.address.street, "123 Main St")
-                tests.eq(response.result.data.address.city, "Boston")
+                tests.eq((response :: any).result.data.name, "Bob")
+                tests.eq((response :: any).result.data.address.street, "123 Main St")
+                tests.eq((response :: any).result.data.address.city, "Boston")
             end)
 
             it("should handle arrays in schemas", function()
@@ -723,12 +687,12 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.eq(response.result.data.name, "Carol")
-                tests.eq(type(response.result.data.skills), "table")
-                tests.eq(#response.result.data.skills, 3)
-                tests.eq(response.result.data.skills[1], "JavaScript")
-                tests.eq(response.result.data.skills[2], "Python")
-                tests.eq(response.result.data.skills[3], "Go")
+                tests.eq((response :: any).result.data.name, "Carol")
+                tests.eq(type((response :: any).result.data.skills), "table")
+                tests.eq(#(response :: any).result.data.skills, 3)
+                tests.eq((response :: any).result.data.skills[1], "JavaScript")
+                tests.eq((response :: any).result.data.skills[2], "Python")
+                tests.eq((response :: any).result.data.skills[3], "Go")
             end)
 
             it("should handle system instructions", function()
@@ -819,7 +783,7 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.eq(response.result.data.value, 42)
+                tests.eq((response :: any).result.data.value, 42)
             end)
         end)
 
@@ -907,7 +871,7 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.is_true(response.result.data.test)
+                tests.is_true((response :: any).result.data.test)
             end)
 
             it("should use custom schema name when provided", function()
@@ -991,7 +955,7 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.eq(response.result.data.value, 42)
+                tests.eq((response :: any).result.data.value, 42)
             end)
 
             it("should generate different names for different schemas", function()
@@ -1454,7 +1418,7 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.eq(response.result.data.result, "merged")
+                tests.eq((response :: any).result.data.result, "merged")
             end)
         end)
 
@@ -1478,13 +1442,8 @@ local function define_tests()
                             metadata = {}
                         }
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "model_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "model_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -1544,11 +1503,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "model_error")
-                tests.contains(tostring(response.error_message), "Model failed to return valid JSON")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "NotFound")
+                tests.contains(tostring(err:message()), "Model failed to return valid JSON")
             end)
 
             it("should handle API authentication errors", function()
@@ -1561,13 +1521,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "authentication_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "authentication_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -1615,11 +1570,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "authentication_error")
-                tests.contains(tostring(response.error_message), "API key is invalid")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "PermissionDenied")
+                tests.contains(tostring(err:message()), "API key is invalid")
             end)
 
             it("should handle contract retrieval errors", function()
@@ -1632,13 +1588,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "server_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -1668,11 +1619,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "server_error")
-                tests.contains(tostring(response.error_message), "Failed to get client contract")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.contains(tostring(err:message()), "Failed to get client contract")
             end)
 
             it("should handle client binding errors", function()
@@ -1685,13 +1637,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "server_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -1730,11 +1677,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "server_error")
-                tests.contains(tostring(response.error_message), "Failed to open client binding")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.contains(tostring(err:message()), "Failed to open client binding")
             end)
 
             it("should handle response mapping errors", function()
@@ -1750,13 +1698,8 @@ local function define_tests()
                     map_success_response = function(response)
                         error("Invalid response structure")
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "server_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -1804,11 +1747,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "server_error")
-                tests.contains(tostring(response.error_message), "Invalid response structure")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.contains(tostring(err:message()), "Invalid response structure")
             end)
 
             it("should handle rate limit errors", function()
@@ -1821,13 +1765,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "rate_limit_exceeded",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "rate_limit_exceeded", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -1875,11 +1814,12 @@ local function define_tests()
                     }
                 }
 
-                local response = structured_output.handler(contract_args)
+                local response, err = structured_output.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "rate_limit_exceeded")
-                tests.contains(tostring(response.error_message), "Rate limit")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "RateLimited")
+                tests.contains(tostring(err:message()), "Rate limit")
             end)
         end)
 
@@ -1972,7 +1912,7 @@ local function define_tests()
                 local response = structured_output.handler(contract_args)
 
                 tests.is_true(response.success)
-                tests.is_true(response.result.data.success)
+                tests.is_true((response :: any).result.data.success)
             end)
 
             it("should handle empty context", function()

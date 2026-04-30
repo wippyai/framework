@@ -14,13 +14,8 @@ local function define_tests()
         describe("Contract Argument Validation", function()
             it("should require model parameter", function()
                 generate._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -30,22 +25,18 @@ local function define_tests()
                     }
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Model is required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Model is required")
             end)
 
             it("should require messages parameter", function()
                 generate._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -53,22 +44,18 @@ local function define_tests()
                     model = "gemini-pro"
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Messages are required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Messages are required")
             end)
 
             it("should reject empty messages array", function()
                 generate._mapper = {
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -77,11 +64,12 @@ local function define_tests()
                     messages = {}
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.eq(response.error_message, "Messages are required")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.eq(err:message(), "Messages are required")
             end)
         end)
 
@@ -671,13 +659,8 @@ local function define_tests()
                     map_tool_config = function(tool_choice, tools)
                         return nil, "Tool 'nonexistent' not found in tools list"
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "invalid_request",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "invalid_request", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -696,11 +679,12 @@ local function define_tests()
                     tool_choice = "nonexistent"
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "invalid_request")
-                tests.contains(response.error_message, "not found in tools list")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Invalid")
+                tests.contains(err:message(), "not found in tools list")
             end)
         end)
 
@@ -785,13 +769,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "server_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -817,11 +796,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Failed to get client contract")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.contains(err:message(), "Failed to get client contract")
             end)
 
             it("should handle client binding errors", function()
@@ -834,13 +814,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "server_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
                     end
                 }
 
@@ -875,11 +850,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Failed to open client binding")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.contains(err:message(), "Failed to open client binding")
             end)
 
             it("should handle API error responses", function()
@@ -892,13 +868,8 @@ local function define_tests()
                     map_options = function(options)
                         return {}
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "authentication_error",
-                            error_message = error_info.message or "API key is invalid",
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "authentication_error", http_err and http_err.message or "API key is invalid", {}
                     end
                 }
 
@@ -942,11 +913,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "authentication_error")
-                tests.contains(response.error_message, "API key is invalid")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "PermissionDenied")
+                tests.contains(err:message(), "API key is invalid")
             end)
 
             it("should handle response mapping errors", function()
@@ -962,13 +934,8 @@ local function define_tests()
                     map_success_response = function(response)
                         error("Invalid response structure")
                     end,
-                    map_error_response = function(error_info)
-                        return {
-                            success = false,
-                            error = "server_error",
-                            error_message = error_info.message,
-                            metadata = {}
-                        }
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Failed", {}
                     end
                 }
 
@@ -1012,11 +979,12 @@ local function define_tests()
                     }
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
-                tests.eq(response.error, "server_error")
-                tests.contains(response.error_message, "Invalid response structure")
+                tests.is_nil(response)
+                tests.not_nil(err)
+                tests.eq(err:kind(), "Unavailable")
+                tests.contains(err:message(), "Invalid response structure")
             end)
         end)
 
@@ -1375,9 +1343,10 @@ local function define_tests()
                     }
                 }
 
-                local response = generate.handler(contract_args)
+                local response, err = generate.handler(contract_args)
 
-                tests.is_false(response.success)
+                tests.is_nil(response)
+                tests.not_nil(err)
             end)
         end)
     end)

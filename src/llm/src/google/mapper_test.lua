@@ -1,5 +1,13 @@
 local mapper = require("google_mapper")
+local output = require("output")
 local tests = require("test")
+
+local function map_error_response(google_error)
+    return output.errors.generate({ _provider_id = "google" })
+        :classifier(mapper.classify_error)
+        :from(google_error)
+        :build()
+end
 
 local function define_tests()
     describe("Google Mapper", function()
@@ -1793,13 +1801,13 @@ local function define_tests()
         describe("Error Response Mapping", function()
             it("should map errors by status code", function()
                 local test_cases = {
-                    { status = 400, error_type = "invalid_request", message = "Bad request" },
-                    { status = 401, error_type = "authentication_error", message = "Unauthorized" },
-                    { status = 403, error_type = "authentication_error", message = "Forbidden" },
-                    { status = 404, error_type = "model_error", message = "Not found" },
-                    { status = 429, error_type = "rate_limit_exceeded", message = "Rate limit" },
-                    { status = 500, error_type = "server_error", message = "Internal error" },
-                    { status = 503, error_type = "server_error", message = "Service unavailable" }
+                    { status = 400, expected_kind = "Invalid", message = "Bad request" },
+                    { status = 401, expected_kind = "PermissionDenied", message = "Unauthorized" },
+                    { status = 403, expected_kind = "PermissionDenied", message = "Forbidden" },
+                    { status = 404, expected_kind = "NotFound", message = "Not found" },
+                    { status = 429, expected_kind = "RateLimited", message = "Rate limit" },
+                    { status = 500, expected_kind = "Unavailable", message = "Internal error" },
+                    { status = 503, expected_kind = "Unavailable", message = "Service unavailable" }
                 }
 
                 for _, case in ipairs(test_cases) do
@@ -1808,11 +1816,11 @@ local function define_tests()
                         message = case.message
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.is_false(contract_response.success)
-                    tests.eq(contract_response.error, case.error_type)
-                    tests.eq(contract_response.error_message, case.message)
+                    tests.not_nil(contract_err)
+                    tests.eq(contract_err:kind(), case.expected_kind)
+                    tests.eq(contract_err:message(), case.message)
                 end
             end)
 
@@ -1831,10 +1839,10 @@ local function define_tests()
                         message = message
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.is_false(contract_response.success)
-                    tests.eq(contract_response.error, "context_length_exceeded")
+                    tests.not_nil(contract_err)
+                    tests.eq(contract_err:kind(), "Invalid")
                 end
             end)
 
@@ -1852,10 +1860,10 @@ local function define_tests()
                         message = message
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.is_false(contract_response.success)
-                    tests.eq(contract_response.error, "content_filtered")
+                    tests.not_nil(contract_err)
+                    tests.eq(contract_err:kind(), "Invalid")
                 end
             end)
 
@@ -1873,10 +1881,10 @@ local function define_tests()
                         message = message
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.is_false(contract_response.success)
-                    tests.eq(contract_response.error, "timeout_error")
+                    tests.not_nil(contract_err)
+                    tests.eq(contract_err:kind(), "Timeout")
                 end
             end)
 
@@ -1894,20 +1902,20 @@ local function define_tests()
                         message = message
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.is_false(contract_response.success)
-                    tests.eq(contract_response.error, "network_error")
+                    tests.not_nil(contract_err)
+                    tests.eq(contract_err:kind(), "Unavailable")
                 end
             end)
 
             it("should handle nil error", function()
-                local contract_response = mapper.map_error_response(nil)
+                local contract_err = map_error_response(nil)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.error, "server_error")
-                tests.eq(contract_response.error_message, "Unknown Google error")
-                tests.not_nil(contract_response.metadata)
+                tests.not_nil(contract_err)
+                tests.eq(contract_err:kind(), "Unavailable")
+                tests.eq(contract_err:message(), "Unknown Google error")
+                tests.not_nil((contract_err:details() :: any))
             end)
 
             it("should handle error without message", function()
@@ -1915,11 +1923,11 @@ local function define_tests()
                     status_code = 500
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.error, "server_error")
-                tests.eq(contract_response.error_message, "Google API error")
+                tests.not_nil(contract_err)
+                tests.eq(contract_err:kind(), "Unavailable")
+                tests.eq(contract_err:message(), "Google API error")
             end)
 
             it("should handle error without status code", function()
@@ -1927,41 +1935,41 @@ local function define_tests()
                     message = "Something went wrong"
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.error, "server_error")
-                tests.eq(contract_response.error_message, "Something went wrong")
+                tests.not_nil(contract_err)
+                tests.eq(contract_err:kind(), "Unavailable")
+                tests.eq(contract_err:message(), "Something went wrong")
             end)
 
-            it("should preserve metadata from error", function()
+            it("should preserve request_id from error metadata", function()
                 local google_error = {
                     status_code = 429,
                     message = "Rate limit exceeded",
                     metadata = {
                         request_id = "req_error_123",
-                        retry_after = 60
                     }
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.metadata.request_id, "req_error_123")
-                tests.eq(contract_response.metadata.retry_after, 60)
+                tests.not_nil(contract_err)
+                tests.eq((contract_err:details() :: any).request_id, "req_error_123")
             end)
 
-            it("should handle missing metadata in error", function()
+            it("should populate provider/operation in details even without metadata", function()
                 local google_error = {
                     status_code = 400,
                     message = "Bad request"
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.not_nil(contract_response.metadata)
-                tests.is_nil(next(contract_response.metadata))
+                tests.not_nil(contract_err)
+                local d = (contract_err:details() :: any)
+                tests.eq(d.provider, "google")
+                tests.eq(d.operation, "generate")
+                tests.eq(d.status_code, 400)
             end)
 
             it("should prioritize message patterns over status code", function()
@@ -1970,10 +1978,10 @@ local function define_tests()
                     message = "context length exceeded"
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.error, "context_length_exceeded")
+                tests.not_nil(contract_err)
+                tests.eq(contract_err:kind(), "Invalid")
             end)
 
             it("should be case-insensitive for message matching", function()
@@ -1982,10 +1990,10 @@ local function define_tests()
                     message = "CONTEXT LENGTH EXCEEDED"
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.error, "context_length_exceeded")
+                tests.not_nil(contract_err)
+                tests.eq(contract_err:kind(), "Invalid")
             end)
 
             it("should handle empty message", function()
@@ -1994,11 +2002,11 @@ local function define_tests()
                     message = ""
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
-                tests.eq(contract_response.error, "invalid_request")
-                tests.eq(contract_response.error_message, "")
+                tests.not_nil(contract_err)
+                tests.eq(contract_err:kind(), "Invalid")
+                tests.eq(contract_err:message(), "")
             end)
 
             it("should map 401 and 403 to authentication error", function()
@@ -2010,9 +2018,9 @@ local function define_tests()
                         message = "Auth failed"
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.eq(contract_response.error, "authentication_error")
+                    tests.eq(contract_err:kind(), "PermissionDenied")
                 end
             end)
 
@@ -2025,9 +2033,9 @@ local function define_tests()
                         message = "Server error"
                     }
 
-                    local contract_response = mapper.map_error_response(google_error)
+                    local contract_err = map_error_response(google_error)
 
-                    tests.eq(contract_response.error, "server_error")
+                    tests.eq(contract_err:kind(), "Unavailable")
                 end
             end)
 
@@ -2037,11 +2045,11 @@ local function define_tests()
                     message = "Request failed: context length exceeded and content filter triggered"
                 }
 
-                local contract_response = mapper.map_error_response(google_error)
+                local contract_err = map_error_response(google_error)
 
-                tests.is_false(contract_response.success)
+                tests.not_nil(contract_err)
                 -- Should match first pattern (context length)
-                tests.eq(contract_response.error, "context_length_exceeded")
+                tests.eq(contract_err:kind(), "Invalid")
             end)
         end)
 
@@ -2301,18 +2309,18 @@ local function define_tests()
 
         describe("Error Response Mapping", function()
             it("should return structured error for 429 rate limit", function()
-                local response, err = mapper.map_error_response({
+                local err = map_error_response({
                     status_code = 429,
                     message = "Rate limited"
                 })
-                tests.eq(response.error, "rate_limit_exceeded")
+                tests.eq(err:kind(), "RateLimited")
                 tests.not_nil(err)
                 tests.eq(err:kind(), "RateLimited")
                 tests.eq(err:retryable(), true)
             end)
 
             it("should return structured error for 500 server error", function()
-                local response, err = mapper.map_error_response({
+                local err = map_error_response({
                     status_code = 500,
                     message = "Internal error"
                 })
@@ -2322,7 +2330,7 @@ local function define_tests()
             end)
 
             it("should return non-retryable for 401 auth error", function()
-                local _, err = mapper.map_error_response({
+                local err = map_error_response({
                     status_code = 401,
                     message = "Invalid credentials"
                 })
@@ -2332,7 +2340,7 @@ local function define_tests()
             end)
 
             it("should return non-retryable for 404 model not found", function()
-                local _, err = mapper.map_error_response({
+                local err = map_error_response({
                     status_code = 404,
                     message = "Model not found"
                 })
@@ -2342,8 +2350,8 @@ local function define_tests()
             end)
 
             it("should handle nil error", function()
-                local response, err = mapper.map_error_response(nil)
-                tests.eq(response.error, "server_error")
+                local err = map_error_response(nil)
+                tests.eq(err:kind(), "Unavailable")
                 tests.not_nil(err)
                 tests.eq(err:kind(), "Unavailable")
                 tests.eq(err:retryable(), true)

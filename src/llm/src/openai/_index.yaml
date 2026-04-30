@@ -140,7 +140,7 @@ entries:
   - name: generate
     kind: function.lua
     meta:
-      comment: OpenAI text generation handler supporting streaming, tool calling, and reasoning models via unified contract
+      comment: OpenAI text generation handler via /v1/responses with streaming, tool calling, and reasoning support
     source: file://generate.lua
     modules:
       - json
@@ -209,7 +209,7 @@ entries:
   - name: mapper
     kind: library.lua
     meta:
-      comment: OpenAI contract mapper with consistent error handling, token usage mapping, and reasoning detection
+      comment: OpenAI Responses API mapper — input items, tools, options, output items, reasoning, tokens
     source: file://mapper.lua
     modules:
       - json
@@ -235,6 +235,7 @@ entries:
       - json
     imports:
       openai_mapper: wippy.llm.openai:mapper
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 
@@ -253,7 +254,7 @@ entries:
       name: openai
       type: llm.provider
       title: OpenAI
-      comment: OpenAI API provider for GPT models with chat completions, embeddings, and structured output
+      comment: OpenAI provider via /v1/responses for GPT/o-series models, plus embeddings
       tags:
         - llm
         - provider
@@ -311,7 +312,7 @@ entries:
   - name: structured_output
     kind: function.lua
     meta:
-      comment: OpenAI structured output handler with JSON schema validation and reasoning model support via unified contract
+      comment: OpenAI structured output via /v1/responses (text.format.json_schema)
     source: file://structured_output.lua
     modules:
       - json

@@ -29,33 +29,27 @@ local function approximate_token_count(text)
     return math.ceil(string.len(text) / 4)
 end
 
-function mapper.map_error_response(bedrock_error)
+function mapper.classify_error(bedrock_error)
     if not bedrock_error then
-        local response = {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Unknown error"
-        }
-        return response, output.to_structured_error(response)
+        return output.ERROR_TYPE.SERVER_ERROR, "Unknown Bedrock error", nil
     end
 
-    local error_type = output.ERROR_TYPE.SERVER_ERROR
-    local error_message = "Unknown Bedrock API error"
+    local kind = output.ERROR_TYPE.SERVER_ERROR
+    local message = bedrock_error.message or "Unknown Bedrock API error"
 
     if bedrock_error.status_code then
-        error_type = mapper.HTTP_STATUS_MAP[bedrock_error.status_code] or output.ERROR_TYPE.SERVER_ERROR
-    end
-    if bedrock_error.message then
-        error_message = bedrock_error.message
+        kind = mapper.HTTP_STATUS_MAP[bedrock_error.status_code] or output.ERROR_TYPE.SERVER_ERROR
     end
 
-    local response = {
-        success = false,
-        error = error_type,
-        error_message = error_message,
-        metadata = bedrock_error.metadata or {}
+    local details = {
+        status_code = bedrock_error.status_code,
+        type = bedrock_error.type
     }
-    return response, output.to_structured_error(response)
+    if bedrock_error.metadata then
+        if bedrock_error.metadata.request_id then details.request_id = bedrock_error.metadata.request_id end
+    end
+
+    return kind, message, details
 end
 
 function mapper.map_tokens(converse_usage)

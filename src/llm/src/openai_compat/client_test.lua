@@ -440,22 +440,6 @@ local function define_tests()
         end)
 
         describe("Streaming Support", function()
-            local function build_mock_stream(chunks)
-                local s = { chunks = chunks, current = 0 }
-                setmetatable(s, {
-                    __index = {
-                        read = function(self)
-                            self.current = self.current + 1
-                            if self.current <= #self.chunks then
-                                return self.chunks[self.current]
-                            end
-                            return nil
-                        end
-                    }
-                })
-                return s
-            end
-
             it("should handle streaming request setup", function()
                 openai_client._ctx = {
                     all = function()
@@ -469,9 +453,26 @@ local function define_tests()
                     end
                 }
 
-                -- Responses API stream: named SSE events with embedded `type` field
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.completed","response":{"id":"r","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n'
+                local stream_chunks = {
+                    'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+                    'data: [DONE]\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
                 })
 
                 openai_client._http_client = {
@@ -479,9 +480,7 @@ local function define_tests()
                         test.is_true(http_options.stream)
                         local payload = json.decode(tostring(http_options.body))
                         test.is_true(payload.stream)
-                        -- Responses API does not require stream_options.include_usage:
-                        -- usage is delivered inside the response.completed event.
-                        test.is_nil(payload.stream_options)
+                        test.is_true(payload.stream_options.include_usage)
 
                         return {
                             status_code = 200,
@@ -491,21 +490,35 @@ local function define_tests()
                     end
                 }
 
-                local response, err = openai_client.request("/responses", {}, { stream = true })
+                local response, err = openai_client.request("/test", {}, { stream = true })
 
                 test.is_nil(err)
                 test.not_nil(response.stream)
             end)
 
             it("should process streaming content correctly", function()
-                -- Responses API content deltas: response.output_text.delta events
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.created","response":{"id":"r1","status":"in_progress"}}\n\n',
-                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[]}}\n\n',
-                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":1,"delta":"Hello"}\n\n',
-                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":2,"delta":" world"}\n\n',
-                    'data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":3,"text":"Hello world"}\n\n',
-                    'data: {"type":"response.completed","response":{"id":"r1","status":"completed","usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n'
+                local stream_chunks = {
+                    'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+                    'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
+                    'data: {"choices":[{"finish_reason":"stop"}]}\n\n',
+                    'data: [DONE]\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
                 })
 
                 local stream_response = {
@@ -514,14 +527,14 @@ local function define_tests()
                 }
 
                 local content_chunks = {}
-                local done_result = nil
+                local finish_reason = nil
 
-                local full_content, err, _ = openai_client.process_stream(stream_response, {
+                local full_content, err, result = openai_client.process_stream(stream_response, {
                     on_content = function(chunk)
                         table.insert(content_chunks, chunk)
                     end,
-                    on_done = function(r)
-                        done_result = r
+                    on_done = function(result)
+                        finish_reason = result.finish_reason
                     end
                 })
 
@@ -530,25 +543,33 @@ local function define_tests()
                 test.eq(#content_chunks, 2)
                 test.eq(content_chunks[1], "Hello")
                 test.eq(content_chunks[2], " world")
-
-                local r = assert(done_result) :: any
-                test.eq(r.status, "completed")
-                test.eq(r.response_id, "r1")
-                test.eq(r.usage.input_tokens, 3)
-                test.eq(r.usage.output_tokens, 2)
+                test.eq(finish_reason, "stop")
             end)
 
             it("should process streaming tool calls", function()
-                -- Responses API tool call streaming:
-                --  output_item.added announces the function_call (id, call_id, name)
-                --  function_call_arguments.delta accumulates argument JSON chunks
-                --  function_call_arguments.done finalizes the call
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_123","name":"test_tool","arguments":""}}\n\n',
-                    'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"sequence_number":1,"delta":"{\\"param\\""}\n\n',
-                    'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"sequence_number":2,"delta":": \\"value\\"}"}\n\n',
-                    'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"sequence_number":3,"name":"test_tool","arguments":"{\\"param\\": \\"value\\"}"}\n\n',
-                    'data: {"type":"response.completed","response":{"id":"r2","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n'
+                local stream_chunks = {
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"test_tool"}}]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"param\\""}}]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":": \\"value\\"}"}}]}}]}\n\n',
+                    'data: {"choices":[{"finish_reason":"tool_calls"}]}\n\n',
+                    'data: [DONE]\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
                 })
 
                 local stream_response = {
@@ -558,7 +579,7 @@ local function define_tests()
 
                 local tool_calls = {}
 
-                local _, err, _ = openai_client.process_stream(stream_response, {
+                local full_content, err, result = openai_client.process_stream(stream_response, {
                     on_tool_call = function(tool_call)
                         table.insert(tool_calls, tool_call)
                     end
@@ -570,44 +591,6 @@ local function define_tests()
                 test.eq(tc.id, "call_123")
                 test.eq(tc.name, "test_tool")
                 test.eq(tc.arguments, '{"param": "value"}')
-            end)
-
-            it("should forward reasoning summary deltas via on_reasoning", function()
-                -- Reasoning summary streaming event: response.reasoning_summary_text.delta
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[]}}\n\n',
-                    'data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"sequence_number":1,"delta":"step1"}\n\n',
-                    'data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"sequence_number":2,"delta":" step2"}\n\n',
-                    'data: {"type":"response.completed","response":{"id":"r3","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n'
-                })
-
-                local reasoning_chunks = {}
-                local _, err, _ = openai_client.process_stream({ stream = mock_stream, metadata = {} }, {
-                    on_reasoning = function(chunk) table.insert(reasoning_chunks, chunk) end
-                })
-
-                test.is_nil(err)
-                test.eq(#reasoning_chunks, 2)
-                test.eq(reasoning_chunks[1], "step1")
-                test.eq(reasoning_chunks[2], " step2")
-            end)
-
-            it("should propagate response.failed events to on_error", function()
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.failed","response":{"id":"r4","status":"failed","error":{"message":"boom","type":"server_error","code":"err_500"}}}\n\n'
-                })
-
-                local seen_error = nil
-                local _, err, _ = openai_client.process_stream({ stream = mock_stream, metadata = {} }, {
-                    on_error = function(e) seen_error = e end
-                })
-
-                test.not_nil(err)
-                test.not_nil(seen_error)
-                local se = assert(seen_error) :: any
-                test.eq(se.message, "boom")
-                test.eq(se.type, "server_error")
-                test.eq(se.code, "err_500")
             end)
         end)
 
@@ -690,8 +673,8 @@ local function define_tests()
             end)
         end)
 
-        describe("POST Request Shape", function()
-            it("should POST JSON with auth + content-type to base_url + endpoint_path", function()
+        describe("Backward Compatibility", function()
+            it("should maintain exact same behavior for existing POST calls", function()
                 openai_client._ctx = {
                     all = function()
                         return { api_key = "test-key" }
@@ -706,17 +689,17 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        test.eq(url, "https://api.openai.com/v1/responses")
+                        test.eq(url, "https://api.openai.com/v1/chat/completions")
                         test.eq(options.headers["Content-Type"], "application/json")
                         test.eq(options.headers["Authorization"], "Bearer test-key")
                         test.not_nil(options.body)
                         local payload = json.decode(tostring(options.body))
-                        test.eq(payload.model, "gpt-5.4")
+                        test.eq(payload.model, "gpt-4")
                         return { status_code = 200, body = '{"test": "success"}', headers = {} }
                     end
                 }
 
-                local response, err = openai_client.request("/responses", { model = "gpt-5.4" })
+                local response, err = openai_client.request("/chat/completions", { model = "gpt-4" })
                 test.is_nil(err)
                 test.eq(response.test, "success")
             end)

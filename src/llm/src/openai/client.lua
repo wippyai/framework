@@ -66,7 +66,6 @@ local function extract_response_metadata(http_response)
         version = http_response.headers["Openai-Version"]
     }
 
-    -- Add rate limit information
     local rate_limits = {}
     for header, value in pairs(http_response.headers) do
         if header:match("^x%-ratelimit") then
@@ -82,62 +81,40 @@ local function extract_response_metadata(http_response)
     return metadata
 end
 
--- Parse error from OpenAI HTTP response
 local function parse_error_response(http_response)
     local error_info = {
         status_code = http_response and http_response.status_code or 0,
         message = "OpenAI API error: " .. (http_response and http_response.status_code or "connection failed")
-
     }
 
-    -- open router and other providers sometimes store error in various places
-    print("error detected", http_response.body)
-
-    -- Add request ID if available
     if http_response and http_response.headers and http_response.headers["x-request-id"] then
         error_info.request_id = http_response.headers["x-request-id"]
     end
 
-    -- Try to parse error body - check for actual content, not just existence
-    if http_response and http_response.body then
-        if http_response.body ~= "" and http_response.body ~= "no body" then
-            local parsed, decode_err = json.decode(http_response.body)
+    local resp = http_response :: any
+    local error_body = resp and resp.body
+    if resp and resp.stream and (not error_body or error_body == "" or error_body == "no body") then
+        error_body = resp.stream:read(4096)
+    end
 
-            if not decode_err and parsed and parsed.error then
-                error_info.message = parsed.error.message or error_info.message
-                error_info.code = parsed.error.code
-                error_info.param = parsed.error.param
-                error_info.type = parsed.error.type
-
-                -- Handle OpenRouter-style nested error metadata
-                if parsed.error.metadata and parsed.error.metadata.raw then
-                    error_info.nested_error = parsed.error.metadata.raw
-                    error_info.provider_name = parsed.error.metadata.provider_name
-
-                    -- Try to parse the nested error for more specific info
-                    local nested_parsed, nested_err = json.decode(tostring(parsed.error.metadata.raw))
-                    if not nested_err and nested_parsed then
-                        if nested_parsed.message then
-                            error_info.detailed_message = nested_parsed.message
-                        end
-                    end
-                end
-            end
+    if error_body and error_body ~= "" and error_body ~= "no body" then
+        local parsed, decode_err = json.decode(tostring(error_body))
+        if not decode_err and parsed and parsed.error then
+            error_info.message = parsed.error.message or error_info.message
+            error_info.code = parsed.error.code
+            error_info.param = parsed.error.param
+            error_info.type = parsed.error.type
         end
     end
 
-    -- Add metadata from headers
     error_info.metadata = extract_response_metadata(http_response :: any)
-
     return error_info
 end
 
--- Prepare HTTP headers for OpenAI request
 local function prepare_headers(api_key, organization, method, additional_headers): {[string]: string}
     local headers: {[string]: string} = {}
     headers["Authorization"] = "Bearer " .. tostring(api_key)
 
-    -- Only add Content-Type for methods that have a body
     if method == "POST" or method == "PUT" or method == "PATCH" then
         headers["Content-Type"] = "application/json"
     end
@@ -146,7 +123,6 @@ local function prepare_headers(api_key, organization, method, additional_headers
         headers["OpenAI-Organization"] = tostring(organization)
     end
 
-    -- Merge additional headers from context
     if additional_headers then
         for header_name, header_value in pairs(additional_headers) do
             headers[tostring(header_name)] = tostring(header_value)
@@ -156,23 +132,19 @@ local function prepare_headers(api_key, organization, method, additional_headers
     return headers
 end
 
--- Main HTTP request function
 function openai_client.request(endpoint_path, payload, options)
     options = options or {}
     local method = options.method or "POST"
 
     local config = resolve_config()
 
-    -- Validate API key
     if not config.api_key then
-        local error_response = {
+        return nil, {
             status_code = 401,
             message = "OpenAI API key is required"
         }
-        return nil, error_response
     end
 
-    -- Prepare request
     local full_url = config.base_url .. endpoint_path
     local headers: {[string]: string} = prepare_headers(config.api_key, config.organization, method, config.headers)
 
@@ -181,31 +153,15 @@ function openai_client.request(endpoint_path, payload, options)
         timeout = tonumber(options.timeout) or config.timeout,
     }
 
-    -- Handle payload and streaming for methods that support body
     if method == "POST" or method == "PUT" or method == "PATCH" then
         payload = payload or {}
-
-        -- Handle streaming payload modifications BEFORE encoding
         if options.stream then
             payload.stream = true
-            payload.stream_options = {
-                include_usage = true
-            }
-        else
-            if config.base_url:match("openrouter") then
-                payload.usage = { include = true }
-            end
-        end
-
-        http_options.body = json.encode(payload)
-
-        -- Handle streaming http options
-        if options.stream then
             http_options.stream = true
         end
+        http_options.body = json.encode(payload)
     end
 
-    -- Make the HTTP request using appropriate method
     local response, err
     if method == "GET" then
         response, err = openai_client._http_client.get(full_url, http_options)
@@ -215,11 +171,10 @@ function openai_client.request(endpoint_path, payload, options)
         response, err = openai_client._http_client.put(full_url, http_options)
     elseif method == "PATCH" then
         response, err = openai_client._http_client.patch(full_url, http_options)
-    else -- Default to POST
+    else
         response, err = openai_client._http_client.post(full_url, http_options)
     end
 
-    -- Handle nil response (connection failures)
     if not response then
         return nil, {
             status_code = 0,
@@ -227,13 +182,10 @@ function openai_client.request(endpoint_path, payload, options)
         }
     end
 
-    -- Check for HTTP errors
     if response.status_code < 200 or response.status_code >= 300 then
-        local parsed_error = parse_error_response(response)
-        return nil, parsed_error
+        return nil, parse_error_response(response)
     end
 
-    -- Handle streaming response
     if options.stream and response.stream then
         return {
             stream = response.stream,
@@ -243,48 +195,81 @@ function openai_client.request(endpoint_path, payload, options)
         }
     end
 
-    -- Parse non-streaming response
     local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
-        local parse_error = {
+        return nil, {
             status_code = response.status_code,
             message = "Failed to parse OpenAI response: " .. parse_err,
             metadata = extract_response_metadata(response)
         }
-        return nil, parse_error
     end
 
-    -- Add metadata to the response
     parsed.metadata = extract_response_metadata(response :: any)
-
     return parsed
 end
 
--- Process streaming response
+-- Process a /v1/responses streaming SSE response.
+-- Each chunk is a `data: <json>` line; the JSON carries a `type` field that
+-- names the event (e.g. response.output_text.delta). Multiple events are
+-- separated by a blank line (\n\n).
 function openai_client.process_stream(stream_response, callbacks)
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
 
     local full_content = ""
-    local finish_reason = nil
-    local usage = nil
+    local final_response = nil
+    local final_usage = nil
+    local response_id = nil
+    local response_status = nil
+    local incomplete_reason = nil
     local metadata = stream_response.metadata or {}
 
-    -- Track tool calls across chunks
-    local tool_calls_accumulator = {}
-    local sent_tool_calls = {}
+    local pending_calls = {}
+    local sent_calls = {}
 
-    -- Track reasoning details for OpenRouter
-    local reasoning_accumulator = {}
-
-    -- Default callbacks
     callbacks = callbacks or {}
     local on_content = callbacks.on_content or function(...) end
     local on_tool_call = callbacks.on_tool_call or function(...) end
     local on_reasoning = callbacks.on_reasoning or function(...) end
     local on_error = callbacks.on_error or function(...) end
     local on_done = callbacks.on_done or function(...) end
+
+    local function emit_call(item_id)
+        local call = pending_calls[item_id]
+        if not call or not call.call_id or not call.name then return end
+        if sent_calls[call.call_id] then return end
+        sent_calls[call.call_id] = true
+        on_tool_call({
+            id = call.call_id,
+            name = call.name,
+            arguments = call.arguments or ""
+        })
+    end
+
+    local function build_result()
+        local tool_calls_out = {}
+        for _, call in pairs(pending_calls) do
+            if call.call_id and call.name then
+                table.insert(tool_calls_out, {
+                    id = call.call_id,
+                    name = call.name,
+                    arguments = call.arguments or ""
+                })
+            end
+        end
+
+        return {
+            content = full_content,
+            tool_calls = tool_calls_out,
+            usage = final_usage,
+            status = response_status,
+            incomplete_reason = incomplete_reason,
+            response_id = response_id,
+            response = final_response,
+            metadata = metadata
+        }
+    end
 
     local leftover = ""
 
@@ -296,13 +281,8 @@ function openai_client.process_stream(stream_response, callbacks)
             return nil, err
         end
 
-        if not chunk then
-            break
-        end
-
-        if chunk == "" then
-            goto continue
-        end
+        if not chunk then break end
+        if chunk == "" then goto continue end
 
         if leftover ~= "" then
             chunk = leftover .. chunk
@@ -328,166 +308,110 @@ function openai_client.process_stream(stream_response, callbacks)
             leftover = chunk:sub(last_boundary + 1)
         end
 
-        local error_json = complete:match('data:%s*({.-"error":.-)%s*\n')
-        if error_json then
-            local parsed_error, parse_err = json.decode(tostring(error_json))
-            if not parse_err and parsed_error and parsed_error.error then
+        for data_line in complete:gmatch('data:%s*(.-)%s*\n') do
+            if data_line == "" or data_line == "[DONE]" then
+                goto continue_line
+            end
+
+            local parsed, parse_err = json.decode(tostring(data_line))
+            if parse_err or not parsed then
+                goto continue_line
+            end
+
+            local etype = parsed.type
+
+            if etype == "response.created" or etype == "response.in_progress" then
+                if parsed.response then
+                    if parsed.response.id then response_id = parsed.response.id end
+                    if parsed.response.status then response_status = parsed.response.status end
+                end
+            elseif etype == "response.output_item.added" then
+                local item = parsed.item
+                if item and item.type == "function_call" then
+                    local key = item.id or item.call_id
+                    if key then
+                        pending_calls[key] = pending_calls[key] or { arguments = "" }
+                        local entry = pending_calls[key] :: any
+                        entry.call_id = item.call_id or entry.call_id
+                        entry.name = item.name or entry.name
+                        if item.arguments and item.arguments ~= "" then
+                            entry.arguments = item.arguments
+                        end
+                    end
+                end
+            elseif etype == "response.output_text.delta" then
+                if parsed.delta and parsed.delta ~= "" then
+                    full_content = full_content .. parsed.delta
+                    on_content(parsed.delta)
+                end
+            elseif etype == "response.function_call_arguments.delta" then
+                local key = parsed.item_id
+                if key then
+                    pending_calls[key] = pending_calls[key] or { arguments = "" }
+                    if parsed.delta then
+                        pending_calls[key].arguments = (pending_calls[key].arguments or "") .. parsed.delta
+                    end
+                end
+            elseif etype == "response.function_call_arguments.done" then
+                local key = parsed.item_id
+                if key then
+                    pending_calls[key] = pending_calls[key] or { arguments = "" }
+                    if parsed.arguments then
+                        pending_calls[key].arguments = parsed.arguments
+                    end
+                    if parsed.name then
+                        pending_calls[key].name = parsed.name
+                    end
+                    emit_call(key)
+                end
+            elseif etype == "response.output_item.done" then
+                local item = parsed.item
+                if item and item.type == "function_call" then
+                    local key = item.id or item.call_id
+                    if key then
+                        pending_calls[key] = pending_calls[key] or { arguments = "" }
+                        local entry = pending_calls[key] :: any
+                        entry.call_id = item.call_id or entry.call_id
+                        entry.name = item.name or entry.name
+                        if item.arguments and item.arguments ~= "" then
+                            entry.arguments = item.arguments
+                        end
+                        emit_call(key)
+                    end
+                end
+            elseif etype == "response.reasoning_summary_text.delta" then
+                if parsed.delta and parsed.delta ~= "" then
+                    on_reasoning(parsed.delta)
+                end
+            elseif etype == "response.completed" then
+                if parsed.response then
+                    final_response = parsed.response
+                    final_usage = parsed.response.usage
+                    response_status = parsed.response.status or "completed"
+                    response_id = parsed.response.id or response_id
+                    if parsed.response.incomplete_details then
+                        incomplete_reason = parsed.response.incomplete_details.reason
+                    end
+                end
+            elseif etype == "response.incomplete" then
+                if parsed.response then
+                    final_response = parsed.response
+                    final_usage = parsed.response.usage
+                    response_status = parsed.response.status or "incomplete"
+                    if parsed.response.incomplete_details then
+                        incomplete_reason = parsed.response.incomplete_details.reason
+                    end
+                end
+            elseif etype == "response.failed" or etype == "error" or etype == "response.error" then
+                local err_payload = parsed.response and parsed.response.error or parsed.error or parsed
                 local error_info = {
-                    message = parsed_error.error.message,
-                    code = parsed_error.error.code,
-                    type = parsed_error.error.type,
-                    param = parsed_error.error.param
+                    message = (err_payload and err_payload.message) or "Responses stream failed",
+                    code = err_payload and err_payload.code,
+                    type = err_payload and err_payload.type,
+                    param = err_payload and err_payload.param
                 }
                 on_error(error_info)
                 return nil, error_info.message, { error = error_info }
-            end
-        end
-
-        for data_line in complete:gmatch('data:%s*(.-)%s*\n') do
-            -- Skip empty data lines
-            if data_line == "" then
-                goto continue_line
-            end
-
-            -- Check for [DONE] marker
-            if data_line == "[DONE]" then
-                -- Process any remaining tool calls
-                for id, tool_call in pairs(tool_calls_accumulator) do
-                    if tool_call.name and tool_call.arguments and not sent_tool_calls[id] then
-                        sent_tool_calls[id] = true
-                        on_tool_call({
-                            id = id,
-                            name = tool_call.name,
-                            arguments = tool_call.arguments
-                        })
-                    end
-                end
-
-                -- Create final result with reasoning if present
-                local result = {
-                    content = full_content,
-                    finish_reason = finish_reason,
-                    usage = usage,
-                    metadata = metadata
-                }
-
-                -- Add reasoning details if accumulated
-                if next(reasoning_accumulator) then
-                    result.reasoning_details = reasoning_accumulator
-                end
-
-                on_done(result)
-                return full_content, nil, result
-            end
-
-            -- Parse the JSON data
-            local parsed, parse_err = json.decode(tostring(data_line))
-            if parse_err then
-                goto continue_line
-            end
-
-            -- Process the delta if present
-            if parsed.choices and parsed.choices[1] then
-                local choice = parsed.choices[1]
-
-                -- Handle content delta
-                if choice.delta and choice.delta.content then
-                    local content_chunk = choice.delta.content
-                    full_content = full_content .. content_chunk
-                    on_content(content_chunk)
-                end
-
-                -- Handle reasoning details delta (OpenRouter)
-                if choice.delta and choice.delta.reasoning_details then
-                    for _, reasoning_detail in ipairs(choice.delta.reasoning_details) do
-                        table.insert(reasoning_accumulator, reasoning_detail)
-                        if reasoning_detail.text then
-                            on_reasoning(reasoning_detail.text)
-                        end
-                    end
-                end
-
-                -- Handle tool call deltas
-                if choice.delta and choice.delta.tool_calls then
-                    for _, tool_call_delta in ipairs(choice.delta.tool_calls) do
-                        local index = tool_call_delta.index
-                        local id = tool_call_delta.id
-
-                        -- Initialize tool call entry if new
-                        if id and not tool_calls_accumulator[id] then
-                            tool_calls_accumulator[id] = {
-                                id = id,
-                                index = index,
-                                arguments = "",
-                                name = nil
-                            }
-                        elseif not id and tool_call_delta.index ~= nil then
-                            -- Find ID for this index
-                            for tc_id, tc in pairs(tool_calls_accumulator) do
-                                if tc.index == index then
-                                    id = tc_id
-                                    break
-                                end
-                            end
-                        end
-
-                        -- Update tool call info if we have a valid ID
-                        if id then
-                            if tool_call_delta.index ~= nil then
-                                tool_calls_accumulator[id].index = tool_call_delta.index
-                            end
-
-                            if tool_call_delta["function"] then
-                                if tool_call_delta["function"].name then
-                                    tool_calls_accumulator[id].name = tool_call_delta["function"].name
-                                end
-
-                                if tool_call_delta["function"].arguments then
-                                    tool_calls_accumulator[id].arguments =
-                                        (tool_calls_accumulator[id].arguments or "") ..
-                                        tool_call_delta["function"].arguments
-                                end
-                            end
-
-                            -- Check if tool call is complete
-                            local tool_call = tool_calls_accumulator[id] :: any
-                            local is_complete, _ = json.decode(tostring(tool_call.arguments))
-                            if tool_call.name and tool_call.arguments and not sent_tool_calls[id] and
-                                (choice.finish_reason == "tool_calls" or is_complete) then
-                                sent_tool_calls[id] = true
-                                on_tool_call({
-                                    id = id,
-                                    name = tool_call.name,
-                                    arguments = tool_call.arguments
-                                })
-                            end
-                        end
-                    end
-                end
-
-                -- Record finish reason if present
-                if choice.finish_reason then
-                    finish_reason = choice.finish_reason
-
-                    -- Final check for tool calls on finish
-                    if choice.finish_reason == "tool_calls" then
-                        for id, tool_call in pairs(tool_calls_accumulator) do
-                            if tool_call.name and tool_call.arguments and not sent_tool_calls[id] then
-                                sent_tool_calls[id] = true
-                                on_tool_call({
-                                    id = id,
-                                    name = tool_call.name,
-                                    arguments = tool_call.arguments
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- Capture usage info if present
-            if parsed.usage then
-                usage = parsed.usage
             end
 
             ::continue_line::
@@ -496,31 +420,11 @@ function openai_client.process_stream(stream_response, callbacks)
         ::continue::
     end
 
-    -- Process any remaining tool calls
-    for id, tool_call in pairs(tool_calls_accumulator) do
-        if tool_call.name and tool_call.arguments and not sent_tool_calls[id] then
-            sent_tool_calls[id] = true
-            on_tool_call({
-                id = id,
-                name = tool_call.name,
-                arguments = tool_call.arguments
-            })
-        end
+    for key, _ in pairs(pending_calls) do
+        emit_call(key)
     end
 
-    -- Create final result with reasoning if present
-    local result = {
-        content = full_content,
-        finish_reason = finish_reason,
-        usage = usage,
-        metadata = metadata
-    }
-
-    -- Add reasoning details if accumulated
-    if next(reasoning_accumulator) then
-        result.reasoning_details = reasoning_accumulator
-    end
-
+    local result = build_result()
     on_done(result)
     return full_content, nil, result
 end

@@ -8,7 +8,7 @@ local generate_handler = {
     _output = output
 }
 
-local function handle_streaming(stream_response, context, stream_config)
+local function handle_streaming(stream_response, context, stream_config, err)
     local streamer, streamer_err = generate_handler._output.streamer(
         tostring(stream_config.reply_to),
         tostring(stream_config.topic),
@@ -16,10 +16,9 @@ local function handle_streaming(stream_response, context, stream_config)
     )
 
     if not streamer then
-        return generate_handler._mapper.map_error_response({
-            message = streamer_err or "Failed to create streamer",
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = streamer_err or "Failed to create streamer", status_code = 500 })
+            :build()
     end
 
     local full_content = ""
@@ -27,7 +26,7 @@ local function handle_streaming(stream_response, context, stream_config)
     local finish_reason = nil
     local final_usage = nil
 
-    local stream_content, stream_err, stream_result = generate_handler._client.process_converse_stream(stream_response, {
+    local _, stream_err, stream_result = generate_handler._client.process_converse_stream(stream_response, {
         on_content = function(chunk)
             streamer:buffer_content(chunk)
             full_content = full_content .. chunk
@@ -50,8 +49,8 @@ local function handle_streaming(stream_response, context, stream_config)
         end,
 
         on_error = function(error_info)
-            local error_response = generate_handler._mapper.map_error_response(error_info)
-            streamer:send_error(tostring(error_response.error), tostring(error_response.error_message), nil)
+            local e = err:from(error_info):build()
+            streamer:send_error(tostring(e:kind()), tostring(e:message()), nil)
         end,
 
         on_done = function(result)
@@ -62,10 +61,9 @@ local function handle_streaming(stream_response, context, stream_config)
     })
 
     if stream_err then
-        return generate_handler._mapper.map_error_response({
-            message = stream_err,
-            status_code = 500
-        })
+        return nil, err
+            :from({ message = stream_err, status_code = 500 })
+            :build()
     end
 
     return generate_handler._mapper.format_streaming_response(
@@ -78,22 +76,14 @@ local function handle_streaming(stream_response, context, stream_config)
 end
 
 function generate_handler.handler(contract_args)
+    local err = output.errors.generate(contract_args):classifier(generate_handler._mapper.classify_error)
+
     if not contract_args.model then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Model is required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Messages are required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     local context = {
@@ -104,7 +94,6 @@ function generate_handler.handler(contract_args)
     local mapped = generate_handler._mapper.map_messages(contract_args.messages)
     local inference_config, additional_fields = generate_handler._mapper.map_options(contract_args.options or {})
 
-    -- Set default max_tokens if not specified
     if not inference_config.maxTokens then
         inference_config.maxTokens = 2000
     end
@@ -125,7 +114,6 @@ function generate_handler.handler(contract_args)
         converse_payload.additionalModelRequestFields = additional_fields
     end
 
-    -- Tool support
     if contract_args.tools and #contract_args.tools > 0 then
         local converse_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
 
@@ -146,7 +134,6 @@ function generate_handler.handler(contract_args)
         context.name_to_id_map = name_to_id_map
     end
 
-    -- Streaming path
     if contract_args.stream and contract_args.stream.reply_to then
         local stream_response, stream_err = generate_handler._client.converse_stream(
             contract_args.model,
@@ -155,13 +142,12 @@ function generate_handler.handler(contract_args)
         )
 
         if stream_err then
-            return generate_handler._mapper.map_error_response(stream_err)
+            return nil, err:from(stream_err):build()
         end
 
-        return handle_streaming(stream_response, context, contract_args.stream)
+        return handle_streaming(stream_response, context, contract_args.stream, err)
     end
 
-    -- Non-streaming path
     local response, request_err = generate_handler._client.converse(
         contract_args.model,
         converse_payload,
@@ -169,7 +155,7 @@ function generate_handler.handler(contract_args)
     )
 
     if request_err then
-        return generate_handler._mapper.map_error_response(request_err)
+        return nil, err:from(request_err):build()
     end
 
     return generate_handler._mapper.format_success_response(response, context.name_to_id_map)

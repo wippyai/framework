@@ -59,41 +59,27 @@ local function validate_schema(schema)
 end
 
 function structured_output_handler.handler(contract_args)
+    local err = output.errors.structured_output(contract_args):classifier(structured_output_handler._mapper.classify_error)
+
     if not contract_args.model then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Model is required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
     end
 
     if not contract_args.messages or #contract_args.messages == 0 then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Messages are required",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Messages are required"):build()
     end
 
     if not contract_args.schema then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Schema is required for structured output",
-            metadata = {}
-        }
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Schema is required for structured output"):build()
     end
 
     local schema_valid, schema_errors = validate_schema(contract_args.schema)
     if not schema_valid then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.INVALID_REQUEST,
-            error_message = "Invalid schema: " .. table.concat(schema_errors, "; "),
-            metadata = {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Invalid schema: " .. table.concat(schema_errors, "; "))
+            :details({ schema_errors = schema_errors })
+            :build()
     end
 
     local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages)
@@ -141,18 +127,15 @@ function structured_output_handler.handler(contract_args)
     )
 
     if request_err then
-        local error_response, structured_err = structured_output_handler._mapper.map_error_response(request_err)
-        error_response.success = false
-        return error_response, structured_err
+        return nil, err:from(request_err):build()
     end
 
     if not response or not response.content then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Invalid response structure from Claude",
-            metadata = response and response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Invalid response structure from Claude")
+            :details(response and response.metadata or nil)
+            :build()
     end
 
     local tool_use_block = nil
@@ -164,21 +147,17 @@ function structured_output_handler.handler(contract_args)
     end
 
     if not tool_use_block then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Claude failed to use the structured_output tool",
-            metadata = response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Claude failed to use the structured_output tool")
+            :build()
     end
 
     if not tool_use_block.input then
-        return {
-            success = false,
-            error = output.ERROR_TYPE.SERVER_ERROR,
-            error_message = "Tool use block does not contain input",
-            metadata = response.metadata or {}
-        }
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("Tool use block does not contain input")
+            :build()
     end
 
     return {

@@ -516,7 +516,7 @@ local function define_tests()
                 mock_providers.open = function(provider_id, options)
                     return {
                         structured_output = function(self, args)
-                            return nil, "Schema validation failed"
+                            return nil, errors.new("Schema validation failed")
                         end
                     }
                 end

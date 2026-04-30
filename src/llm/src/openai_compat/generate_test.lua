@@ -73,32 +73,26 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        -- Responses API endpoint
-                        test.contains(tostring(url), "/responses")
+                        test.contains(tostring(url), "chat/completions")
 
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "gpt-4o-mini")
-                        -- Responses API uses `input` items, not `messages`
-                        test.not_nil(payload.input)
-                        test.is_nil(payload.messages)
+                        test.not_nil(payload.messages)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                id = "resp_text_1",
-                                status = "completed",
-                                output = {
+                                choices = {
                                     {
-                                        type = "message",
-                                        role = "assistant",
-                                        content = {
-                                            { type = "output_text", text = "Hello! How can I help you today!" }
-                                        }
+                                        message = {
+                                            content = "Hello! How can I help you today!"
+                                        },
+                                        finish_reason = "stop"
                                     }
                                 },
                                 usage = {
-                                    input_tokens = 12,
-                                    output_tokens = 8,
+                                    prompt_tokens = 12,
+                                    completion_tokens = 8,
                                     total_tokens = 20
                                 }
                             }),
@@ -114,7 +108,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
@@ -123,7 +117,6 @@ local function define_tests()
                 test.eq(response.tokens.completion_tokens, 8)
                 test.eq(response.tokens.total_tokens, 20)
                 test.eq(response.finish_reason, "stop")
-                test.eq(response.metadata.response_id, "resp_text_1")
             end)
 
             it("should handle options mapping", function()
@@ -142,31 +135,19 @@ local function define_tests()
                 generate_handler._client._http_client = {
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
-                        -- Responses API supported sampling parameters
                         test.eq(payload.temperature, 0.3)
-                        test.eq(payload.max_output_tokens, 50)
-                        test.is_nil(payload.max_tokens)
-                        test.is_nil(payload.max_completion_tokens)
+                        test.eq(payload.max_tokens, 50)
                         test.eq(payload.top_p, 0.9)
-                        -- Chat-Completions-only sampling fields are filtered out by the mapper
-                        test.is_nil(payload.frequency_penalty)
-                        test.is_nil(payload.presence_penalty)
-                        test.is_nil(payload.stop)
-                        test.is_nil(payload.seed)
+                        test.eq(payload.frequency_penalty, 0.5)
+                        test.eq(payload.presence_penalty, 0.2)
+                        test.not_nil(payload.stop)
+                        test.eq(payload.stop[1], "STOP")
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                id = "resp_opts",
-                                status = "completed",
-                                output = {
-                                    {
-                                        type = "message",
-                                        role = "assistant",
-                                        content = { { type = "output_text", text = "Response" } }
-                                    }
-                                },
-                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
+                                choices = {{ message = { content = "Response" }, finish_reason = "stop" }},
+                                usage = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -184,12 +165,11 @@ local function define_tests()
                         top_p = 0.9,
                         frequency_penalty = 0.5,
                         presence_penalty = 0.2,
-                        stop_sequences = {"STOP"},
-                        seed = 42
+                        stop_sequences = {"STOP"}
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
@@ -213,31 +193,24 @@ local function define_tests()
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "o1-mini")
-                        -- Responses API: reasoning.effort, not reasoning_effort; max_output_tokens not max_completion_tokens
-                        test.not_nil(payload.reasoning)
-                        test.eq(payload.reasoning.effort, "medium")
-                        test.is_nil(payload.reasoning_effort)
-                        test.eq(payload.max_output_tokens, 100)
+                        test.eq(payload.reasoning_effort, "medium")
+                        test.eq(payload.max_completion_tokens, 100)
                         test.is_nil(payload.max_tokens)
-                        test.is_nil(payload.max_completion_tokens)
                         test.is_nil(payload.temperature)
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                id = "resp_reason",
-                                status = "completed",
-                                output = {
+                                choices = {
                                     {
-                                        type = "message",
-                                        role = "assistant",
-                                        content = { { type = "output_text", text = "Reasoning response" } }
+                                        message = { content = "Reasoning response" },
+                                        finish_reason = "stop"
                                     }
                                 },
                                 usage = {
-                                    input_tokens = 15,
-                                    output_tokens = 25,
-                                    output_tokens_details = { reasoning_tokens = 10 },
+                                    prompt_tokens = 15,
+                                    completion_tokens = 25,
+                                    completion_tokens_details = { reasoning_tokens = 10 },
                                     total_tokens = 50
                                 }
                             }),
@@ -259,57 +232,12 @@ local function define_tests()
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
                 test.eq(response.tokens.thinking_tokens, 10)
                 test.eq(response.tokens.total_tokens, 50)
-            end)
-
-            it("should pull system messages into instructions field", function()
-                -- Responses API: system messages live in a separate `instructions` field,
-                -- not inside the input array.
-                generate_handler._client._ctx = {
-                    all = function()
-                        return { api_key = "test-api-key" }
-                    end
-                }
-                generate_handler._client._env = {
-                    get = function(_) return nil end
-                }
-                generate_handler._client._http_client = {
-                    post = function(_, options)
-                        local payload = json.decode(tostring(options.body))
-                        test.eq(payload.instructions, "Be brief")
-                        for _, item in ipairs(payload.input) do
-                            test.is_true(item.role ~= "system")
-                            test.is_true(item.role ~= "developer")
-                        end
-
-                        return {
-                            status_code = 200,
-                            body = json.encode({
-                                id = "r",
-                                status = "completed",
-                                output = {
-                                    { type = "message", role = "assistant", content = { { type = "output_text", text = "ok" } } }
-                                },
-                                usage = { input_tokens = 1, output_tokens = 1 }
-                            }),
-                            headers = {}
-                        }
-                    end
-                }
-
-                local response = generate_handler.handler({
-                    model = "gpt-4o-mini",
-                    messages = {
-                        { role = "system", content = "Be brief" },
-                        { role = "user", content = "Hi" }
-                    }
-                })
-                test.is_true(response.success)
             end)
         end)
 
@@ -332,33 +260,33 @@ local function define_tests()
                         local payload = json.decode(tostring(options.body))
                         test.not_nil(payload.tools)
                         test.eq(#payload.tools, 1)
-                        -- Responses API: name & parameters are top-level on the tool, no nested .function wrapper
                         test.eq(payload.tools[1].type, "function")
-                        test.eq(payload.tools[1].name, "calculate")
-                        test.is_nil(payload.tools[1]["function"])
-                        test.not_nil(payload.tools[1].parameters)
+                        test.eq(payload.tools[1]["function"].name, "calculate")
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                id = "resp_tool",
-                                status = "completed",
-                                output = {
+                                choices = {
                                     {
-                                        type = "message",
-                                        role = "assistant",
-                                        content = { { type = "output_text", text = "I'll help with that calculation." } }
-                                    },
-                                    {
-                                        type = "function_call",
-                                        call_id = "call_123",
-                                        name = "calculate",
-                                        arguments = '{"expression": "2+2"}'
+                                        message = {
+                                            content = "I'll help with that calculation.",
+                                            tool_calls = {
+                                                {
+                                                    id = "call_123",
+                                                    type = "function",
+                                                    ["function"] = {
+                                                        name = "calculate",
+                                                        arguments = '{"expression": "2+2"}'
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        finish_reason = "tool_calls"
                                     }
                                 },
                                 usage = {
-                                    input_tokens = 15,
-                                    output_tokens = 10,
+                                    prompt_tokens = 15,
+                                    completion_tokens = 10,
                                     total_tokens = 25
                                 }
                             }),
@@ -387,7 +315,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
@@ -417,25 +345,30 @@ local function define_tests()
                     post = function(url, options)
                         local payload = json.decode(tostring(options.body))
                         test.not_nil(payload.tool_choice)
-                        -- Responses API: tool_choice for a specific function is { type = "function", name = "..." }
                         test.eq(payload.tool_choice.type, "function")
-                        test.eq(payload.tool_choice.name, "calculate")
-                        test.is_nil(payload.tool_choice["function"])
+                        test.eq(payload.tool_choice["function"].name, "calculate")
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                id = "resp_forced",
-                                status = "completed",
-                                output = {
+                                choices = {
                                     {
-                                        type = "function_call",
-                                        call_id = "call_forced",
-                                        name = "calculate",
-                                        arguments = '{"expression": "forced"}'
+                                        message = {
+                                            tool_calls = {
+                                                {
+                                                    id = "call_forced",
+                                                    type = "function",
+                                                    ["function"] = {
+                                                        name = "calculate",
+                                                        arguments = '{"expression": "forced"}'
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        finish_reason = "tool_calls"
                                     }
                                 },
-                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
+                                usage = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 }
                             }),
                             headers = {}
                         }
@@ -457,7 +390,7 @@ local function define_tests()
                     tool_choice = "calculate"
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
@@ -467,9 +400,20 @@ local function define_tests()
         end)
 
         describe("Streaming Support", function()
-            local function build_mock_stream(chunks)
-                local s = { chunks = chunks, current = 0 }
-                setmetatable(s, {
+            it("should handle streaming responses", function()
+                local stream_chunks = {
+                    'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+                    'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
+                    'data: {"choices":[{"finish_reason":"stop"}]}\n\n',
+                    'data: [DONE]\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
                     __index = {
                         read = function(self)
                             self.current = self.current + 1
@@ -479,17 +423,6 @@ local function define_tests()
                             return nil
                         end
                     }
-                })
-                return s
-            end
-
-            it("should handle streaming responses", function()
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.created","response":{"id":"r1","status":"in_progress"}}\n\n',
-                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[]}}\n\n',
-                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":1,"delta":"Hello"}\n\n',
-                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":2,"delta":" world"}\n\n',
-                    'data: {"type":"response.completed","response":{"id":"r1","status":"completed","usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n'
                 })
 
                 generate_handler._client._ctx = {
@@ -520,7 +453,6 @@ local function define_tests()
                 local mock_streamer = {
                     buffer_content = function(self, chunk) end,
                     send_tool_call = function(self, name, args, id) end,
-                    send_thinking = function(self, chunk) end,
                     send_error = function(self, error, message) end,
                     flush = function(self) end
                 }
@@ -542,26 +474,38 @@ local function define_tests()
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
                 test.eq(response.result.content, "Hello world")
-                test.eq(response.finish_reason, "stop")
-                test.eq(response.tokens.prompt_tokens, 3)
-                test.eq(response.tokens.completion_tokens, 2)
             end)
 
             it("should handle streaming tool calls", function()
-                local mock_stream = build_mock_stream({
-                    'data: {"type":"response.created","response":{"id":"r2","status":"in_progress"}}\n\n',
-                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[]}}\n\n',
-                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":1,"delta":"I will help."}\n\n',
-                    'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_123","name":"calculate","arguments":""}}\n\n',
-                    'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":1,"sequence_number":2,"delta":"{\\"expr\\""}\n\n',
-                    'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":1,"sequence_number":3,"delta":":\\"2+2\\"}"}\n\n',
-                    'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":1,"sequence_number":4,"name":"calculate","arguments":"{\\"expr\\":\\"2+2\\"}"}\n\n',
-                    'data: {"type":"response.completed","response":{"id":"r2","status":"completed","usage":{"input_tokens":5,"output_tokens":4,"total_tokens":9}}}\n\n'
+                local stream_chunks = {
+                    'data: {"choices":[{"delta":{"content":"I will help."}}]}\n\n',
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"calculate"}}]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"expr\\""}}]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"2+2\\"}"}}]}}]}\n\n',
+                    'data: {"choices":[{"finish_reason":"tool_calls"}]}\n\n',
+                    'data: [DONE]\n\n'
+                }
+
+                local mock_stream = {
+                    chunks = stream_chunks,
+                    current = 0
+                }
+
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
                 })
 
                 generate_handler._client._ctx = {
@@ -590,7 +534,6 @@ local function define_tests()
                 local mock_streamer = {
                     buffer_content = function(self, chunk) end,
                     send_tool_call = function(self, name, args, id) end,
-                    send_thinking = function(self, chunk) end,
                     send_error = function(self, error, message) end,
                     flush = function(self) end
                 }
@@ -619,7 +562,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)
@@ -821,7 +764,7 @@ local function define_tests()
                     post = function(url, options)
                         return {
                             status_code = 200,
-                            body = json.encode({}), -- Empty response (no output[])
+                            body = json.encode({}), -- Empty response
                             headers = {}
                         }
                     end
@@ -836,10 +779,10 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                -- Empty/missing output array should yield a server_error from the response mapper
                 test.is_nil(response)
                 test.not_nil(err)
                 test.eq(err:kind(), "Unavailable")
+                test.contains(tostring(err:message()), "Invalid OpenAI response structure")
             end)
         end)
 
@@ -865,23 +808,15 @@ local function define_tests()
 
                 generate_handler._client._http_client = {
                     post = function(url, options)
-                        test.contains(tostring(url), "https://custom.openai.proxy/v1/responses")
+                        test.contains(tostring(url), "https://custom.openai.proxy/v1/chat/completions")
                         test.eq(options.headers["Authorization"], "Bearer custom-key")
                         test.eq(options.headers["OpenAI-Organization"], "org-custom")
 
                         return {
                             status_code = 200,
                             body = json.encode({
-                                id = "resp_ctx",
-                                status = "completed",
-                                output = {
-                                    {
-                                        type = "message",
-                                        role = "assistant",
-                                        content = { { type = "output_text", text = "Response" } }
-                                    }
-                                },
-                                usage = { input_tokens = 5, output_tokens = 3, total_tokens = 8 }
+                                choices = {{ message = { content = "Response" }, finish_reason = "stop" }},
+                                usage = { prompt_tokens = 5, completion_tokens = 3, total_tokens = 8 }
                             }),
                             headers = {}
                         }
@@ -895,7 +830,7 @@ local function define_tests()
                     }
                 }
 
-                local response, err = generate_handler.handler(contract_args)
+                local response = generate_handler.handler(contract_args)
 
                 test.is_true(response.success)
                 assert(response.success)

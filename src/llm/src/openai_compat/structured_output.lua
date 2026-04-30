@@ -15,7 +15,7 @@ local function _generate_schema_name(schema)
     if err then
         return nil, "Failed to generate schema name: " .. tostring(err)
     end
-    return "schema_" .. digest:sub(1, 16), nil
+    return "schema_" .. digest:sub(1,16), nil
 end
 
 local function _validate_schema(schema)
@@ -56,6 +56,7 @@ local function _validate_schema(schema)
                     table.insert(missing_required, prop_name)
                 end
             end
+
             if #missing_required > 0 then
                 table.insert(errs, "Properties must be marked as required: " .. table.concat(missing_required, ", "))
             end
@@ -99,17 +100,12 @@ function structured_output_handler.handler(contract_args)
         schema_name = name
     end
 
-    local instructions = structured_output_handler._mapper.extract_instructions(contract_args.messages)
-    local input_items = structured_output_handler._mapper.map_messages(contract_args.messages, {
-        model = contract_args.model
-    })
-
-    local payload = {
+    local openai_payload = {
         model = contract_args.model,
-        input = input_items,
-        text = {
-            format = {
-                type = "json_schema",
+        messages = contract_args.messages,
+        response_format = {
+            type = "json_schema",
+            json_schema = {
                 name = schema_name,
                 schema = contract_args.schema,
                 strict = true
@@ -117,79 +113,64 @@ function structured_output_handler.handler(contract_args)
         }
     }
 
-    if instructions and instructions ~= "" then
-        payload.instructions = instructions
-    end
-
     local mapped_options = structured_output_handler._mapper.map_options(contract_args.options)
     for key, value in pairs(mapped_options) do
-        payload[key] = value
+        openai_payload[key] = value
     end
 
     local request_options = {
         timeout = contract_args.timeout
     }
 
-    local response, req_err = structured_output_handler._client.request("/responses", payload, request_options)
+    local response, req_err = structured_output_handler._client.request(
+        "/chat/completions",
+        openai_payload,
+        request_options
+    )
 
     if req_err then
         return nil, err:from(req_err):build()
     end
 
-    if not response or not response.output then
+    if not response or not response.choices or #response.choices == 0 then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
-            :message("Invalid response structure from OpenAI Responses API")
+            :message("Invalid response structure from OpenAI")
             :details(response and response.metadata or nil)
             :build()
     end
 
-    local content_text = nil
-    local refusal = nil
-    for _, item in ipairs(response.output) do
-        if item.type == "message" and item.content then
-            for _, part in ipairs(item.content) do
-                if part.type == "output_text" and part.text then
-                    content_text = (content_text or "") .. part.text
-                elseif part.type == "refusal" and part.refusal then
-                    refusal = part.refusal
-                end
-            end
-        end
-    end
-
-    if refusal then
-        return nil, err
-            :kind(output.ERROR_TYPE.CONTENT_FILTER)
-            :message("Request was refused: " .. refusal)
-            :details({ response_id = response.id, refusal = refusal })
-            :build()
-    end
-
-    if not content_text or content_text == "" then
+    local first_choice = response.choices[1]
+    if not first_choice or not first_choice.message then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
-            :message("No content in Responses API response")
-            :details({ response_id = response.id })
+            :message("Invalid choice structure in OpenAI response")
             :build()
     end
 
-    local parsed_content, decode_err = json.decode(tostring(content_text))
+    if first_choice.message.refusal then
+        return nil, err
+            :kind(output.ERROR_TYPE.CONTENT_FILTER)
+            :message("Request was refused: " .. first_choice.message.refusal)
+            :details({ refusal = first_choice.message.refusal })
+            :build()
+    end
+
+    if not first_choice.message.content then
+        return nil, err
+            :kind(output.ERROR_TYPE.SERVER_ERROR)
+            :message("No content in OpenAI response")
+            :build()
+    end
+
+    local parsed_content, decode_err = json.decode(tostring(first_choice.message.content))
     if decode_err then
         return nil, err
             :kind(output.ERROR_TYPE.MODEL_ERROR)
             :message("Model failed to return valid JSON: " .. decode_err)
-            :details({ response_id = response.id, raw_content = content_text })
+            :details({ raw_content = first_choice.message.content })
             :build()
     end
-
-    local has_tool_calls = false
-    for _, item in ipairs(response.output) do
-        if item.type == "function_call" then has_tool_calls = true; break end
-    end
-
-    local meta = response.metadata or {}
-    if response.id then meta.response_id = response.id end
 
     return {
         success = true,
@@ -197,12 +178,8 @@ function structured_output_handler.handler(contract_args)
             data = parsed_content
         },
         tokens = structured_output_handler._mapper.map_tokens(response.usage),
-        finish_reason = structured_output_handler._mapper.map_finish_reason(
-            response.status,
-            has_tool_calls,
-            response.incomplete_details and response.incomplete_details.reason or nil
-        ),
-        metadata = meta
+        finish_reason = structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason),
+        metadata = response.metadata or {}
     }
 end
 

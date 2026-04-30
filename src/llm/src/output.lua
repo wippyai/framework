@@ -1,3 +1,5 @@
+local logger = require("logger")
+
 local output = {}
 
 ---------------------------
@@ -77,32 +79,185 @@ output.ERROR_TYPE = {
 
 -- Map LLM error types to structured error kinds and retryable flags
 output.ERROR_KIND_MAP = {
-    [output.ERROR_TYPE.RATE_LIMIT]      = { kind = "RateLimited", retryable = true },
-    [output.ERROR_TYPE.SERVER_ERROR]    = { kind = "Unavailable",  retryable = true },
-    [output.ERROR_TYPE.TIMEOUT]         = { kind = "Timeout",      retryable = true },
-    [output.ERROR_TYPE.NETWORK_ERROR]   = { kind = "Unavailable",  retryable = true },
-    [output.ERROR_TYPE.INVALID_REQUEST] = { kind = "Invalid",      retryable = false },
-    [output.ERROR_TYPE.AUTHENTICATION]  = { kind = "PermissionDenied", retryable = false },
-    [output.ERROR_TYPE.MODEL_ERROR]     = { kind = "NotFound",     retryable = false },
-    [output.ERROR_TYPE.CONTEXT_LENGTH]  = { kind = "Invalid",      retryable = false },
-    [output.ERROR_TYPE.CONTENT_FILTER]  = { kind = "Invalid",      retryable = false },
+    [output.ERROR_TYPE.RATE_LIMIT]      = { kind = errors.RATE_LIMITED,     retryable = true },
+    [output.ERROR_TYPE.SERVER_ERROR]    = { kind = errors.UNAVAILABLE,      retryable = true },
+    [output.ERROR_TYPE.TIMEOUT]         = { kind = errors.TIMEOUT,          retryable = true },
+    [output.ERROR_TYPE.NETWORK_ERROR]   = { kind = errors.UNAVAILABLE,      retryable = true },
+    [output.ERROR_TYPE.INVALID_REQUEST] = { kind = errors.INVALID,          retryable = false },
+    [output.ERROR_TYPE.AUTHENTICATION]  = { kind = errors.PERMISSION_DENIED, retryable = false },
+    [output.ERROR_TYPE.MODEL_ERROR]     = { kind = errors.NOT_FOUND,        retryable = false },
+    [output.ERROR_TYPE.CONTEXT_LENGTH]  = { kind = errors.INVALID,          retryable = false },
+    [output.ERROR_TYPE.CONTENT_FILTER]  = { kind = errors.INVALID,          retryable = false },
 }
 
--- Build a structured error from an error response table
-function output.to_structured_error(error_response)
-    if not error_response or error_response.success ~= false then
-        return nil
-    end
-    local mapping = output.ERROR_KIND_MAP[error_response.error]
-    local kind = mapping and mapping.kind or "Unknown"
-    local retryable = mapping and mapping.retryable or false
-    return errors.new({
-        message = error_response.error_message or error_response.error or "LLM error",
-        kind = kind,
-        retryable = retryable,
-        details = error_response.metadata,
+type StructuredError = any
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+type ErrorContract = {
+    model: string?,
+    _provider_id: string?,
+}
+type ErrorBuilder = {
+    _operation: string,
+    _provider: string?,
+    _contract: ErrorContract?,
+    _classifier: ClassifyError?,
+    _kind: string?,
+    _message: string?,
+    _details: table?,
+    _http_err: any?,
+    _has_http_err: boolean?,
+    classifier:    (self: ErrorBuilder, fn: ClassifyError) -> ErrorBuilder,
+    with_contract: (self: ErrorBuilder, contract_args: ErrorContract) -> ErrorBuilder,
+    kind:          (self: ErrorBuilder, k: string) -> ErrorBuilder,
+    message:       (self: ErrorBuilder, m: string) -> ErrorBuilder,
+    details:       (self: ErrorBuilder, d: table) -> ErrorBuilder,
+    from:          (self: ErrorBuilder, http_err: any?) -> ErrorBuilder,
+    build:         (self: ErrorBuilder) -> StructuredError,
+}
+type ErrorBuilderFactory = (arg: ErrorContract?) -> ErrorBuilder
+
+-- Internal: turn (kind, message, details) into a stdlib `errors` value
+-- and log at the single observability point.
+local function build_error(kind_type: string?, message: string?, details: table?): StructuredError
+    local mapping = output.ERROR_KIND_MAP[kind_type or output.ERROR_TYPE.SERVER_ERROR] or
+        { kind = errors.UNKNOWN, retryable = false }
+
+    details = details or {}
+    local d = details :: any
+
+    local err = errors.new({
+        message = message or "LLM error",
+        kind = mapping.kind,
+        retryable = mapping.retryable,
+        details = details
     })
+
+    local log = logger:named("llm")
+    log:error("llm provider error", {
+        kind = mapping.kind,
+        retryable = mapping.retryable,
+        provider = d.provider,
+        operation = d.operation,
+        model = d.model,
+        message = message,
+        details = details
+    })
+
+    return err
 end
+
+local ErrorBuilder = {}
+ErrorBuilder.__index = ErrorBuilder
+
+function ErrorBuilder:with_contract(contract_args: ErrorContract): ErrorBuilder
+    local s = self :: any
+    s._contract = contract_args
+    return s :: ErrorBuilder
+end
+
+function ErrorBuilder:classifier(fn: ClassifyError): ErrorBuilder
+    local s = self :: any
+    s._classifier = fn
+    return s :: ErrorBuilder
+end
+
+function ErrorBuilder:kind(k: string): ErrorBuilder
+    local s = self :: any
+    s._kind = k
+    return s :: ErrorBuilder
+end
+
+function ErrorBuilder:message(m: string): ErrorBuilder
+    local s = self :: any
+    s._message = m
+    return s :: ErrorBuilder
+end
+
+function ErrorBuilder:details(d: table): ErrorBuilder
+    local s = self :: any
+    s._details = d
+    return s :: ErrorBuilder
+end
+
+function ErrorBuilder:from(http_err: any?): ErrorBuilder
+    local s = self :: any
+    s._http_err = http_err
+    s._has_http_err = true  -- distinguishes :from(nil) from "never called"
+    return s :: ErrorBuilder
+end
+
+function ErrorBuilder:build(): StructuredError
+    local s = self :: any
+    -- Snapshot per-call state, then reset so the builder is reusable.
+    local kind_type    = s._kind
+    local message      = s._message
+    local details      = s._details
+    local http_err     = s._http_err
+    local has_http_err = s._has_http_err
+
+    s._kind         = nil
+    s._message      = nil
+    s._details      = nil
+    s._http_err     = nil
+    s._has_http_err = false
+
+    local merged_details = {}
+
+    -- 1. Provider-specific classifier on HTTP / transport error if `:from(...)` was called.
+    if has_http_err and s._classifier then
+        local c_kind, c_message, c_details = s._classifier(http_err)
+        kind_type = kind_type or c_kind
+        message   = message   or c_message
+        if c_details then
+            for k, v in pairs(c_details) do merged_details[k] = v end
+        end
+    end
+
+    -- 2. Provider-specific overrides on top.
+    if details then
+        for k, v in pairs(details) do merged_details[k] = v end
+    end
+
+    -- 3. Builder-level context (provider / operation / model from contract).
+    local md = merged_details :: any
+    md.provider  = s._provider
+    md.operation = s._operation
+    if s._contract and s._contract.model then
+        md.model = s._contract.model
+    end
+
+    return build_error(kind_type or output.ERROR_TYPE.SERVER_ERROR, message :: string?, merged_details)
+end
+
+local function builder_factory(operation: string): ErrorBuilderFactory
+    return function(arg: ErrorContract?): ErrorBuilder
+        local a = arg or {}
+        local self = {
+            _operation = operation,
+            _provider = a._provider_id,
+            _contract = a,
+            _classifier = nil,
+            _kind = nil,
+            _message = nil,
+            _details = nil,
+            _http_err = nil,
+            _has_http_err = false,
+        }
+        return setmetatable(self, ErrorBuilder) :: ErrorBuilder
+    end
+end
+
+output.errors = {
+    generate          = builder_factory("generate"),
+    structured_output = builder_factory("structured_output"),
+    embed             = builder_factory("embed"),
+    status            = builder_factory("status"),
+} :: {
+    generate:          ErrorBuilderFactory,
+    structured_output: ErrorBuilderFactory,
+    embed:             ErrorBuilderFactory,
+    status:            ErrorBuilderFactory,
+}
 
 -- Finish/stop reason constants
 output.FINISH_REASON = {

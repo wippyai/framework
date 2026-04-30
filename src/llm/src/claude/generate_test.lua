@@ -11,31 +11,34 @@ local function define_tests()
 
         describe("Contract Validation", function()
             it("should require model parameter", function()
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } }
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Model is required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Model is required")
             end)
 
             it("should require messages parameter", function()
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "claude-3-5-sonnet-20241022"
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Messages are required")
             end)
 
             it("should reject empty messages array", function()
-                local response = generate_handler.handler({
+                local response, err = generate_handler.handler({
                     model = "claude-3-5-sonnet-20241022",
                     messages = {}
                 })
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "Messages are required")
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Messages are required")
             end)
         end)
 
@@ -752,10 +755,11 @@ local function define_tests()
                     tool_choice = "nonexistent_tool"
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "invalid_request")
-                test.contains(response.error_message, "not found")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "not found")
             end)
 
             it("should handle mixed content and tool use blocks", function()
@@ -1021,9 +1025,10 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.contains(response.error_message, "Stream error occurred")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err:message(), "Stream error occurred")
             end)
         end)
 
@@ -1049,10 +1054,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
-                test.eq(response.error_message, "Invalid API key")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.eq(err:message(), "Invalid API key")
             end)
 
             it("should handle rate limit errors", function()
@@ -1076,10 +1082,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "rate_limit_exceeded")
-                test.eq(response.error_message, "Rate limit exceeded")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "RateLimited")
+                test.eq(err:message(), "Rate limit exceeded")
             end)
 
             it("should handle model not found errors", function()
@@ -1103,10 +1110,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "model_error")
-                test.contains(response.error_message, "not found")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "NotFound")
+                test.contains(err:message(), "not found")
             end)
 
             it("should handle server errors", function()
@@ -1127,10 +1135,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.contains(response.error_message, "server error")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.contains(err:message(), "server error")
             end)
 
             it("should handle connection failures", function()
@@ -1151,10 +1160,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
-                test.eq(response.error_message, "Connection failed")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Unavailable")
+                test.eq(err:message(), "Connection failed")
             end)
 
             it("should handle API key missing", function()
@@ -1175,10 +1185,11 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
-                test.contains(response.error_message, "API key")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "PermissionDenied")
+                test.contains(err:message(), "API key")
             end)
 
             it("should handle JSON parsing errors", function()
@@ -1199,9 +1210,10 @@ local function define_tests()
                     }
                 }
 
-                local response = generate_handler.handler(contract_args)
-                test.is_false(response.success)
-                test.contains(response.error_message, "Failed to parse Claude response")
+                local response, err = generate_handler.handler(contract_args)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err:message(), "Failed to parse Claude response")
             end)
         end)
 

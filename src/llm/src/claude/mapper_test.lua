@@ -7,130 +7,89 @@ local test = require("test")
 local function define_tests()
     describe("Claude Mapper", function()
 
-        describe("Error Response Mapping", function()
-            it("should map structured Claude error types correctly", function()
-                local claude_errors = {
-                    {
-                        input = {
-                            error = { type = "invalid_request_error", message = "Bad request" },
-                            request_id = "req_123"
-                        },
-                        expected = {
-                            error = output.ERROR_TYPE.INVALID_REQUEST,
-                            error_message = "Bad request",
-                            request_id = "req_123"
-                        }
-                    },
-                    {
-                        input = {
-                            error = { type = "authentication_error", message = "Invalid API key" }
-                        },
-                        expected = {
-                            error = output.ERROR_TYPE.AUTHENTICATION,
-                            error_message = "Invalid API key"
-                        }
-                    },
-                    {
-                        input = {
-                            error = { type = "rate_limit_error", message = "Rate limit exceeded" }
-                        },
-                        expected = {
-                            error = output.ERROR_TYPE.RATE_LIMIT,
-                            error_message = "Rate limit exceeded"
-                        }
-                    },
-                    {
-                        input = {
-                            error = { type = "overloaded_error", message = "API overloaded" }
-                        },
-                        expected = {
-                            error = output.ERROR_TYPE.SERVER_ERROR,
-                            error_message = "API overloaded"
-                        }
-                    }
+        describe("Error Classification", function()
+            it("should classify structured Claude error types correctly", function()
+                local cases = {
+                    { input = { error = { type = "invalid_request_error", message = "Bad request" } },
+                      kind = output.ERROR_TYPE.INVALID_REQUEST, message = "Bad request" },
+                    { input = { error = { type = "authentication_error", message = "Invalid API key" } },
+                      kind = output.ERROR_TYPE.AUTHENTICATION, message = "Invalid API key" },
+                    { input = { error = { type = "rate_limit_error", message = "Rate limit exceeded" } },
+                      kind = output.ERROR_TYPE.RATE_LIMIT, message = "Rate limit exceeded" },
+                    { input = { error = { type = "overloaded_error", message = "API overloaded" } },
+                      kind = output.ERROR_TYPE.SERVER_ERROR, message = "API overloaded" }
                 }
 
-                for _, case in ipairs(claude_errors) do
-                    local result = mapper.map_error_response(case.input)
-                    test.eq(result.error, case.expected.error)
-                    test.eq(result.error_message, case.expected.error_message)
-                    if case.expected.request_id and result.metadata then
-                        test.eq(result.metadata.request_id or case.input.request_id, case.expected.request_id)
-                    end
+                for _, case in ipairs(cases) do
+                    local k, m = mapper.classify_error(case.input)
+                    test.eq(k, case.kind)
+                    test.eq(m, case.message)
                 end
             end)
 
             it("should fallback to HTTP status codes when structured error is missing", function()
                 local status_cases = {
-                    { status_code = 401, expected = output.ERROR_TYPE.AUTHENTICATION },
-                    { status_code = 404, expected = output.ERROR_TYPE.MODEL_ERROR },
-                    { status_code = 429, expected = output.ERROR_TYPE.RATE_LIMIT },
-                    { status_code = 500, expected = output.ERROR_TYPE.SERVER_ERROR },
-                    { status_code = 999, expected = output.ERROR_TYPE.SERVER_ERROR } -- Unknown status
+                    { status_code = 401, kind = output.ERROR_TYPE.AUTHENTICATION },
+                    { status_code = 404, kind = output.ERROR_TYPE.MODEL_ERROR },
+                    { status_code = 429, kind = output.ERROR_TYPE.RATE_LIMIT },
+                    { status_code = 500, kind = output.ERROR_TYPE.SERVER_ERROR },
+                    { status_code = 999, kind = output.ERROR_TYPE.SERVER_ERROR }
                 }
 
                 for _, case in ipairs(status_cases) do
-                    local result = mapper.map_error_response({
-                        status_code = case.status_code,
-                        message = "Test error"
-                    })
-                    test.eq(result.error, case.expected)
+                    local k = mapper.classify_error({ status_code = case.status_code, message = "Test error" })
+                    test.eq(k, case.kind)
                 end
             end)
 
             it("should handle nil and malformed error objects", function()
-                test.eq(mapper.map_error_response(nil).error, output.ERROR_TYPE.SERVER_ERROR)
-                test.eq(mapper.map_error_response({}).error, output.ERROR_TYPE.SERVER_ERROR)
-                test.eq(mapper.map_error_response({ random_field = "value" }).error, output.ERROR_TYPE.SERVER_ERROR)
+                local k1 = mapper.classify_error(nil); test.eq(k1, output.ERROR_TYPE.SERVER_ERROR)
+                local k2 = mapper.classify_error({}); test.eq(k2, output.ERROR_TYPE.SERVER_ERROR)
+                local k3 = mapper.classify_error({ random_field = "value" }); test.eq(k3, output.ERROR_TYPE.SERVER_ERROR)
             end)
 
-            it("should return structured error as second value", function()
-                local response, err = mapper.map_error_response({
-                    error = { type = "rate_limit_error", message = "Rate limited" }
+            it("should expose status_code and api type in details", function()
+                local _, _, d = mapper.classify_error({
+                    status_code = 401,
+                    error = { type = "authentication_error", message = "Invalid" }
                 })
-                test.eq(response.error, output.ERROR_TYPE.RATE_LIMIT)
-                test.not_nil(err)
-                test.eq(err:kind(), "RateLimited")
-                test.eq(err:retryable(), true)
+                test.eq(d.status_code, 401)
+                test.eq(d.type, "authentication_error")
             end)
+        end)
 
-            it("should mark authentication errors as non-retryable", function()
-                local response, err = mapper.map_error_response({
-                    error = { type = "authentication_error", message = "Invalid key" }
-                })
-                test.eq(response.error, output.ERROR_TYPE.AUTHENTICATION)
-                test.not_nil(err)
+        describe("Error Builder Integration", function()
+            it("should build a structured error with provider context", function()
+                local err = output.errors.generate({ _provider_id = "claude", model = "claude-sonnet" })
+                    :classifier(mapper.classify_error)
+                    :from({ status_code = 401, message = "Invalid API key" })
+                    :build()
+
                 test.eq(err:kind(), "PermissionDenied")
                 test.eq(err:retryable(), false)
+                local d = err:details() :: any
+                test.eq(d.provider, "claude")
+                test.eq(d.operation, "generate")
+                test.eq(d.model, "claude-sonnet")
+                test.eq(d.status_code, 401)
             end)
 
-            it("should mark overloaded as retryable", function()
-                local response, err = mapper.map_error_response({
-                    error = { type = "overloaded_error", message = "API overloaded" }
-                })
-                test.not_nil(err)
-                test.eq(err:kind(), "Unavailable")
-                test.eq(err:retryable(), true)
-            end)
-
-            it("should mark 429 status as retryable", function()
-                local _, err = mapper.map_error_response({
-                    status_code = 429,
-                    message = "Too many requests"
-                })
-                test.not_nil(err)
+            it("should map rate_limit_error to RateLimited (retryable)", function()
+                local err = output.errors.generate({ _provider_id = "claude" })
+                    :classifier(mapper.classify_error)
+                    :from({ error = { type = "rate_limit_error", message = "Rate limited" } })
+                    :build()
                 test.eq(err:kind(), "RateLimited")
                 test.eq(err:retryable(), true)
             end)
 
-            it("should mark 404 as non-retryable", function()
-                local _, err = mapper.map_error_response({
-                    status_code = 404,
-                    message = "Model not found"
-                })
-                test.not_nil(err)
-                test.eq(err:kind(), "NotFound")
-                test.eq(err:retryable(), false)
+            it("should map overloaded_error to Unavailable (retryable)", function()
+                local err = output.errors.generate({ _provider_id = "claude" })
+                    :classifier(mapper.classify_error)
+                    :from({ error = { type = "overloaded_error", message = "Overloaded" } })
+                    :build()
+                test.eq(err:kind(), "Unavailable")
+                test.eq(err:retryable(), true)
             end)
         end)
 
@@ -386,7 +345,7 @@ local function define_tests()
                 test.eq(result.temperature, 0.7)
                 test.eq(result.max_tokens, 1000)
                 test.eq(result.top_p, 0.9)
-                test.eq(result.stop_sequences[1], "STOP")
+                test.eq((result.stop_sequences :: {string})[1], "STOP")
             end)
 
             it("should configure thinking when thinking_effort is provided", function()

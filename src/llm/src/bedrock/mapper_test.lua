@@ -1,4 +1,5 @@
 local mapper = require("mapper")
+local output = require("output")
 local json = require("json")
 
 local function define_tests()
@@ -395,32 +396,40 @@ local function define_tests()
             end)
         end)
 
-        describe("map_error_response", function()
-            it("should map HTTP status to error type", function()
-                local response = mapper.map_error_response({
-                    status_code = 429,
-                    message = "Rate limited"
-                })
-
-                test.is_false(response.success)
-                test.eq(response.error, "rate_limit_exceeded")
-                test.eq(response.error_message, "Rate limited")
+        describe("classify_error", function()
+            it("should classify HTTP status to kind", function()
+                local k, m, d = mapper.classify_error({ status_code = 429, message = "Rate limited" })
+                test.eq(k, output.ERROR_TYPE.RATE_LIMIT)
+                test.eq(m, "Rate limited")
+                test.eq(d.status_code, 429)
             end)
 
-            it("should map auth errors", function()
-                local response = mapper.map_error_response({
-                    status_code = 403,
-                    message = "Access denied"
-                })
-
-                test.is_false(response.success)
-                test.eq(response.error, "authentication_error")
+            it("should classify auth errors", function()
+                local k = mapper.classify_error({ status_code = 403, message = "Access denied" })
+                test.eq(k, output.ERROR_TYPE.AUTHENTICATION)
             end)
 
             it("should handle nil error", function()
-                local response = mapper.map_error_response(nil)
-                test.is_false(response.success)
-                test.eq(response.error, "server_error")
+                local k, m = mapper.classify_error(nil)
+                test.eq(k, output.ERROR_TYPE.SERVER_ERROR)
+                test.eq(m, "Unknown Bedrock error")
+            end)
+        end)
+
+        describe("error builder integration", function()
+            it("should attach provider/operation/model to details via builder", function()
+                local err = output.errors.generate({ _provider_id = "bedrock", model = "claude-bedrock" })
+                    :classifier(mapper.classify_error)
+                    :from({ status_code = 401, message = "Invalid key" })
+                    :build()
+
+                test.eq(err:kind(), "PermissionDenied")
+                test.eq(err:retryable(), false)
+                local d = err:details() :: any
+                test.eq(d.provider, "bedrock")
+                test.eq(d.operation, "generate")
+                test.eq(d.model, "claude-bedrock")
+                test.eq(d.status_code, 401)
             end)
         end)
 
