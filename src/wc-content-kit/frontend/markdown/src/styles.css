@@ -1,0 +1,17 @@
+@import "@wippy-fe/theme/theme-config.css";
+
+.markdown-container {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--p-text-color, #333);
+  line-height: 1.6;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.markdown-empty {
+  color: var(--p-text-muted-color, #999);
+  font-style: italic;
+  text-align: center;
+}
