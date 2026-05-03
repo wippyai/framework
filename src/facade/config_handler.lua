@@ -183,6 +183,7 @@ local function handler()
         iframe_origin = iframe_origin,
         iframe_url = iframe_url,
         login_path = get_req("login_path"),
+        login_redirect_param = non_empty_or_nil(get_req("login_redirect_param")),
         mode = fe_mode,
         module_file = module_file,
 

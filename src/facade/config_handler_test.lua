@@ -12,6 +12,7 @@ local REQ_NAMES: {string} = {
     "host_custom_css", "host_css_variables", "host_icon_sets",
     "children_custom_css", "children_css_variables",
     "app_title", "app_icon", "app_name", "login_path",
+    "login_redirect_param",
     "api_routes", "additional_nav_items", "state_cache",
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts",
@@ -41,6 +42,7 @@ local function setup_registry(overrides: {[string]: string}?)
         app_icon = "wippy:logo",
         app_name = "Wippy AI",
         login_path = "/login.html",
+        login_redirect_param = "",
         api_routes = "{}",
         additional_nav_items = "[]",
         state_cache = "{}",
@@ -239,6 +241,36 @@ local function define_tests()
                 test.eq(#decoded, 2)
                 test.eq(decoded[1], "/a.js")
                 test.eq(decoded[2].src, "/b.js")
+            end)
+        end)
+
+        test.describe("login redirect param", function()
+            test.before_each(function()
+                setup_registry()
+            end)
+
+            test.after_each(function()
+                teardown_registry()
+            end)
+
+            test.it("defaults to empty (feature off)", function()
+                local entry = registry.get(NS .. "login_redirect_param")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "")
+            end)
+
+            test.it("can be set to a custom param name", function()
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                changes:update({
+                    id = NS .. "login_redirect_param",
+                    kind = "ns.requirement",
+                    data = { default = "redirect_to" },
+                })
+                changes:apply()
+
+                local entry = registry.get(NS .. "login_redirect_param")
+                test.eq(entry.data.default, "redirect_to")
             end)
         end)
 
