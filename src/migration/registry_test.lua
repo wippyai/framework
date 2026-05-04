@@ -65,6 +65,36 @@ local function define_tests()
             test.eq(results[3].id, "m:third")
         end)
 
+        test.it("sorts untimestamped migrations by id", function()
+            migration_registry._registry = mock_registry({
+                { id = "keeper.mcp.migrations:migration_06", kind = "function.lua", meta = { type = "migration" } },
+                { id = "keeper.mcp.migrations:migration_01", kind = "function.lua", meta = { type = "migration" } },
+                { id = "keeper.mcp.migrations:migration_02", kind = "function.lua", meta = { type = "migration" } },
+            })
+
+            local results, err = migration_registry.find()
+            test.is_nil(err)
+            test.eq(#results, 3)
+            test.eq(results[1].id, "keeper.mcp.migrations:migration_01")
+            test.eq(results[2].id, "keeper.mcp.migrations:migration_02")
+            test.eq(results[3].id, "keeper.mcp.migrations:migration_06")
+        end)
+
+        test.it("uses id as a timestamp tie-breaker", function()
+            migration_registry._registry = mock_registry({
+                { id = "m:beta", kind = "function.lua", meta = { type = "migration", timestamp = "2024-01-01" } },
+                { id = "m:alpha", kind = "function.lua", meta = { type = "migration", timestamp = "2024-01-01" } },
+                { id = "m:later", kind = "function.lua", meta = { type = "migration", timestamp = "2024-02-01" } },
+            })
+
+            local results, err = migration_registry.find()
+            test.is_nil(err)
+            test.eq(#results, 3)
+            test.eq(results[1].id, "m:alpha")
+            test.eq(results[2].id, "m:beta")
+            test.eq(results[3].id, "m:later")
+        end)
+
         test.it("filters by target_db", function()
             migration_registry._registry = mock_registry({
                 { id = "m:pg", kind = "function.lua", meta = { type = "migration", target_db = "app:db", timestamp = "2024-01-01" } },
