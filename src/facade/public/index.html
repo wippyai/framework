@@ -46,12 +46,34 @@
         }
         var cfg = await res.json();
 
+        function goToLogin() {
+            var loginPath = cfg.login_path || '/login.html';
+            var paramName = cfg.login_redirect_param;
+            if (!paramName) {
+                window.location.href = loginPath;
+                return;
+            }
+            try {
+                var loginUrl = new URL(loginPath, window.location.origin);
+                // Don't recurse: if we are already on the login page, skip the param.
+                if (loginUrl.pathname === window.location.pathname) {
+                    window.location.href = loginPath;
+                    return;
+                }
+                var rel = window.location.pathname + window.location.search + window.location.hash;
+                loginUrl.searchParams.set(paramName, rel);
+                window.location.href = loginUrl.toString();
+            } catch (e) {
+                window.location.href = loginPath;
+            }
+        }
+
         var stored = localStorage.getItem(STORAGE_KEY);
-        if (!stored) { window.location.href = cfg.login_path || '/login.html'; throw new Error('no token'); }
+        if (!stored) { goToLogin(); throw new Error('no token'); }
 
         var token;
         try { token = JSON.parse(stored).token; }
-        catch (e) { window.location.href = cfg.login_path || '/login.html'; throw new Error('bad token'); }
+        catch (e) { goToLogin(); throw new Error('bad token'); }
 
         if (Array.isArray(cfg.extraScripts) && cfg.extraScripts.length) {
             await Promise.all(cfg.extraScripts.map(function (entry) {
@@ -132,8 +154,6 @@
             hostConfig: cfg.hostConfig,
             context: { resourceId: '', resourceType: 'page' },
         }, '#app');
-
-        var loginPath = cfg.login_path || '/login.html';
 
         // Hide overlay when initial route resolves and page starts rendering
         events.on('load', hideOverlay);
@@ -244,13 +264,13 @@
 
         events.on('authExpired', function () {
             localStorage.removeItem(STORAGE_KEY);
-            window.location.href = loginPath;
+            goToLogin();
         });
 
         events.on('error', function (err) {
             console.error('Wippy critical error:', err);
             localStorage.removeItem(STORAGE_KEY);
-            window.location.href = loginPath;
+            goToLogin();
         });
     } catch (err) {
         console.error('Facade initialization failed:', err);

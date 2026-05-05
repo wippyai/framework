@@ -159,6 +159,19 @@ entries:
         path: .default
     default: /login.html
 
+  - name: login_redirect_param
+    kind: ns.requirement
+    meta:
+      description: |
+        Query param name appended to login_path with the current page's
+        relative URL (path + search + hash), so the login flow can return the
+        user to the originally requested page after authentication. Empty
+        disables. Common values: "redirect_to", "next", "return_to".
+    targets:
+      - entry: wippy.facade:login_redirect_param
+        path: .default
+    default: ""
+
   # Theming — global scope (applied to both host and children)
   - name: custom_css
     kind: ns.requirement

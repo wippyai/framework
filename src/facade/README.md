@@ -116,6 +116,7 @@ These accept JSON strings for complex configuration:
 | Requirement | Default | Description |
 |---|---|---|
 | `login_path` | `/login.html` | Path to redirect unauthenticated users (no token in localStorage) |
+| `login_redirect_param` | `""` _(off)_ | Query param name appended to `login_path` carrying the user's current relative URL, so the login flow can return them after auth. Empty disables. See [Post-login redirect](#post-login-redirect). |
 
 ### Theming
 
@@ -204,6 +205,23 @@ Only override what differs from defaults.
       value: "custom:logo"
 ```
 
+### Post-login redirect
+
+Off by default. When enabled, the facade appends the current page's relative URL to `login_path` so the login flow can return the user to where they were after authenticating.
+
+```yaml
+    - name: login_redirect_param
+      value: "redirect_to"
+```
+
+A user opening a deep link like `/c/abc-123` without a valid token will be sent to:
+
+```
+/login.html?redirect_to=%2Fc%2Fabc-123
+```
+
+The login page reads `redirect_to` from the query string and navigates the user there after successful auth.
+
 ### Extra scripts
 
 Inject external `<script>` tags into the facade `index.html` before the Web Host bundle loads. Useful for host-context integrations (analytics, third-party bridges) that need to run in the top-level window, not inside child iframes.
@@ -236,6 +254,7 @@ Scripts are fetched in parallel and awaited before the Web Host bundle is import
   "iframe_origin": "https://web-host.wippy.ai",
   "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.26/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
+  "login_redirect_param": null,
   "env": {
     "APP_API_URL": "http://localhost:8085",
     "APP_AUTH_API_URL": "http://localhost:8085",
