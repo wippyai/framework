@@ -33,7 +33,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.28
+    default: https://web-host.wippy.ai/webcomponents-1.0.29
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -42,7 +42,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_entry_path
         path: .default
-    default: /iframe.html
+    default: /iframe.html?live-yaml-test=1
 
   - name: fe_mode
     kind: ns.requirement
