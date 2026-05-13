@@ -42,7 +42,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_entry_path
         path: .default
-    default: /iframe.html?live-yaml-test=1
+    default: /iframe.html
 
   - name: fe_mode
     kind: ns.requirement
