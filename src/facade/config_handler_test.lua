@@ -115,7 +115,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.26"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.30"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -226,7 +226,7 @@ local function define_tests()
                 changes:apply()
 
                 local entry = registry.get(NS .. "host_config_layout")
-                local decoded, err = json.decode(entry.data.default)
+                local decoded, err = json.decode(entry.data.default :: string)
                 test.is_nil(err)
                 test.not_nil(decoded)
                 test.eq(decoded.layouts.default.direction, "vertical")
