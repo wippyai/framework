@@ -33,7 +33,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.29
+    default: https://web-host.wippy.ai/webcomponents-1.0.27
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -289,6 +289,21 @@ entries:
         path: .default
     default: "{}"
 
+  - name: host_config_layout
+    kind: ns.requirement
+    meta:
+      description: |
+        Managed-layout HostLayoutDeclaration as JSON string. Only relevant
+        when fe_mode = "managed". Top-level keys: layouts (required),
+        breakpoints, panels, floating, modals, services, dragEnabled.
+        Empty (default `{}`) leaves hostConfig.layout unset so the host
+        falls back to its URL-param / parent-SetConfig configuration paths.
+        See gen-2-chat/managed-layout.md for the schema.
+    targets:
+      - entry: wippy.facade:host_config_layout
+        path: .default
+    default: "{}"
+
   - name: axios_defaults
     kind: ns.requirement
     meta:
@@ -297,15 +312,6 @@ entries:
       - entry: wippy.facade:axios_defaults
         path: .default
     default: "{}"
-
-  - name: extra_scripts
-    kind: ns.requirement
-    meta:
-      description: "External scripts injected into facade index.html before the Web Host bundle loads. JSON array of strings (src shorthand) or objects ({\"src\":\"...\",\"async\":true,\"defer\":true,\"type\":\"module\",\"crossorigin\":\"anonymous\",\"integrity\":\"...\"}). e.g. [\"/script.js\",{\"src\":\"https://cdn.example.com/x.js\",\"defer\":true}]"
-    targets:
-      - entry: wippy.facade:extra_scripts
-        path: .default
-    default: "[]"
 
   # Static files
   - name: public_files

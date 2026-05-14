@@ -175,6 +175,17 @@ local function handler()
         host_config.chat = chat_config
     end
 
+    -- Managed-layout HostLayoutDeclaration. Only attached when fe_mode is
+    -- "managed" — compat mode ignores it. Empty/missing decode skips
+    -- the field so the host falls back to its other configuration paths
+    -- (URL `?layout=` param, parent SetConfig postMessage handshake).
+    if fe_mode == "managed" then
+        local layout = non_empty_map_or_nil(get_req_json_any("host_config_layout"))
+        if layout then
+            host_config.layout = layout
+        end
+    end
+
     local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
     local extra_scripts = non_empty_array_or_nil(get_req_json_any("extra_scripts"))
 

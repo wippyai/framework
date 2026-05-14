@@ -1,0 +1,123 @@
+import { p as x, b as f, s as C, q as B, g as T, a as y, _ as s, F as u, l as k, I as V, e as _, D, G as N, z as S } from "./mermaid.core-Jw3znkh4.js";
+import { p as I } from "./chunk-4BX2VUAB-OP5xfQzz.js";
+import { I as $ } from "./chunk-QZHKN3VN-DnDrFfng.js";
+import { p as z } from "./mermaid-parser.core-DQ6c91Zg.js";
+var d = new $(() => ({
+  cnt: 1,
+  stack: [
+    {
+      id: 0,
+      level: -1,
+      name: "/",
+      children: []
+    }
+  ]
+})), A = /* @__PURE__ */ s(() => {
+  d.reset(), S();
+}, "clear"), X = /* @__PURE__ */ s(() => d.records.stack[0], "getRoot"), H = /* @__PURE__ */ s(() => d.records.cnt, "getCount"), L = N.treeView, R = /* @__PURE__ */ s(() => u(L, D().treeView), "getConfig"), W = /* @__PURE__ */ s((e, t) => {
+  for (; e <= d.records.stack[d.records.stack.length - 1].level; )
+    d.records.stack.pop();
+  const a = {
+    id: d.records.cnt++,
+    level: e,
+    name: t,
+    children: []
+  };
+  d.records.stack[d.records.stack.length - 1].children.push(a), d.records.stack.push(a);
+}, "addNode"), E = {
+  clear: A,
+  addNode: W,
+  getRoot: X,
+  getCount: H,
+  getConfig: R,
+  getAccTitle: y,
+  getAccDescription: T,
+  getDiagramTitle: B,
+  setAccDescription: C,
+  setAccTitle: f,
+  setDiagramTitle: x
+}, m = E, F = /* @__PURE__ */ s((e) => {
+  I(e, m), e.nodes.map((t) => m.addNode(t.indent ? parseInt(t.indent) : 0, t.name));
+}, "populate"), M = {
+  parse: /* @__PURE__ */ s(async (e) => {
+    const t = await z("treeView", e);
+    k.debug(t), F(t);
+  }, "parse")
+}, Y = /* @__PURE__ */ s((e, t, a, n, o) => {
+  const c = n.append("text").text(a.name).attr("dominant-baseline", "middle").attr("class", "treeView-node-label"), { height: g, width: r } = c.node().getBBox(), l = g + o.paddingY * 2, i = r + o.paddingX * 2;
+  c.attr("x", e + o.paddingX), c.attr("y", t + l / 2), a.BBox = {
+    x: e,
+    y: t,
+    width: i,
+    height: l
+  };
+}, "positionLabel"), b = /* @__PURE__ */ s((e, t, a, n, o, c) => e.append("line").attr("x1", t).attr("y1", a).attr("x2", n).attr("y2", o).attr("stroke-width", c).attr("class", "treeView-node-line"), "positionLine"), q = /* @__PURE__ */ s((e, t, a) => {
+  let n = 0, o = 0;
+  const c = /* @__PURE__ */ s((r, l, i, h) => {
+    const v = h * (i.rowIndent + i.paddingX);
+    Y(v, n, l, r, i);
+    const { height: p, width: w } = l.BBox;
+    b(
+      r,
+      v - i.rowIndent,
+      n + p / 2,
+      v,
+      n + p / 2,
+      i.lineThickness
+    ), o = Math.max(o, v + w), n += p;
+  }, "drawNode"), g = /* @__PURE__ */ s((r, l = 0) => {
+    c(e, r, a, l), r.children.forEach((p) => {
+      g(p, l + 1);
+    });
+    const { x: i, y: h, height: v } = r.BBox;
+    if (r.children.length) {
+      const { y: p, height: w } = r.children[r.children.length - 1].BBox;
+      b(
+        e,
+        i + a.paddingX,
+        h + v,
+        i + a.paddingX,
+        p + w / 2 + a.lineThickness / 2,
+        a.lineThickness
+      );
+    }
+  }, "processNode");
+  return g(t), { totalHeight: n, totalWidth: o };
+}, "drawTree"), G = /* @__PURE__ */ s((e, t, a, n) => {
+  k.debug(`Rendering treeView diagram
+` + e);
+  const o = n.db, c = o.getRoot(), g = o.getConfig(), r = V(t), l = r.append("g");
+  l.attr("class", "tree-view");
+  const { totalHeight: i, totalWidth: h } = q(l, c, g);
+  r.attr("viewBox", `-${g.lineThickness / 2} 0 ${h} ${i}`), _(r, i, h, g.useMaxWidth);
+}, "draw"), j = {
+  draw: G
+}, J = j, K = {
+  labelFontSize: "16px",
+  labelColor: "black",
+  lineColor: "black"
+}, O = /* @__PURE__ */ s(({
+  treeView: e
+}) => {
+  const { labelFontSize: t, labelColor: a, lineColor: n } = u(
+    K,
+    e
+  );
+  return `
+    .treeView-node-label {
+        font-size: ${t};
+        fill: ${a};
+    }
+    .treeView-node-line {
+        stroke: ${n};
+    }
+    `;
+}, "styles"), P = O, te = {
+  db: m,
+  renderer: J,
+  parser: M,
+  styles: P
+};
+export {
+  te as diagram
+};

@@ -66,7 +66,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.29` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.27` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 
@@ -109,7 +109,6 @@ These accept JSON strings for complex configuration:
 | `allow_additional_tags` | `{}` | `hostConfig.allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
 | `axios_defaults` | `{}` | `axiosDefaults` | HTTP client defaults (e.g. `{"timeout":30000}`) — top-level, not under hostConfig |
-| `extra_scripts` | `[]` | `extraScripts` | External `<script>` tags injected into `index.html` before the Web Host bundle loads. See [Extra scripts](#extra-scripts). |
 
 ### Auth
 
@@ -145,6 +144,36 @@ Three theming scopes control which layers see which styles:
 | `children_css_variables` | `{}` | `theming.children.cssVariables` | CSS variables for children only — override global vars |
 
 > **Merge rules:** Host sees `global + host` merged. Children see `global + children` merged. Host-scope styles never leak to children and vice versa. Icons are only in `global` and `host` scopes (children don't get their own icon sets).
+
+### Managed-layout
+
+| Requirement | Default | Config path | Description |
+|---|---|---|---|
+| `host_config_layout` | `{}` | `hostConfig.layout` | Managed-layout `HostLayoutDeclaration` as JSON string. Only relevant when `fe_mode = "managed"`. Empty (default) leaves `hostConfig.layout` unset, so the host falls back to URL-param / parent-SetConfig configuration paths. See [`gen-2-chat/managed-layout.md`](https://github.com/wippyai/gen-2-chat/blob/webcomponents/managed-layout.md) for the schema. |
+
+Example — minimal 2-panel layout:
+
+```yaml
+    - name: fe_mode
+      value: managed
+    - name: host_config_layout
+      value: |
+        {
+          "layouts": {
+            "default": {
+              "direction": "horizontal",
+              "children": [
+                { "panel": "nav", "size": "240px" },
+                { "panel": "main", "size": "1fr", "main": true }
+              ]
+            }
+          },
+          "panels": {
+            "nav":  { "kind": "builtin", "id": "@HOST/nav-sidebar" },
+            "main": { "kind": "page",    "id": "home", "route": "/" }
+          }
+        }
+```
 
 ## Usage
 
@@ -204,37 +233,15 @@ Only override what differs from defaults.
       value: "custom:logo"
 ```
 
-### Extra scripts
-
-Inject external `<script>` tags into the facade `index.html` before the Web Host bundle loads. Useful for host-context integrations (analytics, third-party bridges) that need to run in the top-level window, not inside child iframes.
-
-Each entry is either a string (shorthand for `{ src }`) or an object with any of: `src` (required), `async`, `defer`, `type`, `noModule`, `crossorigin`, `integrity`.
-
-```yaml
-    - name: extra_scripts
-      value: '["/bridge.js"]'
-```
-
-Object form:
-
-```yaml
-    - name: extra_scripts
-      value: '[{"src":"/bridge.js"},{"src":"https://cdn.example.com/analytics.js","defer":true}]'
-```
-
-Scripts are fetched in parallel and awaited before the Web Host bundle is imported, so any globals they define are available to the bundle. Load failures are logged to `console.warn` and do NOT block app startup.
-
-> **Security:** entries come from `ns.requirement` defaults — i.e. from the application owner, not from end users — so arbitrary URLs in this list are trusted. Still, prefer `integrity` hashes for third-party CDN scripts.
-
 ## Config Response
 
 `GET /api/public/facade/config` returns (wippy-context-2.0 format):
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.29",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.27",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.29/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.27/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "env": {
     "APP_API_URL": "http://localhost:8085",
@@ -260,8 +267,7 @@ Scripts are fetched in parallel and awaited before the Web Host bundle is import
     "hideNavBar": false,
     "disableRightPanel": false,
     "hideSessionSelector": false
-  },
-  "extraScripts": null
+  }
 }
 ```
 
