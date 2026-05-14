@@ -109,6 +109,7 @@ These accept JSON strings for complex configuration:
 | `allow_additional_tags` | `{}` | `hostConfig.allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
 | `axios_defaults` | `{}` | `axiosDefaults` | HTTP client defaults (e.g. `{"timeout":30000}`) — top-level, not under hostConfig |
+| `extra_scripts` | `[]` | `extraScripts` | External `<script>` tags injected into `index.html` before the Web Host bundle loads. See [Extra scripts](#extra-scripts). |
 
 ### Auth
 
@@ -233,6 +234,28 @@ Only override what differs from defaults.
       value: "custom:logo"
 ```
 
+### Extra scripts
+
+Inject external `<script>` tags into the facade `index.html` before the Web Host bundle loads. Useful for host-context integrations (analytics, third-party bridges) that need to run in the top-level window, not inside child iframes.
+
+Each entry is either a string (shorthand for `{ src }`) or an object with any of: `src` (required), `async`, `defer`, `type`, `noModule`, `crossorigin`, `integrity`.
+
+```yaml
+    - name: extra_scripts
+      value: '["/bridge.js"]'
+```
+
+Object form:
+
+```yaml
+    - name: extra_scripts
+      value: '[{"src":"/bridge.js"},{"src":"https://cdn.example.com/analytics.js","defer":true}]'
+```
+
+Scripts are fetched in parallel and awaited before the Web Host bundle is imported, so any globals they define are available to the bundle. Load failures are logged to `console.warn` and do NOT block app startup.
+
+> **Security:** entries come from `ns.requirement` defaults — i.e. from the application owner, not from end users — so arbitrary URLs in this list are trusted. Still, prefer `integrity` hashes for third-party CDN scripts.
+
 ## Config Response
 
 `GET /api/public/facade/config` returns (wippy-context-2.0 format):
@@ -267,7 +290,8 @@ Only override what differs from defaults.
     "hideNavBar": false,
     "disableRightPanel": false,
     "hideSessionSelector": false
-  }
+  },
+  "extraScripts": null
 }
 ```
 

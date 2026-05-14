@@ -14,7 +14,7 @@ local REQ_NAMES: {string} = {
     "app_title", "app_icon", "app_name", "login_path",
     "api_routes", "additional_nav_items", "state_cache",
     "allow_additional_tags", "chat", "axios_defaults",
-    "host_config_layout",
+    "extra_scripts", "host_config_layout",
 }
 
 local function setup_registry(overrides: {[string]: string}?)
@@ -47,6 +47,7 @@ local function setup_registry(overrides: {[string]: string}?)
         allow_additional_tags = "{}",
         chat = "{}",
         axios_defaults = "{}",
+        extra_scripts = "[]",
         host_config_layout = "{}",
     }
 
@@ -231,6 +232,40 @@ local function define_tests()
                 test.eq(decoded.layouts.default.direction, "vertical")
                 test.eq(decoded.panels.main.kind, "page")
                 test.eq(decoded.panels.main.id, "home")
+            end)
+        end)
+
+        test.describe("extra scripts", function()
+            test.it("parses string shorthand as src", function()
+                local raw = '["/bridge.js"]'
+                local decoded, err = json.decode(raw)
+                test.is_nil(err)
+                test.eq(decoded[1], "/bridge.js")
+            end)
+
+            test.it("parses object form with attributes", function()
+                local raw = '[{"src":"https://cdn.example.com/x.js","defer":true,"type":"module"}]'
+                local decoded, err = json.decode(raw)
+                test.is_nil(err)
+                test.eq(decoded[1].src, "https://cdn.example.com/x.js")
+                test.is_true(decoded[1].defer)
+                test.eq(decoded[1].type, "module")
+            end)
+
+            test.it("empty array results in nil (omitted from config)", function()
+                local raw = '[]'
+                local decoded, err = json.decode(raw)
+                test.is_nil(err)
+                test.eq(#decoded, 0)
+            end)
+
+            test.it("mixed string and object entries", function()
+                local raw = '["/a.js",{"src":"/b.js","defer":true}]'
+                local decoded, err = json.decode(raw)
+                test.is_nil(err)
+                test.eq(#decoded, 2)
+                test.eq(decoded[1], "/a.js")
+                test.eq(decoded[2].src, "/b.js")
             end)
         end)
 

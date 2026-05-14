@@ -313,6 +313,15 @@ entries:
         path: .default
     default: "{}"
 
+  - name: extra_scripts
+    kind: ns.requirement
+    meta:
+      description: "External scripts injected into facade index.html before the Web Host bundle loads. JSON array of strings (src shorthand) or objects ({\"src\":\"...\",\"async\":true,\"defer\":true,\"type\":\"module\",\"crossorigin\":\"anonymous\",\"integrity\":\"...\"}). e.g. [\"/script.js\",{\"src\":\"https://cdn.example.com/x.js\",\"defer\":true}]"
+    targets:
+      - entry: wippy.facade:extra_scripts
+        path: .default
+    default: "[]"
+
   # Static files
   - name: public_files
     kind: fs.directory
