@@ -49,6 +49,30 @@ entries:
       func: list_components
       method: GET
       path: /components/list
+    - name: find_by_tag
+      kind: function.lua
+      meta:
+        comment: Resolves a custom-element tag name to its registered view.component metadata
+        description: View component tag-name lookup endpoint
+        router: api_router
+      source: file://find_by_tag.lua
+      imports:
+        component_registry: wippy.views:component_registry
+      method: handler
+      modules:
+        - http
+      pool:
+        size: 4
+        workers: 4
+    - name: find_by_tag.endpoint
+      kind: http.endpoint
+      meta:
+        comment: Endpoint that resolves a tag_name to a single view.component
+        description: View component by-tag lookup endpoint
+        router: api_router
+      func: find_by_tag
+      method: GET
+      path: /components/by-tag/{tag}
     - name: render
       kind: function.lua
       meta:

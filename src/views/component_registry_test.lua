@@ -82,6 +82,7 @@ local function setup_components()
             secure = false,
             public = true,
             announced = true,
+            tag_name = "test-widget",
             url = "https://cdn.example.com/widget/",
         },
     })
@@ -211,6 +212,30 @@ local function define_tests()
             local page, err = page_registry.get(NS .. "test_home")
             test.is_nil(err)
             test.eq(page.entry_point, "index.html")
+        end)
+
+        test.it("find_by_tag_name returns the component for a known tag", function()
+            local comp, err = component_registry.find_by_tag_name("test-widget")
+            test.is_nil(err)
+            test.not_nil(comp)
+            test.eq(comp.id, NS .. "test_comp_widget")
+            test.eq(comp.tag_name, "test-widget")
+        end)
+
+        test.it("find_by_tag_name returns nil + error for unknown tag", function()
+            local comp, err = component_registry.find_by_tag_name("no-such-tag")
+            test.is_nil(comp)
+            test.not_nil(err)
+        end)
+
+        test.it("find_by_tag_name requires non-empty tag", function()
+            local comp1, err1 = component_registry.find_by_tag_name(nil)
+            test.is_nil(comp1)
+            test.not_nil(err1)
+
+            local comp2, err2 = component_registry.find_by_tag_name("")
+            test.is_nil(comp2)
+            test.not_nil(err2)
         end)
 
         test.it("find_all sorts by name", function()

@@ -85,6 +85,31 @@ function components.get(component_id)
     return extract_component_info(entry)
 end
 
+-- Find a single view.component by its meta.tag_name. Returns the first match
+-- (registry tag_name SHOULD be unique across announced components, but the
+-- registry does not enforce uniqueness — caller must accept first-wins).
+-- Returns nil + error string if missing arg, query error, or no match.
+function components.find_by_tag_name(tag_name)
+    if not tag_name or tag_name == "" then
+        return nil, "Tag name is required"
+    end
+
+    local entries, err = registry.find({
+        ["meta.type"] = "view.component",
+        ["meta.tag_name"] = tag_name,
+    })
+
+    if err then
+        return nil, "Failed to query registry: " .. tostring(err)
+    end
+
+    if not entries or #entries == 0 then
+        return nil, "No view.component registered for tag: " .. tag_name
+    end
+
+    return extract_component_info(entries[1])
+end
+
 -- Resolve a component URL to an absolute base URL with trailing slash.
 -- When base_path is set, it is appended to the URL to form the project root.
 -- Entry point paths are relative to this resolved base.
