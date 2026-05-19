@@ -15,7 +15,7 @@ local REQ_NAMES: {string} = {
     "login_redirect_param",
     "api_routes", "additional_nav_items", "state_cache",
     "allow_additional_tags", "chat", "axios_defaults",
-    "extra_scripts",
+    "extra_scripts", "host_config_layout",
 }
 
 local function setup_registry(overrides: {[string]: string}?)
@@ -50,6 +50,7 @@ local function setup_registry(overrides: {[string]: string}?)
         chat = "{}",
         axios_defaults = "{}",
         extra_scripts = "[]",
+        host_config_layout = "{}",
     }
 
     if overrides then
@@ -116,7 +117,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.26"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.30"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -207,6 +208,32 @@ local function define_tests()
 
                 entry = registry.get(NS .. "history_mode")
                 test.eq(entry.data.default, "hash")
+            end)
+
+            test.it("host_config_layout requirement defaults to empty JSON object", function()
+                local entry = registry.get(NS .. "host_config_layout")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "{}")
+            end)
+
+            test.it("host_config_layout decodes a valid HostLayoutDeclaration JSON", function()
+                local layout_json = '{"layouts":{"default":{"direction":"vertical","children":[{"panel":"main","size":"1fr"}]}},"panels":{"main":{"kind":"page","id":"home"}}}'
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                changes:update({
+                    id = NS .. "host_config_layout",
+                    kind = "ns.requirement",
+                    data = { default = layout_json },
+                })
+                changes:apply()
+
+                local entry = registry.get(NS .. "host_config_layout")
+                local decoded, err = json.decode(entry.data.default :: string)
+                test.is_nil(err)
+                test.not_nil(decoded)
+                test.eq(decoded.layouts.default.direction, "vertical")
+                test.eq(decoded.panels.main.kind, "page")
+                test.eq(decoded.panels.main.id, "home")
             end)
         end)
 

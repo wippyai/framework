@@ -20,6 +20,10 @@ entries:
           path: .meta.router
         - entry: wippy.views.api:list_components.endpoint
           path: .meta.router
+        - entry: wippy.views.api:find_by_tag
+          path: .meta.router
+        - entry: wippy.views.api:find_by_tag.endpoint
+          path: .meta.router
         - entry: wippy.views.api:render
           path: .meta.router
         - entry: wippy.views.api:render.endpoint

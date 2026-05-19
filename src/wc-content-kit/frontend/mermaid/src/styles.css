@@ -1,0 +1,23 @@
+@import "@wippy-fe/theme/theme-config.css";
+
+.mermaid-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-error {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--p-red-500, #ef4444);
+  text-align: center;
+  font-size: 14px;
+}

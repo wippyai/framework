@@ -33,7 +33,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.26
+    default: https://web-host.wippy.ai/webcomponents-1.0.30
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -299,6 +299,21 @@ entries:
       description: "Chat config as JSON (e.g. {\"convertPasteToFile\":{\"enabled\":true,\"minFileSize\":1024,\"allowHtml\":false}})"
     targets:
       - entry: wippy.facade:chat
+        path: .default
+    default: "{}"
+
+  - name: host_config_layout
+    kind: ns.requirement
+    meta:
+      description: |
+        Managed-layout HostLayoutDeclaration as JSON string. Only relevant
+        when fe_mode = "managed". Top-level keys: layouts (required),
+        breakpoints, panels, floating, modals, services, dragEnabled.
+        Empty (default `{}`) leaves hostConfig.layout unset so the host
+        falls back to its URL-param / parent-SetConfig configuration paths.
+        See gen-2-chat/managed-layout.md for the schema.
+    targets:
+      - entry: wippy.facade:host_config_layout
         path: .default
     default: "{}"
 
