@@ -95,6 +95,117 @@ local function define_tests()
             test.eq(results[3].id, "m:later")
         end)
 
+        test.it("orders untimestamped migrations identically across shuffled inputs", function()
+            -- gopher-lua's table.sort is not stable. Without the id tie-break,
+            -- migration_NN entries without `meta.timestamp` arrived in a
+            -- different order on each process restart because the comparator
+            -- always returned false and the underlying Go sort.Slice picked
+            -- whatever permutation the hash seed produced. This regression
+            -- guard rebuilds the input in 100 distinct permutations and
+            -- asserts the output is byte-identical.
+            local canonical_ids = {
+                "keeper.mcp.migrations:migration_01",
+                "keeper.mcp.migrations:migration_02",
+                "keeper.mcp.migrations:migration_03",
+                "keeper.mcp.migrations:migration_04",
+                "keeper.mcp.migrations:migration_05",
+                "keeper.mcp.migrations:migration_06",
+            }
+            local expected_order = {}
+            for i, id in ipairs(canonical_ids) do
+                expected_order[i] = id
+            end
+
+            for seed = 1, 100 do
+                math.randomseed(seed)
+                local shuffled = {}
+                for i, id in ipairs(canonical_ids) do
+                    shuffled[i] = id
+                end
+                for i = #shuffled, 2, -1 do
+                    local j = math.random(i)
+                    shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+                end
+
+                local entries = {}
+                for _, id in ipairs(shuffled) do
+                    table.insert(entries, {
+                        id = id,
+                        kind = "function.lua",
+                        meta = { type = "migration" },
+                    })
+                end
+
+                migration_registry._registry = mock_registry(entries)
+                local results, err = migration_registry.find()
+                test.is_nil(err)
+                test.eq(#results, #expected_order)
+                for i, want in ipairs(expected_order) do
+                    test.eq(results[i].id, want)
+                end
+            end
+        end)
+
+        test.it("orders timestamp-tied migrations identically across shuffled inputs", function()
+            -- Mixed scenario: some entries share a timestamp, others have
+            -- unique timestamps, others have no timestamp. The sort must
+            -- order primarily by timestamp ("" sorting first), with id as
+            -- the deterministic secondary key. Shuffle the input across 100
+            -- seeds; the output must never differ.
+            local canonical = {
+                { id = "m:no_ts_a",   meta = { type = "migration" } },
+                { id = "m:no_ts_b",   meta = { type = "migration" } },
+                { id = "m:tie_alpha", meta = { type = "migration", timestamp = "2024-02-01" } },
+                { id = "m:tie_beta",  meta = { type = "migration", timestamp = "2024-02-01" } },
+                { id = "m:tie_gamma", meta = { type = "migration", timestamp = "2024-02-01" } },
+                { id = "m:single",    meta = { type = "migration", timestamp = "2024-03-15" } },
+            }
+            for _, entry in ipairs(canonical) do
+                entry.kind = "function.lua"
+            end
+
+            local function deep_copy(t)
+                local out = {}
+                for k, v in pairs(t) do
+                    if type(v) == "table" then
+                        out[k] = deep_copy(v)
+                    else
+                        out[k] = v
+                    end
+                end
+                return out
+            end
+
+            -- Build the expected order: no timestamp first (sorted by id),
+            -- then unique-timestamp groups (sorted by id), then the lone
+            -- later timestamp.
+            local expected_ids = {
+                "m:no_ts_a", "m:no_ts_b",
+                "m:tie_alpha", "m:tie_beta", "m:tie_gamma",
+                "m:single",
+            }
+
+            for seed = 1, 100 do
+                math.randomseed(seed * 7919)
+                local shuffled = {}
+                for i, entry in ipairs(canonical) do
+                    shuffled[i] = deep_copy(entry)
+                end
+                for i = #shuffled, 2, -1 do
+                    local j = math.random(i)
+                    shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+                end
+
+                migration_registry._registry = mock_registry(shuffled)
+                local results, err = migration_registry.find()
+                test.is_nil(err)
+                test.eq(#results, #expected_ids)
+                for i, want in ipairs(expected_ids) do
+                    test.eq(results[i].id, want)
+                end
+            end
+        end)
+
         test.it("filters by target_db", function()
             migration_registry._registry = mock_registry({
                 { id = "m:pg", kind = "function.lua", meta = { type = "migration", target_db = "app:db", timestamp = "2024-01-01" } },
