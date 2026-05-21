@@ -1,10 +1,12 @@
 import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
+import { wippyComponentPlugin } from '@wippy-fe/vite-plugin'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [
     vue(),
+    wippyComponentPlugin(),
   ],
   build: {
     target: 'esnext',

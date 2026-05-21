@@ -1,6 +1,6 @@
 {
   "name": "@wippy/wc-mermaid",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "specification": "wippy-component-1.0",
   "title": "Mermaid Diagram",
   "description": "Auto-registered Mermaid diagram renderer shipped by the wippy.wc-content-kit module. Tag: <wippy-mermaid>.",
@@ -11,9 +11,9 @@
     "package.json"
   ],
   "dependencies": {
-    "@wippy-fe/theme": "^0.0.26",
-    "@wippy-fe/webcomponent-core": "^0.0.26",
-    "@wippy-fe/webcomponent-vue": "^0.0.26",
+    "@wippy-fe/theme": "^0.0.32",
+    "@wippy-fe/webcomponent-core": "^0.0.32",
+    "@wippy-fe/webcomponent-vue": "^0.0.32",
     "beautiful-mermaid": "latest",
     "mermaid": "^11"
   },
@@ -21,7 +21,8 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vitejs/plugin-vue": "^5.0.0",
-    "@wippy-fe/proxy": "^0.0.26",
+    "@wippy-fe/vite-plugin": "^0.0.32",
+    "@wippy-fe/proxy": "^0.0.32",
     "eslint": "^8.57.0",
     "eslint-plugin-vue": "^9.0.0",
     "typescript": "^5.0.0",
@@ -31,7 +32,7 @@
     "vue-tsc": "^2.0.0"
   },
   "peerDependencies": {
-    "@wippy-fe/proxy": "^0.0.26",
+    "@wippy-fe/proxy": "^0.0.32",
     "vue": "^3.5.0"
   },
   "wippy": {
