@@ -4,8 +4,9 @@ local env = require("env")
 
 type ComponentInfo = {
     id: string,
-    name: string,
-    title: string,
+    name: string?,
+    title: string?,
+    description: string?,
     tag_name: string?,
     base_path: string?,
     entry_point: string?,
@@ -24,11 +25,24 @@ local function extract_component_info(entry)
     local meta = entry.meta
     return {
         id = entry.id,
-        name = meta.name or "",
-        title = meta.title or "",
+        -- Raw YAML values (may be nil when omitted). Defaults are applied
+        -- by the projection's final-fallback chain, NOT here — empty string
+        -- is truthy in Lua and would prevent the bundled-meta fallback
+        -- from running.
+        name = meta.name,
+        title = meta.title,
+        description = meta.description,
         tag_name = meta.tag_name,
         base_path = meta.base_path,
-        entry_point = meta.entry_point or "index.js",
+        -- Raw YAML entry_point (may be nil when omitted). The legacy
+        -- ComponentResponse shape expected "index.js" as a default — that
+        -- default is now applied by callers (find_by_tag / list_components)
+        -- via bundled_meta.project_component_response's fallback chain, NOT
+        -- here. Keeping it raw at this layer is what makes YAML-first
+        -- priority work — a missing YAML field MUST be distinguishable
+        -- from a YAML field with the default value, so the bundled
+        -- wippy-meta.json's wippy.path / browser can fill in.
+        entry_point = meta.entry_point,
         auto_register = meta.auto_register or false,
         secure = meta.secure or false,
         announced = meta.announced or meta.public or false,

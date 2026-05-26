@@ -119,8 +119,12 @@ local function extract_page_info(entry)
 
     local info = {
         id = entry.id,
-        name = meta.name or "",
-        title = meta.title or "",
+        -- Raw YAML values (may be nil when omitted). Defaults belong to the
+        -- projection layer (`bundled_meta.project_page_response`) so that
+        -- `name or w.name or meta.name` actually falls through. Lua "" is
+        -- truthy and would block the bundled-meta fallback chain.
+        name = meta.name,
+        title = meta.title,
         icon = meta.icon or "",
         order = meta.order or 9999,
         group = meta.group or "",
@@ -197,8 +201,11 @@ function pages.get(page_id)
 
     local page = {
         id = entry.id,
-        name = entry.meta.name or "",
-        title = entry.meta.title or "",
+        -- Raw YAML values (may be nil when omitted). Same rationale as
+        -- extract_page_info — the projection's `or` chain depends on nil
+        -- propagation. "" is truthy in Lua and would block bundled fallback.
+        name = entry.meta.name,
+        title = entry.meta.title,
         icon = entry.meta.icon or "",
         order = entry.meta.order or 9999,
         group = entry.meta.group or "",
@@ -242,11 +249,16 @@ function pages.get(page_id)
         page.base_path = entry.meta.base_path
         page.proxy = build_proxy(entry.data and entry.data.proxy)
 
-        local default_entry_point = "index.html"
-        if meta_type == "view.component" then
-            default_entry_point = "index.js"
-        end
-        page.entry_point = entry.meta.entry_point or default_entry_point
+        -- Raw YAML entry_point (may be nil when omitted). Callers that need
+        -- a default-filled value should compute it at their layer:
+        --   - synthesize_from_registry (legacy path) applies the historical
+        --     defaults (index.html for view.page, index.js for view.component)
+        --     to preserve pre-0.4.32 wire compatibility.
+        --   - bundled_meta projection treats nil as "no YAML opinion" so the
+        --     bundled wippy.path / browser field can fill in. This is what
+        --     makes YAML-first priority work — a missing YAML field MUST be
+        --     distinguishable from a YAML field with the default value.
+        page.entry_point = entry.meta.entry_point
     end
 
     return page

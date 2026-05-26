@@ -196,10 +196,14 @@ local function define_tests()
             test.eq(comp.url, "https://cdn.example.com/widget/")
         end)
 
-        test.it("defaults entry_point to index.js", function()
+        test.it("returns nil entry_point when YAML omits it (default applied at projection layer)", function()
+            -- Defaults moved from the registry layer to bundled_meta.project_*
+            -- so the projection's YAML-first `or` chain works correctly. Lua
+            -- `""` is truthy, so applying a string default here would
+            -- short-circuit the bundled-meta fallback. Raw nil propagates.
             local comp, err = component_registry.get(NS .. "test_comp_widget")
             test.is_nil(err)
-            test.eq(comp.entry_point, "index.js")
+            test.is_nil(comp.entry_point)
         end)
 
         test.it("respects custom entry_point", function()
@@ -208,10 +212,14 @@ local function define_tests()
             test.eq(comp.entry_point, "main.js")
         end)
 
-        test.it("page defaults entry_point to index.html", function()
+        test.it("page returns nil entry_point when YAML omits it (default applied at projection layer)", function()
+            -- Same rationale as the component-side test above. The
+            -- `index.html` default for pages now lives in
+            -- `bundled_meta.project_page_response`, not in
+            -- `page_registry.get`.
             local page, err = page_registry.get(NS .. "test_home")
             test.is_nil(err)
-            test.eq(page.entry_point, "index.html")
+            test.is_nil(page.entry_point)
         end)
 
         test.it("find_by_tag_name returns the component for a known tag", function()
