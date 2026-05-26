@@ -153,6 +153,33 @@ local function define_tests()
             end
         end)
 
+        test.it("should filter search results by origin_id as array", function()
+            local query_embedding = embedding_1
+
+            local results, err = embedding_repo.search_by_embedding(query_embedding, {
+                origin_id = { origin_id_1, origin_id_2 }
+            })
+
+            test.is_nil(err)
+            test.not_nil(results)
+
+            for _, result in ipairs(results) do
+                local matches = (result.origin_id == origin_id_1) or (result.origin_id == origin_id_2)
+                test.is_true(matches)
+            end
+
+            results, err = embedding_repo.search_by_embedding(query_embedding, {
+                origin_id = { origin_id_1 }
+            })
+
+            test.is_nil(err)
+            test.not_nil(results)
+
+            for _, result in ipairs(results) do
+                test.eq(result.origin_id, origin_id_1)
+            end
+        end)
+
         test.it("should filter search results by content_type", function()
             local query_embedding = embedding_1
 
@@ -279,11 +306,12 @@ local function define_tests()
             test.is_true(delete_result.deleted)
             test.ok(delete_result.count > 0)
 
-            local results, get_err = embedding_repo.get_by_origin(origin_id_2)
-            test.is_nil(get_err)
-            test.eq(#results, 0)
+            -- Verify they're gone
+            local results, err = embedding_repo.get_by_origin(origin_id_2)
+            expect(err).to_be_nil()
+            expect(#results).to_equal(0)
         end)
     end)
 end
 
-return { run = test.run_cases(define_tests) }
+return test.run_cases(define_tests)
