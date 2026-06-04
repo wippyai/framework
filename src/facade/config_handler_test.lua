@@ -5,12 +5,13 @@ local registry = require("registry")
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "session_type",
+    "fe_facade_url", "fe_entry_path", "fe_mode", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel", "hide_session_selector",
     "custom_css", "css_variables", "icon_sets",
     "host_custom_css", "host_css_variables", "host_icon_sets",
     "children_custom_css", "children_css_variables",
+    "content_fs",
     "app_title", "app_icon", "app_name", "login_path",
     "login_redirect_param",
     "api_routes", "additional_nav_items", "state_cache",
@@ -22,6 +23,7 @@ local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
         fe_facade_url = "https://front.wippy.ai",
         fe_entry_path = "/iframe.html",
+        fe_mode = "compat",
         session_type = "non-persistent",
         history_mode = "hash",
         show_admin = "true",
@@ -38,6 +40,7 @@ local function setup_registry(overrides: {[string]: string}?)
         host_icon_sets = "{}",
         children_custom_css = "",
         children_css_variables = "{}",
+        content_fs = "",
         app_title = "Wippy",
         app_icon = "wippy:logo",
         app_name = "Wippy AI",

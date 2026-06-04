@@ -2,27 +2,16 @@ local http = require("http")
 local registry = require("registry")
 local json = require("json")
 local env = require("env")
+local theming = require("theming_helpers")
 
 local NS = "wippy.facade:"
 
 local function get_req(name: string): string
-    local entry, err = registry.get(NS .. name)
+    local entry, _ = registry.get(NS .. name)
     if entry and entry.data then
         return entry.data.default or ""
     end
     return ""
-end
-
-local function get_req_json(name: string): {[string]: string}
-    local raw = get_req(name)
-    if raw == "" then
-        return {}
-    end
-    local val, err = json.decode(raw)
-    if err then
-        return {}
-    end
-    return (val :: {[string]: string}) or {}
 end
 
 local function get_req_json_any(name: string): {[string]: any}
@@ -66,10 +55,11 @@ local function non_empty_array_or_nil(a: any): {any}?
 end
 
 -- Build a theming scope from requirement name prefixes.
--- Each scope can have: customCSS, cssVariables, iconSets.
-local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?): {[string]: any}?
-    local custom_css = non_empty_or_nil(get_req(css_req))
-    local css_vars = non_empty_map_or_nil(get_req_json(vars_req))
+-- file_sys is optional: when set, "file://path" values are resolved to file content.
+local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?, file_sys: any): {[string]: any}?
+    local custom_css = non_empty_or_nil(theming.resolve_css(get_req(css_req), file_sys))
+    local css_vars = non_empty_map_or_nil(theming.resolve_json(get_req(vars_req), file_sys) :: {[string]: any})
+    -- icon_sets are always inline JSON blobs; file:// refs are not expected here
     local icon_sets = icon_sets_req and non_empty_map_or_nil(get_req_json_any(icon_sets_req)) or nil
 
     if not custom_css and not css_vars and not icon_sets then
@@ -115,14 +105,17 @@ local function handler()
     local api_url = env.get("PUBLIC_API_URL") or ""
     local ws_url = derive_ws_url(api_url)
 
+    -- Optional filesystem for resolving file:// references in CSS/JSON requirements.
+    local file_sys = theming.get_fs(get_req("content_fs"))
+
     -- Theming: three scopes (global, host, children)
-    local global_scope = build_theming_scope("custom_css", "css_variables", "icon_sets")
-    local host_scope = build_theming_scope("host_custom_css", "host_css_variables", "host_icon_sets")
+    local global_scope = build_theming_scope("custom_css", "css_variables", "icon_sets", file_sys)
+    local host_scope = build_theming_scope("host_custom_css", "host_css_variables", "host_icon_sets", file_sys)
     local children_scope: {[string]: any}? = nil
 
     -- Children scope has no icons — only CSS
-    local children_css = non_empty_or_nil(get_req("children_custom_css"))
-    local children_vars = non_empty_map_or_nil(get_req_json("children_css_variables"))
+    local children_css = non_empty_or_nil(theming.resolve_css(get_req("children_custom_css"), file_sys))
+    local children_vars = non_empty_map_or_nil(theming.resolve_json(get_req("children_css_variables"), file_sys) :: {[string]: any})
     if children_css or children_vars then
         children_scope = {
             customCSS = children_css,
