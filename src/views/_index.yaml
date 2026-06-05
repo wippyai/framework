@@ -214,6 +214,36 @@ entries:
       source: file://resource_registry.lua
       modules:
         - registry
+    - name: bundled_meta
+      kind: library.lua
+      meta:
+        comment: Fetches consumer-built wippy-meta.json (file:// refs resolved at build time)
+        description: |
+          Reads the wippy-meta.json that @wippy-fe/vite-plugin emits next to a
+          consumer's app.html / index.js. Used by /pages/content/{id},
+          /components/list, and /components/by-tag/{tag} as the single source
+          of truth for view.page / view.component metadata when present.
+          Callers fall back to YAML-synthesis when fetch returns nil + nil.
+          A process-wide deprecation warning fires the FIRST time an entry is
+          seen without bundled meta (deduplicated via the shared `bundled_meta_warn`
+          memory store so each handler-pool worker doesn't re-warn the same id).
+      source: file://bundled_meta.lua
+      imports:
+        page_registry: wippy.views:page_registry
+        component_registry: wippy.views:component_registry
+      modules:
+        - http_client
+        - json
+        - store
+    - name: bundled_meta_warn
+      kind: store.memory
+      meta:
+        comment: |
+          Process-wide dedup of "no wippy-meta.json" deprecation warnings.
+          Each entry id is logged at most once per wippy process lifetime,
+          regardless of which handler-pool worker observes the miss.
+      max_size: 1000
+      cleanup_interval: "1h"
     - name: dep.wippy.test
       kind: ns.dependency
       meta:

@@ -34,6 +34,7 @@ entries:
       source: file://list_components.lua
       imports:
         component_registry: wippy.views:component_registry
+        bundled_meta: wippy.views:bundled_meta
       method: handler
       modules:
         - http
@@ -58,6 +59,7 @@ entries:
       source: file://find_by_tag.lua
       imports:
         component_registry: wippy.views:component_registry
+        bundled_meta: wippy.views:bundled_meta
       method: handler
       modules:
         - http
@@ -84,6 +86,7 @@ entries:
         page_registry: wippy.views:page_registry
         renderer: wippy.views:renderer
         resource_registry: wippy.views:resource_registry
+        bundled_meta: wippy.views:bundled_meta
       method: handler
       modules:
         - http
