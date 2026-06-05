@@ -196,7 +196,7 @@ end
 --                                    is the canonical FE-author POV. YAML adjusts
 --                                    to the operator's served layout, e.g. when
 --                                    vite's --outDir flattens away the dist/ prefix.)
---   - `wippy.proxy`                 → bundled `wippy.proxy` (whole block; YAML has no canonical proxy override field for the new model)
+--   - `wippy.proxy`                 → bundled `wippy.proxy` deep-merged with YAML `meta.proxy` on top (variant overlay; YAML wins per nested key)
 --   - `wippy.configOverrides`       → bundled `wippy.configOverrides` deep-merged with YAML `meta.config_overrides` on top (variant overlay)
 --
 -- Extra package.json fields (dependencies, scripts, devDependencies, etc.)
@@ -231,33 +231,52 @@ function M.project_page_response(bundled_meta, page, base_url)
         response.wippy.configOverrides = deep_merge(current, page.config_overrides)
     end
 
+    -- Merge YAML's `meta.proxy` over bundled meta's wippy.proxy. Same overlay
+    -- as config_overrides: YAML wins per nested key, untouched bundle keys
+    -- survive. The YAML payload MUST be camelCase (enabled,
+    -- injections.css.customCss) to merge with the camelCase bundle proxy.
+    if page.proxy then
+        local current = response.wippy.proxy or {}
+        response.wippy.proxy = deep_merge(current, page.proxy)
+    end
+
+    -- The FE rejects a page descriptor with no wippy.proxy
+    -- (isWippyPackageWebPage). A bundle that omits a proxy block, with no YAML
+    -- override, lands here — emit a minimal truthy proxy. The FE owns the
+    -- injection defaults (every injection ON when absent).
+    if not response.wippy.proxy then
+        response.wippy.proxy = { enabled = true }
+    end
+
     return response
 end
 
 -- Project a parsed bundled wippy-meta.json + registry component entry into
--- the snake_case-at-top-level response shape served by /components/list and
--- /components/by-tag/{tag}.
+-- the camelCase wippy-component-1.0 ESM descriptor served by /components/list
+-- and /components/by-tag/{tag}. The FE consumes this shape DIRECTLY (no
+-- re-assembly) — it is a valid PackageJsonESM, same family as the page
+-- descriptor from project_page_response.
 --
 -- **Priority is YAML-first.** YAML is the abstraction OVER FE code: the
 -- wippy operator's registry entry ALWAYS wins. Bundled meta is the
 -- fallback for fields YAML omits.
 --
 -- Resolution per field:
---   - `id`, `base_url`, `auto_register` → always from the registry (routing + deployment policy)
---   - `name`         → YAML `meta.name` → bundled top-level `name`
---   - `title`        → YAML `meta.title` → bundled `wippy.title` → bundled top-level `title`
---   - `description`  → YAML `meta.description` → bundled `wippy.description` → bundled top-level `description`
---                     (carried in the response so LLM/agent consumers can
---                     pick the right component by reading its description)
---   - `tag_name`     → YAML `meta.tag_name` → bundled `wippy.tagName`
---   - `entry_point`  → YAML `meta.entry_point` → bundled top-level `browser`
---                     (`browser` is source-relative — the FE-author POV.
---                     YAML adjusts to the served layout; that's its job.
---                     NOT `wippy.path` — that field is page-only per
---                     wippy-component-1.0 spec; `browser` is the
---                     canonical entry for ESM module / component packages.)
---   - `props`        → YAML `meta.props` → bundled `wippy.props`
---   - `events`       → YAML `meta.events` → bundled `wippy.events`
+--   - `id`, `baseUrl`, `wippy.autoRegister` → always from the registry (routing + deployment policy)
+--   - `name`               → YAML `meta.name` → bundled top-level `name`
+--   - `version`, `specification` → bundled top-level → spec defaults
+--   - `title`              → YAML `meta.title` → bundled `wippy.title` → bundled top-level `title`
+--   - `description`        → YAML `meta.description` → bundled `wippy.description` → bundled top-level `description`
+--   - `wippy.tagName`      → YAML `meta.tag_name` → bundled `wippy.tagName`
+--   - `browser`            → YAML `meta.entry_point` → bundled top-level `browser`
+--                            (`browser` is the spec entry for ESM/component
+--                            packages — NOT `wippy.path`, which is page-only.
+--                            Source-relative FE POV; YAML adjusts to the
+--                            operator's served layout.)
+--   - `wippy.props`        → YAML `meta.props` → bundled `wippy.props`
+--   - `wippy.events`       → YAML `meta.events` → bundled `wippy.events`
+--   - `wippy.autoRegister` → always registry `meta.auto_register` (deployment
+--                            policy; the bundle's `wippy.autoRegister` is ignored).
 function M.project_component_response(bundled_meta, component, base_url)
     local meta: any = bundled_meta or {}
     local w: any = meta.wippy or {}
@@ -265,18 +284,22 @@ function M.project_component_response(bundled_meta, component, base_url)
     return {
         id = type(component.id) == "string" and component.id or tostring(component.id),
         name = component.name or meta.name or "",
+        version = meta.version or "1.0.0",
+        specification = meta.specification or "wippy-component-1.0",
         title = component.title or w.title or meta.title or "",
         description = component.description or w.description or meta.description,
-        tag_name = component.tag_name or w.tagName,
-        base_url = base_url,
-        -- For components, the spec field is top-level `browser` (ESM module
-        -- entry). `wippy.path` is reserved for view.page (HTML entry).
-        -- Final fallback to "index.js" matches the legacy component
-        -- response shape so unmigrated entries keep their pre-0.4.32 wire.
-        entry_point = component.entry_point or meta.browser or "index.js",
-        auto_register = component.auto_register == true,
-        props = component.props or w.props,
-        events = component.events or w.events,
+        baseUrl = base_url,
+        -- Spec entry field for components is top-level `browser` (ESM module
+        -- entry). `wippy.path` is reserved for view.page (HTML entry). Final
+        -- fallback to "index.js" matches the legacy component response shape.
+        browser = component.entry_point or meta.browser or "index.js",
+        wippy = {
+            tagName = component.tag_name or w.tagName,
+            type = w.type or "widget",
+            props = component.props or w.props,
+            events = component.events or w.events,
+            autoRegister = component.auto_register == true,
+        },
     }
 end
 

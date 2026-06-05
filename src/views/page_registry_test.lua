@@ -7,7 +7,7 @@ local APP_NS = "app:"
 
 local PAGE_IDS = {
     "test_home", "test_about", "test_secure",
-    "test_dashboard", "test_with_proxy", "test_partial_proxy",
+    "test_dashboard", "test_meta_proxy",
 }
 
 local function setup_pages()
@@ -98,48 +98,20 @@ local function setup_pages()
         },
     })
 
+    -- `meta.proxy` (camelCase overlay) is the SINGLE proxy field, read raw into
+    -- `page.proxy`. The projection (bundle path) / synthesis (no-bundle path)
+    -- layer deep-merges it over the bundle proxy / the default proxy.
     changes:create({
-        id = NS .. "test_with_proxy",
+        id = NS .. "test_meta_proxy",
         kind = "registry.entry",
         meta = {
             type = "view.page",
-            name = "proxied",
-            title = "Proxied",
-            icon = "shield",
-            order = 5,
+            name = "meta-proxy",
+            title = "Meta Proxy",
             secure = false,
-            url = "https://cdn.example.com/proxied/index.html",
-        },
-        data = {
+            url = "https://cdn.example.com/meta-proxy/index.html",
             proxy = {
-                enabled = true,
-                css = {
-                    prime_vue = true,
-                    markdown = true,
-                },
-                tailwind_config = true,
-            },
-        },
-    })
-
-    changes:create({
-        id = NS .. "test_partial_proxy",
-        kind = "registry.entry",
-        meta = {
-            type = "view.page",
-            name = "partial",
-            title = "Partial Proxy",
-            icon = "settings",
-            order = 6,
-            secure = false,
-            url = "https://cdn.example.com/partial/index.html",
-        },
-        data = {
-            proxy = {
-                enabled = false,
-                css = {
-                    fonts = false,
-                },
+                injections = { css = { customCss = true } },
             },
         },
     })
@@ -297,7 +269,7 @@ local function define_tests()
             end)
         end)
 
-        test.describe("proxy config", function()
+        test.describe("proxy (meta.proxy overlay)", function()
             test.before_each(function()
                 setup_pages()
             end)
@@ -306,59 +278,19 @@ local function define_tests()
                 teardown_pages()
             end)
 
-            test.it("component page without proxy block gets defaults", function()
+            test.it("meta.proxy is extracted raw to page.proxy (camelCase overlay)", function()
+                local page, err = page_registry.get(NS .. "test_meta_proxy")
+                test.is_nil(err)
+                page = test.not_nil(page)
+                local proxy = test.not_nil(page.proxy)
+                test.eq(proxy.injections.css.customCss, true)
+            end)
+
+            test.it("page without meta.proxy has nil page.proxy (defaults belong to the projection/synthesis layer)", function()
                 local page, err = page_registry.get(NS .. "test_home")
                 test.is_nil(err)
                 page = test.not_nil(page)
-                local proxy = test.not_nil(page.proxy)
-                test.eq(proxy.enabled, true)
-                test.eq(proxy.css.fonts, true)
-                test.eq(proxy.css.theme_config, true)
-                test.eq(proxy.css.iframe, true)
-                test.eq(proxy.css.prime_vue, false)
-                test.eq(proxy.css.markdown, false)
-                test.eq(proxy.css.custom_css, false)
-                test.eq(proxy.css.custom_variables, false)
-                test.eq(proxy.tailwind_config, false)
-                test.eq(proxy.resize_observer, true)
-                test.eq(proxy.prevent_link_clicks, true)
-                test.eq(proxy.iconify_icons, false)
-            end)
-
-            test.it("component page with proxy block merges over defaults", function()
-                local page, err = page_registry.get(NS .. "test_with_proxy")
-                test.is_nil(err)
-                page = test.not_nil(page)
-                local proxy = test.not_nil(page.proxy)
-                test.eq(proxy.enabled, true)
-                test.eq(proxy.css.prime_vue, true)
-                test.eq(proxy.css.markdown, true)
-                test.eq(proxy.tailwind_config, true)
-                test.eq(proxy.resize_observer, true)
-                test.eq(proxy.prevent_link_clicks, true)
-            end)
-
-            test.it("css sub-fields merge independently", function()
-                local page, err = page_registry.get(NS .. "test_with_proxy")
-                test.is_nil(err)
-                page = test.not_nil(page)
-                local proxy = test.not_nil(page.proxy)
-                test.eq(proxy.css.fonts, true)
-                test.eq(proxy.css.theme_config, true)
-                test.eq(proxy.css.iframe, true)
-                test.eq(proxy.css.custom_css, false)
-                test.eq(proxy.css.custom_variables, false)
-            end)
-
-            test.it("partial proxy can override defaults to false", function()
-                local page, err = page_registry.get(NS .. "test_partial_proxy")
-                test.is_nil(err)
-                page = test.not_nil(page)
-                local proxy = test.not_nil(page.proxy)
-                test.eq(proxy.enabled, false)
-                test.eq(proxy.css.fonts, false)
-                test.eq(proxy.css.theme_config, true)
-                test.eq(proxy.css.iframe, true)
+                test.is_nil(page.proxy)
             end)
 
             test.it("template page has no proxy", function()

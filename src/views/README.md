@@ -90,23 +90,27 @@ for the contract.
 | `baseUrl` | (always computed from `meta.url` + `meta.base_path` + `PUBLIC_API_URL` — operator/routing decision) | | |
 | `wippy.type` | (always `"page"`) | | |
 | `wippy.path` | `meta.entry_point` | `<pkg>.wippy.path` | `"index.html"` |
-| `wippy.proxy` | — | `<pkg>.wippy.proxy` (whole block) | `synthesize_from_registry` builds from snake_case `data.proxy.*` |
+| `wippy.proxy` | `meta.proxy` (camelCase, deep-merged ON TOP of bundled; YAML wins per nested key) | `<pkg>.wippy.proxy` (whole block) | `synthesize_from_registry` sends `meta.proxy` or a minimal `{enabled=true}` — the **FE** (`proxy.js`) defaults every injection ON |
 | `wippy.configOverrides` | `meta.config_overrides` deep-merged ON TOP of bundled (YAML wins per nested key) | `<pkg>.wippy.configOverrides` | `nil` |
 
 #### `view.component` → `GET /components/list` and `GET /components/by-tag/{tag}`
+
+The response is a nested **camelCase** wippy-component-1.0 ESM descriptor (a valid
+`PackageJsonESM`) — the FE consumes it directly, no re-assembly. Response keys:
 
 | Response field | YAML source (priority 1) | Bundled meta source (priority 2) | Legacy default (priority 3) |
 |---|---|---|---|
 | `id` | (always the registry entry id) | | |
 | `name` | `meta.name` | `<pkg>.name` | `""` |
+| `version`, `specification` | — | `<pkg>.version` / `<pkg>.specification` | `"1.0.0"` / `"wippy-component-1.0"` |
 | `title` | `meta.title` | `<pkg>.wippy.title` → `<pkg>.title` | `""` |
 | `description` | `meta.description` | `<pkg>.wippy.description` → `<pkg>.description` | `nil` |
-| `tag_name` | `meta.tag_name` | `<pkg>.wippy.tagName` | `nil` |
-| `base_url` | (always computed from `meta.url` + `meta.base_path` — operator/routing decision) | | |
-| `entry_point` | `meta.entry_point` | `<pkg>.browser` (the wippy-component-1.0 spec field for ESM module / component packages) | `"index.js"` |
-| `auto_register` | (always from `meta.auto_register` — deployment policy) | | |
-| `props` | `meta.props` | `<pkg>.wippy.props` | `nil` |
-| `events` | `meta.events` | `<pkg>.wippy.events` | `nil` |
+| `baseUrl` | (always computed from `meta.url` + `meta.base_path` — operator/routing decision) | | |
+| `browser` | `meta.entry_point` | `<pkg>.browser` (the wippy-component-1.0 spec entry for ESM module / component packages) | `"index.js"` |
+| `wippy.tagName` | `meta.tag_name` | `<pkg>.wippy.tagName` | `nil` |
+| `wippy.props` | `meta.props` | `<pkg>.wippy.props` | `nil` |
+| `wippy.events` | `meta.events` | `<pkg>.wippy.events` | `nil` |
+| `wippy.autoRegister` | (always from `meta.auto_register` — deployment policy; bundle `wippy.autoRegister` ignored) | | |
 
 ### What to keep in YAML vs what to drop
 
@@ -132,7 +136,7 @@ and can be removed:
 - `meta.tag_name` → comes from `package.json` `wippy.tagName`
 - `meta.entry_point` → comes from `package.json` `wippy.path` (for `view.page`) or top-level `browser` (for `view.component`). Per [wippy-component-1.0 spec][spec], these are the canonical fields per package kind — `browser` is for ESM module / component entries, `wippy.path` is for HTML page entries. They are NOT interchangeable.
 - `meta.props`, `meta.events` → come from `package.json` `wippy.props` / `wippy.events`
-- `data.proxy` (the snake_case legacy proxy injection block at the top of the entry data) → comes from `package.json` `wippy.proxy` (camelCase). **Note**: there is NO camelCase YAML override for `wippy.proxy`. If you need a per-entry proxy override, declare it inside the consumer's `package.json` or fork the artifact.
+- proxy injections → come from `package.json` `wippy.proxy` (camelCase). For a per-entry override, set **`meta.proxy`** (camelCase payload) on the registry entry — it deep-merges ON TOP of the bundle's `wippy.proxy`, YAML winning per nested key (same overlay model as `meta.config_overrides`). `meta.proxy` is the **single** proxy field — the older snake-case `data.proxy` block has been removed. **The FE owns injection defaults:** `proxy.js` (`getProxyConfig`) defaults every injection ON when the field is absent, so an empty/minimal proxy means "all injections on". To DISABLE an injection, set it `false` in `meta.proxy` (or the bundle's `wippy.proxy`) — absence never disables. Server-rendered jet/template pages don't read a descriptor proxy; to override their injections, emit the config server-side in the page's YAML/template.
 
 #### YAML overlay pattern (variants)
 
@@ -193,7 +197,7 @@ This separation is what lets a single consumer build ship to multiple operator d
 4. Deploy the new build (the published wippy module or the served static dir).
 5. **Set `meta.entry_point` in YAML to match the SERVED layout.** If your build pipeline strips the `dist/` prefix (typical with vite's `--outDir <served-path>`), declare it in YAML: `meta.entry_point: app.html` (for pages) or `meta.entry_point: index.js` (for components). YAML wins, bundled meta is the fallback for fields YAML omits — so this works regardless of what `package.json` declared.
 6. Restart wippy and observe that the deprecation warning for this entry stops firing.
-7. Slim the YAML registry entry — you can drop fields covered by bundled meta (`title`, `props`, `events`, `data.proxy`). Keep routing + policy fields, and keep `meta.entry_point` for the deployment-aware path adjustment. **`tag_name` for components**: optional — if omitted, views falls back to a scan of bundled meta files matching `wippy.tagName`. Keep it in YAML if you want the O(1) registry index lookup; drop it if the consumer's `wippy.tagName` is the only source of truth you want.
+7. Slim the YAML registry entry — you can drop fields covered by bundled meta (`title`, `props`, `events`). Keep routing + policy fields, and keep `meta.entry_point` for the deployment-aware path adjustment. **`tag_name` for components**: optional — if omitted, views falls back to a scan of bundled meta files matching `wippy.tagName`. Keep it in YAML if you want the O(1) registry index lookup; drop it if the consumer's `wippy.tagName` is the only source of truth you want.
 8. Restart wippy. Probe the API endpoint and confirm the response shape is unchanged from before slimming.
 
 ### What's NOT in scope for 0.4.32
