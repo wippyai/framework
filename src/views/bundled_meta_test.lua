@@ -11,9 +11,7 @@ local bundled_meta = require("bundled_meta")
 -- YAML explicitly sets. Tests are written so that flipping this
 -- precedence anywhere in the projection helpers will FAIL.
 
-local function run()
-    local outcomes = {}
-
+local function define_tests()
     test.describe("bundled_meta.project_page_response", function()
         test.it("YAML wins for name + title even when bundled meta has its own", function()
             local meta = {
@@ -163,10 +161,12 @@ local function run()
         test.it("falls back to bundled meta when YAML omits a field", function()
             local meta = {
                 name = "@example/x",
+                -- top-level `browser` is the component entry_point source;
+                -- `wippy.path` is page-only and is ignored for components.
+                browser = "dist/x.js",
                 wippy = {
                     type = "component",
                     tagName = "x-elem",
-                    path = "dist/x.js",
                     props = { type = "object", properties = {} },
                 },
             }
@@ -183,6 +183,42 @@ local function run()
             test.eq(r.tag_name, "x-elem")
             test.eq(r.entry_point, "dist/x.js")
             test.eq(type(r.props), "table")
+        end)
+
+        test.it("explicit empty YAML value ({} / '') OVERRIDES the bundle; only omitted (nil) falls through", function()
+            -- The nil-vs-empty contract. An operator who writes `props: {}` or
+            -- `tag_name: ""` in YAML means "blank this on purpose" — a truthy
+            -- override that wins over the bundle. Only an OMITTED key (Lua nil)
+            -- means "no opinion, fall through to the bundled wippy-meta.json".
+            -- This guards against a future `meta.X or {}` coercion that would
+            -- turn the omitted-key default truthy and silently kill fall-through.
+            local meta = {
+                name = "@example/x",
+                wippy = {
+                    type = "component",
+                    tagName = "x-from-bundle",
+                    props = { type = "object", properties = { fromBundle = { type = "string" } } },
+                    events = { type = "object", properties = { evt = { type = "object" } } },
+                },
+            }
+            local component = {
+                id = "ns:x",
+                name = "x",
+                title = "",        -- explicit empty string → overrides to ""
+                tag_name = "",     -- explicit empty string → overrides to ""
+                entry_point = nil,
+                auto_register = false,
+                props = {},        -- explicit empty table → overrides to {}
+                events = nil,      -- OMITTED → falls through to the bundle
+            }
+            local r = bundled_meta.project_component_response(meta, component, "http://h/x/")
+            -- Explicit empties win (must NOT fall through to the bundle):
+            test.eq(r.title, "")
+            test.eq(r.tag_name, "")
+            test.eq(next(r.props), nil)  -- the empty {} from YAML, not the bundle's schema
+            -- Omitted (nil) still falls through to the bundle:
+            test.eq(type(r.events), "table")
+            test.eq(r.events.properties.evt.type, "object")
         end)
 
         test.it("uses bundled top-level `browser` for entry_point (the spec field for components; wippy.path is page-only)", function()
@@ -230,7 +266,12 @@ local function run()
         end)
     end)
 
-    return test.run_cases(outcomes)
+end
+
+local run_cases = test.run_cases(define_tests)
+
+local function run(options: any): any
+    return run_cases(options)
 end
 
 return { run = run }

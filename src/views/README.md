@@ -100,6 +100,7 @@ for the contract.
 | `id` | (always the registry entry id) | | |
 | `name` | `meta.name` | `<pkg>.name` | `""` |
 | `title` | `meta.title` | `<pkg>.wippy.title` → `<pkg>.title` | `""` |
+| `description` | `meta.description` | `<pkg>.wippy.description` → `<pkg>.description` | `nil` |
 | `tag_name` | `meta.tag_name` | `<pkg>.wippy.tagName` | `nil` |
 | `base_url` | (always computed from `meta.url` + `meta.base_path` — operator/routing decision) | | |
 | `entry_point` | `meta.entry_point` | `<pkg>.browser` (the wippy-component-1.0 spec field for ESM module / component packages) | `"index.js"` |
