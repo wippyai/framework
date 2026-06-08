@@ -21,9 +21,11 @@ entries:
   - name: router
     kind: ns.requirement
     meta:
-      description: Public API router for config endpoint
+      description: Public API router for config and CSS variable endpoints
     targets:
       - entry: wippy.facade:config_endpoint
+        path: .meta.router
+      - entry: wippy.facade:css_vars_endpoint
         path: .meta.router
 
   - name: fe_facade_url
@@ -33,7 +35,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.32
+    default: https://web-host.wippy.ai/webcomponents-1.0.36
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -247,6 +249,20 @@ entries:
         path: .default
     default: "{}"
 
+  - name: content_fs
+    kind: ns.requirement
+    meta:
+      description: |
+        fs.directory entry ID whose files can be referenced via "file://" in CSS and
+        JSON requirements. When set, any requirement value of the form "file://path"
+        is resolved to that file's content at request time. The same fs.directory can
+        also be served as a static endpoint so pages like login.html can <link> the
+        same CSS files directly. Example: "app:theming_files".
+    targets:
+      - entry: wippy.facade:content_fs
+        path: .default
+    default: ""
+
   # Additional hostConfig options (JSON)
   - name: hide_session_selector
     kind: ns.requirement
@@ -355,6 +371,16 @@ entries:
       index: index.html
       spa: true
 
+  # Shared helpers: file:// resolution and CSS variable generation
+  - name: theming_helpers
+    kind: library.lua
+    meta:
+      comment: File-ref resolution and CSS variable generation shared by config and CSS-vars handlers
+    source: file://theming_helpers.lua
+    modules:
+      - fs
+      - json
+
   # Config endpoint
   - name: config_handler
     kind: function.lua
@@ -362,11 +388,14 @@ entries:
       comment: Returns facade configuration as JSON
     source: file://config_handler.lua
     method: handler
+    imports:
+      theming_helpers: wippy.facade:theming_helpers
     modules:
       - http
       - registry
       - json
       - env
+      - fs
 
   - name: config_endpoint
     kind: http.endpoint
@@ -375,6 +404,28 @@ entries:
     method: GET
     path: /facade/config
     func: config_handler
+
+  # CSS variables endpoint
+  - name: css_vars_handler
+    kind: function.lua
+    meta:
+      comment: Returns global CSS variables as a text/css stylesheet for use in non-Wippy-Host pages
+    source: file://css_vars_handler.lua
+    method: handler
+    imports:
+      theming_helpers: wippy.facade:theming_helpers
+    modules:
+      - http
+      - registry
+      - fs
+
+  - name: css_vars_endpoint
+    kind: http.endpoint
+    meta:
+      router: router
+    method: GET
+    path: /facade/variables.css
+    func: css_vars_handler
 
   - name: dep.wippy.test
     kind: ns.dependency
@@ -397,3 +448,18 @@ entries:
     modules:
       - json
       - registry
+
+  - name: theming_helpers_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Tests for theming_helpers (CSS generation + file-ref resolution)
+    source: file://theming_helpers_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      theming_helpers: wippy.facade:theming_helpers
+    modules:
+      - fs
+      - json

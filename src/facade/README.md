@@ -66,7 +66,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.32` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.36` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 
@@ -103,7 +103,7 @@ These accept JSON strings for complex configuration:
 
 | Requirement | Default | Config path | Description |
 |---|---|---|---|
-| `api_routes` | `{}` | `hostConfig.apiRoutes` | API route overrides (e.g. `{"agents":{"list":"/custom/agents"}}`) |
+| `api_routes` | `{}` | `apiRoutes` | API route overrides — top-level, not under hostConfig (e.g. `{"agents":{"list":"/custom/agents"}}`) |
 | `additional_nav_items` | `[]` | `hostConfig.additionalNavItems` | Extra sidebar nav items as JSON array |
 | `state_cache` | `{}` | `hostConfig.stateCache` | Child state LRU config (e.g. `{"maxPages":50,"maxSizePerPage":1048576}`) |
 | `allow_additional_tags` | `{}` | `hostConfig.allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
@@ -122,28 +122,40 @@ These accept JSON strings for complex configuration:
 
 Three theming scopes control which layers see which styles:
 
+#### File system for `fs://` references
+
+| Requirement | Default | Description |
+|---|---|---|
+| `content_fs` | _(empty)_ | `fs.directory` entry ID whose files can be referenced via `fs://` in CSS and JSON requirements. When set, any value like `fs://custom-css.facade.css` or `fs://css-variables.facade.json` is resolved to that file's content at request time. Empty disables file resolution. Example: `"app:app_fs"`. |
+
+When `content_fs` is configured, CSS requirements (`custom_css`, `host_custom_css`, `children_custom_css`) and JSON variable requirements (`css_variables`, `host_css_variables`, `children_css_variables`) all accept `fs://path` values in addition to inline strings.
+
+> **Why `fs://` and not `file://`?** The wippy registry loader reserves `file://` for its OWN load-time interpolation — it reads a `file://` value relative to the `_index.yaml` that contains it and inlines the file content at boot, so a `file://` written in a YAML requirement param never reaches the facade (and a path that doesn't resolve from the YAML's own directory fails the whole file). `fs://` is passed through untouched, so the facade resolves it at request time against `content_fs`. (`file://` is still accepted for values set via non-YAML paths — env vars, `-o` overrides, runtime registry edits — where the loader does not interpolate.)
+
+The same `fs.directory` can be served as a static endpoint (`http.static`) so pages like `login.html` can `<link>` the same CSS files directly. See [File-based theming](#file-based-theming) below.
+
 #### Global scope (`theming.global`) — applied to host AND children
 
 | Requirement | Default | Config path | Description |
 |---|---|---|---|
-| `custom_css` | Poppins font `@import` | `theming.global.customCSS` | CSS applied everywhere — host chrome and child iframes |
-| `css_variables` | `{}` | `theming.global.cssVariables` | CSS variables applied everywhere. Supports `@dark`/`@light` variants. |
+| `custom_css` | Poppins font `@import` | `theming.global.customCSS` | CSS applied everywhere — host chrome and child iframes. Accepts inline CSS or `fs://path` (requires `content_fs`). |
+| `css_variables` | `{}` | `theming.global.cssVariables` | CSS variables applied everywhere. Supports `@dark`/`@light` variants. Accepts inline JSON or `fs://path`. |
 | `icon_sets` | `{}` | `theming.global.iconSets` | Iconify icon sets as `{prefix: {name: {body,width,height}}}` (e.g. `{"custom":{"logo":{...}}}`) |
 
 #### Host scope (`theming.host`) — applied to host chrome ONLY
 
 | Requirement | Default | Config path | Description |
 |---|---|---|---|
-| `host_custom_css` | _(empty)_ | `theming.host.customCSS` | CSS for sidebar, chat, nav — NOT applied to child iframes |
-| `host_css_variables` | `{}` | `theming.host.cssVariables` | CSS variables for host chrome only — override global vars |
+| `host_custom_css` | _(empty)_ | `theming.host.customCSS` | CSS for sidebar, chat, nav — NOT applied to child iframes. Accepts inline CSS or `fs://path`. |
+| `host_css_variables` | `{}` | `theming.host.cssVariables` | CSS variables for host chrome only — override global vars. Accepts inline JSON or `fs://path`. |
 | `host_icon_sets` | `{}` | `theming.host.iconSets` | Icon sets for host chrome only (same format as global `icon_sets`) |
 
 #### Children scope (`theming.children`) — applied to child iframes ONLY
 
 | Requirement | Default | Config path | Description |
 |---|---|---|---|
-| `children_custom_css` | _(empty)_ | `theming.children.customCSS` | CSS for child iframes only — NOT applied to host chrome |
-| `children_css_variables` | `{}` | `theming.children.cssVariables` | CSS variables for children only — override global vars |
+| `children_custom_css` | _(empty)_ | `theming.children.customCSS` | CSS for child iframes only — NOT applied to host chrome. Accepts inline CSS or `fs://path`. |
+| `children_css_variables` | `{}` | `theming.children.cssVariables` | CSS variables for children only — override global vars. Accepts inline JSON or `fs://path`. |
 
 > **Merge rules:** Host sees `global + host` merged. Children see `global + children` merged. Host-scope styles never leak to children and vice versa. Icons are only in `global` and `host` scopes (children don't get their own icon sets).
 
@@ -226,6 +238,62 @@ Only override what differs from defaults.
       value: "body { font-family: 'Comic Sans MS', cursive; }"
 ```
 
+### File-based theming
+
+Instead of inlining CSS or JSON in YAML, store theming files in an `fs.directory` and reference them with `fs://path`. Keep them in the **same folder you already serve static assets from** (next to `login.html`), so one place backs both the facade config and the page `<link>`s.
+
+**Naming** — name each file after the requirement it fills, with a `.facade.` infix:
+`custom-css.facade.css`, `css-variables.facade.json`, `host-custom-css.facade.css`, … It keeps them self-documenting and easy to spot among other static assets.
+
+**Step 1** — reuse the static dir you already serve. For example an app that serves `./static` at `/app`:
+
+```yaml
+- name: app_fs
+  kind: fs.directory
+  directory: ./static
+  auto_init: true
+
+- name: app_static
+  kind: http.static
+  meta:
+    server: app:gateway
+  fs: app:app_fs
+  path: /app
+```
+
+**Step 2** — place the theming files in that folder, next to `login.html`:
+
+```
+static/
+  login.html
+  custom-css.facade.css       # @import url(...); :root { ... }
+  css-variables.facade.json   # {"--p-primary":"#6366f1","@dark":{"--p-primary":"#818cf8"}}
+```
+
+**Step 3** — point `content_fs` at that `fs.directory` and reference the files with `fs://`:
+
+```yaml
+- name: content_fs
+  value: app:app_fs
+- name: custom_css
+  value: "fs://custom-css.facade.css"
+- name: css_variables
+  value: "fs://css-variables.facade.json"
+```
+
+**Result:**
+- `GET /api/public/facade/config` → `theming.global.customCSS` contains the file content, `theming.global.cssVariables` contains the parsed JSON object (resolved at request time from `content_fs`)
+- `GET /api/public/facade/variables.css` → generates CSS from `css-variables.facade.json`
+- `GET /app/custom-css.facade.css` → serves the raw file (via `app_static`)
+- `login.html` can use both:
+
+```html
+<link rel="stylesheet" href="/app/custom-css.facade.css">
+<link rel="stylesheet" href="/api/public/facade/variables.css">
+```
+
+To relocate the assets later, change the one `directory:` line on the `fs.directory` — the `fs://` references and `content_fs` follow it.
+
 ### Custom icons
 
 ```yaml
@@ -274,15 +342,38 @@ Scripts are fetched in parallel and awaited before the Web Host bundle is import
 
 > **Security:** entries come from `ns.requirement` defaults — i.e. from the application owner, not from end users — so arbitrary URLs in this list are trusted. Still, prefer `integrity` hashes for third-party CDN scripts.
 
+## Endpoints
+
+### `GET /api/public/facade/config`
+
+Returns the full facade configuration as JSON (wippy-context-2.0 format). Used by `index.html` on load; see [Config Response](#config-response) below.
+
+### `GET /api/public/facade/variables.css`
+
+Returns the global CSS variables (`css_variables` requirement) as a `text/css` stylesheet. Useful for non-Wippy-Host pages (e.g. `login.html`) that need the same brand variables without embedding the full Web Host.
+
+The CSS follows the same algorithm as the Web Host's `createCssVariables()`:
+- Flat string keys → `:root { --key: value; }`
+- `@dark` object → `@media (prefers-color-scheme: dark) { :root { ... } }`
+- `@light` object → `@media (prefers-color-scheme: light) { :root { ... } }`
+- Keys without `--` prefix get `--` prepended automatically
+
+Returns an empty body (200 OK) when no variables are configured. Response has `Cache-Control: public, max-age=3600`.
+
+**Usage in `login.html`:**
+```html
+<link rel="stylesheet" href="/api/public/facade/variables.css">
+```
+
 ## Config Response
 
 `GET /api/public/facade/config` returns (wippy-context-2.0 format):
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.32",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.36",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.32/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.36/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {

@@ -306,3 +306,15 @@ entries:
         env_loader: wippy.views:env_loader
       modules:
         - registry
+
+    - name: bundled_meta_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Bundled-meta projection tests (YAML-first precedence + nil-vs-empty override)
+      source: file://bundled_meta_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
+        bundled_meta: wippy.views:bundled_meta

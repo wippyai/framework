@@ -9,9 +9,9 @@ type PageResponse = {
     order: number,
     placement: string,
     group: string,
-    group_icon: string,
-    group_order: number,
-    group_placement: string,
+    groupIcon: string,
+    groupOrder: number,
+    groupPlacement: string,
     secure: boolean,
     announced: boolean,
     internal: string,
@@ -49,9 +49,9 @@ local function handler()
                 order = tonumber(page.order) or 9999,
                 placement = type(page.placement) == "string" and page.placement or "default",
                 group = type(page.group) == "string" and page.group or "",
-                group_icon = type(page.group_icon) == "string" and page.group_icon or "",
-                group_order = tonumber(page.group_order) or 9999,
-                group_placement = type(page.group_placement) == "string" and page.group_placement or "default",
+                groupIcon = type(page.group_icon) == "string" and page.group_icon or "",
+                groupOrder = tonumber(page.group_order) or 9999,
+                groupPlacement = type(page.group_placement) == "string" and page.group_placement or "default",
                 secure = page.secure == true,
                 announced = page.announced == true,
                 internal = type(page.internal) == "string" and page.internal or "",
@@ -72,10 +72,10 @@ local function handler()
             return a.order < b.order
         end
 
-        if a.group_order == b.group_order then
+        if a.groupOrder == b.groupOrder then
             return a.group < b.group
         end
-        return a.group_order < b.group_order
+        return a.groupOrder < b.groupOrder
     end)
 
     res:set_content_type(http.CONTENT.JSON)

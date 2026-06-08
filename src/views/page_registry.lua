@@ -2,25 +2,6 @@ local registry = require("registry")
 local security = require("security")
 local env = require("env")
 
-type ProxyCss = {
-    fonts: boolean,
-    theme_config: boolean,
-    iframe: boolean,
-    prime_vue: boolean,
-    markdown: boolean,
-    custom_css: boolean,
-    custom_variables: boolean,
-}
-
-type ProxyConfig = {
-    enabled: boolean,
-    css: ProxyCss,
-    tailwind_config: boolean,
-    resize_observer: boolean,
-    prevent_link_clicks: boolean,
-    iconify_icons: boolean,
-}
-
 type PageInfo = {
     id: string,
     name: string,
@@ -49,50 +30,10 @@ type PageDetail = PageInfo & {
     resources: {string}?,
     content_type: string,
     source: string?,
-    proxy: ProxyConfig?,
+    proxy: {[string]: any}?,
     base_path: string?,
     entry_point: string?,
 }
-
-local DEFAULT_PROXY = {
-    enabled = true,
-    css = {
-        fonts = true,
-        theme_config = true,
-        iframe = true,
-        prime_vue = false,
-        markdown = false,
-        custom_css = false,
-        custom_variables = false,
-    },
-    tailwind_config = false,
-    resize_observer = true,
-    prevent_link_clicks = true,
-    iconify_icons = false,
-}
-
--- Deep merge tables: values from override take precedence, missing keys use base
-local function deep_merge(base, override)
-    local result = {}
-    for k, v in pairs(base) do
-        if type(v) == "table" and type(override[k]) == "table" then
-            result[k] = deep_merge(v, override[k])
-        elseif override[k] ~= nil then
-            result[k] = override[k]
-        else
-            result[k] = v
-        end
-    end
-    return result
-end
-
--- Build proxy config by merging entry data over defaults
-local function build_proxy(entry_proxy)
-    if not entry_proxy then
-        return DEFAULT_PROXY
-    end
-    return deep_merge(DEFAULT_PROXY, entry_proxy)
-end
 
 local pages = {}
 
@@ -139,6 +80,9 @@ local function extract_page_info(entry)
         internal = meta.internal or "",
         kind = kind,
         config_overrides = meta.config_overrides,
+        -- `meta.proxy` (camelCase overlay) is the single proxy field. Raw (nil
+        -- when omitted); the projection/synthesis layer applies defaults.
+        proxy = meta.proxy,
         mount_route = meta.mountRoute,
     }
 
@@ -220,6 +164,9 @@ function pages.get(page_id)
         kind = kind,
         content_type = entry.meta.content_type or "text/html",
         config_overrides = entry.meta.config_overrides,
+        -- `meta.proxy` (camelCase overlay) is the single proxy field. Raw (nil
+        -- when omitted); the projection/synthesis layer applies defaults.
+        proxy = entry.meta.proxy,
         mount_route = entry.meta.mountRoute,
     }
 
@@ -247,7 +194,6 @@ function pages.get(page_id)
     else
         page.url = entry.meta.url or entry.meta.public_url
         page.base_path = entry.meta.base_path
-        page.proxy = build_proxy(entry.data and entry.data.proxy)
 
         -- Raw YAML entry_point (may be nil when omitted). Callers that need
         -- a default-filled value should compute it at their layer:

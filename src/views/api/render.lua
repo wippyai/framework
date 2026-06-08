@@ -16,17 +16,9 @@ type ComponentResponse = {
 -- Synthesize a wippy-component-1.0 package descriptor from the YAML registry
 -- entry. Backwards-compat path for consumers that have NOT yet adopted
 -- @wippy-fe/vite-plugin's wippy-meta.json emission. Deprecated; the canonical
--- path is `bundled_meta.project_page_response`. This function is kept for
--- entries that ship no wippy-meta.json and stays bit-for-bit compatible
--- with pre-1.0.31 / pre-views-0.4.32 callers.
+-- path is `bundled_meta.project_page_response`. Kept for entries that ship no
+-- wippy-meta.json.
 local function synthesize_from_registry(page: any, base_url: string?)
-    local proxy = page.proxy or {}
-    local css = proxy.css or {}
-    -- Apply the historical default at this layer so pre-0.4.32 synthesis
-    -- responses keep their wire shape. page_registry no longer fills the
-    -- default itself (so the bundled-meta projection can distinguish
-    -- YAML-omitted from YAML-set; see page_registry.lua:get).
-    local entry_point = page.entry_point or "index.html"
     return {
         name = page.name or page.id,
         version = "1.0.0",
@@ -35,25 +27,15 @@ local function synthesize_from_registry(page: any, base_url: string?)
         baseUrl = base_url,
         wippy = {
             type = "page",
-            path = entry_point,
-            proxy = {
-                enabled = proxy.enabled or false,
-                injections = {
-                    css = {
-                        fonts = css.fonts or false,
-                        themeConfig = css.theme_config or false,
-                        iframe = css.iframe or false,
-                        primevue = css.prime_vue or false,
-                        markdown = css.markdown or false,
-                        customCss = css.custom_css or false,
-                        customVariables = css.custom_variables or false,
-                    },
-                    tailwindConfig = proxy.tailwind_config or false,
-                    resizeObserver = proxy.resize_observer or false,
-                    preventLinkClicks = proxy.prevent_link_clicks or false,
-                    iconifyIcons = proxy.iconify_icons or false,
-                },
-            },
+            -- Final fallback "index.html" preserves the pre-0.4.32 wire shape.
+            path = page.entry_point or "index.html",
+            -- The FE owns proxy injection defaults: proxy.js (getProxyConfig)
+            -- defaults EVERY injection ON when the field is absent. So send the
+            -- operator's `meta.proxy` overlay as-is, or a minimal truthy block —
+            -- the FE rejects a page descriptor with no wippy.proxy
+            -- (isWippyPackageWebPage). To DISABLE an injection, set it false in
+            -- `meta.proxy` (absence never disables).
+            proxy = page.proxy or { enabled = true },
             configOverrides = page.config_overrides,
         },
     }

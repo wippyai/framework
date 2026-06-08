@@ -12,14 +12,19 @@ local bundled_meta = require("bundled_meta")
 type ComponentResponse = {
     id: string,
     name: string,
+    version: string,
+    specification: string,
     title: string,
     description: string?,
-    tag_name: string?,
-    base_url: string?,
-    entry_point: string?,
-    auto_register: boolean,
-    props: any?,
-    events: any?,
+    baseUrl: string?,
+    browser: string?,
+    wippy: {
+        tagName: string?,
+        type: string,
+        props: any?,
+        events: any?,
+        autoRegister: boolean,
+    },
 }
 
 local function handler()
