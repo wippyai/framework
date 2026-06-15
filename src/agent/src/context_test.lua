@@ -680,6 +680,202 @@ local function define_tests()
                 end
             end)
         end)
+
+        describe("Active trait and tool overlays", function()
+            local captured
+
+            local function capture_compiler()
+                captured = nil
+                agent_context._compiler = {
+                    compile = function(raw_spec, _config)
+                        captured = raw_spec
+                        local compiled = {}
+                        for k, v in pairs(raw_spec) do
+                            compiled[k] = v
+                        end
+                        compiled.tool_contexts = {}
+                        compiled.tool_schemas = {}
+                        compiled.delegate_tools = {}
+                        compiled.delegate_map = {}
+                        return compiled, nil
+                    end
+                }
+            end
+
+            local function has_tool(tools, id)
+                for _, t in ipairs(tools or {}) do
+                    local tid = type(t) == "table" and t.id or t
+                    if tid == id then
+                        return true
+                    end
+                end
+                return false
+            end
+
+            it("should store a copy of active traits and pend recompile", function()
+                context:load_agent("test-agent")
+                test.not_nil(context.current_agent)
+
+                local traits = { "trait_a", "trait_b" }
+                local result = context:set_active_traits(traits)
+
+                test.eq(result, context, "returns self for chaining")
+                test.eq(#context.active_traits, 2)
+                test.is_nil(context.current_agent, "current agent cleared so next load recompiles")
+
+                traits[3] = "leaked"
+                test.eq(#context.active_traits, 2, "external mutation does not leak into stored overlay")
+            end)
+
+            it("should replace the agent's traits on compile", function()
+                capture_compiler()
+                context:set_active_traits({ "only_this_trait" })
+                local agent_instance, err = context:load_agent("test-agent")
+
+                test.is_nil(err)
+                test.not_nil(agent_instance)
+                test.eq(#captured.traits, 1)
+                test.eq(captured.traits[1], "only_this_trait")
+            end)
+
+            it("should replace the explicit tool set while arena tools still layer on top", function()
+                capture_compiler()
+                context:set_active_tools({ "wippy.x:active_tool" })
+                context:add_tools("wippy.x:arena_tool")
+                context:load_agent("test-agent")
+
+                test.is_false(has_tool(captured.tools, "test:calculator"), "base tool replaced")
+                test.is_true(has_tool(captured.tools, "wippy.x:active_tool"), "declared tool present")
+                test.is_true(has_tool(captured.tools, "wippy.x:arena_tool"), "arena tool still appended")
+            end)
+
+            it("should fall back to the agent's own set when overlay is cleared with nil", function()
+                capture_compiler()
+                context:set_active_tools({ "wippy.x:active_tool" })
+                context:set_active_tools(nil)
+                test.is_nil(context.active_tools)
+
+                context:load_agent("test-agent")
+                test.is_false(has_tool(captured.tools, "wippy.x:active_tool"), "dropped overlay not applied")
+                test.is_true(has_tool(captured.tools, "test:calculator"), "agent's own tools used")
+            end)
+
+            it("should not mutate the stored tool overlay when arena tools are appended", function()
+                capture_compiler()
+                context:set_active_tools({ "wippy.x:active_tool" })
+                context:add_tools("wippy.x:arena_tool")
+                context:load_agent("test-agent")
+
+                test.eq(#context.active_tools, 1, "overlay still holds only the declared tool")
+            end)
+
+            it("should drop overlays when switching to a different agent", function()
+                capture_compiler()
+                context:load_agent("test-agent")
+                context:set_active_traits({ "trait_a" })
+                context:set_active_tools({ "wippy.x:active_tool" })
+
+                local ok, err = context:switch_to_agent("specialist-agent")
+                test.is_true(ok, tostring(err))
+                test.is_nil(context.active_traits, "trait overlay dropped on agent switch")
+                test.is_nil(context.active_tools, "tool overlay dropped on agent switch")
+                test.is_false(has_tool(captured.tools, "wippy.x:active_tool"),
+                    "previous agent's overlay not applied to the new agent")
+            end)
+
+            it("should preserve overlays across a model switch on the same agent", function()
+                capture_compiler()
+                -- Setting an overlay invalidates the loaded agent (incl. its id), so the
+                -- realistic flow is: declare overlay -> load_agent to reconcile. A model
+                -- switch on the now-loaded agent must keep the overlay.
+                context:set_active_tools({ "wippy.x:active_tool" })
+                context:load_agent("test-agent")
+
+                local ok, err = context:switch_to_model("claude-haiku")
+                test.is_true(ok, tostring(err))
+                test.not_nil(context.active_tools, "overlay preserved on model switch")
+                test.is_true(has_tool(captured.tools, "wippy.x:active_tool"), "overlay still applied")
+                test.eq(captured.model, "claude-haiku")
+            end)
+
+            it("should treat an empty list as an explicit empty set", function()
+                capture_compiler()
+                context:set_active_tools({})
+                context:load_agent("test-agent")
+
+                test.is_false(has_tool(captured.tools, "test:calculator"), "base tools cleared")
+                test.eq(#captured.tools, 0)
+            end)
+
+            it("should normalize a single trait or tool into a list", function()
+                context:set_active_traits("solo_trait")
+                test.eq(#context.active_traits, 1)
+                test.eq(context.active_traits[1], "solo_trait")
+
+                context:set_active_tools("wippy.x:solo_tool")
+                test.eq(#context.active_tools, 1)
+                test.eq(context.active_tools[1], "wippy.x:solo_tool")
+            end)
+
+            it("should report overlay state via get_config", function()
+                test.is_false(context:get_config().has_active_traits)
+                test.is_false(context:get_config().has_active_tools)
+
+                context:set_active_traits({ "t" })
+                test.is_true(context:get_config().has_active_traits)
+
+                context:set_active_traits(nil)
+                test.is_false(context:get_config().has_active_traits)
+            end)
+
+            it("should apply the trait overlay on every load without consuming it", function()
+                capture_compiler()
+                context:set_active_traits({ "persistent_trait" })
+
+                context:load_agent("test-agent")
+                test.eq(#captured.traits, 1)
+                test.eq(captured.traits[1], "persistent_trait")
+
+                context:load_agent("test-agent")
+                test.eq(#captured.traits, 1, "overlay re-applied on the second load")
+                test.eq(#context.active_traits, 1, "stored overlay neither consumed nor mutated")
+            end)
+
+            it("should not mutate the stored trait overlay across loads", function()
+                capture_compiler()
+                context:set_active_traits({ "trait_a" })
+                context:load_agent("test-agent")
+
+                -- mutating the compiled spec's trait list must not reach the stored overlay
+                table.insert(captured.traits, "injected")
+                test.eq(#context.active_traits, 1, "stored overlay isolated from compiled spec")
+            end)
+
+            it("should replace a previously declared overlay when set again", function()
+                context:set_active_tools({ "tool_v1" })
+                context:set_active_tools({ "tool_v2", "tool_v3" })
+
+                test.eq(#context.active_tools, 2)
+                test.eq(context.active_tools[1], "tool_v2")
+            end)
+
+            it("should disable trait processing for an explicit empty trait list", function()
+                capture_compiler()
+                context:set_active_traits({})
+                context:load_agent("test-agent")
+
+                test.not_nil(captured.traits)
+                test.eq(#captured.traits, 0, "empty overlay yields no traits")
+            end)
+
+            it("should chain overlay setters", function()
+                local result = context:set_active_traits({ "t" }):set_active_tools({ "x" })
+
+                test.eq(result, context)
+                test.eq(#context.active_traits, 1)
+                test.eq(#context.active_tools, 1)
+            end)
+        end)
     end)
 end
 

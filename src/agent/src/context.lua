@@ -41,6 +41,8 @@ type ConfigSummary = {
     current_model: string?,
     additional_tools_count: number,
     additional_delegates_count: number,
+    has_active_traits: boolean,
+    has_active_tools: boolean,
     has_memory_contract: boolean,
     cache_enabled: boolean,
     delegate_tools_enabled: boolean,
@@ -130,6 +132,10 @@ function agent_context.new(config: {
 
     self.additional_tools = {}
     self.additional_delegates = {}
+    -- Declarative active overlays: nil means "use the agent's own set"; a list is
+    -- the full desired set that replaces it on the next compile (see set_active_*).
+    self.active_traits = nil
+    self.active_tools = nil
     self.memory_contract = config.memory_contract
 
     self.compilation_config = {
@@ -195,6 +201,50 @@ function agent_context:add_delegates(delegate_specs): any
         if not self.compilation_config.delegates.generate_tool_schemas then
             self.compilation_config.delegates.generate_tool_schemas = true
         end
+    end
+
+    clear_current_agent(self)
+    return self
+end
+
+-- Declares the full desired trait set for the current agent. This is a replace,
+-- not an append: the list becomes the agent's traits on the next compile, and the
+-- compiler reconciles (resolving trait prompts/tools/contexts) accordingly. Pass nil
+-- to drop the override and fall back to the agent's own traits.
+function agent_context:set_active_traits(traits: {any}?): any
+    if traits == nil then
+        self.active_traits = nil
+    else
+        if type(traits) == "string" or (type(traits) == "table" and (traits.id or traits.name)) then
+            traits = { traits }
+        end
+        local list = {}
+        for _, trait in ipairs(traits) do
+            table.insert(list, trait)
+        end
+        self.active_traits = list
+    end
+
+    clear_current_agent(self)
+    return self
+end
+
+-- Declares the full desired explicit tool set for the current agent (replace, not
+-- append). Arena/runtime add_tools still layer on top, and trait-contributed tools
+-- are resolved independently by the compiler. Pass nil to fall back to the agent's
+-- own tools.
+function agent_context:set_active_tools(tools: {any}?): any
+    if tools == nil then
+        self.active_tools = nil
+    else
+        if type(tools) == "string" or (type(tools) == "table" and tools.id) then
+            tools = { tools }
+        end
+        local list = {}
+        for _, tool in ipairs(tools) do
+            table.insert(list, tool)
+        end
+        self.active_tools = list
     end
 
     clear_current_agent(self)
@@ -276,6 +326,25 @@ function agent_context:load_agent(agent_spec_or_id: string | table, options: Loa
         raw_spec.model = model_override
     end
 
+    -- Declarative overlays replace the agent's own sets before compilation; the
+    -- compiler then reconciles (re-resolving traits, re-deriving tools). Copy the
+    -- tool list so the additional_tools append below cannot mutate the stored overlay.
+    if self.active_traits ~= nil then
+        local traits = {}
+        for _, trait_spec in ipairs(self.active_traits) do
+            table.insert(traits, trait_spec)
+        end
+        raw_spec.traits = traits
+    end
+
+    if self.active_tools ~= nil then
+        local tools = {}
+        for _, tool_spec in ipairs(self.active_tools) do
+            table.insert(tools, tool_spec)
+        end
+        raw_spec.tools = tools
+    end
+
     if #self.additional_tools > 0 then
         raw_spec.tools = raw_spec.tools or {}
         for _, tool_spec in ipairs(self.additional_tools) do
@@ -329,6 +398,20 @@ function agent_context:switch_to_agent(agent_identifier: string | table, options
     end
 
     options = options or {}
+
+    -- Switching to a different agent drops the declarative trait/tool overlays: they
+    -- describe the current agent's active set and must not be applied to another agent
+    -- (e.g. agent A's trait list is meaningless for agent B). add_tools/add_delegates
+    -- are an agent-agnostic additive layer and intentionally persist across switches.
+    -- switch_to_model reloads the same agent and preserves the overlays.
+    local target_id = type(agent_identifier) == "table"
+        and (agent_identifier.id or agent_identifier.name)
+        or agent_identifier
+    if target_id == nil or target_id ~= self.current_agent_id then
+        self.active_traits = nil
+        self.active_tools = nil
+    end
+
     local new_agent, err = self:load_agent(agent_identifier, options)
     if not new_agent then
         return false, err
@@ -360,6 +443,8 @@ function agent_context:get_config(): ConfigSummary
         current_model = self.current_model,
         additional_tools_count = #self.additional_tools,
         additional_delegates_count = #self.additional_delegates,
+        has_active_traits = self.active_traits ~= nil,
+        has_active_tools = self.active_tools ~= nil,
         has_memory_contract = self.memory_contract ~= nil,
         cache_enabled = self.enable_cache,
         delegate_tools_enabled = self.compilation_config.delegates.generate_tool_schemas
