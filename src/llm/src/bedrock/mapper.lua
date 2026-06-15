@@ -91,6 +91,27 @@ local function convert_image_to_converse(content_part)
     return nil
 end
 
+local function convert_document_to_converse(content_part)
+    if content_part.type == "document" and content_part.source then
+        if content_part.source.type == "base64" then
+            local format = "pdf"
+            if content_part.source.mime_type then
+                format = content_part.source.mime_type:match("/(.+)") or "pdf"
+            end
+            return {
+                document = {
+                    format = format,
+                    name = "document",
+                    source = {
+                        bytes = content_part.source.data
+                    }
+                }
+            }
+        end
+    end
+    return nil
+end
+
 local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
     if type(arguments) == "string" then
@@ -235,6 +256,11 @@ function mapper.map_messages(contract_messages)
                         if img then
                             table.insert(content_blocks, img)
                         end
+                    elseif part.type == "document" then
+                        local doc = convert_document_to_converse(part)
+                        if doc then
+                            table.insert(content_blocks, doc)
+                        end
                     end
                 end
             end
@@ -259,6 +285,11 @@ function mapper.map_messages(contract_messages)
                         local img = convert_image_to_converse(part)
                         if img then
                             table.insert(content_blocks, img)
+                        end
+                    elseif part.type == "document" then
+                        local doc = convert_document_to_converse(part)
+                        if doc then
+                            table.insert(content_blocks, doc)
                         end
                     end
                 end

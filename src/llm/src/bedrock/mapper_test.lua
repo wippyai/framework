@@ -127,6 +127,101 @@ local function define_tests()
             end)
         end)
 
+        describe("Document Content Conversion", function()
+            it("should convert base64 PDF in user message to Converse document block", function()
+                local result = mapper.map_messages({
+                    {
+                        role = "user",
+                        content = {
+                            {
+                                type = "document",
+                                source = {
+                                    type = "base64",
+                                    mime_type = "application/pdf",
+                                    data = "JVBERi0xLjQ..."
+                                }
+                            },
+                            { type = "text", text = "Extract invoice data." }
+                        }
+                    }
+                })
+
+                test.eq(#result.messages, 1)
+                local doc_block = result.messages[1].content[1] :: any
+                test.not_nil(doc_block.document)
+                test.eq(doc_block.document.format, "pdf")
+                test.eq(doc_block.document.name, "document")
+                test.eq(doc_block.document.source.bytes, "JVBERi0xLjQ...")
+                local text_block = result.messages[1].content[2] :: any
+                test.eq(text_block.text, "Extract invoice data.")
+            end)
+
+            it("should convert base64 PDF in assistant message to Converse document block", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = { { type = "text", text = "Review this." } } },
+                    {
+                        role = "assistant",
+                        content = {
+                            {
+                                type = "document",
+                                source = {
+                                    type = "base64",
+                                    mime_type = "application/pdf",
+                                    data = "JVBERi0xLjQ..."
+                                }
+                            }
+                        }
+                    }
+                })
+
+                test.eq(#result.messages, 2)
+                local doc_block = result.messages[2].content[1] :: any
+                test.not_nil(doc_block.document)
+                test.eq(doc_block.document.format, "pdf")
+                test.eq(doc_block.document.source.bytes, "JVBERi0xLjQ...")
+            end)
+
+            it("should extract format from mime_type subtype", function()
+                local result = mapper.map_messages({
+                    {
+                        role = "user",
+                        content = {
+                            {
+                                type = "document",
+                                source = {
+                                    type = "base64",
+                                    mime_type = "text/plain",
+                                    data = "aGVsbG8="
+                                }
+                            }
+                        }
+                    }
+                })
+
+                local doc_block = result.messages[1].content[1] :: any
+                test.not_nil(doc_block.document)
+                test.eq(doc_block.document.format, "plain")
+            end)
+
+            it("should default format to pdf when mime_type is absent", function()
+                local result = mapper.map_messages({
+                    {
+                        role = "user",
+                        content = {
+                            {
+                                type = "document",
+                                source = { type = "base64", data = "JVBERi0xLjQ..." }
+                            }
+                        }
+                    }
+                })
+
+                local doc_block = result.messages[1].content[1] :: any
+                test.not_nil(doc_block.document)
+                test.eq(doc_block.document.format, "pdf")
+            end)
+        end)
+
         describe("map_tools", function()
             it("should map contract tools to Converse toolConfig format", function()
                 local tools, name_map = mapper.map_tools({
