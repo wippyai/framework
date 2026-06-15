@@ -15,3 +15,16 @@ entries:
     parameters:
       - name: env_storage
         value: app:envs
+
+  - name: dependency_kind_test
+    kind: function.lua
+    meta:
+      name: Bootloader Dependency Classification Tests
+      type: test
+      suite: bootloader
+      comment: Validates registry-based dependency_kind classification (bootloader vs service).
+    source: file://dependency_kind_test.lua
+    method: run_tests
+    imports:
+      bootloader: wippy.bootloader:bootloader
+      test: wippy.test:test

@@ -5,6 +5,7 @@ local bootloader_registry = require("bootloader_registry")
 local registry = require("registry")
 
 local log = logger:named("boot")
+local registry_provider = registry
 
 type BootloaderMeta = {
     type: string,
@@ -84,17 +85,37 @@ local function log_bootloader_result(bootloader_entry: any, result: any)
     end
 end
 
-local function is_service_id(dep_id: string): boolean
-    -- Service IDs contain ':' but don't have '.' in namespace part
-    -- Bootloader IDs: "wippy.bootloader.bootloaders:encryption_key"
-    -- Service IDs: "app:db", "system:logger"
+local function set_registry_for_test(mock_registry: any?)
+    registry_provider = mock_registry or registry
+end
+
+-- Classifies a dependency id as "bootloader" or "service".
+-- Authoritative source is the registry entry's meta.type; the namespace heuristic
+-- is only a fallback when the entry cannot be resolved. A registry-backed check is
+-- required because ids like "wippy.bootloader.bootloaders:encryption_key_var" have a
+-- dotted namespace yet are env.variable services, not bootloaders.
+local function dependency_kind(dep_id: string): string
     if not dep_id:match(":") then
-        return false
+        return "bootloader"
+    end
+
+    local entry = registry_provider.get(dep_id)
+    if entry then
+        if entry.meta and entry.meta.type == "bootloader" then
+            return "bootloader"
+        end
+        return "service"
     end
 
     local namespace = dep_id:match("^([^:]+):")
-    -- If namespace contains '.', it's a bootloader
-    return not namespace:match("%.")
+    if namespace and namespace:match("%.") then
+        return "bootloader"
+    end
+    return "service"
+end
+
+local function is_service_id(dep_id: string): boolean
+    return dependency_kind(dep_id) == "service"
 end
 
 local function wait_for_service(service_id: string, max_attempts: number, sleep_ms: number): (boolean, string?)
@@ -105,7 +126,7 @@ local function wait_for_service(service_id: string, max_attempts: number, sleep_
 
     for attempt = 1, max_attempts do
         -- Check if service entry exists in registry
-        local entry, err = registry.get(service_id)
+        local entry, err = registry_provider.get(service_id)
 
         if entry then
             log:info("Service is available", {
@@ -355,5 +376,7 @@ end
 return {
     run = run,
     _is_service_id = is_service_id,
+    _dependency_kind = dependency_kind,
     _check_dependencies = check_dependencies,
+    _set_registry_for_test = set_registry_for_test,
 }
