@@ -523,3 +523,37 @@ entries:
                 "description": "Generated unique identifier for the usage record"
               }
             format: application/schema+json
+
+  # wippy.llm:model_resolver
+  - name: model_resolver
+    kind: contract.definition
+    meta:
+      comment: Optional model/provider resolution contract
+      description: |
+        Resolves a model identifier (name, class, or "class:<name>") to a model card
+        including provider details. When a binding exists, llm.lua uses it before the
+        built-in registry-backed discovery; if it returns no card, discovery is used.
+        With no binding, model resolution is unchanged.
+    methods:
+      - name: resolve
+        description: Resolve a model identifier to a model card with provider details
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "Model identifier: a name, a class, or class:<name>"
+                  }
+                },
+                "required": ["model"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "description": "Model card including name, providers[] (with provider id and options), and limits"
+              }
+            format: application/schema+json

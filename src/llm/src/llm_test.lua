@@ -331,6 +331,7 @@ local function define_tests()
             llm._models = nil
             llm._providers = nil
             llm._usage_tracker = nil
+            llm._model_resolver = nil
         end)
 
         describe("Smart Model Resolution", function()
@@ -372,6 +373,137 @@ local function define_tests()
 
                 test.is_nil(result)
                 test.contains(err, "No models found for class")
+            end)
+        end)
+
+        describe("Optional Model Resolver Contract", function()
+            type ResolvedProvider = { id: string, provider_model: string?, options: { [string]: any } }
+            type ResolvedCard = {
+                id: string,
+                name: string,
+                title: string?,
+                priority: number?,
+                max_tokens: number?,
+                providers: { ResolvedProvider }?,
+            }
+
+            local custom_card: ResolvedCard = {
+                id = "custom:via-resolver",
+                name = "custom-via-resolver",
+                title = "Custom Resolved Model",
+                priority = 100,
+                max_tokens = 128000,
+                providers = {
+                    {
+                        id = "wippy.llm.openai:provider",
+                        provider_model = "gpt-4o-2024-11-20",
+                        options = {}
+                    }
+                }
+            }
+
+            it("should resolve via the bound resolver, bypassing discovery", function()
+                -- "custom-via-resolver" is unknown to discovery; only the resolver knows it.
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return custom_card
+                    end
+                }
+
+                local result, err = llm.generate("Hello", { model = "custom-via-resolver" })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_usage_tracker.last_model_id, "custom-via-resolver")
+            end)
+
+            it("should fall back to discovery when the resolver returns no card", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard?
+                        return nil
+                    end
+                }
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_usage_tracker.last_model_id, "gpt-4o")
+            end)
+
+            it("should use discovery unchanged when no resolver is bound", function()
+                -- No resolver set (default). This is the path every other test exercises.
+                test.is_nil(llm._model_resolver)
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+
+                local unknown_result, unknown_err = llm.generate("Hello", { model = "custom-via-resolver" })
+                test.is_nil(unknown_result, "discovery does not know the resolver-only model")
+                test.contains(unknown_err, "Model or class not found")
+            end)
+
+            it("should fall back to discovery when the resolver returns an error", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): (ResolvedCard?, string?)
+                        return nil, "resolver backend unavailable"
+                    end
+                }
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err, "resolver error does not propagate; discovery is used")
+                test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_usage_tracker.last_model_id, "gpt-4o")
+            end)
+
+            it("should let discovery handle class: syntax the resolver declines", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard?
+                        return nil
+                    end
+                }
+
+                local result, err = llm.generate("Hello", { model = "class:frontier" })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_usage_tracker.last_model_id, "gpt-4o")
+            end)
+
+            it("should surface a missing-providers error for a malformed resolver card", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return { id = "custom:bad", name = "custom-no-providers" }
+                    end
+                }
+
+                local result, err = llm.generate("Hello", { model = "custom-no-providers" })
+
+                test.is_nil(result)
+                test.contains(err, "Model has no configured providers")
+            end)
+
+            it("should apply the resolver to structured_output as well as generate", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return custom_card
+                    end
+                }
+
+                local schema = {
+                    type = "object",
+                    additionalProperties = false,
+                    properties = { name = { type = "string" } },
+                    required = { "name" }
+                }
+                local result, err = llm.structured_output(schema, "Extract", { model = "custom-via-resolver" })
+
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(mock_usage_tracker.last_model_id, "custom-via-resolver")
             end)
         end)
 

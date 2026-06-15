@@ -122,18 +122,51 @@ local llm = {}
 
 -- Contract constants
 local USAGE_TRACKER_CONTRACT = "wippy.llm:usage_tracker"
+local MODEL_RESOLVER_CONTRACT = "wippy.llm:model_resolver"
 
 -- Dependency injection fields
 llm._models = nil
 llm._providers = nil
 llm._usage_tracker = nil
+llm._model_resolver = nil
 
 ---------------------------
 -- Internal Helper Functions
 ---------------------------
 
--- Smart model resolution: name → class → error, plus "class:abc" syntax
+-- Optional model/provider resolver contract. When a binding exists it is tried
+-- before the built-in registry-backed discovery; with no binding this returns nil
+-- and resolution is unchanged. Mirrors the usage_tracker contract handling.
+local function get_model_resolver(): any?
+    if llm._model_resolver then
+        return llm._model_resolver
+    end
+
+    local resolver_contract, err = contract.get(MODEL_RESOLVER_CONTRACT)
+    if not err and resolver_contract then
+        local instance, open_err = resolver_contract:open()
+        if not open_err and instance then
+            llm._model_resolver = instance
+            return instance
+        end
+    end
+
+    return nil
+end
+
+-- Smart model resolution: name → class → error, plus "class:abc" syntax.
+-- An optional resolver contract takes precedence when bound; if it returns no
+-- card, resolution falls back to the built-in discovery below.
 local function resolve_model(model_identifier)
+    local resolver = get_model_resolver()
+    if resolver then
+        local card, resolve_err = resolver:resolve({ model = model_identifier })
+        if card and not resolve_err then
+            return card
+        end
+        -- resolver declined or errored: fall through to built-in discovery
+    end
+
     local models_module = llm._models or models
 
     -- Check for explicit class syntax "class:abc"
