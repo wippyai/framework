@@ -654,6 +654,45 @@ local function define_tests()
             test.eq(c1.type, "text")
             test.eq(c2.type, "image")
         end)
+
+        it("should expose DOCUMENT in CONTENT_TYPE constants", function()
+            test.eq(prompt.CONTENT_TYPE.DOCUMENT, "document")
+        end)
+
+        it("should create a document content part from base64 data", function()
+            local part = prompt.document_base64("application/pdf", "JVBERi0xLjQ...")
+
+            test.eq(part.type, "document")
+            test.not_nil(part.source)
+            local src = assert(part.source)
+            test.eq(src.type, "base64")
+            test.eq(src.mime_type, "application/pdf")
+            test.eq(src.data, "JVBERi0xLjQ...")
+        end)
+
+        it("should include document parts in user messages", function()
+            local builder = prompt.new()
+
+            builder:add_message(prompt.ROLE.USER, {
+                prompt.document_base64("application/pdf", "JVBERi0xLjQ..."),
+                prompt.text("Extract the invoice data from this PDF."),
+            })
+
+            local messages = builder:get_messages()
+            test.eq(#messages, 1)
+
+            local msg = assert(messages[1])
+            test.eq(#msg.content, 2)
+
+            local doc_part = assert(msg.content[1])
+            test.eq(doc_part.type, "document")
+            test.eq(doc_part.source.mime_type, "application/pdf")
+            test.eq(doc_part.source.data, "JVBERi0xLjQ...")
+
+            local text_part = assert(msg.content[2])
+            test.eq(text_part.type, "text")
+            test.eq(text_part.text, "Extract the invoice data from this PDF.")
+        end)
     end)
 end
 

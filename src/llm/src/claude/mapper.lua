@@ -189,6 +189,17 @@ local function convert_image_content(content_part)
                 }
             }
         end
+    elseif content_part.type == "document" and content_part.source then
+        if content_part.source.type == "base64" then
+            return {
+                type = "document",
+                source = {
+                    type = "base64",
+                    media_type = content_part.source.mime_type,
+                    data = content_part.source.data
+                }
+            }
+        end
     end
     return content_part
 end

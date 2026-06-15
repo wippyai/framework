@@ -74,7 +74,8 @@ prompt.ROLE = {
 -- Content types
 prompt.CONTENT_TYPE = {
     TEXT = "text",
-    IMAGE = "image"
+    IMAGE = "image",
+    DOCUMENT = "document"
 }
 
 ---------------------------
@@ -105,6 +106,19 @@ end
 function prompt.image_base64(mime_type: string, data: string): ContentPart
     return {
         type = prompt.CONTENT_TYPE.IMAGE,
+        source = {
+            type = "base64",
+            mime_type = mime_type,
+            data = data
+        }
+    }
+end
+
+-- Create a document content part from base64 data (PDF, etc.)
+-- Works with both Anthropic direct API and AWS Bedrock Converse API.
+function prompt.document_base64(mime_type: string, data: string): ContentPart
+    return {
+        type = prompt.CONTENT_TYPE.DOCUMENT,
         source = {
             type = "base64",
             mime_type = mime_type,

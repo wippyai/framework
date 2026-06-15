@@ -508,6 +508,62 @@ local function define_tests()
             end)
         end)
 
+        describe("Document Content Conversion", function()
+            it("should convert base64 PDF document in user message to Anthropic format", function()
+                local result = mapper.map_messages({
+                    {
+                        role = prompt.ROLE.USER,
+                        content = {
+                            {
+                                type = "document",
+                                source = {
+                                    type = "base64",
+                                    mime_type = "application/pdf",
+                                    data = "JVBERi0xLjQ..."
+                                }
+                            },
+                            { type = "text", text = "Summarize this." }
+                        }
+                    }
+                })
+
+                test.eq(#result.messages, 1)
+                local doc_block = result.messages[1].content[1] :: any
+                test.eq(doc_block.type, "document")
+                test.not_nil(doc_block.source)
+                test.eq(doc_block.source.type, "base64")
+                test.eq(doc_block.source.media_type, "application/pdf")
+                test.eq(doc_block.source.data, "JVBERi0xLjQ...")
+                local text_block = result.messages[1].content[2] :: any
+                test.eq(text_block.type, "text")
+            end)
+
+            it("should convert base64 PDF document in assistant message to Anthropic format", function()
+                local result = mapper.map_messages({
+                    { role = prompt.ROLE.USER, content = { { type = "text", text = "Review this." } } },
+                    {
+                        role = prompt.ROLE.ASSISTANT,
+                        content = {
+                            {
+                                type = "document",
+                                source = {
+                                    type = "base64",
+                                    mime_type = "application/pdf",
+                                    data = "JVBERi0xLjQ..."
+                                }
+                            }
+                        }
+                    }
+                })
+
+                test.eq(#result.messages, 2)
+                local doc_block = result.messages[2].content[1] :: any
+                test.eq(doc_block.type, "document")
+                test.eq(doc_block.source.media_type, "application/pdf")
+                test.eq(doc_block.source.data, "JVBERi0xLjQ...")
+            end)
+        end)
+
         describe("Streaming Finish Reason Preservation", function()
             it("should preserve LENGTH finish_reason when streaming response has tool_calls", function()
                 local client_result = {
