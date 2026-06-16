@@ -876,6 +876,189 @@ local function define_tests()
                 test.eq(#context.active_tools, 1)
             end)
         end)
+
+        -- Reconcile coverage: the suite above asserts the overlay reaches the compiler as
+        -- raw_spec; these run the REAL compiler to prove an overlay actually changes the
+        -- compiled prompt and tool set the agent runs with.
+        describe("Active overlay reconcile (real compiler)", function()
+            local compiler = require("compiler")
+            local compiled
+
+            local trait_defs = {
+                ["trait:researcher"] = {
+                    id = "trait:researcher",
+                    name = "researcher",
+                    prompt = "You research thoroughly before answering.",
+                    tools = { "research:search" }
+                },
+                ["trait:writer"] = {
+                    id = "trait:writer",
+                    name = "writer",
+                    prompt = "You write concisely."
+                }
+            }
+
+            local function use_real_compiler()
+                compiled = nil
+                agent_context._compiler = {
+                    compile = function(raw_spec, config)
+                        local c, err = compiler.compile(raw_spec, config)
+                        compiled = c
+                        return c, err
+                    end
+                }
+                compiler._traits = {
+                    get_by_id = function(id)
+                        local d = (trait_defs :: any)[id]
+                        return d, d and nil or ("no trait: " .. id)
+                    end,
+                    get_by_name = function(name)
+                        for _, d in pairs(trait_defs) do
+                            if d.name == name then return d end
+                        end
+                        return nil, "no trait named " .. name
+                    end
+                }
+                compiler._tools = {
+                    find_tools = function(query)
+                        if query and query.namespace == "research" then
+                            return { { id = "research:search" }, { id = "research:summarize" } }
+                        end
+                        return {}
+                    end,
+                    run_input_schema_processors = function(schema) return schema end,
+                    get_tool_schema = function(tool_id)
+                        local name = tostring(tool_id):match("[^:]+$") or tool_id
+                        return {
+                            id = tool_id,
+                            registry_id = tool_id,
+                            name = name,
+                            description = "Schema for " .. tool_id,
+                            schema = { type = "object", properties = {} }
+                        }
+                    end
+                }
+            end
+
+            after_each(function()
+                compiler._traits = nil
+                compiler._tools = nil
+                compiler._funcs = nil
+            end)
+
+            local function tool_by_registry_id(tools, registry_id)
+                for _, entry in pairs(tools or {}) do
+                    if entry.registry_id == registry_id then return entry end
+                end
+                return nil
+            end
+
+            it("merges an active trait's prompt and tool into the compiled agent", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                local agent_instance, err = context:load_agent("test-agent")
+
+                test.is_nil(err)
+                test.not_nil(agent_instance)
+                test.not_nil(compiled)
+                test.not_nil(string.find(compiled.prompt, "You are a test agent", 1, true),
+                    "base agent prompt preserved")
+                test.not_nil(string.find(compiled.prompt, "research thoroughly", 1, true),
+                    "trait prompt merged into compiled prompt")
+                test.not_nil(tool_by_registry_id(compiled.tools, "research:search"),
+                    "trait tool present in compiled tool set")
+                test.not_nil(tool_by_registry_id(compiled.tools, "test:calculator"),
+                    "agent's own tool still present")
+            end)
+
+            it("silently skips an unknown trait in the overlay", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:does_not_exist" })
+                local agent_instance, err = context:load_agent("test-agent")
+
+                test.is_nil(err, "unknown trait does not fail compilation")
+                test.not_nil(agent_instance)
+                test.eq(compiled.prompt, "You are a test agent.", "no trait prompt appended")
+            end)
+
+            it("clears the agent's base tools with an empty tool overlay", function()
+                use_real_compiler()
+                context:set_active_tools({})
+                context:load_agent("test-agent")
+
+                test.is_nil(tool_by_registry_id(compiled.tools, "test:calculator"),
+                    "base tool removed by empty overlay")
+            end)
+
+            it("keeps a trait's contributed tool even when the tool overlay is empty", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:set_active_tools({})
+                context:load_agent("test-agent")
+
+                test.is_nil(tool_by_registry_id(compiled.tools, "test:calculator"),
+                    "base tool cleared by empty tool overlay")
+                test.not_nil(tool_by_registry_id(compiled.tools, "research:search"),
+                    "trait-contributed tool survives the empty tool overlay")
+            end)
+
+            it("applies trait prompts in the overlay's declared order", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:writer", "trait:researcher" })
+                context:load_agent("test-agent")
+
+                local prompt = compiled.prompt :: string
+                local writer_at = string.find(prompt, "write concisely", 1, true)
+                local researcher_at = string.find(prompt, "research thoroughly", 1, true)
+                test.not_nil(writer_at)
+                test.not_nil(researcher_at)
+                test.is_true((writer_at or 0) < (researcher_at or 0),
+                    "writer prompt precedes researcher prompt, matching overlay order")
+            end)
+
+            it("reconciles a single-string trait overlay", function()
+                use_real_compiler()
+                context:set_active_traits("trait:researcher")
+                context:load_agent("test-agent")
+
+                test.not_nil(string.find(compiled.prompt :: string, "research thoroughly", 1, true),
+                    "single-string trait normalized and merged")
+            end)
+
+            it("keys a table tool overlay by its alias", function()
+                use_real_compiler()
+                context:set_active_tools({ { id = "research:search", alias = "finder" } })
+                context:load_agent("test-agent")
+
+                local entry = (compiled.tools :: {[string]: any})["finder"]
+                test.not_nil(entry, "tool keyed by alias")
+                test.eq(entry.registry_id, "research:search", "alias entry resolves to the registry id")
+            end)
+
+            it("expands a wildcard tool overlay against the namespace", function()
+                use_real_compiler()
+                context:set_active_tools({ "research:*" })
+                context:load_agent("test-agent")
+
+                test.not_nil(tool_by_registry_id(compiled.tools, "research:search"))
+                test.not_nil(tool_by_registry_id(compiled.tools, "research:summarize"))
+                test.is_nil(tool_by_registry_id(compiled.tools, "test:calculator"),
+                    "base tool replaced by the wildcard overlay")
+            end)
+
+            it("collapses a trait tool and an overlay tool with the same id into one entry", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:set_active_tools({ "research:search" })
+                context:load_agent("test-agent")
+
+                local count = 0
+                for _, entry in pairs(compiled.tools :: {[string]: any}) do
+                    if entry.registry_id == "research:search" then count = count + 1 end
+                end
+                test.eq(count, 1, "duplicate tool id collapses to a single compiled entry")
+            end)
+        end)
     end)
 end
 
