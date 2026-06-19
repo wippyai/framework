@@ -182,6 +182,13 @@ local function handler()
     local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
     local extra_scripts = non_empty_array_or_nil(get_req_json_any("extra_scripts"))
 
+    -- Clamp theme_mode to the valid enum; anything else (typo/misconfig) → auto,
+    -- so a bad value can't ship a silently-ignored class to the client.
+    local theme_mode = get_req("theme_mode")
+    if theme_mode ~= "light" and theme_mode ~= "dark" and theme_mode ~= "auto" then
+        theme_mode = "auto"
+    end
+
     local config = {
         facade_url = facade_url,
         iframe_origin = iframe_origin,
@@ -197,6 +204,7 @@ local function handler()
             APP_WEBSOCKET_URL = ws_url,
         },
         routePrefix = non_empty_or_nil(api_url),
+        themeMode = theme_mode,
         apiRoutes = api_routes,
         axiosDefaults = axios_defaults,
         extraScripts = extra_scripts,
