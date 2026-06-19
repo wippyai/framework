@@ -35,7 +35,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.37
+    default: https://web-host.wippy.ai/webcomponents-1.0.39
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -150,6 +150,18 @@ entries:
       - entry: wippy.facade:history_mode
         path: .default
     default: hash
+
+  - name: theme_mode
+    kind: ns.requirement
+    meta:
+      description: |
+        Forced theme mode for the host and all children. "auto" (default)
+        follows the OS prefers-color-scheme; "light"/"dark" force a theme
+        regardless of OS (applied via w-theme-light/w-theme-dark classes).
+    targets:
+      - entry: wippy.facade:theme_mode
+        path: .default
+    default: auto
 
   # Auth
   - name: login_path

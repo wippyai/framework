@@ -16,7 +16,7 @@ local REQ_NAMES: {string} = {
     "login_redirect_param",
     "api_routes", "additional_nav_items", "state_cache",
     "allow_additional_tags", "chat", "axios_defaults",
-    "extra_scripts", "host_config_layout",
+    "extra_scripts", "host_config_layout", "theme_mode",
 }
 
 local function setup_registry(overrides: {[string]: string}?)
@@ -54,6 +54,7 @@ local function setup_registry(overrides: {[string]: string}?)
         axios_defaults = "{}",
         extra_scripts = "[]",
         host_config_layout = "{}",
+        theme_mode = "auto",
     }
 
     if overrides then
@@ -120,7 +121,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.37"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.39"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -317,6 +318,7 @@ local function define_tests()
                         APP_WEBSOCKET_URL = "ws://localhost:8085",
                     },
                     routePrefix = "http://localhost:8085",
+                    themeMode = "auto",
                     theming = {
                         global = {
                             customCSS = "@import url('https://fonts.example.com');",
@@ -357,6 +359,7 @@ local function define_tests()
                 test.is_true(decoded.hostConfig.showAdmin)
                 test.is_false(decoded.hostConfig.allowSelectModel)
                 test.eq(decoded.theming.host.i18n.app.title, "Wippy")
+                test.eq(decoded.themeMode, "auto")
                 test.eq(decoded.login_path, "/login.html")
             end)
         end)

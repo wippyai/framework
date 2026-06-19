@@ -92,9 +92,11 @@ function helpers.resolve_json(value: string, file_sys: any): {[string]: any}
 end
 
 -- Generate a CSS string from a cssVariables map, mirroring gen-2-chat's
--- createCssVariables(). Flat string entries → :root {}, "@dark"/"@light"
--- entries → @media (prefers-color-scheme: …) { :root {} }.
--- Keys without a "--" prefix get it prepended automatically.
+-- createCssVariables(). Flat string entries → :root {}. "@dark"/"@light"
+-- entries compile to the three-state forcing model: an OS media query gated
+-- against the opposite forced scope (:root:not(.w-theme-*)) PLUS a forced
+-- .w-theme-* class rule, so they respond to a forced themeMode as well as the OS
+-- preference. Keys without a "--" prefix get it prepended automatically.
 -- Returns "" for an empty or nil input.
 function helpers.build_variables_css(vars: {[string]: any}): string
     if not vars or next(vars) == nil then
@@ -123,11 +125,13 @@ function helpers.build_variables_css(vars: {[string]: any}): string
         if (key == "@dark" or key == "@light") and type(value) == "table" then
             local block = to_block(value :: {[string]: any})
             if block ~= "" then
-                local scheme: string = key == "@dark" and "dark" or "light"
-                table.insert(
-                    media_parts,
-                    "@media (prefers-color-scheme: " .. scheme .. ") { :root { " .. block .. " } }"
-                )
+                if key == "@dark" then
+                    table.insert(media_parts, "@media (prefers-color-scheme: dark) { :root:not(.w-theme-light) { " .. block .. " } }")
+                    table.insert(media_parts, ":root.w-theme-dark, .w-theme-dark { " .. block .. " }")
+                else
+                    table.insert(media_parts, "@media (prefers-color-scheme: light) { :root:not(.w-theme-dark) { " .. block .. " } }")
+                    table.insert(media_parts, ":root.w-theme-light, .w-theme-light { " .. block .. " }")
+                end
             end
         elseif type(value) == "string" then
             table.insert(root_parts, to_var(key, value :: string))
