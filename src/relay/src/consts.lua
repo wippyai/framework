@@ -42,6 +42,15 @@ local consts = {
         ACTIVITY_UPDATE = "hub.activity_update"
     },
 
+    -- Server-issued control topics. Delivered to a user hub by a trusted
+    -- in-runtime process (e.g. an authorizing endpoint), never reachable from a
+    -- ws client. The hub joins/leaves the named pg process group and then fans
+    -- that group's broadcasts to the user's clients via the normal inbox path.
+    HUB_CONTROL = {
+        PG_SUBSCRIBE = "pg.subscribe",
+        PG_UNSUBSCRIBE = "pg.unsubscribe"
+    },
+
     -- Client topics
     CLIENT_TOPICS = {
         WELCOME = "welcome",

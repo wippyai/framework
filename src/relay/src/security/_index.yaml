@@ -19,4 +19,18 @@ entries:
       resources: '*'
       actions: '*'
       effect: allow
+
+  # wippy.relay.security:user_hub_registry
+  - name: user_hub_registry
+    kind: security.policy
+    meta:
+      comment: User relay hubs own their canonical user.<actor_id> registry name for named fanout.
+    groups: []
+    policy:
+      resources:
+        - user.*
+      actions:
+        - process.registry.register
+        - process.registry.unregister
+      effect: allow
     

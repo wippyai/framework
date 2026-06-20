@@ -11,6 +11,11 @@ local bundled_meta = require("bundled_meta")
 -- YAML explicitly sets. Tests are written so that flipping this
 -- precedence anywhere in the projection helpers will FAIL.
 
+local function field(value: any, key: string): any
+    if type(value) ~= "table" then return nil end
+    return value[key]
+end
+
 local function define_tests()
     test.describe("bundled_meta.project_page_response", function()
         test.it("YAML wins for name + title even when bundled meta has its own", function()
@@ -118,10 +123,10 @@ local function define_tests()
                 wippy = { type = "page", path = "app.html" },
             }
             local r = bundled_meta.project_page_response(meta, { id = "ns:x", name = "x" }, "http://h/")
-            test.eq(r.dependencies, nil)
-            test.eq(r.devDependencies, nil)
-            test.eq(r.scripts, nil)
-            test.eq(r.description, nil)
+            test.eq(field(r, "dependencies"), nil)
+            test.eq(field(r, "devDependencies"), nil)
+            test.eq(field(r, "scripts"), nil)
+            test.eq(field(r, "description"), nil)
         end)
 
         test.it("YAML config_overrides deep-merges over bundled wippy.configOverrides (variant overlay; YAML wins)", function()

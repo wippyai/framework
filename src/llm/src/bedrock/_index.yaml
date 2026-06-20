@@ -165,6 +165,9 @@ entries:
       description: Always-running service to keep AWS credentials fresh in EC2 and container environments
     lifecycle:
       auto_start: true
+      security:
+        groups:
+          - wippy.security:process
     process: credential_refresher
 
   # Handlers

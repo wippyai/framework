@@ -1,5 +1,6 @@
 local time = require("time")
 local json = require("json")
+local pg = require("pg")
 local consts = require("consts")
 
 local logger = require("logger"):named("relay.user")
@@ -26,6 +27,8 @@ type UserState = {
     active_plugins: {[string]: PluginState},
     connected_clients: {[string]: boolean},
     client_count: number,
+    pg_scopes: {[string]: any},
+    pg_groups: {[string]: string},
 }
 
 local function get_plugin_info(state: UserState): any
@@ -44,9 +47,85 @@ local function get_plugin_info(state: UserState): any
 end
 
 local function broadcast_to_clients(state: UserState, topic: string, message: any)
+    logger:info("broadcasting topic to clients", {
+        user_id = state.user_id,
+        topic = topic,
+        client_count = state.client_count
+    })
     for client_pid, _ in pairs(state.connected_clients) do
+        logger:info("broadcasting topic to client", {
+            user_id = state.user_id,
+            topic = topic,
+            client_pid = client_pid
+        })
         process.send(client_pid, topic, message)
     end
+end
+
+-- Group subscriptions. A trusted in-runtime process instructs the hub to join a
+-- pg process group; the hub then receives that group's broadcasts in its inbox
+-- and fans them to the user's clients via broadcast_to_clients (the else branch).
+-- These control topics are not reachable from ws clients.
+local function pg_scope_for(state: UserState, scope_id: string): (any, any)
+    local existing = state.pg_scopes[scope_id]
+    if existing then return existing, nil end
+    local scope, err = pg.open(scope_id)
+    if err or not scope then
+        return nil, err or "failed to open pg scope"
+    end
+    state.pg_scopes[scope_id] = scope
+    return scope, nil
+end
+
+local function handle_pg_subscribe(state: UserState, payload_data: any)
+    local scope_id = payload_data.scope :: string?
+    local group = payload_data.group :: string?
+    if not scope_id or not group then
+        logger:warn("pg.subscribe missing scope or group", { user_id = state.user_id })
+        return
+    end
+    if state.pg_groups[group] then
+        return
+    end
+    local scope, err = pg_scope_for(state, scope_id)
+    if not scope then
+        logger:error("pg.subscribe scope open failed", { user_id = state.user_id, scope = scope_id, error = err })
+        return
+    end
+    local ok, jerr = scope:join(group)
+    if not ok then
+        logger:error("pg.subscribe join failed", { user_id = state.user_id, group = group, error = jerr })
+        return
+    end
+    state.pg_groups[group] = scope_id
+    logger:info("pg subscribed", { user_id = state.user_id, group = group })
+end
+
+local function handle_pg_unsubscribe(state: UserState, payload_data: any)
+    local group = payload_data.group :: string?
+    if not group then return end
+    local scope_id = state.pg_groups[group]
+    if not scope_id then return end
+    local scope = state.pg_scopes[scope_id]
+    if scope then
+        scope:leave(group)
+    end
+    state.pg_groups[group] = nil
+    logger:info("pg unsubscribed", { user_id = state.user_id, group = group })
+end
+
+local function release_pg(state: UserState)
+    for group, scope_id in pairs(state.pg_groups) do
+        local scope = state.pg_scopes[scope_id]
+        if scope then
+            scope:leave(group)
+        end
+    end
+    state.pg_groups = {}
+    for _, scope in pairs(state.pg_scopes) do
+        scope:release()
+    end
+    state.pg_scopes = {}
 end
 
 local function notify_central_hub_activity(state: UserState)
@@ -168,6 +247,8 @@ local function handle_client_join(state: UserState, payload_data: any)
         process.send(client_pid, consts.CLIENT_TOPICS.WELCOME, {
             user_id = state.user_id,
             client_count = state.client_count,
+            active_session_ids = {},
+            active_sessions = 0,
             plugins = get_plugin_info(state)
         })
 
@@ -309,11 +390,17 @@ local function run(args: any): any
         central_hub_pid = central_hub_pid,
         active_plugins = {},
         connected_clients = {},
-        client_count = 0
+        client_count = 0,
+        pg_scopes = {},
+        pg_groups = {}
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
-    process.registry.register(registry_name)
+    local registered, register_err = process.registry.register(registry_name)
+    if not registered then
+        error("Failed to register user hub " .. registry_name .. ": " .. (register_err or "unknown error"))
+    end
+    logger:info("user hub registered", { user_id = state.user_id, registry_name = registry_name })
     process.set_options({ trap_links = true })
 
     for prefix, plugin_config in pairs(state.plugins) do
@@ -350,6 +437,10 @@ local function run(args: any): any
             elseif topic == consts.WS_TOPICS.CANCEL then
                 logger:info("received cancel signal")
                 break
+            elseif topic == consts.HUB_CONTROL.PG_SUBSCRIBE then
+                handle_pg_subscribe(state, payload:data())
+            elseif topic == consts.HUB_CONTROL.PG_UNSUBSCRIBE then
+                handle_pg_unsubscribe(state, payload:data())
             else
                 broadcast_to_clients(state, topic, payload:data())
             end
@@ -362,6 +453,8 @@ local function run(args: any): any
             end
         end
     end
+
+    release_pg(state)
 
     for prefix, plugin_state in pairs(state.active_plugins) do
         local pid = plugin_state.pid

@@ -44,4 +44,7 @@ entries:
       description: Always-running service to keep Google OAuth2 tokens fresh
     lifecycle:
       auto_start: true
+      security:
+        groups:
+          - wippy.security:process
     process: token_refresher

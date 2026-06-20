@@ -300,6 +300,25 @@ local function merge_provider_options(contract_args, provider_info)
     end
 end
 
+local function provider_open_context(provider_info)
+    local merged = {}
+    if provider_info and type(provider_info.context) == "table" then
+        for k, v in pairs(provider_info.context) do
+            merged[k] = v
+        end
+    end
+    if provider_info and type(provider_info.options) == "table" then
+        for k, v in pairs(provider_info.options) do
+            merged[k] = v
+        end
+    end
+    return merged
+end
+
+local function open_provider(providers_module, provider_info)
+    return providers_module.open(provider_info.id, provider_open_context(provider_info))
+end
+
 -- Merge user options into contract arguments
 local function merge_user_options(contract_args, user_options, exclude_keys)
     exclude_keys = exclude_keys or {}
@@ -440,7 +459,7 @@ function llm.generate(prompt_input, options)
 
         -- Open provider instance
         local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, provider_info.options or {})
+        local provider_instance, err = open_provider(providers_module, provider_info)
         if not provider_instance then
             return nil, "Failed to open provider: " .. (err or "unknown error")
         end
@@ -575,7 +594,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
         -- Open provider instance
         local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, provider_info.options or {})
+        local provider_instance, err = open_provider(providers_module, provider_info)
         if not provider_instance then
             return nil, "Failed to open provider: " .. (err or "unknown error")
         end
@@ -698,7 +717,7 @@ function llm.embed(text, options)
 
         -- Open provider instance
         local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, provider_info.options or {})
+        local provider_instance, err = open_provider(providers_module, provider_info)
         if not provider_instance then
             return nil, "Failed to open provider: " .. (err or "unknown error")
         end
@@ -777,7 +796,7 @@ function llm.status(options)
     end
 
     local providers_module = llm._providers or providers
-    local provider_instance, err = providers_module.open(provider_info.id, provider_info.options or {})
+    local provider_instance, err = open_provider(providers_module, provider_info)
     if not provider_instance then
         return nil, "Failed to open provider: " .. (err or "unknown error")
     end

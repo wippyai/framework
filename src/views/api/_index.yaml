@@ -13,6 +13,11 @@ entries:
       method: handler
       modules:
         - http
+      security:
+        actor:
+          id: wippy.views.api:list_pages
+        policies:
+          - wippy.views:public_registry_runtime
       pool:
         size: 4
         workers: 4
@@ -38,6 +43,15 @@ entries:
       method: handler
       modules:
         - http
+      security:
+        actor:
+          id: wippy.views.api:list_components
+        policies:
+          - wippy.views:public_registry_runtime
+          - wippy.views:public_env_runtime
+          - wippy.views:public_metadata_http_runtime
+          - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
         workers: 4
@@ -63,6 +77,15 @@ entries:
       method: handler
       modules:
         - http
+      security:
+        actor:
+          id: wippy.views.api:find_by_tag
+        policies:
+          - wippy.views:public_registry_runtime
+          - wippy.views:public_env_runtime
+          - wippy.views:public_metadata_http_runtime
+          - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
         workers: 4
@@ -90,6 +113,16 @@ entries:
       method: handler
       modules:
         - http
+      security:
+        actor:
+          id: wippy.views.api:render
+        policies:
+          - wippy.views:public_registry_runtime
+          - wippy.views:public_env_runtime
+          - wippy.views:public_metadata_http_runtime
+          - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_store_runtime
+          - wippy.views:public_data_func_runtime
       pool:
         size: 4
     - name: render.endpoint
@@ -112,6 +145,12 @@ entries:
       method: handler
       modules:
         - http
+      security:
+        actor:
+          id: wippy.views.api:public_url
+        policies:
+          - wippy.views:public_registry_runtime
+          - wippy.views:public_env_runtime
     - name: public_url.endpoint
       kind: http.endpoint
       meta:
@@ -132,6 +171,11 @@ entries:
       method: handler
       modules:
         - http
+      security:
+        actor:
+          id: wippy.views.api:list_routes
+        policies:
+          - wippy.views:public_registry_runtime
       pool:
         size: 4
         workers: 4

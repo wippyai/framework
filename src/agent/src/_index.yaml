@@ -139,6 +139,7 @@ entries:
     source: file://context.lua
     modules:
       - contract
+      - security
     imports:
       agent: wippy.agent:agent
       agent_registry: wippy.agent.discovery:registry

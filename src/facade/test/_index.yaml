@@ -42,3 +42,17 @@ entries:
       test: wippy.test:test
     modules:
       - security
+
+  - name: config_handler_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Config handler and dependency wiring tests
+    source: file://config_dependency_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - json
+      - registry

@@ -394,6 +394,25 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  - name: process_security_test
+    kind: function.lua
+    meta:
+      name: LLM Process Security Test
+      type: test
+      comment: Ensures auto-start LLM background services run under the platform process scope.
+      group: LLM / General
+      tags:
+        - llm
+        - security
+        - process
+        - tests
+    source: file://process_security_test.lua
+    modules:
+      - registry
+    imports:
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.llm:provider
   - name: provider
     kind: contract.definition

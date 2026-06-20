@@ -244,6 +244,69 @@ entries:
           regardless of which handler-pool worker observes the miss.
       max_size: 1000
       cleanup_interval: "1h"
+    - name: public_registry_runtime
+      kind: security.policy
+      meta:
+        comment: Public view API handlers may discover declared view pages, components, resources, and env mappings.
+      policy:
+        resources: '*'
+        actions:
+          - registry.get
+          - registry.find
+        effect: allow
+    - name: public_env_runtime
+      kind: security.policy
+      meta:
+        comment: Public view rendering may resolve browser-safe environment values.
+      policy:
+        resources:
+          - PUBLIC_*
+          - userspace.dataflow.env:web_host_origin
+        actions:
+          - env.get
+        effect: allow
+    - name: public_metadata_http_runtime
+      kind: security.policy
+      meta:
+        comment: Public view API handlers may fetch bundled wippy-meta.json from declared component/page URLs.
+      policy:
+        resources:
+          - http://*
+          - https://*
+        actions:
+          - http_client.request
+        effect: allow
+    - name: public_metadata_private_ip_runtime
+      kind: security.policy
+      meta:
+        comment: Public view metadata self-fetch supports app-local component/page URLs.
+      policy:
+        resources: '*'
+        actions:
+          - http_client.private_ip
+        effect: allow
+    - name: public_metadata_store_runtime
+      kind: security.policy
+      meta:
+        comment: Public view metadata fallback warnings are deduplicated through the package-owned memory store.
+      policy:
+        resources:
+          - wippy.views:bundled_meta_warn
+        actions:
+          - store.get
+          - store.key.get
+          - store.key.set
+        effect: allow
+    - name: public_data_func_runtime
+      kind: security.policy
+      meta:
+        comment: Template-backed public views may call data functions declared in view namespaces.
+      policy:
+        resources:
+          - '*.views:*'
+        actions:
+          - funcs.call
+        effect: allow
     - name: dep.wippy.test
       kind: ns.dependency
       meta:
@@ -318,3 +381,16 @@ entries:
       imports:
         test: wippy.test:test
         bundled_meta: wippy.views:bundled_meta
+
+    - name: public_security_test
+      kind: function.lua
+      meta:
+        type: test
+        suite: views
+        comment: Public view API security policy tests
+      source: file://public_security_test.lua
+      method: run
+      imports:
+        test: wippy.test:test
+      modules:
+        - security

@@ -2,6 +2,7 @@ local agent_registry = require("agent_registry")
 local compiler = require("compiler")
 local agent = require("agent")
 local contract = require("contract")
+local security = require("security")
 
 type ToolSpec = string | { id: string, alias: string?, description: string?, context: table? }
 type DelegateSpec = { id: string, name: string?, rule: string?, schema: table?, context: table? }
@@ -54,47 +55,68 @@ agent_context.__index = agent_context
 agent_context._agent_registry = nil
 agent_context._compiler = nil
 agent_context._agent = nil
-agent_context._resolver = nil
-agent_context._resolver_checked = false
+agent_context._contract = nil
+agent_context._security = nil
 
 local RESOLVER_CONTRACT = "wippy.agent:resolver"
 
 local function get_agent_registry(): any return agent_context._agent_registry or agent_registry end
 local function get_compiler(): any return agent_context._compiler or compiler end
 local function get_agent(): any return agent_context._agent or agent end
+local function get_contract(): any return agent_context._contract or contract end
+local function get_security(): any return agent_context._security or security end
 
-local function get_resolver(): any?
-    if agent_context._resolver_checked then
-        return agent_context._resolver
-    end
-    agent_context._resolver_checked = true
-
-    local resolver_contract, err = contract.get(RESOLVER_CONTRACT)
+local function get_resolver(): (any?, string?)
+    local resolver_contract, err = get_contract().get(RESOLVER_CONTRACT)
     if err or not resolver_contract then
-        return nil
+        return nil, nil
     end
 
-    local instance, open_err = resolver_contract:open()
+    local implementations, implementations_err = resolver_contract:implementations()
+    if implementations_err then
+        return nil, "failed to inspect agent resolver implementations: " .. tostring(implementations_err)
+    end
+    if not implementations or #implementations == 0 then
+        return nil, nil
+    end
+
+    local opener = resolver_contract
+    local security_module = get_security()
+    local actor = security_module.actor()
+    local scope = security_module.scope()
+    if actor then
+        opener = opener:with_actor(actor)
+    end
+    if scope then
+        opener = opener:with_scope(scope)
+    end
+
+    local instance, open_err = opener:open()
     if open_err or not instance then
-        return nil
+        return nil, "failed to open agent resolver: " .. tostring(open_err or "no instance")
     end
 
-    agent_context._resolver = instance
-    return instance
+    return instance, nil
 end
 
-local function resolve_agent_via_contract(agent_id: string): table?
-    local resolver = get_resolver()
+local function resolve_agent_via_contract(agent_id: string): (table?, string?)
+    local resolver, resolver_err = get_resolver()
+    if resolver_err then
+        return nil, resolver_err
+    end
     if not resolver then
-        return nil
+        return nil, nil
     end
 
     local spec, resolve_err = resolver:resolve({ agent_id = agent_id })
-    if resolve_err or not spec then
-        return nil
+    if resolve_err then
+        return nil, "failed to resolve agent: " .. tostring(resolve_err)
+    end
+    if not spec then
+        return nil, nil
     end
 
-    return spec :: {}?
+    return spec :: {}?, nil
 end
 
 local function merge_contexts(base_context: {[string]: any}?, override_context: {[string]: any}?): {[string]: any}
@@ -307,7 +329,11 @@ function agent_context:load_agent(agent_spec_or_id: string | table, options: Loa
     else
         agent_identifier = agent_spec_or_id
 
-        raw_spec = resolve_agent_via_contract(agent_identifier)
+        local resolver_err
+        raw_spec, resolver_err = resolve_agent_via_contract(agent_identifier)
+        if resolver_err then
+            return nil, resolver_err
+        end
 
         if not raw_spec then
             local registry = get_agent_registry()

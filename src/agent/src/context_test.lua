@@ -120,6 +120,8 @@ local function define_tests()
             agent_context._agent_registry = mock_registry
             agent_context._compiler = mock_compiler
             agent_context._agent = mock_agent
+            agent_context._contract = nil
+            agent_context._security = nil
 
             context = agent_context.new({
                 context = {
@@ -133,6 +135,8 @@ local function define_tests()
             agent_context._agent_registry = nil
             agent_context._compiler = nil
             agent_context._agent = nil
+            agent_context._contract = nil
+            agent_context._security = nil
         end)
 
         describe("Construction", function()
@@ -310,6 +314,94 @@ local function define_tests()
         end)
 
         describe("Agent Loading", function()
+            it("should open resolver contract with current actor and scope", function()
+                local current_actor = { id = "test-actor" }
+                local current_scope = { id = "test-scope" }
+                local opened: any = {}
+
+                local resolver_contract = {}
+                function resolver_contract:implementations()
+                    return { "app:resolver" }, nil
+                end
+                function resolver_contract:with_actor(actor)
+                    opened.actor = actor
+                    return self
+                end
+                function resolver_contract:with_scope(scope)
+                    opened.scope = scope
+                    return self
+                end
+                function resolver_contract:open()
+                    opened.opened = true
+                    return {
+                        resolve = function(self, args)
+                            opened.resolved_agent_id = args.agent_id
+                            return {
+                                id = args.agent_id,
+                                name = "Resolved Agent",
+                                model = "gpt-4o-mini",
+                                prompt = "Resolved by contract.",
+                                tools = {}
+                            }, nil
+                        end
+                    }, nil
+                end
+
+                agent_context._contract = {
+                    get = function(contract_id)
+                        opened.contract_id = contract_id
+                        return resolver_contract, nil
+                    end
+                }
+                agent_context._security = {
+                    actor = function() return current_actor end,
+                    scope = function() return current_scope end
+                }
+
+                local agent_instance, err = context:load_agent("resolver-agent")
+
+                test.is_nil(err)
+                test.not_nil(agent_instance)
+                test.eq(opened.contract_id, "wippy.agent:resolver")
+                test.eq(opened.actor.id, "test-actor")
+                test.eq(opened.scope.id, "test-scope")
+                test.eq(opened.opened, true)
+                test.eq(opened.resolved_agent_id, "resolver-agent")
+            end)
+
+            it("should return resolver open errors", function()
+                local resolver_contract = {}
+                function resolver_contract:implementations()
+                    return { "app:resolver" }, nil
+                end
+                function resolver_contract:with_actor(actor)
+                    return self
+                end
+                function resolver_contract:with_scope(scope)
+                    return self
+                end
+                function resolver_contract:open()
+                    return nil, "resolver unavailable"
+                end
+
+                agent_context._contract = {
+                    get = function(contract_id)
+                        return resolver_contract, nil
+                    end
+                }
+                agent_context._security = {
+                    actor = function() return nil end,
+                    scope = function() return nil end
+                }
+
+                local agent_instance, err = context:load_agent("resolver-agent")
+
+                test.is_nil(agent_instance)
+                test.not_nil(err)
+                test.contains(err, "failed to open agent resolver")
+                test.contains(err, "resolver unavailable")
+            end)
+
             it("should load agent by ID successfully", function()
                 local agent_instance, err = context:load_agent("test-agent")
 

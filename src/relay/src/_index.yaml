@@ -43,10 +43,12 @@ entries:
   - name: user_security_scope
     kind: ns.requirement
     meta:
-      description: "Environment variable storage location"
+      description: "Application security scope/group applied to user relay hubs"
     targets:
       - entry: wippy.relay.env:user_security_scope
         path: ".default"
+      - entry: wippy.relay.security:user_hub_registry
+        path: ".groups +="
 
   - name: max_connections_per_user
     kind: ns.requirement
@@ -141,6 +143,7 @@ entries:
       - json
       - uuid
       - logger
+      - pg
     imports:
       consts: wippy.relay:consts
     method: run
@@ -165,4 +168,26 @@ entries:
     modules:
       - env
       - time
+    method: run
+
+  # wippy.relay:user_test
+  - name: user_test
+    kind: function.lua
+    meta:
+      name: Relay User Hub Test
+      type: test
+      suite: relay
+      comment: Tests user-hub websocket payload compatibility.
+      group: Relay
+      tags:
+        - relay
+        - user
+        - tests
+    source: file://user_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules:
+      - time
+      - security
     method: run
