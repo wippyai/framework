@@ -29,3 +29,16 @@ entries:
         value: app:api.public
       - name: domain
         value: localhost
+
+  - name: security_policy_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Facade handler security policy tests
+    source: file://security_policy_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - security

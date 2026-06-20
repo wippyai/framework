@@ -408,6 +408,12 @@ entries:
       - json
       - env
       - fs
+    security:
+      actor:
+        id: wippy.facade:config_handler
+      policies:
+        - wippy.facade:config_read_runtime
+        - wippy.facade:content_fs_runtime
 
   - name: config_endpoint
     kind: http.endpoint
@@ -430,6 +436,12 @@ entries:
       - http
       - registry
       - fs
+    security:
+      actor:
+        id: wippy.facade:css_vars_handler
+      policies:
+        - wippy.facade:config_read_runtime
+        - wippy.facade:content_fs_runtime
 
   - name: css_vars_endpoint
     kind: http.endpoint
@@ -438,6 +450,29 @@ entries:
     method: GET
     path: /facade/variables.css
     func: css_vars_handler
+
+  - name: config_read_runtime
+    kind: security.policy
+    meta:
+      comment: Facade handlers read their own declarative config and public API URL.
+    policy:
+      resources:
+        - wippy.facade:*
+        - PUBLIC_API_URL
+      actions:
+        - registry.get
+        - env.get
+      effect: allow
+
+  - name: content_fs_runtime
+    kind: security.policy
+    meta:
+      comment: Facade handlers may open the configured content filesystem to resolve fs:// theming references.
+    policy:
+      resources: '*'
+      actions:
+        - fs.get
+      effect: allow
 
   - name: dep.wippy.test
     kind: ns.dependency
@@ -460,6 +495,19 @@ entries:
     modules:
       - json
       - registry
+
+  - name: security_policy_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Facade handler security policy tests
+    source: file://security_policy_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - security
 
   - name: theming_helpers_test
     kind: function.lua
