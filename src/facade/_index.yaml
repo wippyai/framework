@@ -35,7 +35,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.39
+    default: https://web-host.wippy.ai/webcomponents-1.0.40
 
   - name: fe_entry_path
     kind: ns.requirement
