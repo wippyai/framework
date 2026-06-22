@@ -354,6 +354,15 @@ entries:
         path: .default
     default: "{}"
 
+  - name: tanstack
+    kind: ns.requirement
+    meta:
+      description: "TanStack Query default options as JSON: { default?, content?, lists? }. `default` applies to every query; `content` targets single-resource renders (page/artifact/session/entry/model/upload), `lists` targets navigation/index queries. Each is a JSON-safe subset of query options (refetchOnWindowFocus, refetchOnReconnect, refetchOnMount, staleTime, gcTime, retry, refetchInterval). Default behavior (no config) is refetchOnWindowFocus:false. e.g. {\"lists\":{\"refetchOnWindowFocus\":true}}"
+    targets:
+      - entry: wippy.facade:tanstack
+        path: .default
+    default: "{}"
+
   - name: extra_scripts
     kind: ns.requirement
     meta:

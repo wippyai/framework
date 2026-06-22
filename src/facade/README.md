@@ -109,6 +109,7 @@ These accept JSON strings for complex configuration:
 | `allow_additional_tags` | `{}` | `hostConfig.allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
 | `axios_defaults` | `{}` | `axiosDefaults` | HTTP client defaults (e.g. `{"timeout":30000}`) — top-level, not under hostConfig |
+| `tanstack` | `{}` | `tanstack` | TanStack Query defaults — top-level, not under hostConfig. `{ default?, content?, lists? }`: `default` applies to all queries, `content` to single-resource renders, `lists` to navigation/index queries. Host default is `refetchOnWindowFocus:false` (e.g. `{"lists":{"refetchOnWindowFocus":true}}`) |
 | `extra_scripts` | `[]` | `extraScripts` | External `<script>` tags injected into `index.html` before the Web Host bundle loads. See [Extra scripts](#extra-scripts). |
 
 ### Auth
