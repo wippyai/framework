@@ -1,4 +1,5 @@
 local http = require("http")
+local api_error = require("api_error")
 local page_registry = require("page_registry")
 
 -- GET /pages/routes
@@ -22,11 +23,7 @@ local function handler()
     -- Single fetch + validation pass — avoids the two-call race.
     local all_pages, list_err = page_registry.find_all()
     if list_err then
-        res:set_status(http.STATUS.INTERNAL_ERROR)
-        res:write_json({
-            success = false,
-            error = list_err,
-        })
+        api_error.fail(res, http.STATUS.INTERNAL_ERROR, "Failed to list mount routes", list_err)
         return
     end
 

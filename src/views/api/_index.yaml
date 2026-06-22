@@ -1,6 +1,13 @@
 version: "1.0"
 namespace: wippy.views.api
 entries:
+    - name: api_error
+      kind: library.lua
+      meta:
+        comment: Sanitized API error responses with server-side logging
+      source: file://api_error.lua
+      modules:
+        - logger
     - name: list_pages
       kind: function.lua
       meta:
@@ -9,6 +16,7 @@ entries:
         router: api_router
       source: file://list_pages.lua
       imports:
+        api_error: wippy.views.api:api_error
         page_registry: wippy.views:page_registry
       method: handler
       modules:
@@ -38,6 +46,7 @@ entries:
         router: api_router
       source: file://list_components.lua
       imports:
+        api_error: wippy.views.api:api_error
         component_registry: wippy.views:component_registry
         bundled_meta: wippy.views:bundled_meta
       method: handler
@@ -72,6 +81,7 @@ entries:
         router: api_router
       source: file://find_by_tag.lua
       imports:
+        api_error: wippy.views.api:api_error
         component_registry: wippy.views:component_registry
         bundled_meta: wippy.views:bundled_meta
       method: handler
@@ -106,6 +116,7 @@ entries:
         router: api_router
       source: file://render.lua
       imports:
+        api_error: wippy.views.api:api_error
         page_registry: wippy.views:page_registry
         renderer: wippy.views:renderer
         resource_registry: wippy.views:resource_registry
@@ -167,6 +178,7 @@ entries:
         router: api_router
       source: file://list_routes.lua
       imports:
+        api_error: wippy.views.api:api_error
         page_registry: wippy.views:page_registry
       method: handler
       modules:

@@ -1,4 +1,5 @@
 local http = require("http")
+local api_error = require("api_error")
 local component_registry = require("component_registry")
 local bundled_meta = require("bundled_meta")
 
@@ -37,11 +38,7 @@ local function handler()
 
     local all_components, err = component_registry.find_all()
     if err then
-        res:set_status(http.STATUS.INTERNAL_ERROR)
-        res:write_json({
-            success = false,
-            error = err
-        })
+        api_error.fail(res, http.STATUS.INTERNAL_ERROR, "Failed to list components", err)
         return
     end
 

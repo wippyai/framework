@@ -1,4 +1,5 @@
 local http = require("http")
+local api_error = require("api_error")
 local page_registry = require("page_registry")
 local resource_registry = require("resource_registry")
 local renderer = require("renderer")
@@ -52,12 +53,7 @@ local function handler()
     local page_id, err = req:param("id")
 
     if err then
-        res:set_status(http.STATUS.INTERNAL_ERROR)
-        res:write_json({
-            success = false,
-            error = "Parameter extraction error",
-            details = err
-        })
+        api_error.fail(res, http.STATUS.INTERNAL_ERROR, "Parameter extraction error", err)
         return
     end
 
@@ -74,12 +70,7 @@ local function handler()
     local page, page_err = page_registry.get(page_id)
 
     if page_err then
-        res:set_status(http.STATUS.NOT_FOUND)
-        res:write_json({
-            success = false,
-            error = "Page not found",
-            details = page_err
-        })
+        api_error.fail(res, http.STATUS.NOT_FOUND, "Page not found", page_err)
         return
     end
 
@@ -149,12 +140,7 @@ local function handler()
                 details = "You do not have permission to view this page"
             })
         else
-            res:set_status(http.STATUS.INTERNAL_ERROR)
-            res:write_json({
-                success = false,
-                error = "Failed to render page",
-                details = render_err
-            })
+            api_error.fail(res, http.STATUS.INTERNAL_ERROR, "Failed to render page", render_err)
         end
         return
     end

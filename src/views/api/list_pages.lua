@@ -1,4 +1,5 @@
 local http = require("http")
+local api_error = require("api_error")
 local page_registry = require("page_registry")
 
 type PageResponse = {
@@ -30,11 +31,7 @@ local function handler()
 
     local all_pages, err = page_registry.find_all()
     if err then
-        res:set_status(http.STATUS.INTERNAL_ERROR)
-        res:write_json({
-            success = false,
-            error = err
-        })
+        api_error.fail(res, http.STATUS.INTERNAL_ERROR, "Failed to list pages", err)
         return
     end
 

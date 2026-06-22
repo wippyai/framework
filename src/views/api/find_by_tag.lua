@@ -1,4 +1,5 @@
 local http = require("http")
+local api_error = require("api_error")
 local component_registry = require("component_registry")
 local bundled_meta = require("bundled_meta")
 
@@ -41,11 +42,7 @@ local function handler()
 
     local tag, param_err = req:param("tag")
     if param_err or not tag or tag == "" then
-        res:set_status(http.STATUS.BAD_REQUEST)
-        res:write_json({
-            success = false,
-            error = "Tag name is required" .. (param_err and (": " .. tostring(param_err)) or ""),
-        })
+        api_error.fail(res, http.STATUS.BAD_REQUEST, "Tag name is required", param_err)
         return
     end
 
@@ -77,11 +74,7 @@ local function handler()
     end
 
     if err or not component then
-        res:set_status(http.STATUS.NOT_FOUND)
-        res:write_json({
-            success = false,
-            error = err or ("No view.component registered for tag: " .. tag),
-        })
+        api_error.fail(res, http.STATUS.NOT_FOUND, "No view.component registered for tag: " .. tag, err)
         return
     end
 
