@@ -315,6 +315,77 @@ local function define_tests()
             }
         }
 
+        local spec_with_tool_wrapper_trait = {
+            id = "test:tool_wrapper",
+            name = "Agent With Tool Wrapper Trait",
+            description = "Agent whose trait wraps tool execution",
+            model = "gpt-4o-mini",
+            prompt = "You are an agent with tool wrappers.",
+            context = {
+                agent_setting = "agent_value",
+                shared_setting = "agent_overrides_trait"
+            },
+            agent_options = {
+                compact = {
+                    strict = true
+                },
+                checkpoint = {
+                    token_threshold = 96000
+                }
+            },
+            traits = {
+                {
+                    id = "tool_wrapper_trait",
+                    context = {
+                        trait_instance_setting = "instance_value",
+                        shared_setting = "instance_overrides_agent"
+                    },
+                    agent_options = {
+                        compact = {
+                            token_threshold = 16000
+                        },
+                        checkpoint = {
+                            function_id = "agent.checkpoint:instance"
+                        }
+                    }
+                },
+                "legacy_runtime_provider_trait",
+                "invalid_tool_wrapper_trait"
+            }
+        }
+
+        local spec_with_contract_traits = {
+            id = "test:contract_traits",
+            name = "Agent With Contract Traits",
+            description = "Agent whose traits own memory, lifecycle, prompt, and compact bindings",
+            model = "gpt-4o-mini",
+            prompt = "You are an agent with trait-owned contracts.",
+            context = {
+                workspace = "/repo",
+                namespace = "agent_context",
+                shared_setting = "agent_context_wins"
+            },
+            traits = {
+                {
+                    id = "memory_contract_trait",
+                    context = {
+                        namespace = "ops",
+                        shard = "primary",
+                        shared_setting = "attachment_context"
+                    },
+                    options = {
+                        recall = {
+                            max_items = 5
+                        },
+                        compact = {
+                            token_threshold = 32000
+                        }
+                    }
+                },
+                "audit_lifecycle_trait"
+            }
+        }
+
         local trait_definitions = {
             static_trait = {
                 id = "static_trait",
@@ -392,6 +463,189 @@ local function define_tests()
                     dynamic_prompts = true
                 },
                 prompt_func_id = "generate_dynamic_prompt"
+            },
+            tool_wrapper_trait = {
+                id = "tool_wrapper_trait",
+                name = "Tool Wrapper Trait",
+                description = "Trait with tool wrapper specs",
+                prompt = "",
+                tools = {},
+                context = {
+                    memory_profile = "default",
+                    shared_setting = "trait_default"
+                },
+                agent_options = {
+                    compact = {
+                        token_threshold = 32000,
+                        function_id = "agent.compact:default",
+                        max_memory_chars = 8192
+                    },
+                    checkpoint = {
+                        token_threshold = 64000
+                    }
+                },
+                tool_wrappers = {
+                    {
+                        id = "audit_after",
+                        phase = "after_execute",
+                        binding = "test.wrapper:audit",
+                        priority = 20,
+                        strict = true,
+                        context = {
+                            slot = "audit"
+                        },
+                        options = {
+                            include_results = true
+                        }
+                    },
+                    {
+                        id = "guard_before",
+                        phases = { "before_execute" },
+                        binding = "test.wrapper:guard",
+                        priority = 10,
+                        options = {
+                            max_calls = 4
+                        }
+                    }
+                }
+            },
+            legacy_runtime_provider_trait = {
+                id = "legacy_runtime_provider_trait",
+                name = "Legacy Runtime Provider Trait",
+                description = "Trait with old runtime and notify fields that must not map to tool wrappers",
+                prompt = "",
+                tools = {},
+                context = {},
+                runtime_hook = {
+                    id = "legacy_checkpoint",
+                    phase = "checkpoint",
+                    binding_id = "test.runtime:legacy_provider",
+                    options = {
+                        token_threshold = 64000
+                    }
+                },
+                notify_hook = {
+                    id = "legacy_notify",
+                    event = "turn.failed",
+                    binding_id = "test.notify:legacy",
+                    priority = 35,
+                    options = {
+                        severity = "error"
+                    }
+                }
+            },
+            invalid_tool_wrapper_trait = {
+                id = "invalid_tool_wrapper_trait",
+                name = "Invalid Tool Wrapper Trait",
+                description = "Trait with malformed tool wrapper specs",
+                prompt = "",
+                tools = {},
+                context = {},
+                tool_wrappers = {
+                    {
+                        id = "missing_target",
+                        phase = "before_execute"
+                    },
+                    {
+                        id = "unsupported_phase",
+                        phase = "around_execute",
+                        binding = "test.wrapper:invalid"
+                    }
+                }
+            },
+            memory_contract_trait = {
+                id = "memory_contract_trait",
+                name = "Memory Contract Trait",
+                description = "Trait that owns memory, lifecycle, prompt, and compaction bindings",
+                prompt = "Use durable memory when relevant.",
+                tools = {},
+                context = {
+                    namespace = "default",
+                    shard = "default",
+                    shared_setting = "trait_default"
+                },
+                options = {
+                    recall = {
+                        enabled = true,
+                        max_items = 2,
+                        max_length = 1000
+                    },
+                    compact = {
+                        enabled = true,
+                        token_threshold = 24000,
+                        max_memory_chars = 8192
+                    },
+                    checkpoint = {
+                        token_threshold = 48000
+                    }
+                },
+                bindings = {
+                    memory = {
+                        id = "memory",
+                        contract = "wippy.agent:memory",
+                        binding = "test.memory:store",
+                        context = {
+                            slot = "memory"
+                        },
+                        options = {
+                            recall = {
+                                max_length = 2000
+                            }
+                        }
+                    },
+                    lifecycle = {
+                        id = "memory_lifecycle",
+                        contract = "wippy.agent:lifecycle",
+                        binding = "test.memory:lifecycle",
+                        phases = { "activate", "deactivate", "after_compact" },
+                        priority = 30,
+                        context = {
+                            hook = "memory"
+                        }
+                    },
+                    prompt_provider = {
+                        id = "memory_prompt",
+                        contract = "wippy.agent:prompt_provider",
+                        binding = "test.memory:prompt_provider",
+                        priority = 40
+                    },
+                    context_compactor = {
+                        id = "memory_compactor",
+                        contract = "wippy.agent:context_compactor",
+                        binding = "test.memory:compactor",
+                        priority = 20,
+                        context = {
+                            mode = "memory"
+                        }
+                    }
+                }
+            },
+            audit_lifecycle_trait = {
+                id = "audit_lifecycle_trait",
+                name = "Audit Lifecycle Trait",
+                description = "Second lifecycle binding for ordering tests",
+                prompt = "",
+                tools = {},
+                context = {},
+                options = {
+                    audit = {
+                        level = "standard"
+                    }
+                },
+                bindings = {
+                    lifecycle = {
+                        id = "audit_lifecycle",
+                        contract = "wippy.agent:lifecycle",
+                        binding = "test.audit:lifecycle",
+                        phases = { "after_step" },
+                        priority = 10,
+                        options = {
+                            audit = {
+                                include_tools = true
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -747,18 +1001,20 @@ local function define_tests()
                 end
             end)
 
-            it("should handle empty runtime function lists for agents without runtime traits", function()
+            it("should handle empty extension lists for agents without dynamic traits", function()
                 local compiled_spec, err = compiler.compile(minimal_spec)
 
                 test.is_nil(err)
                 test.not_nil(compiled_spec)
                 test.not_nil(compiled_spec.prompt_funcs)
                 test.not_nil(compiled_spec.step_funcs)
+                test.not_nil(compiled_spec.tool_wrappers)
                 test.eq(#compiled_spec.prompt_funcs, 0)
                 test.eq(#compiled_spec.step_funcs, 0)
+                test.eq(#compiled_spec.tool_wrappers, 0)
             end)
 
-            it("should not include traits without runtime functions in runtime collections", function()
+            it("should not include traits without wrappers in wrapper collections", function()
                 local spec_with_static_traits = {
                     id = "test:static_only",
                     name = "Static Traits Only",
@@ -776,6 +1032,163 @@ local function define_tests()
                 test.not_nil(compiled_spec)
                 test.eq(#compiled_spec.prompt_funcs, 0)
                 test.eq(#compiled_spec.step_funcs, 0)
+                test.eq(#compiled_spec.tool_wrappers, 0)
+            end)
+
+            it("should collect trait-owned tool wrapper specs", function()
+                local compiled_spec, err = compiler.compile(spec_with_tool_wrapper_trait)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+                test.not_nil(compiled_spec.tool_wrappers)
+                test.eq(#compiled_spec.tool_wrappers, 2)
+
+                local first = compiled_spec.tool_wrappers[1]
+                test.eq(first.id, "guard_before")
+                test.eq(first.trait_id, "tool_wrapper_trait")
+                test.eq(first.binding, "test.wrapper:guard")
+                test.eq(first.phases[1], "before_execute")
+                test.eq(first.priority, 10)
+                test.eq(first.options.max_calls, 4)
+
+                local second = compiled_spec.tool_wrappers[2]
+                test.eq(second.id, "audit_after")
+                test.eq(second.trait_id, "tool_wrapper_trait")
+                test.eq(second.binding, "test.wrapper:audit")
+                test.eq(second.phases[1], "after_execute")
+                test.eq(second.priority, 20)
+                test.is_true(second.strict)
+                test.is_true(second.options.include_results)
+            end)
+
+            it("should merge trait agent options with attachment and agent overrides", function()
+                local compiled_spec, err = compiler.compile(spec_with_tool_wrapper_trait)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+                test.not_nil(compiled_spec.agent_options)
+
+                test.eq(compiled_spec.agent_options.compact.token_threshold, 16000,
+                    "attachment option overrides trait default")
+                test.eq(compiled_spec.agent_options.compact.function_id, "agent.compact:default",
+                    "trait option preserved when not overridden")
+                test.eq(compiled_spec.agent_options.compact.max_memory_chars, 8192)
+                test.is_true(compiled_spec.agent_options.compact.strict,
+                    "agent-level option overlays trait and attachment options")
+                test.eq(compiled_spec.agent_options.checkpoint.token_threshold, 96000,
+                    "agent-level checkpoint threshold wins last")
+                test.eq(compiled_spec.agent_options.checkpoint.function_id, "agent.checkpoint:instance",
+                    "attachment checkpoint function is preserved")
+            end)
+
+            it("should merge trait instance, agent, and wrapper context for tool wrappers", function()
+                local compiled_spec, err = compiler.compile(spec_with_tool_wrapper_trait)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+
+                local wrapper = compiled_spec.tool_wrappers[2]
+                test.eq(wrapper.context.memory_profile, "default")
+                test.eq(wrapper.context.agent_setting, "agent_value")
+                test.eq(wrapper.context.shared_setting, "agent_overrides_trait")
+                test.eq(wrapper.context.trait_instance_setting, "instance_value")
+                test.eq(wrapper.context.slot, "audit")
+                test.eq(wrapper.context.agent_id, "test:tool_wrapper")
+                test.eq(wrapper.context.trait_id, "tool_wrapper_trait")
+            end)
+
+            it("should ignore old runtime/notify fields and malformed tool wrappers", function()
+                local compiled_spec, err = compiler.compile(spec_with_tool_wrapper_trait)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+
+                test.eq(#compiled_spec.tool_wrappers, 2)
+                for _, wrapper in ipairs(compiled_spec.tool_wrappers) do
+                    test.is_false(wrapper.id == "legacy_checkpoint")
+                    test.is_false(wrapper.id == "legacy_notify")
+                    test.is_false(wrapper.id == "missing_target")
+                    test.is_false(wrapper.id == "unsupported_phase")
+                end
+            end)
+
+            it("should normalize trait-owned contract bindings into a compiled binding plan", function()
+                local compiled_spec, err = compiler.compile(spec_with_contract_traits)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+                test.not_nil(compiled_spec.bindings)
+
+                test.eq(#compiled_spec.bindings.memory, 1)
+                test.eq(#compiled_spec.bindings.lifecycle, 2)
+                test.eq(#compiled_spec.bindings.prompt_provider, 1)
+                test.eq(#compiled_spec.bindings.context_compactor, 1)
+
+                local memory = compiled_spec.bindings.memory[1]
+                test.eq(memory.kind, "memory")
+                test.eq(memory.contract, "wippy.agent:memory")
+                test.eq(memory.binding, "test.memory:store")
+                test.eq(memory.context.agent_id, "test:contract_traits")
+                test.eq(memory.context.trait_id, "memory_contract_trait")
+                test.eq(memory.context.slot, "memory")
+            end)
+
+            it("should merge trait defaults, binding options, and attachment options into binding context options", function()
+                local compiled_spec, err = compiler.compile(spec_with_contract_traits)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+
+                local memory = compiled_spec.bindings.memory[1]
+                test.eq(memory.context.namespace, "agent_context", "agent context still follows existing context merge order")
+                test.eq(memory.context.shard, "primary")
+                test.eq(memory.context.shared_setting, "agent_context_wins")
+                test.is_true(memory.context.options.recall.enabled)
+                test.eq(memory.context.options.recall.max_items, 5,
+                    "trait attachment options override trait defaults")
+                test.eq(memory.context.options.recall.max_length, 2000,
+                    "binding-local options refine trait defaults")
+                test.eq(memory.context.options.compact.token_threshold, 32000,
+                    "attachment compact option overrides trait default")
+                test.eq(memory.context.options.compact.max_memory_chars, 8192)
+                test.eq(memory.options.recall.max_items, 5)
+                test.eq(memory.options.recall.max_length, 2000)
+            end)
+
+            it("should order multiple bindings of the same kind by priority then declaration order", function()
+                local compiled_spec, err = compiler.compile(spec_with_contract_traits)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+
+                local lifecycle = compiled_spec.bindings.lifecycle
+                test.eq(#lifecycle, 2)
+                test.eq(lifecycle[1].id, "audit_lifecycle")
+                test.eq(lifecycle[1].binding, "test.audit:lifecycle")
+                test.eq(lifecycle[1].phases[1], "after_step")
+                test.eq(lifecycle[1].context.options.audit.level, "standard")
+                test.is_true(lifecycle[1].context.options.audit.include_tools)
+
+                test.eq(lifecycle[2].id, "memory_lifecycle")
+                test.eq(lifecycle[2].binding, "test.memory:lifecycle")
+                test.eq(lifecycle[2].phases[1], "activate")
+                test.eq(lifecycle[2].phases[2], "deactivate")
+                test.eq(lifecycle[2].phases[3], "after_compact")
+            end)
+
+            it("should let a trait replace the default compactor through context_compactor binding", function()
+                local compiled_spec, err = compiler.compile(spec_with_contract_traits)
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+
+                local compactor = compiled_spec.bindings.context_compactor[1]
+                test.eq(compactor.contract, "wippy.agent:context_compactor")
+                test.eq(compactor.binding, "test.memory:compactor")
+                test.eq(compactor.context.mode, "memory")
+                test.eq(compactor.context.options.compact.enabled, true)
+                test.eq(compactor.context.options.compact.token_threshold, 32000)
+                test.eq(compactor.context.options.checkpoint.token_threshold, 48000)
             end)
         end)
 
@@ -1476,7 +1889,11 @@ local function define_tests()
                 delegates = {},
                 memory_contract = {
                     implementation_id = "memory:impl",
-                    context = { setting = "value" }
+                    context = { setting = "value" },
+                    options = {
+                        max_items = 4,
+                        max_length = 3000
+                    }
                 }
             }
 
@@ -1495,6 +1912,14 @@ local function define_tests()
             test.eq(compiled_spec.memory[1], "memory:item1")
             test.not_nil(compiled_spec.memory_contract)
             test.eq(compiled_spec.memory_contract.implementation_id, "memory:impl")
+            test.not_nil(compiled_spec.bindings)
+            test.eq(#compiled_spec.bindings.memory, 1)
+            test.eq(compiled_spec.bindings.memory[1].source, "legacy_memory_contract")
+            test.eq(compiled_spec.bindings.memory[1].contract, "wippy.agent:memory")
+            test.eq(compiled_spec.bindings.memory[1].binding, "memory:impl")
+            test.eq(compiled_spec.bindings.memory[1].context.setting, "value")
+            test.eq(compiled_spec.bindings.memory[1].context.options.max_items, 4)
+            test.eq(compiled_spec.bindings.memory[1].options.max_length, 3000)
 
             test.eq(compiled_spec.tools["tool"].context.agent_id, "test:full")
         end)

@@ -15,6 +15,7 @@ entries:
     modules:
       - json
       - funcs
+      - contract
     imports:
       tools: wippy.agent.discovery:tools
     
@@ -98,4 +99,3 @@ entries:
       - time
       - ctx
     method: delayed_echo
-    

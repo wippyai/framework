@@ -12,6 +12,8 @@ local function define_tests()
 
     describe("Tool Caller", function()
         local tool_caller
+        local wrapper_calls
+        local wrapper_behaviors
 
         -- Mock tool schemas
         local tool_schemas = {
@@ -65,6 +67,8 @@ local function define_tests()
                 ["test:non_exclusive"] = { result = "regular_result" },
                 ["test:failing_tool"] = { error = "Tool execution failed" }
             }
+            wrapper_calls = {}
+            wrapper_behaviors = {}
 
             -- Create mock modules
             local mock_json = {
@@ -161,18 +165,61 @@ local function define_tests()
                 end
             }
 
+            local mock_contract = {
+                get = function(contract_id)
+                    if contract_id ~= "wippy.agent:tool_wrapper" then
+                        return nil, "unknown contract: " .. tostring(contract_id)
+                    end
+
+                    local function open_with_context(binding_context)
+                        return {
+                            open = function(self, binding)
+                                return {
+                                    apply = function(self, payload)
+                                        table.insert(wrapper_calls, {
+                                            binding = binding,
+                                            context = binding_context or {},
+                                            payload = payload
+                                        })
+
+                                        local behavior = wrapper_behaviors[binding]
+                                        if behavior then
+                                            return behavior(payload, binding_context or {})
+                                        end
+                                        return {}, nil
+                                    end
+                                }, nil
+                            end
+                        }
+                    end
+
+                    return {
+                        with_context = function(self, binding_context)
+                            return open_with_context(binding_context)
+                        end,
+                        open = function(self, binding)
+                            return open_with_context({}):open(binding)
+                        end
+                    }, nil
+                end
+            }
+
             -- Inject mocks via internal fields
             tool_caller = require("tool_caller")
             tool_caller._json = mock_json
             tool_caller._tools = mock_tools
             tool_caller._funcs = mock_funcs
+            tool_caller._contract = mock_contract
         end)
 
         after_each(function()
             tool_caller._json = nil
             tool_caller._tools = nil
             tool_caller._funcs = nil
+            tool_caller._contract = nil
             tool_caller = nil
+            wrapper_calls = nil
+            wrapper_behaviors = nil
         end)
 
         describe("Constructor and Strategy", function()
@@ -739,6 +786,238 @@ local function define_tests()
             end)
         end)
 
+        describe("Tool Wrapper Contracts", function()
+            local function calculator_call(call_id)
+                return {
+                    id = call_id or "call_calculator",
+                    name = "calculator",
+                    arguments = { expression = "2 + 2" },
+                    registry_id = "test:calculator"
+                }
+            end
+
+            it("should apply focused before and after wrapper bindings without losing context", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload, binding_context)
+                    test.eq(payload.phase, tool_caller.PHASE.BEFORE_EXECUTE)
+                    test.eq(payload.host.kind, "session")
+                    test.eq(payload.host.session_id, "session-1")
+                    test.eq(payload.agent.id, "agent-1")
+                    test.eq(payload.options.max_calls, 1)
+                    test.eq(binding_context.policy, "guard")
+                    test.eq(binding_context.agent_id, "agent-1")
+                    test.eq(binding_context.trait_id, "trait:guard")
+
+                    return {
+                        tool_calls = {
+                            {
+                                id = "call_weather",
+                                name = "get_weather",
+                                arguments = { city = "NYC" },
+                                registry_id = "test:weather"
+                            }
+                        },
+                        observations = {
+                            {
+                                level = "info",
+                                code = "guard.checked",
+                                content = "tool calls checked"
+                            }
+                        },
+                        metadata = {
+                            checked = true
+                        }
+                    }, nil
+                end
+
+                wrapper_behaviors["test.wrapper:audit"] = function(payload, binding_context)
+                    test.eq(payload.phase, tool_caller.PHASE.AFTER_EXECUTE)
+                    test.eq(payload.host.kind, "session")
+                    test.eq(payload.host.session_id, "session-1")
+                    test.eq(payload.agent.model, "gpt-test")
+                    test.eq(payload.run_context.contract, "wippy.agent:run_context")
+                    test.eq(payload.run_context.binding, "wippy.session.run_context:binding")
+                    test.eq(payload.options.include_results, true)
+                    test.eq(binding_context.policy, "audit")
+                    test.eq(payload.tool_calls[1].registry_id, "test:weather")
+                    test.not_nil(payload.tool_results.call_weather)
+                    test.eq(payload.tool_results.call_weather.result, "Sunny, 25°C")
+                    test.eq(payload.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
+                    test.eq(payload.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_RESULTS_RECORDED)
+
+                    return {
+                        observations = {
+                            {
+                                level = "info",
+                                code = "audit.recorded",
+                                content = "tool results recorded"
+                            }
+                        }
+                    }, nil
+                end
+
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "audit",
+                        trait_id = "trait:audit",
+                        phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit",
+                        priority = 20,
+                        context = {
+                            policy = "audit",
+                            trait_id = "trait:audit"
+                        },
+                        options = {
+                            include_results = true
+                        }
+                    },
+                    {
+                        id = "guard",
+                        trait_id = "trait:guard",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                        binding = "test.wrapper:guard",
+                        priority = 10,
+                        context = {
+                            policy = "guard",
+                            agent_id = "agent-1",
+                            trait_id = "trait:guard"
+                        },
+                        options = {
+                            max_calls = 1
+                        }
+                    }
+                })
+                caller:set_wrapper_context({
+                    host = {
+                        kind = "session",
+                        session_id = "session-1"
+                    },
+                    agent = {
+                        id = "agent-1",
+                        model = "gpt-test"
+                    },
+                    run_context = {
+                        contract = "wippy.agent:run_context",
+                        binding = "wippy.session.run_context:binding",
+                        host = {
+                            kind = "session",
+                            session_id = "session-1"
+                        }
+                    }
+                })
+
+                local validated, validate_err = caller:validate({ calculator_call() })
+                test.is_nil(validate_err)
+                test.not_nil(validated)
+                test.not_nil(validated.call_weather)
+                test.eq(validated.call_weather.registry_id, "test:weather")
+
+                local results = caller:execute({}, validated)
+                test.not_nil(results.call_weather)
+                test.eq(results.call_weather.result, "Sunny, 25°C")
+
+                test.eq(#wrapper_calls, 2)
+                test.eq(wrapper_calls[1].binding, "test.wrapper:guard")
+                test.eq(wrapper_calls[2].binding, "test.wrapper:audit")
+
+                local observations = caller:get_wrapper_observations()
+                test.eq(#observations, 2)
+                test.eq(observations[1].code, "guard.checked")
+                test.eq(observations[2].code, "audit.recorded")
+
+                local metadata = caller:get_wrapper_metadata()
+                test.eq(#metadata, 1)
+                test.eq(metadata[1].wrapper_id, "guard")
+                test.is_true(metadata[1].metadata.checked)
+            end)
+
+            it("should require host context when wrappers are configured", function()
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "guard",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                        binding = "test.wrapper:guard",
+                        strict = true
+                    }
+                })
+
+                local validated, err = caller:validate({ calculator_call() })
+
+                test.is_nil(validated)
+                test.not_nil(err)
+                test.not_nil(err:match("host is required"))
+                test.eq(#wrapper_calls, 0)
+            end)
+
+            it("should block validation on strict before wrapper errors", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload, binding_context)
+                    return nil, "blocked by policy"
+                end
+
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "guard",
+                        trait_id = "trait:guard",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                        binding = "test.wrapper:guard",
+                        strict = true
+                    }
+                })
+                caller:set_wrapper_context({
+                    host = { kind = "dataflow", dataflow_id = "df-1", node_id = "node-1", iteration = 3 },
+                    agent = { id = "agent-1" }
+                })
+
+                local validated, err = caller:validate({ calculator_call() })
+
+                test.is_nil(validated)
+                test.not_nil(err)
+                test.not_nil(err:match("blocked by policy"))
+
+                local wrapper_errors = caller:get_wrapper_errors()
+                test.eq(#wrapper_errors, 1)
+                test.eq(wrapper_errors[1].phase, tool_caller.PHASE.BEFORE_EXECUTE)
+                test.is_true(wrapper_errors[1].strict)
+            end)
+
+            it("should preserve tool results on after wrapper errors", function()
+                wrapper_behaviors["test.wrapper:audit"] = function(payload, binding_context)
+                    test.eq(payload.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_RESULTS_RECORDED)
+                    return nil, "audit sink unavailable"
+                end
+
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "audit",
+                        trait_id = "trait:audit",
+                        phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit",
+                        strict = false
+                    }
+                })
+                caller:set_wrapper_context({
+                    host = { kind = "dataflow", dataflow_id = "df-1", node_id = "node-1", iteration = 7 },
+                    agent = { id = "agent-1", model = "gpt-test" }
+                })
+
+                local validated, validate_err = caller:validate({ calculator_call("call_123") })
+                test.is_nil(validate_err)
+                test.not_nil(validated)
+
+                local results = caller:execute({}, validated)
+                test.not_nil(results.call_123)
+                test.eq(results.call_123.result, 42)
+
+                local wrapper_errors = caller:get_wrapper_errors()
+                test.eq(#wrapper_errors, 1)
+                test.eq(wrapper_errors[1].phase, tool_caller.PHASE.AFTER_EXECUTE)
+                test.is_false(wrapper_errors[1].strict)
+            end)
+        end)
+
         describe("Interface Completeness", function()
             it("should have all required methods", function()
                 local caller = tool_caller.new()
@@ -746,6 +1025,8 @@ local function define_tests()
                 test.eq(type(caller.validate), "function")
                 test.eq(type(caller.execute), "function")
                 test.eq(type(caller.set_strategy), "function")
+                test.eq(type(caller.set_tool_wrappers), "function")
+                test.eq(type(caller.set_wrapper_context), "function")
             end)
 
             it("should maintain consistent interface", function()

@@ -134,6 +134,46 @@ local function merge_contexts(base_context: {[string]: any}?, override_context: 
     return merged
 end
 
+local function copy_list(list: any): any
+    if type(list) ~= "table" then
+        return list
+    end
+
+    local copied = {}
+    for i, value in ipairs(list) do
+        copied[i] = value
+    end
+    return copied
+end
+
+local function copy_map(map: any): any
+    if type(map) ~= "table" then
+        return map
+    end
+
+    local copied = {}
+    for key, value in pairs(map) do
+        copied[key] = value
+    end
+    return copied
+end
+
+local function copy_agent_spec(raw_spec: table): table
+    local copied = {}
+    for key, value in pairs(raw_spec) do
+        copied[key] = value
+    end
+
+    copied.traits = copy_list(raw_spec.traits)
+    copied.tools = copy_list(raw_spec.tools)
+    copied.delegates = copy_list(raw_spec.delegates)
+    copied.memory = copy_list(raw_spec.memory)
+    copied.context = copy_map(raw_spec.context)
+    copied.agent_options = copy_map(raw_spec.agent_options)
+
+    return copied
+end
+
 function agent_context.new(config: {
     enable_cache: boolean?,
     context: {[string]: any}?,
@@ -347,6 +387,8 @@ function agent_context:load_agent(agent_spec_or_id: string | table, options: Loa
             end
         end
     end
+
+    raw_spec = copy_agent_spec(raw_spec)
 
     if model_override then
         raw_spec.model = model_override

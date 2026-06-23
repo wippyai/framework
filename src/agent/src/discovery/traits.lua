@@ -14,6 +14,19 @@ type TraitToolEntry = {
     alias: string?,
 }
 
+type TraitToolWrapperSpec = {
+    id: string?,
+    phases: {string},
+    binding: string,
+    context: {[string]: any},
+    options: {[string]: any},
+    priority: number,
+    strict: boolean?,
+}
+
+type TraitAgentOptions = {[string]: any}
+type TraitOptions = {[string]: any}
+
 type TraitSpec = {
     id: string,
     name: string,
@@ -23,6 +36,10 @@ type TraitSpec = {
     build_func_id: string?,
     prompt_func_id: string?,
     step_func_id: string?,
+    bindings: any?,
+    tool_wrappers: {TraitToolWrapperSpec},
+    options: TraitOptions,
+    agent_options: TraitAgentOptions,
     context: {[string]: any},
 }
 
@@ -39,6 +56,12 @@ type TraitRegistryEntry = {
         build_func_id: string?,
         prompt_func_id: string?,
         step_func_id: string?,
+        tool_wrapper: any?,
+        tool_wrappers: any?,
+        binding: any?,
+        bindings: any?,
+        options: TraitOptions?,
+        agent_options: TraitAgentOptions?,
         context: {[string]: any}?,
     }?,
 }
@@ -118,6 +141,118 @@ local function process_tools(tools_data: any): {TraitToolEntry}
     return processed_tools :: {TraitToolEntry}
 end
 
+local TOOL_WRAPPER_PHASES = {
+    before_execute = true,
+    after_execute = true,
+}
+
+local function normalize_tool_wrapper_phases(raw_wrapper: any): {string}
+    local phases: {string} = {}
+    local raw_phases = raw_wrapper and (raw_wrapper.phases or raw_wrapper.phase)
+
+    if raw_phases == nil then
+        return { "before_execute", "after_execute" }
+    end
+
+    if type(raw_phases) == "string" then
+        if TOOL_WRAPPER_PHASES[raw_phases] then
+            phases[#phases + 1] = raw_phases
+        end
+        return phases :: {string}
+    end
+
+    if type(raw_phases) == "table" then
+        for _, phase in ipairs(raw_phases) do
+            if type(phase) == "string" and TOOL_WRAPPER_PHASES[phase] then
+                phases[#phases + 1] = phase
+            end
+        end
+    end
+
+    return phases :: {string}
+end
+
+local function append_tool_wrapper(out: {TraitToolWrapperSpec}, raw_wrapper: any)
+    if type(raw_wrapper) ~= "table" then
+        return
+    end
+
+    local binding = raw_wrapper.binding or raw_wrapper.binding_id or raw_wrapper.implementation_id
+    if type(binding) ~= "string" or binding == "" then
+        return
+    end
+
+    local phases = normalize_tool_wrapper_phases(raw_wrapper)
+    if #phases == 0 then
+        return
+    end
+
+    table.insert(out, {
+        id = raw_wrapper.id or raw_wrapper.name,
+        phases = phases,
+        binding = binding,
+        context = type(raw_wrapper.context) == "table" and raw_wrapper.context or {},
+        options = type(raw_wrapper.options) == "table" and raw_wrapper.options or {},
+        priority = tonumber(raw_wrapper.priority) or 100,
+        strict = raw_wrapper.strict == true,
+    })
+end
+
+local function collect_tool_wrappers(out: {TraitToolWrapperSpec}, raw_wrappers: any)
+    if type(raw_wrappers) ~= "table" then
+        return
+    end
+
+    if raw_wrappers[1] ~= nil then
+        for _, raw_wrapper in ipairs(raw_wrappers) do
+            append_tool_wrapper(out, raw_wrapper)
+        end
+        return
+    end
+
+    append_tool_wrapper(out, raw_wrappers)
+end
+
+local function process_tool_wrappers(data: any): {TraitToolWrapperSpec}
+    local out: {TraitToolWrapperSpec} = {}
+    if type(data) ~= "table" then
+        return out
+    end
+
+    collect_tool_wrappers(out, data.tool_wrappers)
+    collect_tool_wrappers(out, data.tool_wrapper)
+
+    table.sort(out, function(a, b)
+        return (a.priority or 100) < (b.priority or 100)
+    end)
+
+    return out
+end
+
+local function process_agent_options(data: any): TraitAgentOptions
+    if type(data) ~= "table" or type(data.agent_options) ~= "table" then
+        return {}
+    end
+
+    return data.agent_options :: TraitAgentOptions
+end
+
+local function process_options(data: any): TraitOptions
+    if type(data) ~= "table" or type(data.options) ~= "table" then
+        return {}
+    end
+
+    return data.options :: TraitOptions
+end
+
+local function process_bindings(data: any): any
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    return data.bindings or data.binding
+end
+
 ---------------------------
 -- Trait Discovery Functions
 ---------------------------
@@ -144,6 +279,10 @@ function traits.get_by_id(trait_id: string): (TraitSpec?, string?)
     -- Process tools to handle both formats
     local data = entry.data :: any
     local processed_tools = process_tools(data and data.tools)
+    local tool_wrappers = process_tool_wrappers(data)
+    local bindings = process_bindings(data)
+    local options = process_options(data)
+    local agent_options = process_agent_options(data)
 
     -- Build trait spec
     local trait_spec = {
@@ -155,6 +294,10 @@ function traits.get_by_id(trait_id: string): (TraitSpec?, string?)
         build_func_id = (data and data.build_func_id),
         prompt_func_id = (data and data.prompt_func_id),
         step_func_id = (data and data.step_func_id),
+        bindings = bindings,
+        tool_wrappers = tool_wrappers,
+        options = options,
+        agent_options = agent_options,
         context = (data and data.context) or {},
     }
 
@@ -183,6 +326,10 @@ function traits.get_by_name(name: string): (TraitSpec?, string?)
     local entry = entries[1]
     local data = entry.data :: any
     local processed_tools = process_tools(data and data.tools)
+    local tool_wrappers = process_tool_wrappers(data)
+    local bindings = process_bindings(data)
+    local options = process_options(data)
+    local agent_options = process_agent_options(data)
 
     local trait_spec = {
         id = entry.id,
@@ -193,6 +340,10 @@ function traits.get_by_name(name: string): (TraitSpec?, string?)
         build_func_id = (data and data.build_func_id),
         prompt_func_id = (data and data.prompt_func_id),
         step_func_id = (data and data.step_func_id),
+        bindings = bindings,
+        tool_wrappers = tool_wrappers,
+        options = options,
+        agent_options = agent_options,
         context = (data and data.context) or {},
     }
 
@@ -219,6 +370,10 @@ function traits.get_all(): {TraitSpec}
     for i, entry in ipairs(entries) do
         local data = entry.data :: any
         local processed_tools = process_tools(data and data.tools)
+        local tool_wrappers = process_tool_wrappers(data)
+        local bindings = process_bindings(data)
+        local options = process_options(data)
+        local agent_options = process_agent_options(data)
 
         local trait_spec = {
             id = entry.id,
@@ -229,6 +384,10 @@ function traits.get_all(): {TraitSpec}
             build_func_id = (data and data.build_func_id),
             prompt_func_id = (data and data.prompt_func_id),
             step_func_id = (data and data.step_func_id),
+            bindings = bindings,
+            tool_wrappers = tool_wrappers,
+            options = options,
+            agent_options = agent_options,
             context = (data and data.context) or {},
         }
 

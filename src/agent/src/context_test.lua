@@ -960,6 +960,27 @@ local function define_tests()
                 test.eq(#captured.traits, 0, "empty overlay yields no traits")
             end)
 
+            it("should not mutate caller-owned agent specs when overlays are applied", function()
+                capture_compiler()
+                local inline_agent = {
+                    id = "inline-agent",
+                    name = "Inline Agent",
+                    model = "gpt-4o-mini",
+                    prompt = "Inline.",
+                    traits = { "base_trait" },
+                    tools = { "base:tool" }
+                }
+
+                context:set_active_traits({ "overlay_trait" })
+                context:set_active_tools({ "overlay:tool" })
+                context:load_agent(inline_agent)
+
+                test.eq(captured.traits[1], "overlay_trait")
+                test.eq(captured.tools[1], "overlay:tool")
+                test.eq(inline_agent.traits[1], "base_trait")
+                test.eq(inline_agent.tools[1], "base:tool")
+            end)
+
             it("should chain overlay setters", function()
                 local result = context:set_active_traits({ "t" }):set_active_tools({ "x" })
 
@@ -981,12 +1002,60 @@ local function define_tests()
                     id = "trait:researcher",
                     name = "researcher",
                     prompt = "You research thoroughly before answering.",
-                    tools = { "research:search" }
+                    tools = { "research:search" },
+                    agent_options = {
+                        compact = {
+                            token_threshold = 24000,
+                            function_id = "agent.compact:research"
+                        },
+                        checkpoint = {
+                            token_threshold = 48000
+                        }
+                    },
+                    tool_wrappers = {
+                        {
+                            id = "research_guard",
+                            phase = "before_execute",
+                            binding = "test.wrapper:research_guard",
+                            priority = 10,
+                            context = {
+                                lane = "research"
+                            },
+                            options = {
+                                max_calls = 4
+                            }
+                        },
+                        {
+                            id = "research_audit",
+                            phase = "after_execute",
+                            binding = "test.wrapper:research_audit",
+                            priority = 20,
+                            options = {
+                                include_results = true
+                            }
+                        }
+                    }
                 },
                 ["trait:writer"] = {
                     id = "trait:writer",
                     name = "writer",
-                    prompt = "You write concisely."
+                    prompt = "You write concisely.",
+                    agent_options = {
+                        compact = {
+                            token_threshold = 12000,
+                            function_id = "agent.compact:writer"
+                        }
+                    },
+                    tool_wrapper = {
+                        id = "writer_guard",
+                        phase = "before_execute",
+                        binding = "test.wrapper:writer_guard",
+                        priority = 5,
+                        options = {
+                            style = "brief",
+                            max_calls = 2
+                        }
+                    }
                 }
             }
 
@@ -1149,6 +1218,120 @@ local function define_tests()
                     if entry.registry_id == "research:search" then count = count + 1 end
                 end
                 test.eq(count, 1, "duplicate tool id collapses to a single compiled entry")
+            end)
+
+            it("activates tool wrappers from the selected trait overlay", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:load_agent("test-agent")
+
+                test.eq(#compiled.tool_wrappers, 2)
+                test.eq(compiled.tool_wrappers[1].id, "research_guard")
+                test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:research_guard")
+                test.eq(compiled.tool_wrappers[1].phases[1], "before_execute")
+                test.eq(compiled.tool_wrappers[1].context.lane, "research")
+                test.eq(compiled.tool_wrappers[1].context.agent_id, "test-agent")
+                test.eq(compiled.tool_wrappers[1].context.trait_id, "trait:researcher")
+                test.eq(compiled.tool_wrappers[1].options.max_calls, 4)
+
+                test.eq(compiled.tool_wrappers[2].id, "research_audit")
+                test.eq(compiled.tool_wrappers[2].binding, "test.wrapper:research_audit")
+                test.eq(compiled.tool_wrappers[2].phases[1], "after_execute")
+                test.is_true(compiled.tool_wrappers[2].options.include_results)
+            end)
+
+            it("activates agent options from the selected trait overlay", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:load_agent("test-agent")
+
+                test.not_nil(compiled.agent_options)
+                test.eq(compiled.agent_options.compact.token_threshold, 24000)
+                test.eq(compiled.agent_options.compact.function_id, "agent.compact:research")
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 48000)
+            end)
+
+            it("switches active traits by replacing tool wrapper sets", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:load_agent("test-agent")
+                test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:research_guard")
+
+                context:set_active_traits({ "trait:writer" })
+                context:load_agent("test-agent")
+
+                test.eq(#compiled.tool_wrappers, 1)
+                test.eq(compiled.tool_wrappers[1].id, "writer_guard")
+                test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:writer_guard")
+                test.eq(compiled.tool_wrappers[1].phases[1], "before_execute")
+                test.eq(compiled.tool_wrappers[1].options.style, "brief")
+                test.eq(compiled.tool_wrappers[1].options.max_calls, 2)
+                test.eq(compiled.agent_options.compact.token_threshold, 12000)
+                test.eq(compiled.agent_options.compact.function_id, "agent.compact:writer")
+                test.is_nil(compiled.agent_options.checkpoint)
+            end)
+
+            it("deactivates trait-owned tool wrappers with an empty trait overlay", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:load_agent("test-agent")
+                test.eq(#compiled.tool_wrappers, 2)
+
+                context:set_active_traits({})
+                context:load_agent("test-agent")
+
+                test.eq(#compiled.tool_wrappers, 0)
+                test.is_nil(compiled.agent_options.compact)
+            end)
+
+            it("restores the agent's own trait wrappers when the overlay is cleared", function()
+                use_real_compiler()
+                local inline_agent = {
+                    id = "inline-agent",
+                    name = "Inline Agent",
+                    model = "gpt-4o-mini",
+                    prompt = "Inline.",
+                    traits = { "trait:researcher" }
+                }
+
+                context:set_active_traits({ "trait:writer" })
+                context:load_agent(inline_agent)
+                test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:writer_guard")
+
+                context:set_active_traits(nil)
+                context:load_agent(inline_agent)
+                test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:research_guard")
+                test.eq(compiled.tool_wrappers[2].binding, "test.wrapper:research_audit")
+                test.eq(compiled.agent_options.compact.function_id, "agent.compact:research")
+            end)
+
+            it("preserves trait-owned wrapper overlays across model switches on the same agent", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:load_agent("test-agent")
+
+                local ok, err = context:switch_to_model("claude-haiku")
+
+                test.is_true(ok, tostring(err))
+                test.eq(compiled.model, "claude-haiku")
+                test.eq(#compiled.tool_wrappers, 2)
+                test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:research_guard")
+                test.eq(compiled.tool_wrappers[2].binding, "test.wrapper:research_audit")
+                test.eq(compiled.agent_options.compact.token_threshold, 24000)
+            end)
+
+            it("drops trait-owned wrapper overlays when switching to a different agent", function()
+                use_real_compiler()
+                context:set_active_traits({ "trait:researcher" })
+                context:load_agent("test-agent")
+                test.eq(#compiled.tool_wrappers, 2)
+
+                local ok, err = context:switch_to_agent("specialist-agent")
+
+                test.is_true(ok, tostring(err))
+                test.eq(context.current_agent_id, "specialist-agent")
+                test.eq(#compiled.tool_wrappers, 0)
+                test.is_nil(compiled.agent_options.compact)
             end)
         end)
     end)

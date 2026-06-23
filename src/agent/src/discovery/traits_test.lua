@@ -161,6 +161,114 @@ local function define_tests()
                 }
             },
 
+            -- Tool wrapper trait with focused contract implementations
+            ["wippy.agents:tool_policy_trait"] = {
+                id = "wippy.agents:tool_policy_trait",
+                kind = "registry.entry",
+                meta = {
+                    type = "agent.trait",
+                    name = "Tool Policy",
+                    comment = "Trait that wraps agent tool execution."
+                },
+                data = {
+                    prompt = "Review tool calls before executing them.",
+                    tool_wrapper = {
+                        id = "guard_before",
+                        phase = "before_execute",
+                        binding = "wippy.tool_policy:guard",
+                        priority = 10,
+                        strict = true,
+                        context = {
+                            policy = "guard"
+                        },
+                        options = {
+                            max_calls = 4
+                        }
+                    },
+                    tool_wrappers = {
+                        {
+                            id = "audit_after",
+                            phase = "after_execute",
+                            binding = "wippy.tool_policy:audit",
+                            priority = 20,
+                            options = {
+                                include_results = true
+                            }
+                        },
+                        {
+                            id = "invalid_no_target",
+                            phase = "before_execute"
+                        },
+                        {
+                            id = "invalid_phase",
+                            phase = "around_execute",
+                            binding = "wippy.tool_policy:invalid"
+                        }
+                    },
+                    context = {
+                        policy_profile = "default"
+                    },
+                    agent_options = {
+                        compact = {
+                            token_threshold = 24000,
+                            max_memory_chars = 4096
+                        },
+                        checkpoint = {
+                            token_threshold = 48000
+                        }
+                    }
+                }
+            },
+
+            ["wippy.agents:legacy_runtime_memory_trait"] = {
+                id = "wippy.agents:legacy_runtime_memory_trait",
+                kind = "registry.entry",
+                meta = {
+                    type = "agent.trait",
+                    name = "Legacy Runtime Memory",
+                    comment = "Old lifecycle fields that should not become tool wrappers."
+                },
+                data = {
+                    runtime_hook = {
+                        id = "compact_context",
+                        phase = "checkpoint",
+                        binding_id = "wippy.memory:runtime_provider"
+                    },
+                    notify_hook = {
+                        id = "memory_commit",
+                        event = "turn.completed",
+                        binding_id = "wippy.memory:notify_provider"
+                    },
+                    notify = {
+                        hooks = {
+                            {
+                                id = "render_progress",
+                                event = "turn.delta",
+                                binding = "wippy.memory:notify_provider",
+                                priority = 20,
+                                context = {
+                                    channel = "renderer"
+                                },
+                                options = {
+                                    include_payload = false
+                                }
+                            },
+                            {
+                                id = "memory_commit",
+                                events = { "turn.completed", "checkpoint.completed" },
+                                binding = "wippy.memory:notify_provider",
+                                priority = 40,
+                                strict = true,
+                                options = {
+                                    persist = true
+                                }
+                            }
+                        }
+                    },
+                    context = {}
+                }
+            },
+
             -- Non-trait entry for validation
             ["wippy.agents:non_trait_entry"] = {
                 id = "wippy.agents:non_trait_entry",
@@ -240,6 +348,8 @@ local function define_tests()
             test.is_nil(trait.step_func_id) -- No step function
             test.not_nil(trait.context)
             test.is_nil(next(trait.context)) -- Empty context
+            test.not_nil(trait.tool_wrappers)
+            test.eq(#trait.tool_wrappers, 0)
         end)
 
         it("should get trait with old format tools", function()
@@ -350,6 +460,45 @@ local function define_tests()
             test.eq(trait.context.timezone, "UTC")
         end)
 
+        it("should get trait with focused tool wrapper specs", function()
+            local trait, err = traits.get_by_id("wippy.agents:tool_policy_trait")
+
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.id, "wippy.agents:tool_policy_trait")
+            test.eq(trait.context.policy_profile, "default")
+            test.eq(trait.agent_options.compact.token_threshold, 24000)
+            test.eq(trait.agent_options.compact.max_memory_chars, 4096)
+            test.eq(trait.agent_options.checkpoint.token_threshold, 48000)
+            test.not_nil(trait.tool_wrappers)
+            test.eq(#trait.tool_wrappers, 2)
+
+            local guard = trait.tool_wrappers[1]
+            test.eq(guard.id, "guard_before")
+            test.eq(guard.binding, "wippy.tool_policy:guard")
+            test.eq(guard.phases[1], "before_execute")
+            test.eq(guard.priority, 10)
+            test.is_true(guard.strict)
+            test.eq(guard.context.policy, "guard")
+            test.eq(guard.options.max_calls, 4)
+
+            local audit = trait.tool_wrappers[2]
+            test.eq(audit.id, "audit_after")
+            test.eq(audit.binding, "wippy.tool_policy:audit")
+            test.eq(audit.phases[1], "after_execute")
+            test.eq(audit.priority, 20)
+            test.is_true(audit.options.include_results)
+        end)
+
+        it("should not map old runtime and notify fields to tool wrappers", function()
+            local trait, err = traits.get_by_id("wippy.agents:legacy_runtime_memory_trait")
+
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.not_nil(trait.tool_wrappers)
+            test.eq(#trait.tool_wrappers, 0)
+        end)
+
         it("should handle trait not found by ID", function()
             local trait, err = traits.get_by_id("nonexistent")
 
@@ -382,7 +531,7 @@ local function define_tests()
             local all_traits = traits.get_all()
 
             -- Should find all valid traits (excluding non-trait entry)
-            test.eq(#all_traits, 7)
+            test.eq(#all_traits, 9)
 
             -- Check that all traits have required fields
             for _, trait in ipairs(all_traits) do
@@ -400,6 +549,8 @@ local function define_tests()
                 if trait.step_func_id then
                     test.eq(type(trait.step_func_id), "string")
                 end
+                test.not_nil(trait.tool_wrappers)
+                test.not_nil(trait.agent_options)
             end
         end)
 

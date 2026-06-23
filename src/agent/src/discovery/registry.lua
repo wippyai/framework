@@ -20,6 +20,7 @@ type RegistryEntry = {
         memory: {any}?,
         delegates: {any}?,
         memory_contract: any?,
+        agent_options: any?,
         context: {[string]: any}?,
         start_prompts: {any}?,
     },
@@ -41,6 +42,7 @@ type RawAgentSpec = {
     memory: {any},
     delegates: {any},
     memory_contract: any?,
+    agent_options: any?,
     context: {[string]: any},
     start_prompts: {any},
 }
@@ -94,6 +96,7 @@ local function entry_to_raw_spec(entry: any): any
         memory = entry.data.memory or {},
         delegates = entry.data.delegates or {},
         memory_contract = entry.data.memory_contract,
+        agent_options = entry.data.agent_options,
         context = entry.data.context or {},
         start_prompts = entry.data.start_prompts or {},
     }
