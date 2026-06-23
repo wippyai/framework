@@ -12,5 +12,7 @@ keywords:
 exclude_meta:
   type:
     - test
+  scope:
+    - dev
 exclude:
   - "app:**"
