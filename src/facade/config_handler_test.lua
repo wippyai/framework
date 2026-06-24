@@ -17,6 +17,7 @@ local REQ_NAMES: {string} = {
     "api_routes", "additional_nav_items", "state_cache",
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts", "host_config_layout", "theme_mode",
+    "tanstack",
 }
 
 local function setup_registry(overrides: {[string]: string}?)
@@ -55,6 +56,7 @@ local function setup_registry(overrides: {[string]: string}?)
         extra_scripts = "[]",
         host_config_layout = "{}",
         theme_mode = "auto",
+        tanstack = "{}",
     }
 
     if overrides then
@@ -121,7 +123,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.39"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.40"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -238,6 +240,32 @@ local function define_tests()
                 test.eq(decoded.layouts.default.direction, "vertical")
                 test.eq(decoded.panels.main.kind, "page")
                 test.eq(decoded.panels.main.id, "home")
+            end)
+
+            test.it("tanstack requirement defaults to empty JSON object", function()
+                local entry = registry.get(NS .. "tanstack")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "{}")
+            end)
+
+            test.it("tanstack decodes a valid per-category config JSON", function()
+                local tanstack_json = '{"default":{"staleTime":30000},"content":{"refetchOnWindowFocus":false},"lists":{"refetchOnWindowFocus":true}}'
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                changes:update({
+                    id = NS .. "tanstack",
+                    kind = "ns.requirement",
+                    data = { default = tanstack_json },
+                })
+                changes:apply()
+
+                local entry = registry.get(NS .. "tanstack")
+                local decoded, err = json.decode(entry.data.default :: string)
+                test.is_nil(err)
+                test.not_nil(decoded)
+                test.eq(decoded.default.staleTime, 30000)
+                test.is_false(decoded.content.refetchOnWindowFocus)
+                test.is_true(decoded.lists.refetchOnWindowFocus)
             end)
         end)
 

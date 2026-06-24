@@ -181,6 +181,9 @@ local function handler()
 
     local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
     local extra_scripts = non_empty_array_or_nil(get_req_json_any("extra_scripts"))
+    -- TanStack Query defaults: { default?, content?, lists? }. Passed through
+    -- verbatim; the host validates/whitelists the option keys client-side.
+    local tanstack = non_empty_map_or_nil(get_req_json_any("tanstack"))
 
     -- Clamp theme_mode to the valid enum; anything else (typo/misconfig) → auto,
     -- so a bad value can't ship a silently-ignored class to the client.
@@ -207,6 +210,7 @@ local function handler()
         themeMode = theme_mode,
         apiRoutes = api_routes,
         axiosDefaults = axios_defaults,
+        tanstack = tanstack,
         extraScripts = extra_scripts,
         theming = {
             global = global_scope,
