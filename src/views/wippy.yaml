@@ -1,7 +1,7 @@
 organization: wippy
 module: views
 description: Template views and page rendering
-license: Apache-2.0
+license: MPL-2.0
 repository: https://github.com/wippyai/framework
 homepage: https://wippy.ai
 keywords:
