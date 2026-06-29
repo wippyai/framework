@@ -17,15 +17,19 @@ entries:
     targets:
       - entry: wippy.facade:static
         path: .meta.server
+      - entry: wippy.facade:web_router
+        path: .meta.server
 
   - name: router
     kind: ns.requirement
     meta:
-      description: Public API router for config and CSS variable endpoints
+      description: Public API router for config, CSS variable, and theme-persist endpoints
     targets:
       - entry: wippy.facade:config_endpoint
         path: .meta.router
       - entry: wippy.facade:css_vars_endpoint
+        path: .meta.router
+      - entry: wippy.facade:theme_persist_endpoint
         path: .meta.router
 
   - name: fe_facade_url
@@ -35,7 +39,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.40
+    default: https://web-host.wippy.ai/webcomponents-1.0.41
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -162,6 +166,36 @@ entries:
       - entry: wippy.facade:theme_mode
         path: .default
     default: auto
+
+  - name: theme_persist
+    kind: ns.requirement
+    meta:
+      description: |
+        Where the user's chosen theme mode is persisted across reloads.
+        "none" (default) keeps the current behavior (theme always comes from
+        theme_mode). "cookie" stores it in a cookie — the Jet shell reads it
+        server-side and renders the w-theme-* class before paint (no flash).
+        "localStorage" stores it client-side (a brief flash is unavoidable; the
+        server can't read it). The store name is theme_storage_key. The facade
+        serves a ready-made script at /facade/theme-persist.js that applies and
+        writes the value; the host shell and login/non-host pages just include it.
+    targets:
+      - entry: wippy.facade:theme_persist
+        path: .default
+    default: none
+
+  - name: theme_storage_key
+    kind: ns.requirement
+    meta:
+      description: |
+        Cookie / localStorage key used to persist the theme mode when
+        theme_persist is "cookie" or "localStorage". Returned in /facade/config
+        as themeStorageKey and baked into /facade/theme-persist.js so non-Wippy
+        pages share the same key.
+    targets:
+      - entry: wippy.facade:theme_storage_key
+        path: .default
+    default: "@wippy-theme-mode"
 
   # Auth
   - name: login_path
@@ -380,10 +414,14 @@ entries:
     directory: ./public/
     mode: "0755"
 
+  # Serves facade static assets (@wippy-fe/loading.js) and is the SPA fallback
+  # for history-mode deep links. The Jet shell endpoints below match only the
+  # exact "/" and "/index.html" (Go 1.22 "{$}" = exact match), a strict subset
+  # of this catch-all, so they win for those paths without shadowing assets.
   - name: static
     kind: http.static
     meta:
-      comment: Serves facade index.html
+      comment: Serves facade assets (@wippy-fe/*) + SPA fallback
       server: server
     fs: public_files
     directory: /
@@ -391,6 +429,62 @@ entries:
     options:
       index: index.html
       spa: true
+
+  # Jet-rendered shell (index.html) — server-side theme cookie application
+  # Root router for the Jet shell. Endpoints use exact-match paths ("/{$}" and
+  # "/index.html") so they only intercept those two routes; the /api/public API
+  # router and the "/" static catch-all handle everything else.
+  - name: web_router
+    kind: http.router
+    meta:
+      comment: Root router for the Jet-rendered facade shell
+      server: server
+    prefix: /
+
+  - name: templates
+    kind: template.set
+    meta:
+      comment: Facade Jet template set (shell)
+
+  - name: index
+    kind: template.jet
+    meta:
+      content_type: text/html
+      comment: Facade shell template — conditionally bakes the theme class onto <html>
+    source: file://index.jet
+    set: wippy.facade:templates
+
+  - name: index_handler
+    kind: function.lua
+    meta:
+      comment: Renders the facade shell; applies the persisted theme from the request cookie (cookie mode)
+    source: file://index_handler.lua
+    method: handler
+    modules:
+      - http
+      - registry
+      - templates
+    security:
+      actor:
+        id: wippy.facade:index_handler
+      policies:
+        - wippy.facade:config_read_runtime
+
+  - name: index_endpoint
+    kind: http.endpoint
+    meta:
+      router: web_router
+    method: GET
+    path: /{$}
+    func: index_handler
+
+  - name: index_html_endpoint
+    kind: http.endpoint
+    meta:
+      router: web_router
+    method: GET
+    path: /index.html
+    func: index_handler
 
   # Shared helpers: file:// resolution and CSS variable generation
   - name: theming_helpers
@@ -459,6 +553,31 @@ entries:
     method: GET
     path: /facade/variables.css
     func: css_vars_handler
+
+  # Theme-persistence script endpoint
+  - name: theme_persist_handler
+    kind: function.lua
+    meta:
+      comment: Serves /facade/theme-persist.js — early-apply + window.wippyThemePersist with key/mode baked in
+    source: file://theme_persist_handler.lua
+    method: handler
+    modules:
+      - http
+      - registry
+      - json
+    security:
+      actor:
+        id: wippy.facade:theme_persist_handler
+      policies:
+        - wippy.facade:config_read_runtime
+
+  - name: theme_persist_endpoint
+    kind: http.endpoint
+    meta:
+      router: router
+    method: GET
+    path: /facade/theme-persist.js
+    func: theme_persist_handler
 
   - name: config_read_runtime
     kind: security.policy

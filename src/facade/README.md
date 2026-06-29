@@ -66,7 +66,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.40` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.41` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 
@@ -94,6 +94,11 @@ Host-only UI flags — NOT sent to child iframes.
 | `hide_session_selector` | `false` | bool (`== "true"`) | Hide the chat session selector dropdown |
 | `session_type` | `non-persistent` | string | Chat session persistence (`non-persistent` or `cookie`) |
 | `history_mode` | `hash` | string | Browser history mode (`hash` or `browser`) |
+| `theme_mode` | `auto` | string | Forced theme: `auto` (follow OS), `light`, or `dark` |
+| `theme_persist` | `none` | string | Persist the user's chosen theme across reloads: `none`, `cookie`, or `localStorage`. `cookie` is read server-side by the Jet shell so the first paint is already themed (no flash). |
+| `theme_storage_key` | `@wippy-theme-mode` | string | Cookie / localStorage key the theme is stored under. Returned in `/facade/config` as `themeStorageKey` and baked into `/api/public/facade/theme-persist.js`. |
+
+> **Theme persistence:** when `theme_persist` is `cookie` or `localStorage`, include the facade-generated script — `<script src="/api/public/facade/theme-persist.js"></script>` — in the `<head>` of any page that should share the theme (the host shell already does). It applies the stored theme before paint and exposes `window.wippyThemePersist` (`read`, `write`, `apply`). The Web Host emits a `themeChanged` event the shell uses to persist changes.
 
 > **Boolean parsing:** `show_admin` defaults to `true` (any value except `"false"` is truthy). All other boolean flags default to `false` (only `"true"` is truthy).
 
@@ -372,9 +377,9 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.40",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.41",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.40/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.41/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {

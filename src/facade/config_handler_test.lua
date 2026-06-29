@@ -17,6 +17,7 @@ local REQ_NAMES: {string} = {
     "api_routes", "additional_nav_items", "state_cache",
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts", "host_config_layout", "theme_mode",
+    "theme_persist", "theme_storage_key",
     "tanstack",
 }
 
@@ -56,6 +57,8 @@ local function setup_registry(overrides: {[string]: string}?)
         extra_scripts = "[]",
         host_config_layout = "{}",
         theme_mode = "auto",
+        theme_persist = "none",
+        theme_storage_key = "@wippy-theme-mode",
         tanstack = "{}",
     }
 
@@ -93,6 +96,23 @@ local function derive_ws_url(api_url: string): string
     return api_url:gsub("^https://", "wss://"):gsub("^http://", "ws://")
 end
 
+-- Mirrors the clamp in config_handler.lua: only "cookie"/"localStorage" are
+-- valid persistence targets; anything else (typo/misconfig) → "none".
+local function clamp_theme_persist(value: string): string
+    if value ~= "cookie" and value ~= "localStorage" then
+        return "none"
+    end
+    return value
+end
+
+-- Mirrors the storage-key fallback: blank requirement → documented default.
+local function clamp_theme_storage_key(value: string): string
+    if value == "" then
+        return "@wippy-theme-mode"
+    end
+    return value
+end
+
 local function define_tests()
     test.describe("config handler", function()
         test.describe("ws url derivation", function()
@@ -113,6 +133,28 @@ local function define_tests()
             end)
         end)
 
+        test.describe("theme persistence clamping", function()
+            test.it("keeps cookie and localStorage as-is", function()
+                test.eq(clamp_theme_persist("cookie"), "cookie")
+                test.eq(clamp_theme_persist("localStorage"), "localStorage")
+            end)
+
+            test.it("clamps unknown / typo values to none", function()
+                test.eq(clamp_theme_persist("none"), "none")
+                test.eq(clamp_theme_persist(""), "none")
+                test.eq(clamp_theme_persist("localstorage"), "none")
+                test.eq(clamp_theme_persist("session"), "none")
+            end)
+
+            test.it("storage key falls back to default when blank", function()
+                test.eq(clamp_theme_storage_key(""), "@wippy-theme-mode")
+            end)
+
+            test.it("storage key keeps a custom value", function()
+                test.eq(clamp_theme_storage_key("my.theme"), "my.theme")
+            end)
+        end)
+
         test.describe("iframe URL construction", function()
             test.it("builds iframe URL from facade_url and entry_path", function()
                 local facade_url = "https://front.wippy.ai"
@@ -123,7 +165,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.40"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.41"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -347,6 +389,8 @@ local function define_tests()
                     },
                     routePrefix = "http://localhost:8085",
                     themeMode = "auto",
+                    themePersist = "cookie",
+                    themeStorageKey = "@wippy-theme-mode",
                     theming = {
                         global = {
                             customCSS = "@import url('https://fonts.example.com');",
@@ -388,6 +432,8 @@ local function define_tests()
                 test.is_false(decoded.hostConfig.allowSelectModel)
                 test.eq(decoded.theming.host.i18n.app.title, "Wippy")
                 test.eq(decoded.themeMode, "auto")
+                test.eq(decoded.themePersist, "cookie")
+                test.eq(decoded.themeStorageKey, "@wippy-theme-mode")
                 test.eq(decoded.login_path, "/login.html")
             end)
         end)

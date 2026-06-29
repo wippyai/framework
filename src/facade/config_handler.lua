@@ -192,6 +192,18 @@ local function handler()
         theme_mode = "auto"
     end
 
+    -- Persistence of the chosen theme mode. Clamp to the valid enum (bad value →
+    -- "none" = no persistence). theme_storage_key falls back to the documented
+    -- default so a blank requirement still produces a usable key.
+    local theme_persist = get_req("theme_persist")
+    if theme_persist ~= "cookie" and theme_persist ~= "localStorage" then
+        theme_persist = "none"
+    end
+    local theme_storage_key = get_req("theme_storage_key")
+    if theme_storage_key == "" then
+        theme_storage_key = "@wippy-theme-mode"
+    end
+
     local config = {
         facade_url = facade_url,
         iframe_origin = iframe_origin,
@@ -208,6 +220,8 @@ local function handler()
         },
         routePrefix = non_empty_or_nil(api_url),
         themeMode = theme_mode,
+        themePersist = theme_persist,
+        themeStorageKey = theme_storage_key,
         apiRoutes = api_routes,
         axiosDefaults = axios_defaults,
         tanstack = tanstack,
