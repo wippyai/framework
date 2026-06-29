@@ -35,7 +35,8 @@ function embeddings_handler.handler(contract_args)
     end
 
     local openai_response, req_err = embeddings_handler._client.request("/embeddings", openai_payload, {
-        timeout = contract_args.timeout
+        timeout = contract_args.timeout,
+        retry = contract_args.retry,
     })
 
     if req_err then

@@ -342,6 +342,30 @@ local function merge_user_options(contract_args, user_options, exclude_keys)
     end
 end
 
+local function apply_provider_transport(contract_args, provider_info)
+    local context = provider_info and provider_info.context
+    if type(context) ~= "table" then return end
+    if contract_args.timeout == nil and context.timeout ~= nil then
+        contract_args.timeout = context.timeout
+    end
+    if contract_args.retry == nil and context.retry ~= nil then
+        contract_args.retry = context.retry
+    end
+end
+
+local function hoist_transport_options(contract_args)
+    local opts = contract_args.options
+    if type(opts) ~= "table" then return end
+    if opts.timeout ~= nil then
+        contract_args.timeout = opts.timeout
+        opts.timeout = nil
+    end
+    if opts.retry ~= nil then
+        contract_args.retry = opts.retry
+        opts.retry = nil
+    end
+end
+
 ---------------------------
 -- Constants (Backward Compatibility)
 ---------------------------
@@ -420,6 +444,7 @@ function llm.generate(prompt_input, options)
 
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id"})
+        hoist_transport_options(contract_args)
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
@@ -479,9 +504,11 @@ function llm.generate(prompt_input, options)
 
         -- Merge provider options first (from model YAML)
         merge_provider_options(contract_args, provider_info)
+        apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
         merge_user_options(contract_args, options, {"model"})
+        hoist_transport_options(contract_args)
 
         -- Call provider contract
         local raw_result, err = (provider_instance as any):generate(contract_args)
@@ -554,6 +581,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id", "schema"})
+        hoist_transport_options(contract_args)
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
@@ -615,9 +643,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
         -- Merge provider options first (from model YAML)
         merge_provider_options(contract_args, provider_info)
+        apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
         merge_user_options(contract_args, options, {"model", "schema"})
+        hoist_transport_options(contract_args)
 
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
         if err then
@@ -678,6 +708,7 @@ function llm.embed(text, options)
 
         -- Copy user options to contract options (no provider options in direct mode)
         merge_user_options(contract_args, options, {"model", "provider_id"})
+        hoist_transport_options(contract_args)
         contract_args._provider_id = provider_info.id
 
         local raw_result, err = (provider_instance as any):embed(contract_args)
@@ -738,9 +769,11 @@ function llm.embed(text, options)
 
         -- Merge provider options first (from model YAML)
         merge_provider_options(contract_args, provider_info)
+        apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
         merge_user_options(contract_args, options, {"model", "dimensions"})
+        hoist_transport_options(contract_args)
 
         local raw_result, err = (provider_instance as any):embed(contract_args)
         if err then
@@ -793,6 +826,7 @@ function llm.status(options)
         end
         provider_info = model_card.providers[1] as any
         merge_provider_options(contract_args, provider_info)
+        apply_provider_transport(contract_args, provider_info)
     end
 
     local providers_module = llm._providers or providers
@@ -802,6 +836,7 @@ function llm.status(options)
     end
 
     merge_user_options(contract_args, options, {"model", "provider_id"})
+    hoist_transport_options(contract_args)
 
     local result, err = (provider_instance as any):status(contract_args)
 
