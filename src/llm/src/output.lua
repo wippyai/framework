@@ -150,40 +150,34 @@ local ErrorBuilder = {}
 ErrorBuilder.__index = ErrorBuilder
 
 function ErrorBuilder:with_contract(contract_args: ErrorContract): ErrorBuilder
-    local s = self :: any
-    s._contract = contract_args
-    return s :: ErrorBuilder
+    self._contract = contract_args
+    return self
 end
 
 function ErrorBuilder:classifier(fn: ClassifyError): ErrorBuilder
-    local s = self :: any
-    s._classifier = fn
-    return s :: ErrorBuilder
+    self._classifier = fn
+    return self
 end
 
 function ErrorBuilder:kind(k: string): ErrorBuilder
-    local s = self :: any
-    s._kind = k
-    return s :: ErrorBuilder
+    self._kind = k
+    return self
 end
 
 function ErrorBuilder:message(m: string): ErrorBuilder
-    local s = self :: any
-    s._message = m
-    return s :: ErrorBuilder
+    self._message = m
+    return self
 end
 
 function ErrorBuilder:details(d: table): ErrorBuilder
-    local s = self :: any
-    s._details = d
-    return s :: ErrorBuilder
+    self._details = d
+    return self
 end
 
 function ErrorBuilder:from(http_err: any?): ErrorBuilder
-    local s = self :: any
-    s._http_err = http_err
-    s._has_http_err = true  -- distinguishes :from(nil) from "never called"
-    return s :: ErrorBuilder
+    self._http_err = http_err
+    self._has_http_err = true  -- distinguishes :from(nil) from "never called"
+    return self
 end
 
 function ErrorBuilder:build(): StructuredError

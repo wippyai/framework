@@ -29,8 +29,6 @@ local PHASE = {
     ACTIVATE = "activate",
     BEFORE_STEP = "before_step",
     AFTER_STEP = "after_step",
-    BEFORE_COMPACT = "before_compact",
-    AFTER_COMPACT = "after_compact",
     DEACTIVATE = "deactivate",
 }
 

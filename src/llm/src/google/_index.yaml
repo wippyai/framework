@@ -203,6 +203,7 @@ entries:
       - json
     imports:
       google_generate: wippy.llm.google:generate
+      google_config: wippy.llm.google:config
       test: wippy.test:test
     method: run_tests
 

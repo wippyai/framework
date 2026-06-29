@@ -163,6 +163,7 @@ entries:
     source: file://context_test.lua
     imports:
       context: wippy.agent:context
+      compiler: wippy.agent.compiler:compiler
       test: wippy.test:test
     method: run_tests
 
@@ -193,6 +194,36 @@ entries:
     source: file://lifecycle_runtime_test.lua
     imports:
       lifecycle_runtime: wippy.agent:lifecycle_runtime
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.agent:checkpoint_runtime
+  - name: checkpoint_runtime
+    kind: library.lua
+    meta:
+      type: library
+      comment: Runtime dispatcher for trait-owned checkpoint contract bindings
+    source: file://checkpoint_runtime.lua
+    modules:
+      - contract
+
+  # wippy.agent:checkpoint_runtime_test
+  - name: checkpoint_runtime_test
+    kind: function.lua
+    meta:
+      name: Agent Checkpoint Runtime Test
+      type: test
+      comment: Unit tests for optional trait-owned checkpoint contract dispatch
+      group: Agent Framework
+      tags:
+        - agents
+        - checkpoint
+        - traits
+        - contracts
+        - tests
+    source: file://checkpoint_runtime_test.lua
+    imports:
+      checkpoint_runtime: wippy.agent:checkpoint_runtime
       test: wippy.test:test
     method: run_tests
 
@@ -331,7 +362,7 @@ entries:
         - session
         - dataflow
       description: |
-        Read-only contract used by trait bindings, lifecycle handlers, compactors,
+        Read-only contract used by trait bindings, lifecycle handlers, checkpoints,
         and tools that need runner state without knowing whether the agent is
         executing inside a session or dataflow node. Callers pass a host ref and
         a bounded selector; implementations return normalized data and range
@@ -504,8 +535,6 @@ entries:
         - before_step: just before the current agent calls the LLM; returned
           messages can add prompt context for this step.
         - after_step: after the agent step result is known.
-        - before_compact / after_compact: reserved for runner compaction cycles;
-          compaction itself is owned by wippy.agent:context_compactor.
         - deactivate: the active agent leaves the runner because the host
           finished, failed, or switched to another agent.
     methods:
@@ -518,7 +547,7 @@ entries:
                 "properties": {
                   "phase": {
                     "type": "string",
-                    "enum": ["activate", "before_step", "after_step", "before_compact", "after_compact", "deactivate"]
+                    "enum": ["activate", "before_step", "after_step", "deactivate"]
                   },
                   "host": { "type": "object" },
                   "agent": { "type": "object" },
@@ -552,52 +581,19 @@ entries:
               }
             format: application/schema+json
 
-  # wippy.agent:prompt_provider
-  - name: prompt_provider
+  # wippy.agent:checkpoint
+  - name: checkpoint
     kind: contract.definition
     meta:
-      comment: Trait-owned dynamic prompt provider.
-      tags: [agents, traits, prompt, session, dataflow]
-      description: Provides dynamic prompt messages using a host ref and run_context contract.
-    methods:
-      - name: provide
-        input_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "host": { "type": "object" },
-                  "agent": { "type": "object" },
-                  "run_context": { "type": "object" },
-                  "options": { "type": "object" }
-                },
-                "required": ["host"]
-              }
-            format: application/schema+json
-        output_schemas:
-          - definition: |
-              {
-                "type": "object",
-                "properties": {
-                  "messages": { "type": "array", "items": { "type": "object" } },
-                  "prompt": { "type": "string" },
-                  "metadata": { "type": "object" }
-                }
-              }
-            format: application/schema+json
-
-  # wippy.agent:context_compactor
-  - name: context_compactor
-    kind: contract.definition
-    meta:
-      comment: Trait-owned context compaction/checkpoint provider.
-      tags: [agents, traits, memory, compaction, checkpoint, session, dataflow]
+      comment: Trait-owned checkpoint provider.
+      tags: [agents, traits, memory, checkpoint, session, dataflow]
       description: |
-        Replaces runner hardcoded compaction functions. The runner decides when
-        compaction is needed; the binding decides how to read, summarize, and
-        return memory using the run_context contract and selector.
+        Canonical token-threshold checkpoint hook for sessions and dataflow.
+        The runner decides when a checkpoint is needed; the binding decides how
+        to read, summarize, and optionally persist durable memory using the
+        run_context contract and selector.
     methods:
-      - name: compact
+      - name: create
         input_schemas:
           - definition: |
               {
@@ -608,7 +604,9 @@ entries:
                   "reason": { "type": "string" },
                   "selector": { "type": "object" },
                   "run_context": { "type": "object" },
-                  "options": { "type": "object" }
+                  "options": { "type": "object" },
+                  "context": { "type": "object" },
+                  "refs": { "type": "object" }
                 },
                 "required": ["host"]
               }
@@ -640,7 +638,7 @@ entries:
       description: |
         Allows a trait to inspect or adjust tool calls before execution and inspect
         tool results after execution. Session and dataflow runners supply the host
-        reference; the wrapper owns no memory or compaction lifecycle. Traits can
+        reference; the wrapper owns no memory or checkpoint lifecycle. Traits can
         attach multiple focused bindings and each binding is invoked only for the
         phases declared by that trait.
     methods:

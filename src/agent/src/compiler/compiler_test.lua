@@ -357,7 +357,7 @@ local function define_tests()
         local spec_with_contract_traits = {
             id = "test:contract_traits",
             name = "Agent With Contract Traits",
-            description = "Agent whose traits own memory, lifecycle, prompt, and compact bindings",
+            description = "Agent whose traits own memory, lifecycle, and checkpoint bindings",
             model = "gpt-4o-mini",
             prompt = "You are an agent with trait-owned contracts.",
             context = {
@@ -556,7 +556,7 @@ local function define_tests()
             memory_contract_trait = {
                 id = "memory_contract_trait",
                 name = "Memory Contract Trait",
-                description = "Trait that owns memory, lifecycle, prompt, and compaction bindings",
+                description = "Trait that owns memory, lifecycle, and checkpoint bindings",
                 prompt = "Use durable memory when relevant.",
                 tools = {},
                 context = {
@@ -597,22 +597,16 @@ local function define_tests()
                         id = "memory_lifecycle",
                         contract = "wippy.agent:lifecycle",
                         binding = "test.memory:lifecycle",
-                        phases = { "activate", "deactivate", "after_compact" },
+                        phases = { "activate", "deactivate", "after_step" },
                         priority = 30,
                         context = {
                             hook = "memory"
                         }
                     },
-                    prompt_provider = {
-                        id = "memory_prompt",
-                        contract = "wippy.agent:prompt_provider",
-                        binding = "test.memory:prompt_provider",
-                        priority = 40
-                    },
-                    context_compactor = {
-                        id = "memory_compactor",
-                        contract = "wippy.agent:context_compactor",
-                        binding = "test.memory:compactor",
+                    checkpoint = {
+                        id = "memory_checkpoint",
+                        contract = "wippy.agent:checkpoint",
+                        binding = "test.memory:checkpoint",
                         priority = 20,
                         context = {
                             mode = "memory"
@@ -1121,8 +1115,7 @@ local function define_tests()
 
                 test.eq(#compiled_spec.bindings.memory, 1)
                 test.eq(#compiled_spec.bindings.lifecycle, 2)
-                test.eq(#compiled_spec.bindings.prompt_provider, 1)
-                test.eq(#compiled_spec.bindings.context_compactor, 1)
+                test.eq(#compiled_spec.bindings.checkpoint, 1)
 
                 local memory = compiled_spec.bindings.memory[1]
                 test.eq(memory.kind, "memory")
@@ -1173,22 +1166,22 @@ local function define_tests()
                 test.eq(lifecycle[2].binding, "test.memory:lifecycle")
                 test.eq(lifecycle[2].phases[1], "activate")
                 test.eq(lifecycle[2].phases[2], "deactivate")
-                test.eq(lifecycle[2].phases[3], "after_compact")
+                test.eq(lifecycle[2].phases[3], "after_step")
             end)
 
-            it("should let a trait replace the default compactor through context_compactor binding", function()
+            it("should let a trait provide checkpoint behavior through a checkpoint binding", function()
                 local compiled_spec, err = compiler.compile(spec_with_contract_traits)
 
                 test.is_nil(err)
                 test.not_nil(compiled_spec)
 
-                local compactor = compiled_spec.bindings.context_compactor[1]
-                test.eq(compactor.contract, "wippy.agent:context_compactor")
-                test.eq(compactor.binding, "test.memory:compactor")
-                test.eq(compactor.context.mode, "memory")
-                test.eq(compactor.context.options.compact.enabled, true)
-                test.eq(compactor.context.options.compact.token_threshold, 32000)
-                test.eq(compactor.context.options.checkpoint.token_threshold, 48000)
+                local checkpoint = compiled_spec.bindings.checkpoint[1]
+                test.eq(checkpoint.contract, "wippy.agent:checkpoint")
+                test.eq(checkpoint.binding, "test.memory:checkpoint")
+                test.eq(checkpoint.context.mode, "memory")
+                test.eq(checkpoint.context.options.compact.enabled, true)
+                test.eq(checkpoint.context.options.compact.token_threshold, 32000)
+                test.eq(checkpoint.context.options.checkpoint.token_threshold, 48000)
             end)
         end)
 

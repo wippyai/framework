@@ -30,6 +30,7 @@ entries:
       - env
       - ctx
       - security
+      - time
 
   # wippy.llm.openai_compat:client_test
   - name: client_test
@@ -98,6 +99,9 @@ entries:
         description: Request timeout in seconds
         default_env: OPENAI_COMPAT_TIMEOUT
         default_value: 600
+      retry:
+        type: object
+        description: Provider-level retry policy for transient transport/provider failures
 
   # wippy.llm.openai_compat:embed
   - name: embed

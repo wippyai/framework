@@ -205,14 +205,9 @@ local function normalize_binding_kind(kind_hint: any, raw_binding: any): string?
     end
 
     local aliases = {
-        compact = "context_compactor",
-        compactor = "context_compactor",
-        context_compactor = "context_compactor",
-        checkpoint = "context_compactor",
+        checkpoint = "checkpoint",
         lifecycle = "lifecycle",
         memory = "memory",
-        prompt = "prompt_provider",
-        prompt_provider = "prompt_provider",
         tool_wrapper = "tool_wrapper",
         tool_wrappers = "tool_wrapper",
     }
