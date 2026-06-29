@@ -1,13 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{{ if hasTheme }} class="{{ themeClass }}" style="color-scheme: {{ colorScheme }};"{{ end }}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
-    <!-- Theme persistence (client-side): applies the stored theme before paint
-         and exposes window.wippyThemePersist. This file is the SPA fallback for
-         history-mode deep links; the Jet shell (index.jet) is identical plus a
-         server-rendered <html> theme class for cookie mode. Keep the two in sync. -->
+    <!-- Theme persistence: applies the stored theme class before paint and exposes
+         window.wippyThemePersist. Render-blocking and first so there's no flash.
+         In cookie mode the server already set the class on <html> above. -->
     <script src="/api/public/facade/theme-persist.js"></script>
     <title>Wippy</title>
     <script src="/@wippy-fe/loading.js"></script>

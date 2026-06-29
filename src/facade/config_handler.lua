@@ -181,12 +181,27 @@ local function handler()
 
     local axios_defaults = non_empty_map_or_nil(get_req_json_any("axios_defaults"))
     local extra_scripts = non_empty_array_or_nil(get_req_json_any("extra_scripts"))
+    -- TanStack Query defaults: { default?, content?, lists? }. Passed through
+    -- verbatim; the host validates/whitelists the option keys client-side.
+    local tanstack = non_empty_map_or_nil(get_req_json_any("tanstack"))
 
     -- Clamp theme_mode to the valid enum; anything else (typo/misconfig) → auto,
     -- so a bad value can't ship a silently-ignored class to the client.
     local theme_mode = get_req("theme_mode")
     if theme_mode ~= "light" and theme_mode ~= "dark" and theme_mode ~= "auto" then
         theme_mode = "auto"
+    end
+
+    -- Persistence of the chosen theme mode. Clamp to the valid enum (bad value →
+    -- "none" = no persistence). theme_storage_key falls back to the documented
+    -- default so a blank requirement still produces a usable key.
+    local theme_persist = get_req("theme_persist")
+    if theme_persist ~= "cookie" and theme_persist ~= "localStorage" then
+        theme_persist = "none"
+    end
+    local theme_storage_key = get_req("theme_storage_key")
+    if theme_storage_key == "" then
+        theme_storage_key = "@wippy-theme-mode"
     end
 
     local config = {
@@ -205,8 +220,11 @@ local function handler()
         },
         routePrefix = non_empty_or_nil(api_url),
         themeMode = theme_mode,
+        themePersist = theme_persist,
+        themeStorageKey = theme_storage_key,
         apiRoutes = api_routes,
         axiosDefaults = axios_defaults,
+        tanstack = tanstack,
         extraScripts = extra_scripts,
         theming = {
             global = global_scope,
