@@ -304,6 +304,100 @@ local function raw_bindings_from_trait(trait_def: any): {any}
     return out
 end
 
+local function list_from_map_or_array(value: any): {string}
+    local out: {string} = {}
+    if type(value) == "string" and value ~= "" then
+        out[#out + 1] = value
+        return out
+    end
+
+    if type(value) ~= "table" then
+        return out
+    end
+
+    if value[1] ~= nil then
+        for _, item in ipairs(value) do
+            if type(item) == "string" and item ~= "" then
+                out[#out + 1] = item
+            end
+        end
+        return out
+    end
+
+    for key, enabled in pairs(value) do
+        if type(key) == "string" and key ~= "" and enabled ~= false then
+            out[#out + 1] = key
+        end
+    end
+    return out
+end
+
+local function set_from_list(values: {string}): {[string]: boolean}
+    local out = {}
+    for _, value in ipairs(values) do
+        out[value] = true
+    end
+    return out
+end
+
+local function behaviors_from_trait(trait_def: any): {any}
+    local out = {}
+    if type(trait_def) ~= "table" or type(trait_def.behaviors) ~= "table" then
+        return out
+    end
+
+    if trait_def.behaviors[1] ~= nil then
+        for _, behavior in ipairs(trait_def.behaviors) do
+            if type(behavior) == "table" then
+                out[#out + 1] = behavior
+            end
+        end
+        return out
+    end
+
+    for id, behavior in pairs(trait_def.behaviors) do
+        if type(behavior) == "table" then
+            local normalized = deep_copy(behavior)
+            if normalized.id == nil and type(id) == "string" then
+                normalized.id = id
+            end
+            out[#out + 1] = normalized
+        end
+    end
+    return out
+end
+
+local function behavior_handler(behavior: any, handler_name: string): string?
+    if type(behavior) ~= "table" then
+        return nil
+    end
+
+    if type(behavior.handlers) == "table" then
+        local handler = behavior.handlers[handler_name]
+        if type(handler) == "string" and handler ~= "" then
+            return handler
+        end
+    end
+
+    local handler = behavior.handler
+    if type(handler) == "string" and handler ~= "" then
+        return handler
+    end
+
+    return nil
+end
+
+local function append_binding_spec(
+    bindings: {[string]: {BindingSpec}},
+    kind: string,
+    spec: BindingSpec
+)
+    bindings[kind] = bindings[kind] or {}
+    spec.kind = kind
+    spec.order = #bindings[kind] + 1
+    bindings[kind][#bindings[kind] + 1] = spec
+end
+
 local function merge_binding_options(trait_options: any, attachment_options: any, binding: any): table
     local merged = merge_agent_options(trait_options, binding and binding.options or nil)
     if type(binding) == "table" and type(binding.context) == "table" then
@@ -323,6 +417,25 @@ end
 local TOOL_WRAPPER_PHASES = {
     before_execute = true,
     after_execute = true,
+}
+
+local TOOL_WRAPPER_PHASE_ORDER = { "before_execute", "after_execute" }
+
+local LIFECYCLE_PHASES = {
+    activate = true,
+    before_step = true,
+    after_step = true,
+    deactivate = true,
+}
+
+local LIFECYCLE_PHASE_ORDER = { "activate", "before_step", "after_step", "deactivate" }
+
+local CHECKPOINT_AGENT_OPTION_KEYS = {
+    function_id = true,
+    max_memory_chars = true,
+    max_tokens = true,
+    strict = true,
+    token_threshold = true,
 }
 
 local function normalize_tool_wrapper_phases(raw_hook: any): {string}
@@ -468,8 +581,7 @@ local function append_bindings(
         attach_options_to_context(binding_context, binding_options)
 
         local kind = binding.kind
-        bindings[kind] = bindings[kind] or {}
-        bindings[kind][#bindings[kind] + 1] = {
+        append_binding_spec(bindings, kind, {
             id = binding.id,
             kind = kind,
             trait_id = trait_id,
@@ -480,9 +592,236 @@ local function append_bindings(
             options = binding_options,
             priority = binding.priority or 100,
             strict = binding.strict == true,
-            order = #bindings[kind] + 1,
+            order = 0,
+        })
+    end
+end
+
+local function append_behavior_tool_wrapper(
+    tool_wrappers: {ToolWrapperSpec},
+    trait_id: string,
+    behavior: any,
+    handles: {[string]: boolean},
+    base_context: table,
+    base_options: table
+)
+    local binding = behavior_handler(behavior, "tool_wrapper")
+    if not binding then
+        return
+    end
+
+    local phases = {}
+    for _, phase in ipairs(TOOL_WRAPPER_PHASE_ORDER) do
+        if handles[phase] then
+            phases[#phases + 1] = phase
+        end
+    end
+    if #phases == 0 then
+        return
+    end
+
+    for _, phase in ipairs(phases) do
+        local options = merge_agent_options(base_options, type(behavior[phase]) == "table" and behavior[phase] or nil)
+        local context = deep_copy(base_context)
+        attach_options_to_context(context, options)
+        tool_wrappers[#tool_wrappers + 1] = {
+            id = behavior.id,
+            trait_id = trait_id,
+            phases = { phase },
+            binding = binding,
+            context = context,
+            options = options,
+            priority = tonumber(behavior.priority) or 100,
+            strict = behavior.strict == true,
+            order = #tool_wrappers + 1,
         }
     end
+end
+
+local function append_behavior_lifecycle(
+    bindings: {[string]: {BindingSpec}},
+    trait_id: string,
+    behavior: any,
+    handles: {[string]: boolean},
+    base_context: table,
+    base_options: table
+)
+    local binding = behavior_handler(behavior, "lifecycle")
+    if not binding then
+        return
+    end
+
+    local phases = {}
+    for _, phase in ipairs(LIFECYCLE_PHASE_ORDER) do
+        if handles[phase] then
+            phases[#phases + 1] = phase
+        end
+    end
+    if #phases == 0 then
+        return
+    end
+
+    for _, phase in ipairs(phases) do
+        local options = merge_agent_options(base_options, behavior.lifecycle)
+        options = merge_agent_options(options, type(behavior[phase]) == "table" and behavior[phase] or nil)
+
+        local context = deep_copy(base_context)
+        attach_options_to_context(context, options)
+        append_binding_spec(bindings, "lifecycle", {
+            id = behavior.id,
+            kind = "lifecycle",
+            trait_id = trait_id,
+            contract = "wippy.agent:lifecycle",
+            binding = binding,
+            phases = { phase },
+            context = context,
+            options = options,
+            priority = tonumber(behavior.priority) or 100,
+            strict = behavior.strict == true,
+            order = 0,
+        })
+    end
+end
+
+local function checkpoint_agent_options(checkpoint_config: any): table
+    local out = {}
+    if type(checkpoint_config) ~= "table" then
+        return out
+    end
+
+    local checkpoint = {}
+    for key, value in pairs(checkpoint_config) do
+        if CHECKPOINT_AGENT_OPTION_KEYS[key] then
+            checkpoint[key] = deep_copy(value)
+        end
+    end
+
+    if next(checkpoint) ~= nil then
+        out.checkpoint = checkpoint
+    end
+    return out
+end
+
+local function append_behavior_checkpoint(
+    bindings: {[string]: {BindingSpec}},
+    trait_id: string,
+    behavior: any,
+    handles: {[string]: boolean},
+    base_context: table,
+    base_options: table
+): table
+    if not handles.checkpoint then
+        return {}
+    end
+
+    local binding = behavior_handler(behavior, "checkpoint")
+    local checkpoint_config = type(behavior.checkpoint) == "table" and behavior.checkpoint or {}
+    local agent_options = checkpoint_agent_options(checkpoint_config)
+
+    if not binding then
+        return agent_options
+    end
+
+    local options = merge_agent_options(base_options, behavior.checkpoint)
+    attach_options_to_context(base_context, options)
+    append_binding_spec(bindings, "checkpoint", {
+        id = behavior.id,
+        kind = "checkpoint",
+        trait_id = trait_id,
+        contract = "wippy.agent:checkpoint",
+        binding = binding,
+        phases = { "checkpoint" },
+        context = base_context,
+        options = options,
+        priority = tonumber(behavior.priority) or 100,
+        strict = behavior.strict == true,
+        order = 0,
+    })
+
+    return agent_options
+end
+
+local function append_behaviors(
+    bindings: {[string]: {BindingSpec}},
+    tool_wrappers: {ToolWrapperSpec},
+    trait_id: string,
+    trait_def: any,
+    trait_context: table,
+    attachment_options: table,
+    raw_spec: any,
+    config: CompilerConfig
+): table
+    local behaviors = behaviors_from_trait(trait_def)
+    local behavior_agent_options = {}
+    if #behaviors == 0 then
+        return behavior_agent_options
+    end
+
+    local trait_options = type(trait_def.options) == "table" and trait_def.options or {}
+
+    for _, behavior in ipairs(behaviors) do
+        local handles = set_from_list(list_from_map_or_array(behavior.handles))
+        for phase, _ in pairs(LIFECYCLE_PHASES) do
+            if behavior[phase] == false then
+                handles[phase] = nil
+            end
+        end
+        for phase, _ in pairs(TOOL_WRAPPER_PHASES) do
+            if behavior[phase] == false then
+                handles[phase] = nil
+            end
+        end
+        if behavior.checkpoint == false then
+            handles.checkpoint = nil
+        end
+
+        local behavior_context = config.context_merger(
+            trait_context or {},
+            raw_spec.context or {},
+            type(behavior.context) == "table" and behavior.context or {}
+        )
+        behavior_context.agent_id = raw_spec.id
+        behavior_context.trait_id = trait_id
+        if type(behavior.id) == "string" and behavior.id ~= "" then
+            behavior_context.behavior_id = behavior.id
+        end
+        if type(behavior.kind) == "string" and behavior.kind ~= "" then
+            behavior_context.behavior_kind = behavior.kind
+        end
+
+        local base_options = merge_agent_options(trait_options, behavior.options)
+        base_options = merge_agent_options(base_options, attachment_options)
+
+        append_behavior_lifecycle(
+            bindings,
+            trait_id,
+            behavior,
+            handles,
+            deep_copy(behavior_context),
+            base_options
+        )
+
+        local checkpoint_options = append_behavior_checkpoint(
+            bindings,
+            trait_id,
+            behavior,
+            handles,
+            deep_copy(behavior_context),
+            base_options
+        )
+        behavior_agent_options = merge_agent_options(behavior_agent_options, checkpoint_options)
+
+        append_behavior_tool_wrapper(
+            tool_wrappers,
+            trait_id,
+            behavior,
+            handles,
+            deep_copy(behavior_context),
+            base_options
+        )
+    end
+
+    return behavior_agent_options
 end
 
 local function get_canonical_tool_name(tool_id: any, tool_def: any): any
@@ -575,6 +914,18 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
                 context = trait_contexts[trait_id]  -- Use the merged context
             })
         end
+
+        local behavior_agent_options = append_behaviors(
+            bindings,
+            tool_wrappers,
+            trait_id,
+            trait_def,
+            trait_contexts[trait_id],
+            trait_instance_options,
+            raw_spec,
+            config
+        )
+        agent_options = merge_agent_options(agent_options, behavior_agent_options)
 
         append_tool_wrappers(tool_wrappers, trait_id, trait_def, trait_contexts[trait_id], raw_spec, config)
         append_bindings(bindings, trait_id, trait_def, trait_contexts[trait_id], trait_instance_options, raw_spec, config)
@@ -831,7 +1182,7 @@ local function process_delegates(raw_spec: any, additional_delegates: any, confi
     return delegate_tools, delegate_contexts
 end
 
-local function append_legacy_memory_binding(bindings: {[string]: {BindingSpec}}, raw_spec: any, config: CompilerConfig)
+local function append_memory_contract_binding(bindings: {[string]: {BindingSpec}}, raw_spec: any, config: CompilerConfig)
     local memory_contract = raw_spec and raw_spec.memory_contract
     if type(memory_contract) ~= "table" or type(memory_contract.implementation_id) ~= "string" or memory_contract.implementation_id == "" then
         return
@@ -847,9 +1198,8 @@ local function append_legacy_memory_binding(bindings: {[string]: {BindingSpec}},
     local binding_options = type(memory_contract.options) == "table" and deep_copy(memory_contract.options) or {}
     attach_options_to_context(binding_context, binding_options)
 
-    bindings.memory = bindings.memory or {}
-    bindings.memory[#bindings.memory + 1] = {
-        id = "legacy_memory_contract",
+    append_binding_spec(bindings, "memory", {
+        id = "memory_contract",
         kind = "memory",
         trait_id = nil,
         contract = "wippy.agent:memory",
@@ -859,9 +1209,9 @@ local function append_legacy_memory_binding(bindings: {[string]: {BindingSpec}},
         options = binding_options,
         priority = 1000,
         strict = false,
-        order = #bindings.memory + 1,
-        source = "legacy_memory_contract",
-    }
+        order = 0,
+        source = "memory_contract",
+    })
 end
 
 function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
@@ -874,7 +1224,7 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
     local additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, trait_agent_options = process_traits(
         raw_spec, config)
 
-    append_legacy_memory_binding(bindings :: {[string]: {BindingSpec}}, raw_spec, config)
+    append_memory_contract_binding(bindings :: {[string]: {BindingSpec}}, raw_spec, config)
 
     local tools = process_tools(raw_spec, additional_tools, trait_contexts, trait_tool_schemas, config)
 

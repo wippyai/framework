@@ -326,10 +326,8 @@ local function define_tests()
                 shared_setting = "agent_overrides_trait"
             },
             agent_options = {
-                compact = {
-                    strict = true
-                },
                 checkpoint = {
+                    strict = true,
                     token_threshold = 96000
                 }
             },
@@ -341,15 +339,13 @@ local function define_tests()
                         shared_setting = "instance_overrides_agent"
                     },
                     agent_options = {
-                        compact = {
-                            token_threshold = 16000
-                        },
                         checkpoint = {
+                            token_threshold = 16000,
                             function_id = "agent.checkpoint:instance"
                         }
                     }
                 },
-                "legacy_runtime_provider_trait",
+                "ignored_runtime_provider_trait",
                 "invalid_tool_wrapper_trait"
             }
         }
@@ -377,7 +373,7 @@ local function define_tests()
                         recall = {
                             max_items = 5
                         },
-                        compact = {
+                        checkpoint = {
                             token_threshold = 32000
                         }
                     }
@@ -475,13 +471,10 @@ local function define_tests()
                     shared_setting = "trait_default"
                 },
                 agent_options = {
-                    compact = {
-                        token_threshold = 32000,
-                        function_id = "agent.compact:default",
-                        max_memory_chars = 8192
-                    },
                     checkpoint = {
-                        token_threshold = 64000
+                        token_threshold = 32000,
+                        function_id = "agent.checkpoint:default",
+                        max_memory_chars = 8192
                     }
                 },
                 tool_wrappers = {
@@ -509,25 +502,25 @@ local function define_tests()
                     }
                 }
             },
-            legacy_runtime_provider_trait = {
-                id = "legacy_runtime_provider_trait",
-                name = "Legacy Runtime Provider Trait",
-                description = "Trait with old runtime and notify fields that must not map to tool wrappers",
+            ignored_runtime_provider_trait = {
+                id = "ignored_runtime_provider_trait",
+                name = "Ignored Runtime Provider Trait",
+                description = "Trait with runtime and notify fields that must not map to tool wrappers",
                 prompt = "",
                 tools = {},
                 context = {},
                 runtime_hook = {
-                    id = "legacy_checkpoint",
+                    id = "ignored_checkpoint",
                     phase = "checkpoint",
-                    binding_id = "test.runtime:legacy_provider",
+                    binding_id = "test.runtime:ignored_provider",
                     options = {
                         token_threshold = 64000
                     }
                 },
                 notify_hook = {
-                    id = "legacy_notify",
+                    id = "ignored_notify",
                     event = "turn.failed",
-                    binding_id = "test.notify:legacy",
+                    binding_id = "test.notify:ignored",
                     priority = 35,
                     options = {
                         severity = "error"
@@ -570,13 +563,10 @@ local function define_tests()
                         max_items = 2,
                         max_length = 1000
                     },
-                    compact = {
+                    checkpoint = {
                         enabled = true,
                         token_threshold = 24000,
                         max_memory_chars = 8192
-                    },
-                    checkpoint = {
-                        token_threshold = 48000
                     }
                 },
                 bindings = {
@@ -637,6 +627,62 @@ local function define_tests()
                             audit = {
                                 include_tools = true
                             }
+                        }
+                    }
+                }
+            },
+            behavior_trait = {
+                id = "behavior_trait",
+                name = "Behavior Trait",
+                description = "Trait that declares lifecycle, checkpoint, and wrapper behavior in one place",
+                prompt = "Use behavior-defined memory.",
+                tools = {},
+                context = {
+                    namespace = "default",
+                    profile = "default"
+                },
+                behaviors = {
+                    {
+                        id = "durable_memory",
+                        kind = "memory",
+                        priority = 10,
+                        handles = { "activate", "checkpoint", "deactivate" },
+                        handlers = {
+                            lifecycle = "test.behavior:lifecycle",
+                            checkpoint = "test.behavior:checkpoint"
+                        },
+                        context = {
+                            kb_id = "kb-1"
+                        },
+                        options = {
+                            memory_scope = "agent"
+                        },
+                        activate = {
+                            recall_window = 3
+                        },
+                        checkpoint = {
+                            token_threshold = 12000,
+                            checkpoint_model = "class:fast",
+                            checkpoint_max_tokens = 700,
+                            max_memory_chars = 2000
+                        },
+                        deactivate = {
+                            commit_selector = "since_checkpoint"
+                        }
+                    },
+                    {
+                        id = "tool_audit",
+                        kind = "tool_wrapper",
+                        handles = { "before_execute", "after_execute" },
+                        handlers = {
+                            tool_wrapper = "test.behavior:tool_wrapper"
+                        },
+                        priority = 90,
+                        before_execute = {
+                            include_args = true
+                        },
+                        after_execute = {
+                            include_results = true
                         }
                     }
                 }
@@ -1062,17 +1108,13 @@ local function define_tests()
                 test.not_nil(compiled_spec)
                 test.not_nil(compiled_spec.agent_options)
 
-                test.eq(compiled_spec.agent_options.compact.token_threshold, 16000,
-                    "attachment option overrides trait default")
-                test.eq(compiled_spec.agent_options.compact.function_id, "agent.compact:default",
-                    "trait option preserved when not overridden")
-                test.eq(compiled_spec.agent_options.compact.max_memory_chars, 8192)
-                test.is_true(compiled_spec.agent_options.compact.strict,
-                    "agent-level option overlays trait and attachment options")
                 test.eq(compiled_spec.agent_options.checkpoint.token_threshold, 96000,
                     "agent-level checkpoint threshold wins last")
                 test.eq(compiled_spec.agent_options.checkpoint.function_id, "agent.checkpoint:instance",
                     "attachment checkpoint function is preserved")
+                test.eq(compiled_spec.agent_options.checkpoint.max_memory_chars, 8192)
+                test.is_true(compiled_spec.agent_options.checkpoint.strict,
+                    "agent-level option overlays trait and attachment options")
             end)
 
             it("should merge trait instance, agent, and wrapper context for tool wrappers", function()
@@ -1091,7 +1133,7 @@ local function define_tests()
                 test.eq(wrapper.context.trait_id, "tool_wrapper_trait")
             end)
 
-            it("should ignore old runtime/notify fields and malformed tool wrappers", function()
+            it("should ignore runtime/notify fields and malformed tool wrappers", function()
                 local compiled_spec, err = compiler.compile(spec_with_tool_wrapper_trait)
 
                 test.is_nil(err)
@@ -1099,8 +1141,8 @@ local function define_tests()
 
                 test.eq(#compiled_spec.tool_wrappers, 2)
                 for _, wrapper in ipairs(compiled_spec.tool_wrappers) do
-                    test.is_false(wrapper.id == "legacy_checkpoint")
-                    test.is_false(wrapper.id == "legacy_notify")
+                    test.is_false(wrapper.id == "ignored_checkpoint")
+                    test.is_false(wrapper.id == "ignored_notify")
                     test.is_false(wrapper.id == "missing_target")
                     test.is_false(wrapper.id == "unsupported_phase")
                 end
@@ -1141,9 +1183,9 @@ local function define_tests()
                     "trait attachment options override trait defaults")
                 test.eq(memory.context.options.recall.max_length, 2000,
                     "binding-local options refine trait defaults")
-                test.eq(memory.context.options.compact.token_threshold, 32000,
-                    "attachment compact option overrides trait default")
-                test.eq(memory.context.options.compact.max_memory_chars, 8192)
+                test.eq(memory.context.options.checkpoint.token_threshold, 32000,
+                    "attachment checkpoint option overrides trait default")
+                test.eq(memory.context.options.checkpoint.max_memory_chars, 8192)
                 test.eq(memory.options.recall.max_items, 5)
                 test.eq(memory.options.recall.max_length, 2000)
             end)
@@ -1179,9 +1221,68 @@ local function define_tests()
                 test.eq(checkpoint.contract, "wippy.agent:checkpoint")
                 test.eq(checkpoint.binding, "test.memory:checkpoint")
                 test.eq(checkpoint.context.mode, "memory")
-                test.eq(checkpoint.context.options.compact.enabled, true)
-                test.eq(checkpoint.context.options.compact.token_threshold, 32000)
-                test.eq(checkpoint.context.options.checkpoint.token_threshold, 48000)
+                test.eq(checkpoint.context.options.checkpoint.enabled, true)
+                test.eq(checkpoint.context.options.checkpoint.token_threshold, 32000)
+                test.eq(checkpoint.context.options.checkpoint.max_memory_chars, 8192)
+            end)
+
+            it("should expand trait behaviors into lifecycle, checkpoint, and wrapper runtime plans", function()
+                local compiled_spec, err = compiler.compile({
+                    id = "test:behavior",
+                    prompt = "Base prompt.",
+                    context = {
+                        workspace = "agent-context"
+                    },
+                    traits = {
+                        {
+                            id = "behavior_trait",
+                            context = {
+                                profile = "run-profile"
+                            },
+                            options = {
+                                checkpoint_temperature = 0.1
+                            },
+                            agent_options = {
+                                checkpoint = {
+                                    token_threshold = 9000
+                                }
+                            }
+                        }
+                    }
+                })
+
+                test.is_nil(err)
+                test.not_nil(compiled_spec)
+
+                test.eq(#compiled_spec.bindings.lifecycle, 2)
+                local activate = compiled_spec.bindings.lifecycle[1]
+                test.eq(activate.contract, "wippy.agent:lifecycle")
+                test.eq(activate.binding, "test.behavior:lifecycle")
+                test.eq(activate.phases[1], "activate")
+                test.eq(activate.context.kb_id, "kb-1")
+                test.eq(activate.context.profile, "run-profile")
+                test.eq(activate.context.behavior_id, "durable_memory")
+                test.eq(activate.options.recall_window, 3)
+
+                local deactivate = compiled_spec.bindings.lifecycle[2]
+                test.eq(deactivate.phases[1], "deactivate")
+                test.eq(deactivate.options.commit_selector, "since_checkpoint")
+
+                local checkpoint = compiled_spec.bindings.checkpoint[1]
+                test.eq(checkpoint.contract, "wippy.agent:checkpoint")
+                test.eq(checkpoint.binding, "test.behavior:checkpoint")
+                test.eq(checkpoint.context.behavior_kind, "memory")
+                test.eq(checkpoint.options.checkpoint_model, "class:fast")
+                test.eq(checkpoint.options.checkpoint_temperature, 0.1)
+                test.eq(compiled_spec.agent_options.checkpoint.token_threshold, 9000)
+                test.eq(compiled_spec.agent_options.checkpoint.max_memory_chars, 2000)
+
+                test.eq(#compiled_spec.tool_wrappers, 2)
+                test.eq(compiled_spec.tool_wrappers[1].binding, "test.behavior:tool_wrapper")
+                test.eq(compiled_spec.tool_wrappers[1].phases[1], "before_execute")
+                test.is_true(compiled_spec.tool_wrappers[1].options.include_args)
+                test.eq(compiled_spec.tool_wrappers[2].phases[1], "after_execute")
+                test.is_true(compiled_spec.tool_wrappers[2].options.include_results)
             end)
         end)
 
@@ -1907,7 +2008,7 @@ local function define_tests()
             test.eq(compiled_spec.memory_contract.implementation_id, "memory:impl")
             test.not_nil(compiled_spec.bindings)
             test.eq(#compiled_spec.bindings.memory, 1)
-            test.eq(compiled_spec.bindings.memory[1].source, "legacy_memory_contract")
+            test.eq(compiled_spec.bindings.memory[1].source, "memory_contract")
             test.eq(compiled_spec.bindings.memory[1].contract, "wippy.agent:memory")
             test.eq(compiled_spec.bindings.memory[1].binding, "memory:impl")
             test.eq(compiled_spec.bindings.memory[1].context.setting, "value")
