@@ -15,6 +15,7 @@ entries:
     modules:
       - json
       - funcs
+      - contract
     imports:
       tools: wippy.agent.discovery:tools
     
@@ -35,6 +36,7 @@ entries:
     source: file://caller_test.lua
     modules:
       - env
+      - time
     imports:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
@@ -98,4 +100,3 @@ entries:
       - time
       - ctx
     method: delayed_echo
-    

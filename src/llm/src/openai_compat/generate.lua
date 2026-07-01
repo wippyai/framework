@@ -150,6 +150,7 @@ function generate_handler.handler(contract_args)
 
     local request_options = {
         timeout = contract_args.timeout or 600,
+        retry = contract_args.retry,
     }
 
     local stream_config = nil

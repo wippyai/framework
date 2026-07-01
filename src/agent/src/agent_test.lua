@@ -48,7 +48,8 @@ local function define_tests()
             memory = { "You are designed for testing" },
             memory_contract = nil,
             prompt_funcs = {},
-            step_funcs = {}
+            step_funcs = {},
+            tool_wrappers = {}
         }
 
         local compiled_spec_with_aliases = {
@@ -84,7 +85,8 @@ local function define_tests()
             memory = {},
             memory_contract = nil,
             prompt_funcs = {},
-            step_funcs = {}
+            step_funcs = {},
+            tool_wrappers = {}
         }
 
         local compiled_spec_with_delegates = {
@@ -126,7 +128,8 @@ local function define_tests()
             memory = {},
             memory_contract = nil,
             prompt_funcs = {},
-            step_funcs = {}
+            step_funcs = {},
+            tool_wrappers = {}
         }
 
         local compiled_spec_with_tool_schemas = {
@@ -168,7 +171,8 @@ local function define_tests()
             memory = {},
             memory_contract = nil,
             prompt_funcs = {},
-            step_funcs = {}
+            step_funcs = {},
+            tool_wrappers = {}
         }
 
         local compiled_spec_with_memory = {
@@ -205,7 +209,48 @@ local function define_tests()
                 }
             },
             prompt_funcs = {},
-            step_funcs = {}
+            step_funcs = {},
+            tool_wrappers = {}
+        }
+
+        local compiled_spec_with_tool_wrappers = {
+            id = "tool-wrapper-agent",
+            name = "Tool Wrapper Agent",
+            description = "Agent with trait-owned tool wrappers",
+            model = "gpt-4o-mini",
+            prompt = "You are an agent with tool wrappers.",
+            tools = {},
+            memory = {},
+            memory_contract = nil,
+            agent_options = {
+                compact = {
+                    token_threshold = 16000,
+                    function_id = "agent.compact:test"
+                },
+                checkpoint = {
+                    token_threshold = 32000
+                }
+            },
+            prompt_funcs = {},
+            step_funcs = {},
+            tool_wrappers = {
+                {
+                    id = "audit_tools",
+                    trait_id = "audit_trait",
+                    phases = { "before_execute", "after_execute" },
+                    binding = "test.wrapper:audit_provider",
+                    priority = 20,
+                    strict = true,
+                    context = {
+                        agent_id = "tool-wrapper-agent",
+                        trait_id = "audit_trait",
+                        policy = "readonly"
+                    },
+                    options = {
+                        max_calls = 4
+                    }
+                }
+            }
         }
 
         before_each(function()
@@ -517,6 +562,8 @@ local function define_tests()
                 test.eq(test_agent.system_prompt, "You are a helpful test agent.\n\n## Your memory contains:\n- You are designed for testing")
                 test.not_nil(test_agent.tools["calculator"])
                 test.not_nil(test_agent.tools["weather"])
+                test.not_nil(test_agent.tool_wrappers)
+                test.eq(#test_agent.tool_wrappers, 0)
                 test.eq(test_agent.total_tokens.total, 0)
             end)
 
@@ -543,6 +590,35 @@ local function define_tests()
                 test.eq(test_agent.temperature, 0)
                 test.eq(test_agent.thinking_effort, 0)
                 test.is_nil(next(test_agent.tools)) -- Empty tools table
+                test.not_nil(test_agent.tool_wrappers)
+                test.eq(#test_agent.tool_wrappers, 0)
+            end)
+
+            it("should preserve tool wrapper specs from compiled specification", function()
+                local test_agent = agent.new(compiled_spec_with_tool_wrappers)
+
+                test.not_nil(test_agent)
+                test.not_nil(test_agent.tool_wrappers)
+                test.eq(#test_agent.tool_wrappers, 1)
+
+                local wrapper = test_agent.tool_wrappers[1]
+                test.eq(wrapper.id, "audit_tools")
+                test.eq(wrapper.binding, "test.wrapper:audit_provider")
+                test.eq(wrapper.phases[1], "before_execute")
+                test.eq(wrapper.phases[2], "after_execute")
+                test.is_true(wrapper.strict)
+                test.eq(wrapper.context.policy, "readonly")
+                test.eq(wrapper.options.max_calls, 4)
+            end)
+
+            it("should preserve agent options from compiled specification", function()
+                local test_agent = agent.new(compiled_spec_with_tool_wrappers)
+
+                test.not_nil(test_agent)
+                test.not_nil(test_agent.agent_options)
+                test.eq(test_agent.agent_options.compact.token_threshold, 16000)
+                test.eq(test_agent.agent_options.compact.function_id, "agent.compact:test")
+                test.eq(test_agent.agent_options.checkpoint.token_threshold, 32000)
             end)
         end)
 
@@ -680,6 +756,27 @@ local function define_tests()
                 test.eq(result.delegate_calls[1].agent_id, "specialist:data")
                 test.eq(result.delegate_calls[1].name, "to_data_specialist")
                 test.is_nil(result.tool_calls) -- Tool calls should be cleared for delegates
+            end)
+
+            it("should keep tool wrapper metadata stable when a delegate redirect is emitted", function()
+                local redirect_agent_spec = {}
+                for k, v in pairs(compiled_spec_with_delegates) do
+                    redirect_agent_spec[k] = v
+                end
+                redirect_agent_spec.tool_wrappers = compiled_spec_with_tool_wrappers.tool_wrappers
+                redirect_agent_spec.agent_options = compiled_spec_with_tool_wrappers.agent_options
+
+                local test_agent = agent.new(redirect_agent_spec)
+                local prompt_builder = mock_prompt.new()
+
+                prompt_builder:add_user("Please analyze this sales data for trends")
+                local result = test_agent:step(prompt_builder)
+
+                test.not_nil(result.delegate_calls)
+                test.eq(#result.delegate_calls, 1)
+                test.eq(#test_agent.tool_wrappers, 1)
+                test.eq(test_agent.tool_wrappers[1].binding, "test.wrapper:audit_provider")
+                test.eq(test_agent.agent_options.compact.token_threshold, 16000)
             end)
 
             it("should preserve tool calls when no delegates are triggered", function()

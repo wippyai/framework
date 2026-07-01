@@ -163,6 +163,67 @@ entries:
     source: file://context_test.lua
     imports:
       context: wippy.agent:context
+      compiler: wippy.agent.compiler:compiler
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.agent:lifecycle_runtime
+  - name: lifecycle_runtime
+    kind: library.lua
+    meta:
+      type: library
+      comment: Runtime dispatcher for trait-owned lifecycle contract bindings
+    source: file://lifecycle_runtime.lua
+    modules:
+      - contract
+
+  # wippy.agent:lifecycle_runtime_test
+  - name: lifecycle_runtime_test
+    kind: function.lua
+    meta:
+      name: Agent Lifecycle Runtime Test
+      type: test
+      comment: Unit tests for optional trait-owned lifecycle contract dispatch
+      group: Agent Framework
+      tags:
+        - agents
+        - lifecycle
+        - traits
+        - contracts
+        - tests
+    source: file://lifecycle_runtime_test.lua
+    imports:
+      lifecycle_runtime: wippy.agent:lifecycle_runtime
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.agent:checkpoint_runtime
+  - name: checkpoint_runtime
+    kind: library.lua
+    meta:
+      type: library
+      comment: Runtime dispatcher for trait-owned checkpoint contract bindings
+    source: file://checkpoint_runtime.lua
+    modules:
+      - contract
+
+  # wippy.agent:checkpoint_runtime_test
+  - name: checkpoint_runtime_test
+    kind: function.lua
+    meta:
+      name: Agent Checkpoint Runtime Test
+      type: test
+      comment: Unit tests for optional trait-owned checkpoint contract dispatch
+      group: Agent Framework
+      tags:
+        - agents
+        - checkpoint
+        - traits
+        - contracts
+        - tests
+    source: file://checkpoint_runtime_test.lua
+    imports:
+      checkpoint_runtime: wippy.agent:checkpoint_runtime
       test: wippy.test:test
     method: run_tests
 
@@ -285,6 +346,409 @@ entries:
                   }
                 },
                 "required": ["memories"]
+              }
+            format: application/schema+json
+
+  # wippy.agent:run_context
+  - name: run_context
+    kind: contract.definition
+    meta:
+      comment: Provider-neutral read access to an agent run's context, history, and prompt slices.
+      tags:
+        - agents
+        - context
+        - history
+        - prompt
+        - session
+        - dataflow
+      description: |
+        Read-only contract used by trait bindings, lifecycle handlers, checkpoints,
+        and tools that need runner state without knowing whether the agent is
+        executing inside a session or dataflow node. Callers pass a host ref and
+        a bounded selector; implementations return normalized data and range
+        metadata instead of exposing internal repositories.
+
+        Selector semantics are intentionally provider-neutral:
+        - all: full chronological history.
+        - window: last N events in chronological order; omitted N defaults to 20.
+        - since_id: events strictly after from_id.
+        - range: events strictly after from_id and through to_id, inclusive.
+          Missing from_id starts at the beginning; missing to_id is open ended.
+        - checkpoint: events strictly after the supplied checkpoint_id.
+        - since_checkpoint: provider's current/latest checkpoint cut.
+        max_chars is applied after selector slicing and may return an empty
+        event list with truncated=true if the first selected event exceeds the
+        bound.
+    methods:
+      - name: get_context
+        description: Return the current runtime context map for the referenced agent run.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "enum": ["session", "dataflow"] },
+                      "session_id": { "type": "string" },
+                      "dataflow_id": { "type": "string" },
+                      "node_id": { "type": "string" },
+                      "run_id": { "type": "string" },
+                      "iteration": { "type": "integer" }
+                    },
+                    "required": ["kind"]
+                  },
+                  "agent": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "model": { "type": "string" }
+                    }
+                  }
+                },
+                "required": ["host"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "context": { "type": "object" },
+                  "host": { "type": "object" },
+                  "agent": { "type": "object" }
+                },
+                "required": ["context"]
+              }
+            format: application/schema+json
+      - name: get_history
+        description: Return normalized conversation/history events for a bounded selector.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "host": { "type": "object" },
+                  "selector": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": ["all", "window", "range", "since_id", "since_checkpoint", "checkpoint"]
+                      },
+                      "from_id": { "type": "string" },
+                      "to_id": { "type": "string" },
+                      "checkpoint_id": { "type": "string" },
+                      "last": { "type": "integer", "minimum": 1 },
+                      "max_chars": { "type": "integer", "minimum": 1 }
+                    },
+                    "default": { "mode": "since_checkpoint" }
+                  }
+                },
+                "required": ["host"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "events": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  },
+                  "range": {
+                    "type": "object",
+                    "properties": {
+                      "from_id": { "type": "string" },
+                      "to_id": { "type": "string" },
+                      "checkpoint_id": { "type": "string" }
+                    }
+                  },
+                  "truncated": { "type": "boolean" },
+                  "count": { "type": "integer" }
+                },
+                "required": ["events"]
+              }
+            format: application/schema+json
+      - name: get_prompt
+        description: Render a bounded history selector as normalized prompt messages and/or text.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "host": { "type": "object" },
+                  "selector": { "type": "object" },
+                  "format": {
+                    "type": "string",
+                    "enum": ["messages", "text", "both"],
+                    "default": "messages"
+                  }
+                },
+                "required": ["host"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  },
+                  "text": { "type": "string" },
+                  "range": { "type": "object" },
+                  "truncated": { "type": "boolean" }
+                }
+              }
+            format: application/schema+json
+
+  # wippy.agent:lifecycle
+  - name: lifecycle
+    kind: contract.definition
+    meta:
+      comment: Trait-owned agent lifecycle hook for sessions and dataflow.
+      tags: [agents, traits, lifecycle, session, dataflow]
+      description: |
+        Agent-scoped lifecycle extension point. Runners call this contract for
+        trait-owned bindings on the currently active compiled agent. If no trait
+        binds lifecycle, runners continue with their built-in behavior.
+
+        Bindings receive only stable refs: host, agent, outcome/reason, and a
+        run_context pointer. They do not receive repository objects or runner
+        internals. A binding that needs history or prompt slices opens
+        run_context.binding for run_context.contract and calls get_context,
+        get_history, or get_prompt with the supplied host.
+
+        Returned messages are appended to the current prompt only by phases that
+        run before an LLM step (activate and before_step today). Durable memory,
+        checkpoint, or audit writes belong inside the binding implementation.
+        Multiple bindings may be attached by multiple traits; the compiler orders
+        them by priority and declaration order.
+
+        Phase semantics:
+        - activate: a compiled agent becomes active in this runner. On an agent
+          switch, the old agent receives deactivate before the new one activates.
+        - before_step: just before the current agent calls the LLM; returned
+          messages can add prompt context for this step.
+        - after_step: after the agent step result is known.
+        - deactivate: the active agent leaves the runner because the host
+          finished, failed, or switched to another agent.
+    methods:
+      - name: apply
+        description: Apply one lifecycle phase for the active compiled agent.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "type": "string",
+                    "enum": ["activate", "before_step", "after_step", "deactivate"]
+                  },
+                  "host": { "type": "object" },
+                  "agent": { "type": "object" },
+                  "reason": { "type": "string" },
+                  "outcome": { "type": "object" },
+                  "refs": { "type": "object" },
+                  "run_context": {
+                    "type": "object",
+                    "properties": {
+                      "contract": { "type": "string" },
+                      "binding": { "type": "string" },
+                      "host": { "type": "object" },
+                      "agent": { "type": "object" }
+                    }
+                  },
+                  "options": { "type": "object" }
+                },
+                "required": ["phase", "host"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "messages": { "type": "array", "items": { "type": "object" } },
+                  "context": { "type": "object" },
+                  "observations": { "type": "array", "items": { "type": "object" } },
+                  "metadata": { "type": "object" }
+                }
+              }
+            format: application/schema+json
+
+  # wippy.agent:checkpoint
+  - name: checkpoint
+    kind: contract.definition
+    meta:
+      comment: Trait-owned checkpoint provider.
+      tags: [agents, traits, memory, checkpoint, session, dataflow]
+      description: |
+        Canonical token-threshold checkpoint hook for sessions and dataflow.
+        The runner decides when a checkpoint is needed; the binding decides how
+        to read, summarize, and optionally persist durable memory using the
+        run_context contract and selector.
+    methods:
+      - name: create
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "host": { "type": "object" },
+                  "agent": { "type": "object" },
+                  "reason": { "type": "string" },
+                  "selector": { "type": "object" },
+                  "run_context": { "type": "object" },
+                  "options": { "type": "object" },
+                  "context": { "type": "object" },
+                  "refs": { "type": "object" }
+                },
+                "required": ["host"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "memory": { "type": "string" },
+                  "summary": { "type": "string" },
+                  "metadata": { "type": "object" },
+                  "tokens": { "type": "object" }
+                }
+              }
+            format: application/schema+json
+
+  # wippy.agent:tool_wrapper
+  - name: tool_wrapper
+    kind: contract.definition
+    meta:
+      comment: Trait-owned wrapper around agent tool execution.
+      tags:
+        - agents
+        - traits
+        - tools
+        - session
+        - dataflow
+      description: |
+        Allows a trait to inspect or adjust tool calls before execution and inspect
+        tool results after execution. Session and dataflow runners supply the host
+        reference; the wrapper owns no memory or checkpoint lifecycle. Traits can
+        attach multiple focused bindings and each binding is invoked only for the
+        phases declared by that trait.
+    methods:
+      - name: apply
+        description: Apply one wrapper phase to an agent tool execution.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "type": "string",
+                    "enum": ["before_execute", "after_execute"]
+                  },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "enum": ["session", "dataflow"] },
+                      "session_id": { "type": "string" },
+                      "dataflow_id": { "type": "string" },
+                      "node_id": { "type": "string" },
+                      "run_id": { "type": "string" },
+                      "iteration": { "type": "integer" }
+                    },
+                    "required": ["kind"]
+                  },
+                  "agent": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "model": { "type": "string" }
+                    }
+                  },
+                  "run_context": {
+                    "type": "object",
+                    "description": "Pointer to the provider-neutral run_context binding for this host ref.",
+                    "properties": {
+                      "contract": { "type": "string" },
+                      "binding": { "type": "string" },
+                      "host": { "type": "object" },
+                      "agent": { "type": "object" }
+                    }
+                  },
+                  "tool_calls": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  },
+                  "tool_results": {
+                    "type": "object"
+                  },
+                  "outcome": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": ["continues", "completed", "failed", "compacted", "delegated"]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "tool_results_recorded",
+                          "tool_execution_failed",
+                          "exit_tool_completed",
+                          "delegation_requested",
+                          "no_tools_required",
+                          "max_iterations_reached",
+                          "context_limit_reached",
+                          "host_failed"
+                        ]
+                      }
+                    },
+                    "required": ["state", "reason"]
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Trait-declared options for this wrapper."
+                  }
+                },
+                "required": ["phase", "host", "tool_calls"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "skipped": {
+                    "type": "boolean"
+                  },
+                  "tool_calls": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  },
+                  "observations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "level": { "type": "string", "enum": ["info", "warning", "error"] },
+                        "code": { "type": "string" },
+                        "content": {},
+                        "metadata": { "type": "object" }
+                      },
+                      "required": ["level", "code", "content"]
+                    }
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
               }
             format: application/schema+json
 

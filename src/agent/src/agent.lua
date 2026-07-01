@@ -26,8 +26,11 @@ type CompiledAgentSpec = {
     tools: {[string]: UnifiedTool},
     memory: {string},
     memory_contract: table?,
+    agent_options: table?,
     prompt_funcs: {table},
     step_funcs: {table},
+    tool_wrappers: {table},
+    bindings: {[string]: {table}}?,
 }
 
 type TokenUsage = {
@@ -48,10 +51,13 @@ type AgentRunner = {
     tools: {[string]: UnifiedTool},
     memory: {string},
     memory_contract: table?,
+    agent_options: table,
     system_prompt: string,
     system_message: table,
     prompt_funcs: {table},
     step_funcs: {table},
+    tool_wrappers: {table},
+    bindings: {[string]: {table}},
     total_tokens: TokenUsage,
 }
 
@@ -414,9 +420,12 @@ function agent.new(compiled_spec: any): (any, string?)
         tools = compiled_spec.tools or {},
         memory = compiled_spec.memory or {},
         memory_contract = compiled_spec.memory_contract,
+        agent_options = compiled_spec.agent_options or {},
         system_prompt = compiled_spec.prompt or "",
         prompt_funcs = compiled_spec.prompt_funcs or {},
         step_funcs = compiled_spec.step_funcs or {},
+        tool_wrappers = compiled_spec.tool_wrappers or {},
+        bindings = compiled_spec.bindings or {},
         total_tokens = {
             prompt = 0,
             completion = 0,

@@ -27,6 +27,8 @@ entries:
         - classes
         - tests
     source: file://models_test.lua
+    modules:
+      - registry
     imports:
       models: wippy.llm.discovery:models
       test: wippy.test:test
@@ -58,6 +60,9 @@ entries:
         - contracts
         - tests
     source: file://providers_test.lua
+    modules:
+      - registry
+      - contract
     imports:
       providers: wippy.llm.discovery:providers
       test: wippy.test:test
