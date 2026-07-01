@@ -1,7 +1,7 @@
 organization: wippy
 module: agent
 description: LLM agent framework with tool support and conversation management
-license: Apache-2.0
+license: MPL-2.0
 repository: https://github.com/wippyai/framework
 homepage: https://wippy.ai
 keywords:

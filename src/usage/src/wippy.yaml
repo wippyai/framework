@@ -1,7 +1,7 @@
 organization: wippy
 module: usage
 description: Token usage tracking for LLM applications
-license: Apache-2.0
+license: MPL-2.0
 repository: https://github.com/wippyai/framework
 homepage: https://wippy.ai
 keywords:
