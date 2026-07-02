@@ -5,6 +5,7 @@ local consts = require("consts")
 local plugin_discovery = require("plugin_discovery")
 
 local logger = require("logger"):named("relay")
+local security_mod = security
 
 type UserHubInfo = {
     hub_pid: string,
@@ -39,19 +40,27 @@ local function table_length(t: any): number
     return count
 end
 
+local function identity_from_metadata(config: ValidatedConfig, user_id: string, metadata: any): (any?, any?, any?, string?)
+    local user_metadata = type(metadata.user_metadata) == "table" and metadata.user_metadata or {}
+    local scope_id = type(metadata.scope_id) == "string" and metadata.scope_id ~= "" and metadata.scope_id or config.user_security_scope
+    local user_actor = security_mod.new_actor(user_id, user_metadata)
+
+    local user_scope, scope_err = security_mod.named_scope(tostring(scope_id))
+    if scope_err then
+        return nil, nil, nil, "Failed to get user security scope: " .. scope_err
+    end
+
+    return user_actor, user_scope, user_metadata, nil
+end
+
 local function get_or_create_user_hub(state: CentralState, user_id: string, metadata: any): string?
     local hub = state.user_hubs[user_id]
     if hub then
         return hub.hub_pid
     end
 
-    local user_metadata = metadata.user_metadata or {}
-    local user_actor = security.new_actor(user_id, user_metadata)
-
-    local user_scope, scope_err = security.named_scope(state.config.user_security_scope)
-    if scope_err then
-        error("Failed to get user security scope: " .. scope_err)
-    end
+    local user_actor, user_scope, user_metadata, identity_err = identity_from_metadata(state.config, user_id, metadata or {})
+    if identity_err then error(identity_err) end
 
     local hub_pid, err = process.with_context({})
         :with_scope(user_scope)
@@ -284,4 +293,10 @@ local function run(): any
     return { status = "shutdown", hubs = state.total_hubs }
 end
 
-return { run = run }
+return {
+    run = run,
+    _identity_from_metadata = identity_from_metadata,
+    _set_security_for_test = function(fake: any)
+        security_mod = fake or security
+    end,
+}

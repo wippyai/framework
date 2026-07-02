@@ -191,3 +191,23 @@ entries:
       - time
       - security
     method: run
+
+  # wippy.relay:central_test
+  - name: central_test
+    kind: function.lua
+    meta:
+      name: Relay Central Identity Test
+      type: test
+      suite: relay
+      comment: Tests user identity and scope propagation from websocket metadata.
+      group: Relay
+      tags:
+        - relay
+        - identity
+        - tests
+    source: file://central_test.lua
+    imports:
+      central: wippy.relay:central
+      test: wippy.test:test
+    modules: []
+    method: run
