@@ -486,6 +486,42 @@ entries:
     path: /index.html
     func: index_handler
 
+  # Optional view-config resolution contract (bound by the application, if at all)
+  - name: resolver
+    kind: contract.definition
+    meta:
+      comment: Optional view-config resolution contract — override facade requirement values at request time
+      description: |
+        Optional contract for overriding facade requirement values (css_variables,
+        custom_css, app_title, app_icon, theme_mode, ...) at request time. An
+        application binds an implementation to drive the view config from runtime
+        state (settings, per-tenant branding). When no binding exists, the facade
+        config and CSS-vars handlers fall back to the static ns.requirement defaults
+        — detected structurally via :implementations() (an empty list), not by
+        inspecting the contract open error. Runs under the request's ambient actor.
+    methods:
+      - name: resolve
+        description: |
+          Return a map of facade requirement name -> override value (string). Values
+          use the same format as the static requirement default (JSON-encoded for the
+          JSON requirements such as css_variables). Omitted keys fall back to the
+          static default.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "description": "Optional resolution context (reserved; empty today)."
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "description": "Map of facade requirement name to override value string; omitted keys fall back to the static ns.requirement default.",
+                "additionalProperties": { "type": "string" }
+              }
+            format: application/schema+json
+
   # Shared helpers: file:// resolution and CSS variable generation
   - name: theming_helpers
     kind: library.lua
@@ -495,6 +531,9 @@ entries:
     modules:
       - fs
       - json
+      - registry
+      - contract
+      - logger
 
   # Config endpoint
   - name: config_handler

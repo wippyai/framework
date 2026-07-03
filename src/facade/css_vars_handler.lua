@@ -1,21 +1,18 @@
 local http = require("http")
-local registry = require("registry")
 local theming = require("theming_helpers")
-
-local NS = "wippy.facade:"
-
-local function get_req(name: string): string
-    local entry, _ = registry.get(NS .. name)
-    if entry and entry.data then
-        return entry.data.default or ""
-    end
-    return ""
-end
 
 local function handler()
     local res = http.response()
     if not res then
         return nil, "no HTTP context"
+    end
+
+    -- Optional view-config resolver (wippy.facade:resolver): overrides win over the
+    -- static requirement, so this CSS endpoint tones from the same source as
+    -- /facade/config. No binding => {} => static defaults.
+    local overrides = theming.resolve_overrides()
+    local function get_req(name: string): string
+        return theming.requirement(name, overrides)
     end
 
     local file_sys = theming.get_fs(get_req("content_fs"))
