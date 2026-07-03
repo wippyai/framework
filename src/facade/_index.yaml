@@ -533,7 +533,6 @@ entries:
       - json
       - registry
       - contract
-      - logger
 
   # Config endpoint
   - name: config_handler

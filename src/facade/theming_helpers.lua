@@ -2,16 +2,13 @@ local fs = require("fs")
 local json = require("json")
 local registry = require("registry")
 local contract = require("contract")
-local logger = require("logger")
 
 local helpers = {}
 
 local NS = "wippy.facade:"
 -- Optional contract an application binds to override facade requirement values at
--- request time (see the `resolver` contract.definition). "No resolver configured"
--- is detected structurally via :implementations() (an empty list) -- the contract
--- open sentinel is a plain errors.New with no Kind, so it surfaces as kind=Unknown
--- and can't be told apart from a real failure by kind; the binding count can.
+-- request time (see the `resolver` contract.definition). When unbound, open() fails
+-- and every read falls back to the static ns.requirement default.
 local RESOLVER_CONTRACT = "wippy.facade:resolver"
 
 -- Get a named filesystem instance by registry entry ID.
@@ -166,40 +163,26 @@ end
 -- always render, so any failure degrades to the static requirement defaults; an
 -- absent resolver (no binding) is silent, a bound-but-failing one is logged.
 function helpers.resolve_overrides(): {[string]: any}
-    -- The config/CSS endpoints are load-bearing, so the resolver must never break
-    -- them: every failure path (and any unexpected throw) degrades to {} = static.
+    -- Any failure degrades to {} (static defaults) so the load-bearing config/CSS
+    -- endpoints never break. open() alone suffices: it fails cleanly when unbound,
+    -- and unbound vs errored both fall back to static, so nothing gates the open.
+    -- Ambient actor/scope; pcall guards against unexpected throws.
     local ok, result = pcall(function(): {[string]: any}
         local c, get_err = contract.get(RESOLVER_CONTRACT)
         if get_err or not c then
             return {}
         end
-        -- Structural "is a resolver bound?" check -- no error-string/kind coupling.
-        local impls, impl_err = (c :: any):implementations()
-        if impl_err then
-            logger:warn("facade view config resolver: implementations() failed", { error = tostring(impl_err) })
-            return {}
-        end
-        if not impls or #(impls :: {any}) == 0 then
-            return {}
-        end
-        -- Ambient actor/scope: the resolver runs as the request's caller.
         local instance, open_err = (c :: any):open()
         if open_err or not instance then
-            logger:warn("facade view config resolver: open failed", { error = tostring(open_err) })
             return {}
         end
         local overrides, resolve_err = (instance :: any):resolve({})
-        if resolve_err then
-            logger:warn("facade view config resolver: resolve failed", { error = tostring(resolve_err) })
-            return {}
-        end
-        if type(overrides) ~= "table" then
+        if resolve_err or type(overrides) ~= "table" then
             return {}
         end
         return overrides :: {[string]: any}
     end)
     if not ok then
-        logger:warn("facade view config resolver: errored", { error = tostring(result) })
         return {}
     end
     return result :: {[string]: any}
