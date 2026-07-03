@@ -1,30 +1,7 @@
 local http = require("http")
-local registry = require("registry")
 local json = require("json")
 local env = require("env")
 local theming = require("theming_helpers")
-
-local NS = "wippy.facade:"
-
-local function get_req(name: string): string
-    local entry, _ = registry.get(NS .. name)
-    if entry and entry.data then
-        return entry.data.default or ""
-    end
-    return ""
-end
-
-local function get_req_json_any(name: string): {[string]: any}
-    local raw = get_req(name)
-    if raw == "" then
-        return {}
-    end
-    local val, err = json.decode(raw)
-    if err then
-        return {}
-    end
-    return (val :: {[string]: any}) or {}
-end
 
 local function derive_ws_url(api_url: string): string
     if api_url == "" then
@@ -54,28 +31,48 @@ local function non_empty_array_or_nil(a: any): {any}?
     return a :: {any}
 end
 
--- Build a theming scope from requirement name prefixes.
--- file_sys is optional: when set, "file://path" values are resolved to file content.
-local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?, file_sys: any): {[string]: any}?
-    local custom_css = non_empty_or_nil(theming.resolve_css(get_req(css_req), file_sys))
-    local css_vars = non_empty_map_or_nil(theming.resolve_json(get_req(vars_req), file_sys) :: {[string]: any})
-    -- icon_sets are always inline JSON blobs; file:// refs are not expected here
-    local icon_sets = icon_sets_req and non_empty_map_or_nil(get_req_json_any(icon_sets_req)) or nil
-
-    if not custom_css and not css_vars and not icon_sets then
-        return nil
-    end
-    return {
-        customCSS = custom_css,
-        cssVariables = css_vars,
-        iconSets = icon_sets,
-    }
-end
-
 local function handler()
     local res = http.response()
     if not res then
         return nil, "no HTTP context"
+    end
+
+    -- Optional view-config resolver (wippy.facade:resolver): when an application
+    -- binds one, its overrides replace matching requirement values below; with no
+    -- binding this is {} and every read falls back to the static ns.requirement.
+    local overrides = theming.resolve_overrides()
+
+    local function get_req(name: string): string
+        return theming.requirement(name, overrides)
+    end
+
+    local function get_req_json_any(name: string): {[string]: any}
+        local raw = get_req(name)
+        if raw == "" then
+            return {}
+        end
+        local val, err = json.decode(raw)
+        if err then
+            return {}
+        end
+        return (val :: {[string]: any}) or {}
+    end
+
+    -- Build a theming scope from requirement name prefixes. file_sys is optional:
+    -- when set, "fs://path" values are resolved to file content.
+    local function build_theming_scope(css_req: string, vars_req: string, icon_sets_req: string?, file_sys: any): {[string]: any}?
+        local custom_css = non_empty_or_nil(theming.resolve_css(get_req(css_req), file_sys))
+        local css_vars = non_empty_map_or_nil(theming.resolve_json(get_req(vars_req), file_sys) :: {[string]: any})
+        -- icon_sets are always inline JSON blobs; fs:// refs are not expected here
+        local icon_sets = icon_sets_req and non_empty_map_or_nil(get_req_json_any(icon_sets_req)) or nil
+        if not custom_css and not css_vars and not icon_sets then
+            return nil
+        end
+        return {
+            customCSS = custom_css,
+            cssVariables = css_vars,
+            iconSets = icon_sets,
+        }
     end
 
     local facade_url = get_req("fe_facade_url")

@@ -1,7 +1,15 @@
 local fs = require("fs")
 local json = require("json")
+local registry = require("registry")
+local contract = require("contract")
 
 local helpers = {}
+
+local NS = "wippy.facade:"
+-- Optional contract an application binds to override facade requirement values at
+-- request time (see the `resolver` contract.definition). When unbound, open() fails
+-- and every read falls back to the static ns.requirement default.
+local RESOLVER_CONTRACT = "wippy.facade:resolver"
 
 -- Get a named filesystem instance by registry entry ID.
 -- Returns nil (does not raise) when entry_id is empty or the named filesystem
@@ -147,6 +155,56 @@ function helpers.build_variables_css(vars: {[string]: any}): string
     end
 
     return table.concat(css_parts, "\n")
+end
+
+-- resolve_overrides: optionally consult a bound wippy.facade:resolver to override
+-- facade requirement values at request time. Returns a name->value(string) map, or
+-- {} when no resolver is bound (the common case) or resolution fails. The view must
+-- always render, so any failure degrades to the static requirement defaults; an
+-- absent resolver (no binding) is silent, a bound-but-failing one is logged.
+function helpers.resolve_overrides(): {[string]: any}
+    -- Any failure degrades to {} (static defaults) so the load-bearing config/CSS
+    -- endpoints never break. open() alone suffices: it fails cleanly when unbound,
+    -- and unbound vs errored both fall back to static, so nothing gates the open.
+    -- Ambient actor/scope; pcall guards against unexpected throws.
+    local ok, result = pcall(function(): {[string]: any}
+        local c, get_err = contract.get(RESOLVER_CONTRACT)
+        if get_err or not c then
+            return {}
+        end
+        local instance, open_err = (c :: any):open()
+        if open_err or not instance then
+            return {}
+        end
+        local overrides, resolve_err = (instance :: any):resolve({})
+        if resolve_err or type(overrides) ~= "table" then
+            return {}
+        end
+        return overrides :: {[string]: any}
+    end)
+    if not ok then
+        return {}
+    end
+    return result :: {[string]: any}
+end
+
+-- requirement: the value for a facade requirement, preferring a resolver override
+-- (a string) over the static registry default. Mirrors the handlers' get_req so a
+-- resolver can replace any requirement (css_variables, custom_css, app_title, ...).
+-- Override values use the same format as the static default (JSON-encoded for the
+-- JSON requirements such as css_variables); omitted keys fall back to the default.
+function helpers.requirement(name: string, overrides: {[string]: any}?): string
+    if overrides then
+        local ov = (overrides :: {[string]: any})[name]
+        if type(ov) == "string" then
+            return ov :: string
+        end
+    end
+    local entry, _ = registry.get(NS .. name)
+    if entry and entry.data then
+        return entry.data.default or ""
+    end
+    return ""
 end
 
 return helpers
