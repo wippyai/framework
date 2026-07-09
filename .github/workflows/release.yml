@@ -1,0 +1,20 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: wippyai/template-module/.github/workflows/reusable-release.yml@v1
+    with:
+      publish: false
+    secrets: inherit
