@@ -82,9 +82,25 @@ jobs:
       - name: Authenticate to Wippy Hub
         env:
           WIPPY_PUBLISH_TOKEN: ${{ secrets.WIPPY_PUBLISH_TOKEN }}
+          WIPPY_USERNAME: ${{ secrets.WIPPY_USERNAME }}
+          WIPPY_PASSWORD: ${{ secrets.WIPPY_PASSWORD }}
         run: |
-          test -n "$WIPPY_PUBLISH_TOKEN"
-          wippy auth login --local --token "$WIPPY_PUBLISH_TOKEN"
+          set -euo pipefail
+          if [[ -n "$WIPPY_PUBLISH_TOKEN" ]] && \
+             wippy auth login --local --token "$WIPPY_PUBLISH_TOKEN"; then
+            exit 0
+          fi
+
+          test -n "$WIPPY_USERNAME"
+          test -n "$WIPPY_PASSWORD"
+          response="$(curl -fsSL -X POST \
+            https://keycloak.wippy.ai/realms/wippy/protocol/openid-connect/token \
+            --data-urlencode grant_type=password \
+            --data-urlencode client_id=wippy-app \
+            --data-urlencode username="$WIPPY_USERNAME" \
+            --data-urlencode password="$WIPPY_PASSWORD")"
+          access_token="$(jq -er '.access_token' <<<"$response")"
+          wippy auth login --local --token "$access_token"
 
       - name: Validate package
         env:
