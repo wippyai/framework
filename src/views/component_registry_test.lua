@@ -10,7 +10,7 @@ local PAGE_IDS = {
 }
 
 local COMPONENT_IDS = {
-    "test_comp_widget", "test_comp_chart", "test_comp_custom_entry",
+    "test_comp_widget", "test_comp_chart", "test_comp_custom_entry", "test_comp_unnamed",
 }
 
 local function setup_pages()
@@ -128,6 +128,20 @@ local function setup_components()
         },
     })
 
+    changes:create({
+        id = NS .. "test_comp_unnamed",
+        kind = "registry.entry",
+        meta = {
+            type = "view.component",
+            title = "Unnamed",
+            secure = false,
+            public = true,
+            announced = true,
+            tag_name = "test-unnamed",
+            url = "https://cdn.example.com/unnamed/",
+        },
+    })
+
     changes:apply()
 end
 
@@ -165,7 +179,7 @@ local function define_tests()
                     count = count + 1
                 end
             end
-            test.eq(count, 3)
+            test.eq(count, 4)
         end)
 
         test.it("find_all does not include view.page entries", function()
@@ -252,7 +266,7 @@ local function define_tests()
 
             local test_comps = {}
             for _, comp in ipairs(components) do
-                if comp.id:find("^" .. NS .. "test_comp") then
+                if comp.id:find("^" .. NS .. "test_comp") and comp.name then
                     table.insert(test_comps, comp)
                 end
             end
@@ -260,6 +274,23 @@ local function define_tests()
             for i = 1, #test_comps - 1 do
                 test.is_true(test_comps[i].name <= test_comps[i + 1].name)
             end
+        end)
+
+        test.it("find_all accepts components without meta.name", function()
+            local components, err = component_registry.find_all()
+            test.is_nil(err)
+
+            local unnamed: any = nil
+            for _, comp in ipairs(components) do
+                if comp.id == NS .. "test_comp_unnamed" then
+                    unnamed = comp
+                    break
+                end
+            end
+
+            test.not_nil(unnamed)
+            test.is_nil(unnamed.name)
+            test.eq(unnamed.tag_name, "test-unnamed")
         end)
     end)
 end
