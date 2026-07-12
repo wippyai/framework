@@ -74,7 +74,14 @@ function components.find_all()
     end
 
     table.sort(components_list, function(a, b)
-        return a.name < b.name
+        -- Names are optional because bundled metadata can provide them later.
+        -- Keep the projection raw while making discovery safe and stable.
+        local a_name = type(a.name) == "string" and a.name or ""
+        local b_name = type(b.name) == "string" and b.name or ""
+        if a_name == b_name then
+            return tostring(a.id) < tostring(b.id)
+        end
+        return a_name < b_name
     end)
 
     return components_list

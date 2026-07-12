@@ -77,3 +77,18 @@ entries:
       inline: false
     source: file://test_tmpl_settings.jet
     set: test_templates
+
+  # Package test entries are excluded from the runtime projection. Keep this
+  # executable regression in the harness that consumes the package.
+  - name: component_registry_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+    source: file://component_registry_regression_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      component_registry: wippy.views:component_registry
+    modules:
+      - registry
