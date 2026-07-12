@@ -401,7 +401,7 @@ local function run(args: any): any
         error("Failed to register user hub " .. registry_name .. ": " .. (register_err or "unknown error"))
     end
     logger:info("user hub registered", { user_id = state.user_id, registry_name = registry_name })
-    process.set_options({ trap_links = true })
+    process.set_options({ trap_links = true, upgradable = false })
 
     for prefix, plugin_config in pairs(state.plugins) do
         if plugin_config.auto_start then
