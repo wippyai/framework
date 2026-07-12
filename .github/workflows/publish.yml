@@ -1,42 +1,105 @@
-name: Publish in the Wippy Registry
+name: Publish framework module
 
 on:
-  release:
-    types: ['published']
+  workflow_dispatch:
+    inputs:
+      module:
+        description: Framework module to publish
+        required: true
+        type: choice
+        options:
+          - actor
+          - agent
+          - bootloader
+          - docs
+          - embeddings
+          - facade
+          - llm
+          - migration
+          - relay
+          - security
+          - terminal
+          - test
+          - usage
+          - views
+      version:
+        description: Exact semantic version for this module
+        required: true
+        type: string
+      ref:
+        description: Merged commit or tag to publish
+        required: true
+        default: master
+        type: string
+      release_notes:
+        description: Short release notes
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 concurrency:
-  group: publish
+  group: publish-${{ inputs.module }}
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - { folder: actor }
-          - { folder: agent }
-          - { folder: bootloader }
-          - { folder: docs }
-          - { folder: embeddings }
-          - { folder: facade }
-          - { folder: llm }
-          - { folder: migration }
-          - { folder: relay }
-          - { folder: security }
-          - { folder: terminal }
-          - { folder: test }
-          - { folder: usage }
-          - { folder: views }
     steps:
+      - name: Validate release inputs
+        env:
+          MODULE: ${{ inputs.module }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          case "$MODULE" in
+            actor|agent|bootloader|docs|embeddings|facade|llm|migration|relay|security|terminal|test|usage|views) ;;
+            *) echo "Unsupported framework module: $MODULE" >&2; exit 1 ;;
+          esac
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use MAJOR.MINOR.PATCH: $VERSION" >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Publishing
-        uses: wippyai/action-module-release@main
-        with:
-          directory: src/${{ matrix.package.folder }}
-          tag: ${{ github.ref_name }}
-          username: ${{ secrets.WIPPY_USERNAME }}
-          password: ${{ secrets.WIPPY_PASSWORD }}
+
+      - name: Verify selected module
+        env:
+          MODULE: ${{ inputs.module }}
+        run: test -f "src/$MODULE/wippy.yaml"
+
+      - name: Install Wippy
+        run: |
+          curl -fsSL https://hub.wippy.ai/install.sh -o /tmp/wippy-install.sh
+          . /tmp/wippy-install.sh
+          echo "$HOME/.wippy/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate to Wippy Hub
+        env:
+          WIPPY_PUBLISH_TOKEN: ${{ secrets.WIPPY_PUBLISH_TOKEN }}
+        run: |
+          test -n "$WIPPY_PUBLISH_TOKEN"
+          wippy auth login --local --token "$WIPPY_PUBLISH_TOKEN"
+
+      - name: Validate package
+        env:
+          MODULE: ${{ inputs.module }}
+          VERSION: ${{ inputs.version }}
+        run: wippy publish --config "src/$MODULE" --version "$VERSION" --dry-run
+
+      - name: Publish package
+        env:
+          MODULE: ${{ inputs.module }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: >-
+          wippy publish
+          --config "src/$MODULE"
+          --version "$VERSION"
+          --protected
+          --release-notes "$RELEASE_NOTES"
