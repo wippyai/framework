@@ -5,7 +5,7 @@ local registry = require("registry")
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "fe_mode", "session_type",
+    "fe_facade_url", "fe_entry_path", "fe_mode", "render_engine", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel", "hide_session_selector",
     "custom_css", "css_variables", "icon_sets",
@@ -26,6 +26,7 @@ local function setup_registry(overrides: {[string]: string}?)
         fe_facade_url = "https://front.wippy.ai",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
+        render_engine = "iframe",
         session_type = "non-persistent",
         history_mode = "hash",
         show_admin = "true",
@@ -113,6 +114,15 @@ local function clamp_theme_storage_key(value: string): string
     return value
 end
 
+-- Mirrors the clamp in config_handler.lua: only the exact string "fragment"
+-- opts into the Web Fragment engine; anything else (default/typo/blank) → iframe.
+local function clamp_render_engine(value: string): string
+    if value ~= "fragment" then
+        return "iframe"
+    end
+    return value
+end
+
 local function define_tests()
     test.describe("config handler", function()
         test.describe("ws url derivation", function()
@@ -152,6 +162,19 @@ local function define_tests()
 
             test.it("storage key keeps a custom value", function()
                 test.eq(clamp_theme_storage_key("my.theme"), "my.theme")
+            end)
+        end)
+
+        test.describe("render engine clamping", function()
+            test.it("keeps fragment as-is", function()
+                test.eq(clamp_render_engine("fragment"), "fragment")
+            end)
+
+            test.it("clamps default / unknown / typo / blank to iframe", function()
+                test.eq(clamp_render_engine("iframe"), "iframe")
+                test.eq(clamp_render_engine(""), "iframe")
+                test.eq(clamp_render_engine("Fragment"), "iframe")
+                test.eq(clamp_render_engine("srcdoc"), "iframe")
             end)
         end)
 
@@ -256,6 +279,9 @@ local function define_tests()
 
                 entry = registry.get(NS .. "history_mode")
                 test.eq(entry.data.default, "hash")
+
+                entry = registry.get(NS .. "render_engine")
+                test.eq(entry.data.default, "iframe")
             end)
 
             test.it("host_config_layout requirement defaults to empty JSON object", function()

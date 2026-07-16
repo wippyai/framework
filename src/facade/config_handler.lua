@@ -84,6 +84,15 @@ local function handler()
         fe_mode = "compat"
     end
 
+    -- Global page render engine (EE2-2313). Only the exact string "fragment"
+    -- opts a deployment into the Web Fragment engine; anything else (default,
+    -- typo, blank) clamps to the legacy srcdoc "iframe" engine so a bad value
+    -- can never silently ship the non-legacy path.
+    local render_engine = get_req("render_engine")
+    if render_engine ~= "fragment" then
+        render_engine = "iframe"
+    end
+
     -- Module filename loaded by index.html. `compat` keeps the historical
     -- module.js (full Wippy host chrome); `managed` loads managed-layout.js
     -- (declarative multi-panel host via hostConfig.layout).
@@ -141,6 +150,7 @@ local function handler()
         hideNavBar = get_req("hide_nav_bar") == "true",
         disableRightPanel = get_req("disable_right_panel") == "true",
         hideSessionSelector = get_req("hide_session_selector") == "true",
+        renderEngine = render_engine,
     }
 
     local api_routes = non_empty_map_or_nil(get_req_json_any("api_routes"))
