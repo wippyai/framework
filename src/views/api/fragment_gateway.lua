@@ -149,7 +149,21 @@ end
 -- ONLY the reference's prefixHtmlHeadBody, PLUS: drop the app's own
 -- <script type="importmap"> (a streamed import map errors — the map is in the
 -- realm stub now), and inject <base> so the app's relative assets resolve.
-local function transform_document(html: string, base_url: string): string
+-- Host CSS <link>s the child app INHERITS (theme-config tokens+fonts, iframe base,
+-- tailwind utilities + PrimeVue, markdown). Injected SERVER-SIDE into the app
+-- <head> so the streamed document already carries them — like the app's own
+-- style-*.css. This is DETERMINISTIC: reframed streams these in, nothing wipes
+-- them, so the client proxy needs no rAF re-injection loop. Asset names are the
+-- Web Host build's stable, non-hashed outputs (vite assetFileNames [name].[ext]).
+local function host_css_links(fbase: string): string
+    local base = fbase .. "/@wippy-fe/assets/"
+    return '<link rel="stylesheet" data-role="wippy-host-styles-theme-config" href="' .. base .. 'theme-config.css">'
+        .. '<link rel="stylesheet" data-role="wippy-host-styles-iframe" href="' .. base .. 'iframe.css">'
+        .. '<link rel="stylesheet" data-role="wippy-host-styles-primevue" href="' .. base .. 'tailwind.css">'
+        .. '<link rel="stylesheet" data-role="wippy-host-styles-markdown" href="' .. base .. 'data-content.css">'
+end
+
+local function transform_document(html: string, base_url: string, fbase: string): string
     html = html:gsub('<script%s+type="importmap"%s*>.-</script>', '', 1)
     -- Remove the @wippy/scripts dev-proxy placeholder. It shows "Accept config to
     -- continue loading" and waits for the host to swap in the real proxy + config
@@ -163,6 +177,13 @@ local function transform_document(html: string, base_url: string): string
     -- path), but static links/images need an absolute href here.
     html = html:gsub('href="%./', 'href="' .. base_url)
     html = html:gsub('src="%./', 'src="' .. base_url)
+    -- Inject host CSS at the START of <head> (base first, app CSS layers on top).
+    if fbase and fbase ~= "" then
+        local links = host_css_links(fbase)
+        html = html:gsub('(<[hH][eE][aA][dD][^>]*>)', function(h: string): string
+            return h .. links
+        end, 1)
+    end
     return prefix_wf(html)
 end
 
@@ -233,7 +254,7 @@ local function handler()
             res:write("Fragment document fetch failed: " .. tostring(err or (resp and resp.status_code)))
             return
         end
-        local html = transform_document(resp.body or "", base_url)
+        local html = transform_document(resp.body or "", base_url, facade_base())
         res:set_header("Vary", "sec-fetch-dest")
         res:set_content_type("text/html")
         res:set_status(http.STATUS.OK)
