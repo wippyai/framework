@@ -188,3 +188,39 @@ entries:
       func: list_routes
       method: GET
       path: /pages/routes
+    # Web-Fragments gateway (EE2-2313). Serves the reframing contract for a
+    # view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
+    # the app HTML with the fragment proxy + <base> injected (empty/document),
+    # and asset proxying (everything else). Delivery-mode wrapper — render.lua
+    # is untouched. Auth-agnostic: the injected proxy handshakes the host for config.
+    - name: fragment_gateway
+      kind: function.lua
+      meta:
+        comment: Web-Fragments gateway — reframing contract + asset proxy for a fragment-mode view.page
+        description: Fragment gateway endpoint
+        router: api_router
+      source: file://fragment_gateway.lua
+      imports:
+        page_registry: wippy.views:page_registry
+      method: handler
+      modules:
+        - http
+        - http_client
+      security:
+        actor:
+          id: wippy.views.api:fragment_gateway
+        policies:
+          - wippy.views:public_registry_runtime
+          - wippy.views:public_metadata_http_runtime
+          - wippy.views:public_metadata_private_ip_runtime
+      pool:
+        size: 4
+    - name: fragment_gateway.endpoint
+      kind: http.endpoint
+      meta:
+        comment: Web-Fragments gateway endpoint (reframing + asset proxy)
+        description: Fragment reframing contract endpoint
+        router: api_router
+      func: fragment_gateway
+      method: GET
+      path: /frag/{id}/{path...}
