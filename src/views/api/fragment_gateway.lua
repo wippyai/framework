@@ -129,8 +129,18 @@ end
 local function build_stub(fbase: string): string
     local imports = fetch_host_imports(fbase)
     local map = json.encode({ imports = imports }) or '{"imports":{}}'
+    -- The canonical injector's `scripts` array is [loading.js, proxy.js, chat.js].
+    -- For a fragment the applicable subset is loading.js + the reframed-realm proxy:
+    --   * loading.js (classic) registers <wippy-loading>/<wippy-error> (used by the
+    --     app's initial shell + error states);
+    --   * proxy-fragment.js (module) is our realm adapter, replacing srcdoc proxy.js.
+    -- chat.js (registers <wippy-chat>) is DELIBERATELY omitted: app-main uses the
+    -- HOST's chat (right panel) via a host command, not an embedded <wippy-chat>, and
+    -- eagerly loading the heavy chat bundle into every realm destabilises boot. A
+    -- fragment that embeds chat directly would opt in per-page (future meta flag).
     return REFRAMED_STUB
         .. '<script type="importmap">' .. map .. '</script>'
+        .. '<script src="' .. fbase .. '/@wippy-fe/loading.js"></script>'
         .. '<script type="module" src="' .. fbase .. '/@wippy-fe/proxy-fragment.js"></script>'
 end
 
