@@ -206,6 +206,8 @@ entries:
       modules:
         - http
         - http_client
+        - registry
+        - json
       security:
         actor:
           id: wippy.views.api:fragment_gateway
