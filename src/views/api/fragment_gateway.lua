@@ -141,11 +141,18 @@ end
 -- realm stub now), and inject <base> so the app's relative assets resolve.
 local function transform_document(html: string, base_url: string): string
     html = html:gsub('<script%s+type="importmap"%s*>.-</script>', '', 1)
-    local base_tag = '<base href="' .. base_url .. '">'
-    local s, e = html:find("<[hH][eE][aA][dD][^>]*>")
-    if s then
-        html = html:sub(1, e) .. base_tag .. html:sub(e + 1)
-    end
+    -- Remove the @wippy/scripts dev-proxy placeholder. It shows "Accept config to
+    -- continue loading" and waits for the host to swap in the real proxy + config
+    -- (what addAppConfigToDocument does for srcdoc). Our real proxy is in the realm
+    -- stub, so drop the placeholder or it hijacks the render.
+    html = html:gsub('<script[^>]-data%-role="@wippy/scripts"[^>]->%s*</script>', '', 1)
+    -- Rewrite relative asset URLs (href/src="./x") to ABSOLUTE base_url. A <base>
+    -- in the REFLECTED shadow is NOT honored, so relative <link rel=stylesheet> /
+    -- <img> URLs would resolve against the host page origin (404 → unstyled app).
+    -- Module scripts still work (reframed runs them in the realm at the gateway
+    -- path), but static links/images need an absolute href here.
+    html = html:gsub('href="%./', 'href="' .. base_url)
+    html = html:gsub('src="%./', 'src="' .. base_url)
     return prefix_wf(html)
 end
 
