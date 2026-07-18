@@ -25,6 +25,8 @@ local function run()
             test.eq(decision("wippy.facade:config_read_runtime", "env.get", "PUBLIC_API_URL"), "allow")
             test.eq(decision("wippy.facade:config_read_runtime", "env.get", "ENCRYPTION_KEY"), "undefined")
             test.eq(decision("wippy.facade:config_read_runtime", "registry.apply", "wippy.facade:fe_facade_url"), "undefined")
+            -- index_handler loads its Jet shell via templates.get, gated on template.get
+            test.eq(decision("wippy.facade:config_read_runtime", "template.get", "wippy.facade:templates"), "allow")
         end)
 
         test.it("grants only filesystem open for fs-backed theming", function()
