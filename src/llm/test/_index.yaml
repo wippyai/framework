@@ -7,17 +7,6 @@ entries:
     meta:
       type: envstorage
 
-  - name: dep.wippy.llm
-    kind: ns.dependency
-    meta:
-      description: "LLM configuration for testing"
-    component: "wippy/llm"
-    parameters:
-      - name: process_host
-        value: wippy.terminal:host
-      - name: env_storage
-        value: app:env_storage
-
   # Memory store for retry test state sharing
   - name: test_store
     kind: store.memory

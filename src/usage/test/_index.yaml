@@ -19,34 +19,3 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
-
-  - name: dep.wippy.usage
-    kind: ns.dependency
-    meta:
-      description: "Usage module configuration for testing"
-    component: "wippy/usage"
-    parameters:
-      - name: target_db
-        value: app:db
-
-  - name: dep.wippy.llm
-    kind: ns.dependency
-    meta:
-      description: "LLM dependency configuration for testing"
-    component: "wippy/llm"
-    parameters:
-      - name: process_host
-        value: app:processes
-      - name: env_storage
-        value: app:env_storage
-
-  - name: dep.wippy.bootloader
-    kind: ns.dependency
-    meta:
-      description: "Bootloader configuration for testing"
-    component: "wippy/bootloader"
-    parameters:
-      - name: application_host
-        value: app:processes
-      - name: env_storage
-        value: app:env_storage

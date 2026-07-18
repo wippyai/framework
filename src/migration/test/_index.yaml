@@ -13,23 +13,3 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
-
-  - name: dep.wippy.migration
-    kind: ns.dependency
-    meta:
-      description: "Migration module configuration for testing"
-    component: "wippy/migration"
-    parameters:
-      - name: app_db
-        value: app:db
-
-  - name: dep.wippy.bootloader
-    kind: ns.dependency
-    meta:
-      description: "Bootloader configuration for testing"
-    component: "wippy/bootloader"
-    parameters:
-      - name: application_host
-        value: app:processes
-      - name: env_storage
-        value: app:env_storage

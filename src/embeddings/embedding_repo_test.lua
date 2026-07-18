@@ -308,8 +308,8 @@ local function define_tests()
 
             -- Verify they're gone
             local results, err = embedding_repo.get_by_origin(origin_id_2)
-            expect(err).to_be_nil()
-            expect(#results).to_equal(0)
+            test.is_nil(err)
+            test.eq(#results, 0)
         end)
     end)
 end

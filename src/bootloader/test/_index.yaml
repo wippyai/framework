@@ -7,14 +7,10 @@ entries:
     meta:
       comment: OS storage for test environment variables
 
-  - name: dep.wippy.bootloader
-    kind: ns.dependency
-    meta:
-      description: "Bootloader configuration for testing"
-    component: "wippy/bootloader"
-    parameters:
-      - name: env_storage
-        value: app:envs
+  - name: processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
 
   - name: dependency_kind_test
     kind: function.lua
