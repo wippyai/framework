@@ -20,17 +20,6 @@ entries:
   - name: envs
     kind: env.storage.os
 
-  - name: dep.wippy.views
-    kind: ns.dependency
-    meta:
-      description: "Views configuration for testing"
-    component: "wippy/views"
-    parameters:
-      - name: api_router
-        value: app:api.public
-      - name: env_storage
-        value: app:envs
-
   - name: test_templates
     kind: template.set
     meta:

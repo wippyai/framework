@@ -1,13 +1,10 @@
 directories:
     modules: .wippy
-    src: .
+    src: ..
 modules:
     - name: wippy/bootloader
       version: 0.3.12
       hash: 2b6d8eba7b46ef900024d3a7dbf06bd560fad645b8b2ac6296e2a8bad42f60b9
-    - name: wippy/embeddings
-      version: 0.3.10
-      hash: 0ec99d4df899852e18047a78d885cf0edc119ba76962c791d5da6de2017c7a8f
     - name: wippy/llm
       version: 0.4.7
       hash: 2e55afcf55c441a8e79e3737691e5721d06138b9a3a46c7fb87199db6a5dd426
@@ -21,8 +18,6 @@ modules:
       version: 0.4.10
       hash: 5bc5ffe1b71889c0610133d8843451e5bf80e93ff43712b9017c2c0955fb023d
 replacements:
-    - from: wippy/embeddings
-      to: ..
     - from: wippy/bootloader
       to: ../../bootloader/src
     - from: wippy/llm

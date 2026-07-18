@@ -1,6 +1,6 @@
 directories:
     modules: .wippy
-    src: .
+    src: ..
 modules:
     - name: wippy/bootloader
       version: 0.3.12
@@ -17,9 +17,6 @@ modules:
     - name: wippy/test
       version: 0.4.11
       hash: 235f2f1d222dabeec1a83f6f9f48a7f75abf2143860b833437c1d96da3cd3e95
-    - name: wippy/usage
-      version: 0.3.20
-      hash: 0fa127a8ff287f99816d97f34f1b897df6bd031fd392d93f65130f88656ca646
 replacements:
     - from: wippy/bootloader
       to: ../../bootloader/src
@@ -27,5 +24,3 @@ replacements:
       to: ../../llm/src
     - from: wippy/migration
       to: ../../migration
-    - from: wippy/usage
-      to: ../src
