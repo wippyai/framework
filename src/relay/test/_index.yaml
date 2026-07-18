@@ -6,15 +6,3 @@ entries:
     kind: registry.entry
     meta:
       comment: Policy group for user relay hubs under test
-
-  - name: user.messaging
-    kind: security.policy
-    meta:
-      comment: Lets user-scoped hub processes message clients during tests
-    groups:
-      - app:user
-    policy:
-      resources: '*'
-      actions:
-        - process.send
-      effect: allow
