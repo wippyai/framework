@@ -36,6 +36,12 @@ entries:
           path: .meta.router
         - entry: wippy.views.api:list_routes.endpoint
           path: .meta.router
+    - name: fragment_router
+      kind: ns.requirement
+      meta:
+        description: Dedicated top-level router for the Web-Fragments gateway — its own /@fragment prefix (CDN-routable, independent of the dynamic /api/public surface) and NOT behind token_auth (the gateway is auth-agnostic; the fragment proxy handshakes the host for auth client-side).
+        parent: app.deps:__dependency.wippy.views
+      targets:
         - entry: wippy.views.api:fragment_gateway
           path: .meta.router
         - entry: wippy.views.api:fragment_gateway.endpoint

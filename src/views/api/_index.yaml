@@ -198,7 +198,7 @@ entries:
       meta:
         comment: Web-Fragments gateway — reframing contract + asset proxy for a fragment-mode view.page
         description: Fragment gateway endpoint
-        router: api_router
+        router: fragment_router
       source: file://fragment_gateway.lua
       imports:
         page_registry: wippy.views:page_registry
@@ -228,7 +228,9 @@ entries:
       meta:
         comment: Web-Fragments gateway endpoint (reframing + asset proxy)
         description: Fragment reframing contract endpoint
-        router: api_router
+        router: fragment_router
       func: fragment_gateway
       method: GET
-      path: /@fragment/{id}/{path...}
+      # Router-relative: fragment_router supplies the /@fragment prefix, so the
+      # full served path is /@fragment/{id}/{path...} (top-level, not under /api/public).
+      path: /{id}/{path...}
