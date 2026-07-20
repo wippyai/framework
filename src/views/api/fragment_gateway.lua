@@ -251,7 +251,8 @@ local function handler()
         local resp, err = http_client.get(app_url, { timeout = 20 })
         if err or not resp or (resp.status_code or 500) >= 400 then
             res:set_status(http.STATUS.BAD_GATEWAY)
-            res:write("Fragment document fetch failed: " .. tostring(err or (resp and resp.status_code)))
+            res:write("Fragment document fetch failed: " .. tostring(err or (resp and resp.status_code))
+                .. " (url: " .. tostring(app_url) .. ")")
             return
         end
         local html = transform_document(resp.body or "", base_url, facade_base())

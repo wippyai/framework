@@ -213,10 +213,16 @@ entries:
           id: wippy.views.api:fragment_gateway
         policies:
           - wippy.views:public_registry_runtime
+          # Required: page_registry.resolve_base_url reads PUBLIC_API_URL to turn a
+          # page's relative url/base_path into an ABSOLUTE origin. Without this the
+          # read is denied, base_url stays relative, and the document fetch is then
+          # rejected by public_metadata_http_runtime (which only allows http(s)://*).
+          - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
       pool:
         size: 4
+        workers: 4
     - name: fragment_gateway.endpoint
       kind: http.endpoint
       meta:
