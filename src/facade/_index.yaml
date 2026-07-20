@@ -39,7 +39,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.44
+    default: https://web-host.wippy.ai/webcomponents-1.0.45
 
   - name: fe_entry_path
     kind: ns.requirement
@@ -62,6 +62,23 @@ entries:
       - entry: wippy.facade:fe_mode
         path: .default
     default: compat
+
+  - name: render_engine
+    kind: ns.requirement
+    meta:
+      description: |
+        Global page render engine for packaged view.page micro-frontends.
+        `iframe` (default) renders each page in a legacy srcdoc iframe.
+        `fragment` renders each page as a Web Fragment (a reframed realm
+        reflected into a shadow root). `fragment` REQUIRES the wippy/views
+        fragment gateway AND a fragment-capable host bundle serving
+        /@wippy-fe/proxy-fragment.js. Flows to the host as
+        hostConfig.renderEngine; the child app is engine-agnostic (the same
+        package renders identically under either engine).
+    targets:
+      - entry: wippy.facade:render_engine
+        path: .default
+    default: iframe
 
   # App identity
   - name: app_title
