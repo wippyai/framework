@@ -1,10 +1,7 @@
-.PHONY: test test-integration test-e2e
-
 test:
-	wippy run test
+	wippy run test \
+		-o wippy.llm:process_host:default=wippy.terminal:host \
+		-o wippy.llm:env_storage:default=app:env_storage
 
-test-integration:
-	ENABLE_INTEGRATION_TESTS=true wippy run test
-
-test-e2e:
-	ENABLE_INTEGRATION_TESTS=true wippy run wippy.llm.e2e:integration_test
+lint:
+	wippy lint --level error

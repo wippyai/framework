@@ -233,7 +233,7 @@ local function run(): any
     }
 
     process.registry.register(consts.CENTRAL_HUB_REGISTRY_NAME)
-    process.set_options({ trap_links = true })
+    process.set_options({ trap_links = true, upgradable = false })
 
     local gc_ticker = time.ticker(config.gc_check_interval)
     local inbox = process.inbox()

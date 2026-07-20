@@ -33,4 +33,17 @@ entries:
         - process.registry.register
         - process.registry.unregister
       effect: allow
+
+  # wippy.relay.security:user_hub_messaging
+  - name: user_hub_messaging
+    kind: security.policy
+    meta:
+      comment: User-scoped hub processes deliver payloads to client pids. process.send is checked against the raw destination pid, which has no matchable pattern.
+    groups: []
+    policy:
+      resources:
+        - '*'
+      actions:
+        - process.send
+      effect: allow
     

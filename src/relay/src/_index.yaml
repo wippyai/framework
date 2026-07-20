@@ -49,6 +49,8 @@ entries:
         path: ".default"
       - entry: wippy.relay.security:user_hub_registry
         path: ".groups +="
+      - entry: wippy.relay.security:user_hub_messaging
+        path: ".groups +="
 
   - name: max_connections_per_user
     kind: ns.requirement

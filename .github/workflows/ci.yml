@@ -38,7 +38,7 @@ jobs:
 
       - name: Lint
         working-directory: src/${{ matrix.module }}/test
-        run: wippy lint --level error
+        run: make lint
 
   test:
     name: Test (${{ matrix.module }})
@@ -71,4 +71,4 @@ jobs:
 
       - name: Test
         working-directory: src/${{ matrix.module }}/test
-        run: wippy run test
+        run: make test

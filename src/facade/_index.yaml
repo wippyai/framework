@@ -637,7 +637,7 @@ entries:
   - name: config_read_runtime
     kind: security.policy
     meta:
-      comment: Facade handlers read their own declarative config and public API URL.
+      comment: Facade handlers read their own declarative config and public API URL, and load their own Jet template set (the shell).
     policy:
       resources:
         - wippy.facade:*
@@ -645,6 +645,7 @@ entries:
       actions:
         - registry.get
         - env.get
+        - template.get
       effect: allow
 
   - name: content_fs_runtime
