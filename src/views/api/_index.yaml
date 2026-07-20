@@ -231,4 +231,4 @@ entries:
         router: api_router
       func: fragment_gateway
       method: GET
-      path: /frag/{id}/{path...}
+      path: /@fragment/{id}/{path...}
