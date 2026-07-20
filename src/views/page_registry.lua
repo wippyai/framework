@@ -33,6 +33,7 @@ type PageDetail = PageInfo & {
     proxy: {[string]: any}?,
     base_path: string?,
     entry_point: string?,
+    render_engine: string?,
 }
 
 local pages = {}
@@ -83,6 +84,8 @@ local function extract_page_info(entry)
         -- `meta.proxy` (camelCase overlay) is the single proxy field. Raw (nil
         -- when omitted); the projection/synthesis layer applies defaults.
         proxy = meta.proxy,
+        -- EE2-2313: per-page render engine override (auto|iframe|fragment). Raw/nil.
+        render_engine = meta.render_engine,
         mount_route = meta.mountRoute,
     }
 
@@ -167,6 +170,8 @@ function pages.get(page_id)
         -- `meta.proxy` (camelCase overlay) is the single proxy field. Raw (nil
         -- when omitted); the projection/synthesis layer applies defaults.
         proxy = entry.meta.proxy,
+        -- EE2-2313: per-page render engine override (auto|iframe|fragment). Raw/nil.
+        render_engine = entry.meta.render_engine,
         mount_route = entry.meta.mountRoute,
     }
 

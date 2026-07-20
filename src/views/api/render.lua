@@ -37,6 +37,8 @@ local function synthesize_from_registry(page: any, base_url: string?)
             -- `meta.proxy` (absence never disables).
             proxy = page.proxy or { enabled = true },
             configOverrides = page.config_overrides,
+            -- EE2-2313: operator render-engine override reaches unmigrated pages too.
+            renderEngine = page.render_engine,
         },
     }
 end
