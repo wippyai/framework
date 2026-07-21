@@ -188,8 +188,26 @@ entries:
       func: list_routes
       method: GET
       path: /pages/routes
-    # Web-Fragments gateway (EE2-2313). Serves the reframing contract for a
-    # view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
+    # Web-Fragments gateway router (EE2-2313, EXPERIMENTAL). The gateway owns its
+    # own /@fragment router, so a consuming app needs NO fragment wiring: views
+    # takes only the http.service as the `server` requirement (default app:gateway).
+    # A consumer that never enables fragments still boots normally on the iframe
+    # engine. compress only (the gateway is same-origin with the host); no
+    # token_auth — the gateway is auth-agnostic (the injected proxy handshakes the host).
+    - name: fragment_router
+      kind: http.router
+      meta:
+        comment: Web-Fragments gateway router (/@fragment prefix)
+        server: server
+      prefix: /@fragment
+      middleware:
+        - compress
+      options:
+        compress.level: default
+        compress.min.length: "1024"
+
+    # Web-Fragments gateway (EE2-2313, EXPERIMENTAL). Serves the reframing contract
+    # for a view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
     # the app HTML with the fragment proxy + <base> injected (empty/document),
     # and asset proxying (everything else). Delivery-mode wrapper — render.lua
     # is untouched. Auth-agnostic: the injected proxy handshakes the host for config.
@@ -198,7 +216,6 @@ entries:
       meta:
         comment: Web-Fragments gateway — reframing contract + asset proxy for a fragment-mode view.page
         description: Fragment gateway endpoint
-        router: fragment_router
       source: file://fragment_gateway.lua
       imports:
         page_registry: wippy.views:page_registry

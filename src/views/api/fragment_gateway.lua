@@ -70,29 +70,6 @@ local function fetch_host_imports(fbase: string): {[string]: any}
     return {}
 end
 
--- Extract the app's <script type="importmap">, merge the host imports over it
--- (host wins), and return (html_without_importmap, merged_importmap_json).
-local function extract_and_merge_importmap(html: string, host_imports: {[string]: any}): (string, string)
-    local app_imports: {[string]: any} = {}
-    local s, e = html:find('<script%s+type="importmap"%s*>.-</script>')
-    if s then
-        local block = html:sub(s, e)
-        local body = block:match('>%s*(.-)%s*</script>')
-        if body then
-            local decoded = json.decode(body)
-            if type(decoded) == "table" and type(decoded.imports) == "table" then
-                app_imports = decoded.imports :: {[string]: any}
-            end
-        end
-        html = html:sub(1, s - 1) .. html:sub(e + 1)
-    end
-    for k, v in pairs(host_imports) do
-        app_imports[k] = v
-    end
-    local merged = json.encode({ imports = app_imports }) or '{"imports":{}}'
-    return html, merged
-end
-
 -- The reframed client streams the fragment body into the <web-fragment> shadow
 -- root and re-executes scripts in the realm iframe via writable-dom. The only
 -- server-side transform the realm needs is renaming <html>/<head>/<body> ->
