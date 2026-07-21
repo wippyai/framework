@@ -44,10 +44,10 @@ local function facade_base(): string
 end
 
 -- Fetch the Web Host's canonical import map ({fe_facade_url}/import-map.json).
--- Memoized per fbase: the map is deploy-stable, so the original synchronous GET
--- on EVERY fragment mount (once per stub request) was pure overhead. Only
--- successful, non-empty results are cached — a failed fetch falls through and is
--- retried on the next mount rather than pinning the miss for the worker's life.
+-- Memoized per fbase: the map is deploy-stable, so re-fetching it on every
+-- mount is wasted work. Only successful, non-empty results are cached — a
+-- failed fetch falls through and is retried on the next mount rather than
+-- pinning the miss for the worker's life.
 local _imports_cache: {[string]: {[string]: any}} = {}
 local function fetch_host_imports(fbase: string): {[string]: any}
     if fbase == "" then
@@ -187,8 +187,7 @@ local function handler()
     -- 1) Realm iframe src load -> reframed stub (carries import map + proxy).
     -- The stub has NO page and runs NO can_access check — it depends only on
     -- fbase + the deploy-stable host import map, so it is safe to cache in a
-    -- SHARED cache. This is the per-mount hot path; caching it removes the
-    -- import-map GET + response build from every fragment boot.
+    -- SHARED cache.
     if sfd == "iframe" then
         res:set_header("Vary", "sec-fetch-dest")
         res:set_header("Cache-Control", "public, max-age=300")
@@ -254,9 +253,8 @@ local function handler()
         -- can_access above. Its CONTENT carries no per-user data (auth is
         -- client-held, never injected here), but a SHARED cache would serve the
         -- 200 to users who would have failed can_access. private = browser-only
-        -- caching, which speeds repeat navigation without the cross-user leak.
-        -- Public/immutable caching is a future win gated on a per-page `public`
-        -- flag that authorizes shared caching.
+        -- caching. A future per-page `public` flag could authorize
+        -- shared/immutable caching.
         res:set_header("Cache-Control", "private, max-age=60")
         res:set_content_type("text/html")
         res:set_status(http.STATUS.OK)

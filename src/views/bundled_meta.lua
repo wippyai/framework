@@ -221,8 +221,7 @@ function M.project_page_response(bundled_meta, page, base_url)
             proxy = w.proxy,
             configOverrides = w.configOverrides,
             -- EE2-2313: per-page render engine (auto|iframe|fragment). Bundled
-            -- wippy.renderEngine here; a scalar YAML operator override is applied
-            -- below (page.render_engine wins when present).
+            -- wippy.renderEngine here; operator override applied below.
             renderEngine = w.renderEngine,
         },
     }
