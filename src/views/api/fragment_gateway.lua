@@ -1,7 +1,7 @@
 -- fragment_gateway.lua (EE2-2313, Phase 1)
 --
--- Minimal Web-Fragments gateway. Serves the reframing contract for a Wippy
--- view.page rendered as a web-fragment, on the routes /frag/{id}/{path...}.
+-- Web-Fragments gateway. Serves the reframing contract for a Wippy view.page
+-- rendered as a web-fragment, on the routes /@fragment/{id}/{path...}.
 --
 -- The `web-fragments` client (reframed) hits the SAME url three ways,
 -- distinguished by the `Sec-Fetch-Dest` request header:
@@ -44,9 +44,18 @@ local function facade_base(): string
 end
 
 -- Fetch the Web Host's canonical import map ({fe_facade_url}/import-map.json).
+-- Memoized per fbase: the map is deploy-stable, so re-fetching it on every
+-- mount is wasted work. Only successful, non-empty results are cached — a
+-- failed fetch falls through and is retried on the next mount rather than
+-- pinning the miss for the worker's life.
+local _imports_cache: {[string]: {[string]: any}} = {}
 local function fetch_host_imports(fbase: string): {[string]: any}
     if fbase == "" then
         return {}
+    end
+    local cached = _imports_cache[fbase]
+    if cached ~= nil then
+        return cached
     end
     local resp, err = http_client.get(fbase .. "/import-map.json", { timeout = 10 })
     if err or not resp or (resp.status_code or 0) ~= 200 or not resp.body then
@@ -54,69 +63,25 @@ local function fetch_host_imports(fbase: string): {[string]: any}
     end
     local decoded = json.decode(resp.body)
     if type(decoded) == "table" and type(decoded.imports) == "table" then
-        return decoded.imports :: {[string]: any}
+        local imports = decoded.imports :: {[string]: any}
+        _imports_cache[fbase] = imports
+        return imports
     end
     return {}
 end
 
--- Extract the app's <script type="importmap">, merge the host imports over it
--- (host wins), and return (html_without_importmap, merged_importmap_json).
-local function extract_and_merge_importmap(html: string, host_imports: {[string]: any}): (string, string)
-    local app_imports: {[string]: any} = {}
-    local s, e = html:find('<script%s+type="importmap"%s*>.-</script>')
-    if s then
-        local block = html:sub(s, e)
-        local body = block:match('>%s*(.-)%s*</script>')
-        if body then
-            local decoded = json.decode(body)
-            if type(decoded) == "table" and type(decoded.imports) == "table" then
-                app_imports = decoded.imports :: {[string]: any}
-            end
-        end
-        html = html:sub(1, s - 1) .. html:sub(e + 1)
-    end
-    for k, v in pairs(host_imports) do
-        app_imports[k] = v
-    end
-    local merged = json.encode({ imports = app_imports }) or '{"imports":{}}'
-    return html, merged
-end
-
--- The reframed client contract: the fragment body is streamed into the
--- <web-fragment> shadow root, and reframed re-executes the (neutralized) scripts
--- inside the realm iframe. So we must, exactly like the reference gateway:
---   * strip the doctype;
---   * rename <html>/<head>/<body> -> <wf-html>/<wf-head>/<wf-body> (they are not
---     the realm's real document elements);
---   * neutralize scripts (type -> "inert", original kept in data-script-type) and
---     preload/prefetch/modulepreload links (rel -> "inert-...") so the browser
---     does not run them in the shadow — reframed re-activates them in the realm.
-local function strip_doctype(html: string): string
-    return (html:gsub("<![dD][oO][cC][tT][yY][pP][eE][^>]*>", "", 1))
-end
-
+-- The reframed client streams the fragment body into the <web-fragment> shadow
+-- root and re-executes scripts in the realm iframe via writable-dom. The only
+-- server-side transform the realm needs is renaming <html>/<head>/<body> ->
+-- <wf-html>/<wf-head>/<wf-body> (they are not the realm's real document
+-- elements). We deliberately do NOT strip the doctype or neutralize
+-- scripts/preload links: reframed's writable-dom handles script activation in
+-- the realm, and both passes proved unnecessary in practice (the app boots and
+-- re-executes correctly without them).
 local function prefix_wf(html: string): string
     html = html:gsub("<(/?)[hH][tT][mM][lL]([%s>])", "<%1wf-html%2")
     html = html:gsub("<(/?)[hH][eE][aA][dD]([%s>])", "<%1wf-head%2")
     html = html:gsub("<(/?)[bB][oO][dD][yY]([%s>])", "<%1wf-body%2")
-    return html
-end
-
-local function neutralize(html: string): string
-    html = html:gsub("<[sS][cC][rR][iI][pP][tT]([^>]*)>", function(attrs: string): string
-        local t = attrs:match('[tT][yY][pP][eE]%s*=%s*"([^"]*)"')
-        if t then
-            attrs = attrs:gsub('[tT][yY][pP][eE]%s*=%s*"[^"]*"', 'data-script-type="' .. t .. '" type="inert"', 1)
-        end
-        return "<script" .. attrs .. ">"
-    end)
-    html = html:gsub("<[lL][iI][nN][kK]([^>]*)>", function(attrs: string): string
-        local rel = attrs:match('[rR][eE][lL]%s*=%s*"([^"]*)"')
-        if rel == "preload" or rel == "prefetch" or rel == "modulepreload" then
-            attrs = attrs:gsub('[rR][eE][lL]%s*=%s*"[^"]*"', 'rel="inert-' .. rel .. '"', 1)
-        end
-        return "<link" .. attrs .. ">"
-    end)
     return html
 end
 
@@ -197,8 +162,12 @@ local function handler()
     local sfd = req:header("Sec-Fetch-Dest") or ""
 
     -- 1) Realm iframe src load -> reframed stub (carries import map + proxy).
+    -- The stub has NO page and runs NO can_access check — it depends only on
+    -- fbase + the deploy-stable host import map, so it is safe to cache in a
+    -- SHARED cache.
     if sfd == "iframe" then
         res:set_header("Vary", "sec-fetch-dest")
+        res:set_header("Cache-Control", "public, max-age=300")
         res:set_content_type("text/html")
         res:set_status(http.STATUS.OK)
         res:write(build_stub(facade_base()))
@@ -232,10 +201,10 @@ local function handler()
     end
 
     -- Derive the subpath from the full request path — the router does not surface
-    -- the {path...} wildcard via param(). Empty subpath = the document; a non-empty
-    -- subpath = an asset request.
+    -- the {path...} wildcard via param(). Match on the "/@fragment/{id}/" prefix.
+    -- Empty subpath = the document; a non-empty subpath = an asset request.
     local full_path = req:path() or ""
-    local marker = "/frag/" .. page_id .. "/"
+    local marker = "/@fragment/" .. page_id .. "/"
     local subpath = ""
     local mi = full_path:find(marker, 1, true)
     if mi then
@@ -251,11 +220,19 @@ local function handler()
         local resp, err = http_client.get(app_url, { timeout = 20 })
         if err or not resp or (resp.status_code or 500) >= 400 then
             res:set_status(http.STATUS.BAD_GATEWAY)
-            res:write("Fragment document fetch failed: " .. tostring(err or (resp and resp.status_code)))
+            res:write("Fragment document fetch failed: " .. tostring(err or (resp and resp.status_code))
+                .. " (url: " .. tostring(app_url) .. ")")
             return
         end
         local html = transform_document(resp.body or "", base_url, facade_base())
         res:set_header("Vary", "sec-fetch-dest")
+        -- PRIVATE, not public: the document is access-gated per user via
+        -- can_access above. Its CONTENT carries no per-user data (auth is
+        -- client-held, never injected here), but a SHARED cache would serve the
+        -- 200 to users who would have failed can_access. private = browser-only
+        -- caching. A future per-page `public` flag could authorize
+        -- shared/immutable caching.
+        res:set_header("Cache-Control", "private, max-age=60")
         res:set_content_type("text/html")
         res:set_status(http.STATUS.OK)
         res:write(html)
@@ -274,6 +251,12 @@ local function handler()
     local ct = headers["Content-Type"] or headers["content-type"]
     if ct then
         res:set_content_type(ct)
+    end
+    -- Cache only successful asset responses, and PRIVATE for the same
+    -- access-gating reason as the document (see above). Assets are the app's
+    -- static build outputs, so a longer browser TTL is safe.
+    if (resp.status_code or 200) < 400 then
+        res:set_header("Cache-Control", "private, max-age=300")
     end
     res:set_status(resp.status_code or http.STATUS.OK)
     res:write(resp.body or "")

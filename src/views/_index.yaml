@@ -36,10 +36,15 @@ entries:
           path: .meta.router
         - entry: wippy.views.api:list_routes.endpoint
           path: .meta.router
-        - entry: wippy.views.api:fragment_gateway
-          path: .meta.router
-        - entry: wippy.views.api:fragment_gateway.endpoint
-          path: .meta.router
+    - name: server
+      kind: ns.requirement
+      meta:
+        description: HTTP service that hosts the experimental Web Fragments gateway router. Defaults to app:gateway; override only if your http.service entry has a different id. A consumer needs no other fragment wiring — the gateway owns its own /@fragment router.
+        parent: app.deps:__dependency.wippy.views
+      default: app:gateway
+      targets:
+        - entry: wippy.views.api:fragment_router
+          path: .meta.server
     - name: public_api_url
       kind: env.variable
       meta:

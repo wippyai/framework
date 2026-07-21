@@ -220,6 +220,9 @@ function M.project_page_response(bundled_meta, page, base_url)
             path = page.entry_point or w.path or "index.html",
             proxy = w.proxy,
             configOverrides = w.configOverrides,
+            -- EE2-2313: per-page render engine (auto|iframe|fragment). Bundled
+            -- wippy.renderEngine here; operator override applied below.
+            renderEngine = w.renderEngine,
         },
     }
 
@@ -238,6 +241,12 @@ function M.project_page_response(bundled_meta, page, base_url)
     if page.proxy then
         local current = response.wippy.proxy or {}
         response.wippy.proxy = deep_merge(current, page.proxy)
+    end
+
+    -- EE2-2313: scalar (NOT deep-merge) YAML operator override for the render
+    -- engine. meta.render_engine → page.render_engine wins over the bundle.
+    if page.render_engine ~= nil then
+        response.wippy.renderEngine = page.render_engine
     end
 
     -- The FE rejects a page descriptor with no wippy.proxy

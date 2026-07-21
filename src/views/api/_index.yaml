@@ -188,8 +188,26 @@ entries:
       func: list_routes
       method: GET
       path: /pages/routes
-    # Web-Fragments gateway (EE2-2313). Serves the reframing contract for a
-    # view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
+    # Web-Fragments gateway router (EE2-2313, EXPERIMENTAL). The gateway owns its
+    # own /@fragment router, so a consuming app needs NO fragment wiring: views
+    # takes only the http.service as the `server` requirement (default app:gateway).
+    # A consumer that never enables fragments still boots normally on the iframe
+    # engine. compress only (the gateway is same-origin with the host); no
+    # token_auth — the gateway is auth-agnostic (the injected proxy handshakes the host).
+    - name: fragment_router
+      kind: http.router
+      meta:
+        comment: Web-Fragments gateway router (/@fragment prefix)
+        server: server
+      prefix: /@fragment
+      middleware:
+        - compress
+      options:
+        compress.level: default
+        compress.min.length: "1024"
+
+    # Web-Fragments gateway (EE2-2313, EXPERIMENTAL). Serves the reframing contract
+    # for a view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
     # the app HTML with the fragment proxy + <base> injected (empty/document),
     # and asset proxying (everything else). Delivery-mode wrapper — render.lua
     # is untouched. Auth-agnostic: the injected proxy handshakes the host for config.
@@ -198,7 +216,6 @@ entries:
       meta:
         comment: Web-Fragments gateway — reframing contract + asset proxy for a fragment-mode view.page
         description: Fragment gateway endpoint
-        router: api_router
       source: file://fragment_gateway.lua
       imports:
         page_registry: wippy.views:page_registry
@@ -213,16 +230,24 @@ entries:
           id: wippy.views.api:fragment_gateway
         policies:
           - wippy.views:public_registry_runtime
+          # Required: page_registry.resolve_base_url reads PUBLIC_API_URL to turn a
+          # page's relative url/base_path into an ABSOLUTE origin. Without this the
+          # read is denied, base_url stays relative, and the document fetch is then
+          # rejected by public_metadata_http_runtime (which only allows http(s)://*).
+          - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
       pool:
         size: 4
+        workers: 4
     - name: fragment_gateway.endpoint
       kind: http.endpoint
       meta:
         comment: Web-Fragments gateway endpoint (reframing + asset proxy)
         description: Fragment reframing contract endpoint
-        router: api_router
+        router: fragment_router
       func: fragment_gateway
       method: GET
-      path: /frag/{id}/{path...}
+      # Router-relative: fragment_router supplies the /@fragment prefix, so the
+      # full served path is /@fragment/{id}/{path...} (top-level, not under /api/public).
+      path: /{id}/{path...}
