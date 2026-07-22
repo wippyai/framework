@@ -1,5 +1,6 @@
 organization: wippy
 module: bootloader
+type: library
 description: Application bootloader and initialization orchestrator
 license: Apache-2.0
 repository: https://github.com/wippyai/framework

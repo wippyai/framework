@@ -8,7 +8,7 @@ PACKAGES_SRC = actor agent bootloader llm relay usage
 # Modules that have test directories with wippy.lock
 TEST_MODULES = actor bootloader embeddings facade llm migration relay usage views
 
-.PHONY: help run-tests run-lint install publish-all \
+.PHONY: help check-manifests run-tests run-lint install publish-all \
 	publish-flat-% publish-src-%
 
 help:
@@ -17,8 +17,12 @@ help:
 	@echo "Usage:"
 	@echo "  make run-tests      Run tests for all modules"
 	@echo "  make run-lint       Run lint for all modules"
+	@echo "  make check-manifests Validate package and test-app module types"
 	@echo "  make install        Install dependencies for all test modules"
 	@echo "  make publish-all    Publish all packages (skips unchanged)"
+
+check-manifests:
+	@python3 scripts/check_module_manifests.py
 
 run-tests:
 	@failed=0; \
@@ -57,7 +61,7 @@ install:
 		(cd src/$$mod/test && wippy install 2>&1 | tail -1); \
 	done
 
-publish-all:
+publish-all: check-manifests
 	@for pkg in $(PACKAGES_FLAT); do \
 		echo "Publishing $$pkg..."; \
 		cd src/$$pkg && wippy publish || echo "$$pkg unchanged or failed"; \

@@ -1,5 +1,6 @@
 organization: wippy
 module: actor
+type: library
 description: Actor pattern library for message-passing concurrency
 license: Apache-2.0
 repository: https://github.com/wippyai/framework

@@ -1,5 +1,6 @@
 organization: wippy
 module: llm-test
+type: application
 description: Test stub for llm module
 exclude_meta:
   type:

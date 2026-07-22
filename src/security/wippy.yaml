@@ -1,5 +1,6 @@
 organization: wippy
 module: security
+type: library
 description: Security policies for access control
 license: Apache-2.0
 repository: https://github.com/wippyai/framework

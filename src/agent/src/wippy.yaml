@@ -1,5 +1,6 @@
 organization: wippy
 module: agent
+type: library
 description: LLM agent framework with tool support and conversation management
 license: Apache-2.0
 repository: https://github.com/wippyai/framework
