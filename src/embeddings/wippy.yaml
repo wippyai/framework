@@ -1,5 +1,6 @@
 organization: wippy
 module: embeddings
+type: library
 description: Vector embeddings storage and similarity search
 license: Apache-2.0
 repository: https://github.com/wippyai/framework

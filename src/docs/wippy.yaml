@@ -1,5 +1,6 @@
 organization: wippy
 module: docs
+type: library
 description: Module specifications and documentation
 license: Apache-2.0
 repository: https://github.com/wippyai/framework
