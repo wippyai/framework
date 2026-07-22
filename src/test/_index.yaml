@@ -69,6 +69,7 @@ entries:
       command:
         name: test
         short: Run tests
+        use_case: test
     source: file://runner.lua
     method: main
     modules:
