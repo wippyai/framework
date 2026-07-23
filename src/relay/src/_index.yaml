@@ -189,6 +189,7 @@ entries:
     imports:
       consts: wippy.relay:consts
       test: wippy.test:test
+      user: wippy.relay:user
     modules:
       - time
       - security
@@ -211,5 +212,6 @@ entries:
     imports:
       central: wippy.relay:central
       test: wippy.test:test
-    modules: []
+    modules:
+      - time
     method: run

@@ -31,6 +31,19 @@ type UserState = {
     pg_groups: {[string]: string},
 }
 
+type UserUpgradeState = {
+    relay_user_upgrade: boolean,
+    user_id: string,
+    user_metadata: any,
+    plugins: {[string]: PluginConfig},
+    config: any,
+    central_hub_pid: string?,
+    active_plugins: {[string]: PluginState},
+    connected_clients: {[string]: boolean},
+    client_count: number,
+    pg_groups: {[string]: string},
+}
+
 local function get_plugin_info(state: UserState): any
     local count = 0
     for _ in pairs(state.plugins) do count = count + 1 end
@@ -126,6 +139,61 @@ local function release_pg(state: UserState)
         scope:release()
     end
     state.pg_scopes = {}
+end
+
+local function snapshot_state(state: UserState): UserUpgradeState
+    local groups = {}
+    for group, scope_id in pairs(state.pg_groups) do
+        groups[group] = scope_id
+    end
+    return {
+        relay_user_upgrade = true,
+        user_id = state.user_id,
+        user_metadata = state.user_metadata,
+        plugins = state.plugins,
+        config = state.config,
+        central_hub_pid = state.central_hub_pid,
+        active_plugins = state.active_plugins,
+        connected_clients = state.connected_clients,
+        client_count = state.client_count,
+        pg_groups = groups,
+    }
+end
+
+local function encode_upgrade_state(snapshot: UserUpgradeState): string
+    local encoded, encode_err = json.encode(snapshot)
+    if not encoded then
+        error("failed to encode relay user upgrade state: " .. tostring(encode_err))
+    end
+    return encoded
+end
+
+local function decode_upgrade_state(encoded: any): UserUpgradeState
+    if type(encoded) ~= "string" then
+        error("invalid relay user upgrade state payload")
+    end
+    local snapshot, decode_err = json.decode(encoded)
+    if not snapshot then
+        error("failed to decode relay user upgrade state: " .. tostring(decode_err))
+    end
+    if type(snapshot) ~= "table" or snapshot.relay_user_upgrade ~= true then
+        error("invalid relay user upgrade state marker")
+    end
+    return snapshot :: UserUpgradeState
+end
+
+local function restore_pg(state: UserState, groups: {[string]: string})
+    for group, scope_id in pairs(groups or {}) do
+        local scope, scope_err = pg_scope_for(state, scope_id)
+        if not scope then
+            error("failed to restore relay group " .. group .. ": " .. tostring(scope_err))
+        end
+        local joined, join_err = scope:join(group)
+        if not joined then
+            error("failed to restore relay group " .. group .. ": " .. tostring(join_err))
+        end
+        state.pg_groups[group] = scope_id
+    end
 end
 
 local function notify_central_hub_activity(state: UserState)
@@ -374,10 +442,25 @@ local function handle_process_event(state: UserState, event: any)
 end
 
 local function run(args: any): any
+    local resumed = type(args) == "string"
+    if resumed then
+        args = decode_upgrade_state(args)
+    end
     if not args or not args.user_id or not args.plugins or not args.config then
         error("Missing required arguments: user_id, plugins, config")
     end
 
+    local active_plugins: {[string]: PluginState} = {}
+    local connected_clients: {[string]: boolean} = {}
+    local client_count = 0
+    local upgrade_groups: {[string]: string} = {}
+    if resumed then
+        local resume_state = args :: UserUpgradeState
+        active_plugins = resume_state.active_plugins
+        connected_clients = resume_state.connected_clients
+        client_count = resume_state.client_count
+        upgrade_groups = resume_state.pg_groups
+    end
     local user_id = string(args.user_id)
     local central_hub_pid = args.central_hub_pid :: string?
 
@@ -388,24 +471,34 @@ local function run(args: any): any
         plugins = plugins,
         config = args.config,
         central_hub_pid = central_hub_pid,
-        active_plugins = {},
-        connected_clients = {},
-        client_count = 0,
+        active_plugins = active_plugins,
+        connected_clients = connected_clients,
+        client_count = client_count,
         pg_scopes = {},
         pg_groups = {}
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
-    local registered, register_err = process.registry.register(registry_name)
-    if not registered then
-        error("Failed to register user hub " .. registry_name .. ": " .. (register_err or "unknown error"))
+    if not resumed then
+        local registered, register_err = process.registry.register(registry_name)
+        if not registered then
+            error("Failed to register user hub " .. registry_name .. ": " .. (register_err or "unknown error"))
+        end
+        logger:info("user hub registered", { user_id = state.user_id, registry_name = registry_name })
     end
-    logger:info("user hub registered", { user_id = state.user_id, registry_name = registry_name })
-    process.set_options({ trap_links = true, upgradable = false })
+    process.set_options({ trap_links = true, upgradable = true })
 
-    for prefix, plugin_config in pairs(state.plugins) do
-        if plugin_config.auto_start then
-            spawn_plugin(state, prefix, plugin_config)
+    if resumed then
+        restore_pg(state, upgrade_groups)
+        logger:info("user hub upgraded", {
+            user_id = state.user_id,
+            client_count = state.client_count,
+        })
+    else
+        for prefix, plugin_config in pairs(state.plugins) do
+            if plugin_config.auto_start then
+                spawn_plugin(state, prefix, plugin_config)
+            end
         end
     end
 
@@ -448,6 +541,14 @@ local function run(args: any): any
             local event: any = result.value
             if event.kind == process.event.CANCEL then
                 break
+            elseif event.kind == process.event.OUTDATED then
+                local upgrade_state = encode_upgrade_state(snapshot_state(state))
+                release_pg(state)
+                logger:info("upgrading user hub", {
+                    user_id = state.user_id,
+                    client_count = state.client_count,
+                })
+                process.upgrade("", upgrade_state)
             else
                 handle_process_event(state, event)
             end
@@ -466,4 +567,9 @@ local function run(args: any): any
     return { status = "shutdown", user_id = state.user_id }
 end
 
-return { run = run }
+return {
+    run = run,
+    _snapshot_state = snapshot_state,
+    _encode_upgrade_state = encode_upgrade_state,
+    _decode_upgrade_state = decode_upgrade_state,
+}
