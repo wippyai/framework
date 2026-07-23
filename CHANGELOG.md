@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.5.0](https://github.com/wippyai/framework/compare/v0.4.0...v0.5.0) (2026-07-23)
+
+
+### Features
+
+* **facade:** render_engine requirement → hostConfig.renderEngine [EE2-2313] ([4a9ed4a](https://github.com/wippyai/framework/commit/4a9ed4a15dfcdba46efa6206e17bba513f6936fa))
+* **fragment:** /@fragment/ gateway redesign - caching + import-map memo [EE2-2313] ([9cb51fb](https://github.com/wippyai/framework/commit/9cb51fba09f8e9b3dbc00b02bb86f6cd1558d127))
+* **fragment:** dedicated fragment_router requirement for the gateway [EE2-2313] ([76c76fa](https://github.com/wippyai/framework/commit/76c76fa488a922766297363a8ad98f0b75d2cc30))
+* **fragment:** Web Fragments render engine — /[@fragment](https://github.com/fragment) gateway + render_engine switch [EE2-2313] ([2634c1a](https://github.com/wippyai/framework/commit/2634c1a7c0dafd4250efd95cd09827392add877f))
+* **views:** fragment gateway injects host CSS &lt;link&gt;s server-side [EE2-2313] ([9caf53c](https://github.com/wippyai/framework/commit/9caf53c116f50c8c7eb6dff039158ac52927193b))
+* **views:** project per-page render_engine into the page descriptor [EE2-2313] ([e131525](https://github.com/wippyai/framework/commit/e131525b500eee4f431682a6ce4f9dcc072b59db))
+* **views:** Web-Fragments gateway for fragment-mode view.pages [EE2-2313] ([c81c7e4](https://github.com/wippyai/framework/commit/c81c7e4d2ed72d8ce5a88071b2927ec5cdcd826b))
+
+
+### Bug Fixes
+
+* **ci:** publish framework modules independently ([fabbd2b](https://github.com/wippyai/framework/commit/fabbd2bcdf081372a1174486a4a9de7c1fea39ad))
+* **ci:** publish framework modules independently ([e434070](https://github.com/wippyai/framework/commit/e4340709a6986e8331206635dd325fe6d2f5e546))
+* **ci:** support framework publish credentials ([767df3a](https://github.com/wippyai/framework/commit/767df3a78ed8c53dfb8abefe8c4ab536e7bef8cd))
+* **ci:** support framework publish credentials ([fbef50b](https://github.com/wippyai/framework/commit/fbef50bfa3b92da9c1edc7424eaa3818aaf4a72f))
+* **facade:** grant template.get to config_read_runtime (shell render) ([#86](https://github.com/wippyai/framework/issues/86)) ([6f627b8](https://github.com/wippyai/framework/commit/6f627b835277ed5bd222ff444372f03282614db0))
+* **facade:** surface templates.get errors and release Jet shell set ([0f53d41](https://github.com/wippyai/framework/commit/0f53d412761d54389c1152e3899e6d13ff431cb2))
+* **fragment:** views self-provides /[@fragment](https://github.com/fragment) router — no consumer wiring, no boot abort [EE2-2313] ([b0addc9](https://github.com/wippyai/framework/commit/b0addc9db03ebbf1b8d0c7a546838595f90efe5a))
+* **packages:** declare framework module types ([041d74d](https://github.com/wippyai/framework/commit/041d74d4316c46543872c6a6864421c9f003071e))
+* **packages:** declare framework module types ([b020b83](https://github.com/wippyai/framework/commit/b020b83b0f99e4056fe393804f5934cfc7a1399b))
+* **relay:** declare process upgrade policy ([3066acd](https://github.com/wippyai/framework/commit/3066acdf7678aa2acf8a32a19b8a241b5c733d48))
+* **relay:** declare process upgrade policy ([f8202e2](https://github.com/wippyai/framework/commit/f8202e20e4b6e5e6620a0845d4c6ae14b5decf90))
+* **relay:** grant process.send to user hubs via user_security_scope ([#88](https://github.com/wippyai/framework/issues/88)) ([2066954](https://github.com/wippyai/framework/commit/206695426355a0ca1791cae4dbba8575daadc4fb))
+* **relay:** preserve sessions across hot upgrades ([#93](https://github.com/wippyai/framework/issues/93)) ([4c627da](https://github.com/wippyai/framework/commit/4c627da2bf4ac70486442b61b48a058963f960fe))
+* **test:** classify runner for wippy test ([269f46b](https://github.com/wippyai/framework/commit/269f46b2cae7aecdc25131cbc222529bc3c7d556))
+* **test:** classify runner for wippy test ([4070317](https://github.com/wippyai/framework/commit/4070317744b99c126427394cbb61c10c6d34c188))
+* **test:** run package suites on current CLI; drop facade pack symlink ([#87](https://github.com/wippyai/framework/issues/87)) ([d60ecfd](https://github.com/wippyai/framework/commit/d60ecfd5415ac4ff57a01edf9b83f48cc828c177))
+* **views:** bind fragment_gateway endpoint to api_router requirement [EE2-2313] ([3fb548b](https://github.com/wippyai/framework/commit/3fb548bfe29ebdca2147e7e8cc375b4453303a7e))
+* **views:** fragment gateway — drop dev-proxy placeholder + absolute asset URLs [EE2-2313] ([4ef34ed](https://github.com/wippyai/framework/commit/4ef34ed4f871c843fe6a316917cd70783f5cabc2))
+* **views:** fragment gateway — realm-stub import map + proxy, subpath asset routing [EE2-2313] ([6fa548c](https://github.com/wippyai/framework/commit/6fa548ced5e7099a45b3b3e69246929c5b793055))
+* **views:** fragment realm stub injects loading.js; omit chat.js [EE2-2313] ([a25d186](https://github.com/wippyai/framework/commit/a25d186f887b32ecac7ebd84f200a14ed860ea18))
+* **views:** grant the fragment gateway the env policy so base_url resolves absolute [EE2-2313] ([9fa5c0d](https://github.com/wippyai/framework/commit/9fa5c0d2c03f1bdd930cdda696efe4af30f42211))
+* **views:** sort unnamed components safely ([2e904c5](https://github.com/wippyai/framework/commit/2e904c58c9ecdb275a27a60371a87b539237f75e))
+* **views:** sort unnamed components safely ([b0e3e4f](https://github.com/wippyai/framework/commit/b0e3e4f7e73b033d41f6998af96ca110e7525a91))
+
+
+### Reverts
+
+* **ci:** restore framework publish workflow ([1e1d4db](https://github.com/wippyai/framework/commit/1e1d4db4fb170f8fe1b82f7948151c71a742d8f6))
+* **ci:** restore framework publish workflow ([ed7091f](https://github.com/wippyai/framework/commit/ed7091f3bc9318371be5f84dc8d0d03d07517dfc))
+
 ## [0.4.0](https://github.com/wippyai/framework/compare/v0.3.16...v0.4.0) (2026-07-09)
 
 
