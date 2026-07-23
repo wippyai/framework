@@ -34,10 +34,99 @@ type CentralState = {
     total_hubs: number,
 }
 
+type UserHubUpgradeInfo = {
+    hub_pid: string,
+    created_at: string?,
+    last_activity: string?,
+    client_count: number,
+    terminating: boolean?,
+    termination_started_at: string?,
+}
+
+type CentralUpgradeState = {
+    relay_upgrade: boolean,
+    user_hubs: {[string]: UserHubUpgradeInfo},
+    total_hubs: number,
+}
+
 local function table_length(t: any): number
     local count = 0
     for _ in pairs(t) do count = count + 1 end
     return count
+end
+
+local function encode_time(value: time.Time?): string?
+    if not value then return nil end
+    return value:format_rfc3339()
+end
+
+local function decode_time(value: any, field: string): time.Time?
+    if value == nil then return nil end
+    local parsed, parse_err = time.parse(time.RFC3339, tostring(value))
+    if not parsed then
+        error("invalid relay upgrade state " .. field .. ": " .. tostring(parse_err))
+    end
+    return parsed
+end
+
+local function snapshot_state(state: CentralState): CentralUpgradeState
+    local user_hubs: {[string]: UserHubUpgradeInfo} = {}
+    for user_id, hub in pairs(state.user_hubs) do
+        user_hubs[user_id] = {
+            hub_pid = hub.hub_pid,
+            created_at = encode_time(hub.created_at),
+            last_activity = encode_time(hub.last_activity),
+            client_count = hub.client_count,
+            terminating = hub.terminating,
+            termination_started_at = encode_time(hub.termination_started_at),
+        }
+    end
+    local snapshot: CentralUpgradeState = {
+        relay_upgrade = true,
+        user_hubs = user_hubs,
+        total_hubs = state.total_hubs,
+    }
+    return snapshot
+end
+
+local function encode_upgrade_state(snapshot: CentralUpgradeState): string
+    local encoded, encode_err = json.encode(snapshot)
+    if not encoded then
+        error("failed to encode relay central upgrade state: " .. tostring(encode_err))
+    end
+    return encoded
+end
+
+local function decode_upgrade_state(encoded: any): CentralUpgradeState
+    if type(encoded) ~= "string" then
+        error("invalid relay central upgrade state payload")
+    end
+    local snapshot, decode_err = json.decode(encoded)
+    if not snapshot then
+        error("failed to decode relay central upgrade state: " .. tostring(decode_err))
+    end
+    if type(snapshot) ~= "table" or snapshot.relay_upgrade ~= true then
+        error("invalid relay central upgrade state marker")
+    end
+    return snapshot :: CentralUpgradeState
+end
+
+local function restore_hubs(snapshot: CentralUpgradeState): {[string]: UserHubInfo}
+    local user_hubs: {[string]: UserHubInfo} = {}
+    for user_id, hub in pairs(snapshot.user_hubs or {}) do
+        if type(hub.hub_pid) ~= "string" or hub.hub_pid == "" then
+            error("invalid relay upgrade state hub_pid for " .. tostring(user_id))
+        end
+        user_hubs[user_id] = {
+            hub_pid = hub.hub_pid,
+            created_at = decode_time(hub.created_at, "created_at")!,
+            last_activity = decode_time(hub.last_activity, "last_activity")!,
+            client_count = tonumber(hub.client_count) or 0,
+            terminating = hub.terminating == true,
+            termination_started_at = decode_time(hub.termination_started_at, "termination_started_at"),
+        }
+    end
+    return user_hubs
 end
 
 local function identity_from_metadata(config: ValidatedConfig, user_id: string, metadata: any): (any?, any?, any?, string?)
@@ -202,7 +291,7 @@ local function check_inactive_hubs(state: CentralState)
     end
 end
 
-local function run(): any
+local function run(upgrade_state: any?): any
     local config = consts.get_config()
 
     logger:info("relay central hub starting", {
@@ -225,15 +314,31 @@ local function run(): any
 
     logger:info("plugin discovery complete", { plugin_count = table_length(plugins) })
 
+    local resumed = upgrade_state ~= nil
+    local user_hubs: {[string]: UserHubInfo} = {}
+    local total_hubs = 0
+    if resumed then
+        local snapshot = decode_upgrade_state(upgrade_state)
+        if type(snapshot.total_hubs) ~= "number" then
+            error("invalid relay upgrade state total_hubs")
+        end
+        user_hubs = restore_hubs(snapshot)
+        total_hubs = snapshot.total_hubs
+    end
     local state: CentralState = {
         config = config :: ValidatedConfig,
         plugins = plugins,
-        user_hubs = {},
-        total_hubs = 0
+        user_hubs = user_hubs,
+        total_hubs = total_hubs,
     }
 
-    process.registry.register(consts.CENTRAL_HUB_REGISTRY_NAME)
-    process.set_options({ trap_links = true, upgradable = false })
+    if not resumed then
+        local registered, register_err = process.registry.register(consts.CENTRAL_HUB_REGISTRY_NAME)
+        if not registered then
+            error("failed to register relay central hub: " .. tostring(register_err))
+        end
+    end
+    process.set_options({ trap_links = true, upgradable = true })
 
     local gc_ticker = time.ticker(config.gc_check_interval)
     local inbox = process.inbox()
@@ -274,6 +379,11 @@ local function run(): any
             if event.kind == process.event.CANCEL then
                 logger:info("received cancel signal")
                 break
+            elseif event.kind == process.event.OUTDATED then
+                local encoded_state = encode_upgrade_state(snapshot_state(state))
+                gc_ticker:stop()
+                logger:info("upgrading relay central hub", { active_hubs = state.total_hubs })
+                process.upgrade("", encoded_state)
             end
             handle_process_event(state, event)
 
@@ -299,4 +409,8 @@ return {
     _set_security_for_test = function(fake: any)
         security_mod = fake or security
     end,
+    _snapshot_state = snapshot_state,
+    _restore_hubs = restore_hubs,
+    _encode_upgrade_state = encode_upgrade_state,
+    _decode_upgrade_state = decode_upgrade_state,
 }

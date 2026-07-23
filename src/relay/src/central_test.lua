@@ -1,5 +1,6 @@
 local test = require("test")
 local central = require("central")
+local time = require("time")
 
 local function fake_security(calls: any): any
     return {
@@ -65,6 +66,37 @@ local function define_tests()
             test.expect(type(meta)).to_equal("table")
             test.expect(calls.scope_id).to_equal("app.security:user")
             central._set_security_for_test(nil)
+        end)
+    end)
+
+    test.describe("relay central hot upgrade state", function()
+        test.it("serializes hub timestamps and restores the same child pids", function()
+            local now = time.now()
+            local snapshot = central._snapshot_state({
+                config = config("app.security:user"),
+                plugins = {},
+                user_hubs = {
+                    ["admin@wippy.local"] = {
+                        hub_pid = "app:hub:1",
+                        created_at = now,
+                        last_activity = now,
+                        client_count = 2,
+                    },
+                },
+                total_hubs = 1,
+            })
+
+            test.expect(snapshot.relay_upgrade).to_equal(true)
+            test.expect(type(snapshot.user_hubs["admin@wippy.local"].created_at)).to_equal("string")
+
+            local encoded = central._encode_upgrade_state(snapshot)
+            test.expect(type(encoded)).to_equal("string")
+            local decoded = central._decode_upgrade_state(encoded)
+            local restored = central._restore_hubs(decoded)
+            local hub = restored["admin@wippy.local"]
+            test.expect(hub.hub_pid).to_equal("app:hub:1")
+            test.expect(hub.client_count).to_equal(2)
+            test.expect(hub.created_at:format_rfc3339()).to_equal(now:format_rfc3339())
         end)
     end)
 end
