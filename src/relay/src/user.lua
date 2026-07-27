@@ -60,17 +60,7 @@ local function get_plugin_info(state: UserState): any
 end
 
 local function broadcast_to_clients(state: UserState, topic: string, message: any)
-    logger:info("broadcasting topic to clients", {
-        user_id = state.user_id,
-        topic = topic,
-        client_count = state.client_count
-    })
     for client_pid, _ in pairs(state.connected_clients) do
-        logger:info("broadcasting topic to client", {
-            user_id = state.user_id,
-            topic = topic,
-            client_pid = client_pid
-        })
         process.send(client_pid, topic, message)
     end
 end
