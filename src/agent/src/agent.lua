@@ -46,7 +46,7 @@ type AgentRunner = {
     description: string,
     model: string,
     max_tokens: number,
-    temperature: number,
+    temperature: number?,
     thinking_effort: number,
     tools: {[string]: UnifiedTool},
     memory: {string},
@@ -67,7 +67,6 @@ local AGENT_CONFIG = {
     defaults = {
         model = "",
         max_tokens = 512,
-        temperature = 0,
         thinking_effort = 0
     },
     memory = {
@@ -415,7 +414,10 @@ function agent.new(compiled_spec: any): (any, string?)
         description = compiled_spec.description,
         model = compiled_spec.model or AGENT_CONFIG.defaults.model,
         max_tokens = compiled_spec.max_tokens or AGENT_CONFIG.defaults.max_tokens,
-        temperature = compiled_spec.temperature or AGENT_CONFIG.defaults.temperature,
+        -- Left nil when the spec omits it: Claude 4.7+ and Opus/Sonnet 5 reject
+        -- temperature, top_p and top_k outright, and a value the author never
+        -- asked for is not ours to invent.
+        temperature = compiled_spec.temperature,
         thinking_effort = compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort,
         tools = compiled_spec.tools or {},
         memory = compiled_spec.memory or {},

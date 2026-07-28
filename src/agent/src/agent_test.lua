@@ -587,11 +587,85 @@ local function define_tests()
                 test.not_nil(test_agent)
                 test.eq(test_agent.model, "")
                 test.eq(test_agent.max_tokens, 512)
-                test.eq(test_agent.temperature, 0)
+                test.is_nil(test_agent.temperature)
                 test.eq(test_agent.thinking_effort, 0)
                 test.is_nil(next(test_agent.tools)) -- Empty tools table
                 test.not_nil(test_agent.tool_wrappers)
                 test.eq(#test_agent.tool_wrappers, 0)
+            end)
+
+            it("should carry an explicit temperature through to the model options", function()
+                local spec = {
+                    id = "explicit-temp-agent",
+                    name = "Explicit Temp Agent",
+                    description = "Sets its own temperature",
+                    prompt = "You are explicit.",
+                    temperature = 0.7
+                }
+
+                local test_agent = agent.new(spec)
+                test.eq(test_agent.temperature, 0.7)
+
+                local seen
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen = options
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                test_agent:step(mock_prompt.new())
+                test.eq(seen.temperature, 0.7)
+            end)
+
+            it("should carry an explicit zero temperature rather than treating it as unset", function()
+                local spec = {
+                    id = "zero-temp-agent",
+                    name = "Zero Temp Agent",
+                    description = "Asks for greedy decoding on purpose",
+                    prompt = "You are deterministic.",
+                    temperature = 0
+                }
+
+                local test_agent = agent.new(spec)
+                test.eq(test_agent.temperature, 0)
+
+                local seen
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen = options
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                test_agent:step(mock_prompt.new())
+                test.eq(seen.temperature, 0)
+            end)
+
+            it("should omit temperature from model options when the spec does not set one", function()
+                -- Claude 4.7+ and Opus/Sonnet 5 reject temperature, top_p and
+                -- top_k outright, so a fabricated default makes every agent that
+                -- never asked for one unusable on those models.
+                local spec = {
+                    id = "unset-temp-agent",
+                    name = "Unset Temp Agent",
+                    description = "Leaves sampling to the model",
+                    prompt = "You are unset."
+                }
+
+                local test_agent = agent.new(spec)
+
+                local seen
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen = options
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                test_agent:step(mock_prompt.new())
+
+                test.not_nil(seen)
+                test.is_nil(seen.temperature)
+                test.is_nil(seen.top_p)
+                test.is_nil(seen.top_k)
             end)
 
             it("should preserve tool wrapper specs from compiled specification", function()

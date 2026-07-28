@@ -1,0 +1,8 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: env_storage
+    kind: env.storage.os
+    meta:
+      type: envstorage

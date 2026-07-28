@@ -6,7 +6,7 @@ PACKAGES_FLAT = migration embeddings facade views security docs terminal test
 PACKAGES_SRC = actor agent bootloader llm relay usage
 
 # Modules that have test directories with wippy.lock
-TEST_MODULES = actor bootloader embeddings facade llm migration relay usage views
+TEST_MODULES = actor agent bootloader embeddings facade llm migration relay usage views
 
 .PHONY: help check-manifests run-tests run-lint install publish-all \
 	publish-flat-% publish-src-%

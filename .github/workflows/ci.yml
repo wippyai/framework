@@ -22,6 +22,7 @@ jobs:
       matrix:
         module:
           - actor
+          - agent
           - bootloader
           - embeddings
           - facade
@@ -55,6 +56,7 @@ jobs:
       matrix:
         module:
           - actor
+          - agent
           - bootloader
           - embeddings
           - facade

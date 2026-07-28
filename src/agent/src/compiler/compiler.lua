@@ -235,7 +235,29 @@ local function normalize_binding_phases(raw_binding: any): {string}
     return phases :: {string}
 end
 
-local function normalize_raw_binding(kind_hint: any, raw_binding: any): any?
+-- Binding ids reach the compiler from registry data, so they carry whatever
+-- type the author wrote. BindingSpec.id is a string, and tostring keeps the
+-- authored value legible rather than discarding it.
+local function optional_id(value: any): string?
+    if value == nil then
+        return nil
+    end
+    return tostring(value)
+end
+
+type NormalizedBinding = {
+    id: string?,
+    kind: string,
+    contract: string,
+    binding: string,
+    phases: {string},
+    context: table,
+    options: table,
+    priority: number,
+    strict: boolean,
+}
+
+local function normalize_raw_binding(kind_hint: any, raw_binding: any): NormalizedBinding?
     if type(raw_binding) ~= "table" then
         return nil
     end
@@ -255,10 +277,10 @@ local function normalize_raw_binding(kind_hint: any, raw_binding: any): any?
     end
 
     return {
-        id = raw_binding.id or raw_binding.name,
-        kind = kind,
-        contract = contract_id,
-        binding = binding_id,
+        id = optional_id(raw_binding.id or raw_binding.name),
+        kind = kind :: string,
+        contract = contract_id :: string,
+        binding = binding_id :: string,
         phases = normalize_binding_phases(raw_binding),
         context = type(raw_binding.context) == "table" and raw_binding.context or {},
         options = type(raw_binding.options) == "table" and raw_binding.options or {},
@@ -267,7 +289,7 @@ local function normalize_raw_binding(kind_hint: any, raw_binding: any): any?
     }
 end
 
-local function collect_raw_bindings(out: {any}, kind_hint: any, raw_bindings: any)
+local function collect_raw_bindings(out: {NormalizedBinding}, kind_hint: any, raw_bindings: any)
     if type(raw_bindings) ~= "table" then
         return
     end
@@ -293,8 +315,8 @@ local function collect_raw_bindings(out: {any}, kind_hint: any, raw_bindings: an
     end
 end
 
-local function raw_bindings_from_trait(trait_def: any): {any}
-    local out = {}
+local function raw_bindings_from_trait(trait_def: any): {NormalizedBinding}
+    local out: {NormalizedBinding} = {}
     if type(trait_def) ~= "table" then
         return out
     end
@@ -333,7 +355,7 @@ local function list_from_map_or_array(value: any): {string}
 end
 
 local function set_from_list(values: {string}): {[string]: boolean}
-    local out = {}
+    local out: {[string]: boolean} = {}
     for _, value in ipairs(values) do
         out[value] = true
     end
@@ -341,7 +363,7 @@ local function set_from_list(values: {string}): {[string]: boolean}
 end
 
 local function behaviors_from_trait(trait_def: any): {any}
-    local out = {}
+    local out: {any} = {}
     if type(trait_def) ~= "table" or type(trait_def.behaviors) ~= "table" then
         return out
     end
@@ -668,7 +690,7 @@ local function append_behavior_lifecycle(
         local context = deep_copy(base_context)
         attach_options_to_context(context, options)
         append_binding_spec(bindings, "lifecycle", {
-            id = behavior.id,
+            id = optional_id(behavior.id),
             kind = "lifecycle",
             trait_id = trait_id,
             contract = "wippy.agent:lifecycle",
@@ -725,7 +747,7 @@ local function append_behavior_checkpoint(
     local options = merge_agent_options(base_options, behavior.checkpoint)
     attach_options_to_context(base_context, options)
     append_binding_spec(bindings, "checkpoint", {
-        id = behavior.id,
+        id = optional_id(behavior.id),
         kind = "checkpoint",
         trait_id = trait_id,
         contract = "wippy.agent:checkpoint",
