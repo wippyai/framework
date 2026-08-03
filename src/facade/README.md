@@ -30,6 +30,18 @@ Both entries expose the same `window.initWippyApp(config, rootContainer?)` signa
 
 Leave `fe_mode` at `compat` unless you have a specific reason to opt in — the managed shell omits every piece of default Wippy chrome (no sidebar, no chat wrapper, no right panel) and expects the declaration to provide equivalents.
 
+If you do opt in, use Web Host **1.0.50 or newer** and declare the shipped coordinator:
+
+```yaml
+coordinators:
+  compat:
+    kind: builtin
+    id: '@HOST/compat-coordinator'
+    props: { artifactPanel: right, modalId: artifact-modal, routeSync: true }
+```
+
+Below 1.0.50, a child app's `host.openArtifact()` / `startChat()` / `openSession()` / `navigate()` calls fail **silently** in managed mode, and the host URL is not bound to any panel — so deep links, the browser Back button and nav-sidebar clicks change the address bar and render nothing. From 1.0.50 those calls publish intents the coordinator acts on, and the host prints a boot-time table naming anything the declaration has not wired up. See [`managed-layout.md`](https://github.com/wippyai/gen-2-chat/blob/webcomponents/managed-layout.md).
+
 ## Vendored CDN files
 
 `public/@wippy-fe/` contains files copied from the Wippy Web Host CDN. These are loaded before the CDN URL is known (pre-config-fetch), so they must be vendored locally.
