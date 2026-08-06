@@ -57,13 +57,19 @@ local function has_metadata_endpoint()
 end
 
 local function run(args)
+    local events = process.events()
+
     if not has_metadata_endpoint() then
         print("No metadata credentials endpoint, AWS credential refresher will not start.")
-        local events = process.events()
         while true do
             local result = channel.select({
                 events:case_receive()
             })
+
+            if not result.ok then
+                break
+            end
+
             if result.value and result.value.kind == process.event.CANCEL then
                 break
             end
@@ -75,8 +81,6 @@ local function run(args)
 
     local ticker = time.ticker(REFRESH_INTERVAL)
     local ticker_channel = ticker:channel()
-    local events = process.events()
-
     refresh_credentials()
 
     while running do
@@ -84,6 +88,10 @@ local function run(args)
             ticker_channel:case_receive(),
             events:case_receive()
         })
+
+        if not result.ok then
+            break
+        end
 
         if result.channel == ticker_channel then
             refresh_credentials()
