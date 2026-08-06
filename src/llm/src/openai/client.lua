@@ -262,7 +262,7 @@ end
 -- Each chunk is a `data: <json>` line; the JSON carries a `type` field that
 -- names the event (e.g. response.output_text.delta). Multiple events are
 -- separated by a blank line (\n\n).
-function openai_client.process_stream(stream_response, callbacks)
+function openai_client.process_stream(stream_response, callbacks): (string?, any, any)
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -321,6 +321,23 @@ function openai_client.process_stream(stream_response, callbacks)
         }
     end
 
+    local function close_stream()
+        local stream: any = stream_response.stream
+        if type(stream.close) == "function" then
+            pcall(function() stream:close() end)
+        end
+    end
+
+    local function finish_stream(): (string, any, any)
+        for key, _ in pairs(pending_calls) do
+            emit_call(key)
+        end
+        local result: any = build_result()
+        close_stream()
+        on_done(result)
+        return full_content, nil, result
+    end
+
     local leftover = ""
 
     while true do
@@ -338,6 +355,11 @@ function openai_client.process_stream(stream_response, callbacks)
             chunk = leftover .. chunk
             leftover = ""
         end
+
+        -- SSE permits CRLF as well as LF. Normalize only after joining the
+        -- previous partial chunk so a CR/LF pair split across reads remains a
+        -- single line ending.
+        chunk = chunk:gsub("\r\n", "\n"):gsub("\r", "\n")
 
         local last_boundary = 0
         local pos = 1
@@ -442,6 +464,10 @@ function openai_client.process_stream(stream_response, callbacks)
                     if parsed.response.incomplete_details then
                         incomplete_reason = parsed.response.incomplete_details.reason
                     end
+                    -- response.completed is the terminal event. Some
+                    -- Responses transports keep the HTTP connection alive,
+                    -- so waiting for EOF can block an otherwise finished turn.
+                    return finish_stream()
                 end
             elseif etype == "response.incomplete" then
                 if parsed.response then
@@ -451,6 +477,7 @@ function openai_client.process_stream(stream_response, callbacks)
                     if parsed.response.incomplete_details then
                         incomplete_reason = parsed.response.incomplete_details.reason
                     end
+                    return finish_stream()
                 end
             elseif etype == "response.failed" or etype == "error" or etype == "response.error" then
                 local err_payload = parsed.response and parsed.response.error or parsed.error or parsed
@@ -461,6 +488,7 @@ function openai_client.process_stream(stream_response, callbacks)
                     param = err_payload and err_payload.param
                 }
                 on_error(error_info)
+                close_stream()
                 return nil, error_info.message, { error = error_info }
             end
 
@@ -470,13 +498,7 @@ function openai_client.process_stream(stream_response, callbacks)
         ::continue::
     end
 
-    for key, _ in pairs(pending_calls) do
-        emit_call(key)
-    end
-
-    local result = build_result()
-    on_done(result)
-    return full_content, nil, result
+    return finish_stream()
 end
 
 return openai_client
