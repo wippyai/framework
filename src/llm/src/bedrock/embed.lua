@@ -4,6 +4,8 @@ local output = require("output")
 local embed_titan = require("embed_titan")
 local embed_cohere = require("embed_cohere")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local embed_handler = {
     _client = bedrock_client,
     _titan = embed_titan,
@@ -72,7 +74,7 @@ local function embed_with_cohere(client, model_id, input, options)
 end
 
 function embed_handler.handler(contract_args)
-    local err_b = output.errors.embed(contract_args):classifier(mapper.classify_error)
+    local err_b = output.errors.embed(contract_args):classifier(mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err_b:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()

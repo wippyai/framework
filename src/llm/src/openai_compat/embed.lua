@@ -2,6 +2,8 @@ local openai_client = require("openai_client")
 local openai_mapper = require("openai_mapper")
 local output = require("output")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local embeddings_handler = {
     _client = openai_client,
     _mapper = openai_mapper
@@ -9,7 +11,7 @@ local embeddings_handler = {
 
 function embeddings_handler.handler(contract_args)
     local err = output.errors.embed(contract_args)
-        :classifier(embeddings_handler._mapper.classify_error)
+        :classifier(embeddings_handler._mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
