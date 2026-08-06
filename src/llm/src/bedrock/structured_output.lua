@@ -3,6 +3,8 @@ local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local structured_output_handler = {
     _client = bedrock_client,
     _mapper = mapper,
@@ -58,7 +60,8 @@ local function validate_schema(schema)
 end
 
 function structured_output_handler.handler(contract_args)
-    local err = output.errors.structured_output(contract_args):classifier(structured_output_handler._mapper.classify_error)
+    local err = output.errors.structured_output(contract_args)
+        :classifier(structured_output_handler._mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
