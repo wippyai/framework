@@ -102,7 +102,7 @@ local function collapse_cache_positions(system_positions, message_positions)
     return final_system, final_message
 end
 
-function mapper.classify_error(claude_error)
+function mapper.classify_error(claude_error: any?): (string, string, table?)
     if not claude_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown Claude error", nil
     end
@@ -128,7 +128,7 @@ function mapper.classify_error(claude_error)
         if claude_error.metadata.request_id then details.request_id = claude_error.metadata.request_id end
     end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 function mapper.map_tokens(claude_usage)
