@@ -538,6 +538,38 @@ local function define_tests()
                 test.eq(r.usage.output_tokens, 2)
             end)
 
+            it("should stop reading when response.completed arrives", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.completed","response":{"id":"r-terminal","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n',
+                    'data: {"type":"error","error":{"message":"read past terminal event"}}\n\n'
+                })
+
+                local _, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {})
+
+                test.is_nil(err)
+                test.eq(mock_stream.current, 1)
+                test.eq(result.response_id, "r-terminal")
+            end)
+
+            it("should process CRLF framing split across stream reads", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.output_text.delta","delta":"Hello"}\r\n\r',
+                    '\ndata: {"type":"response.completed","response":{"id":"r-crlf","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\r\n\r\n'
+                })
+
+                local content, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {})
+
+                test.is_nil(err)
+                test.eq(content, "Hello")
+                test.eq(result.response_id, "r-crlf")
+            end)
+
             it("should process streaming tool calls", function()
                 -- Responses API tool call streaming:
                 --  output_item.added announces the function_call (id, call_id, name)
