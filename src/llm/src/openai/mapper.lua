@@ -536,7 +536,7 @@ end
 
 -- Pure classifier: turn an HTTP / transport error into (kind, message, details).
 -- Consumed by output.errors.<op>(...):classifier(openai_mapper.classify_error):from(err):build()
-function openai_mapper.classify_error(api_error)
+function openai_mapper.classify_error(api_error: any?): (string, string, table?)
     if not api_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown OpenAI error", nil
     end
@@ -555,7 +555,7 @@ function openai_mapper.classify_error(api_error)
         if api_error.metadata.organization then details.organization = api_error.metadata.organization end
     end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 return openai_mapper
