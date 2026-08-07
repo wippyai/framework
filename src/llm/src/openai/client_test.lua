@@ -554,6 +554,43 @@ local function define_tests()
                 test.eq(result.response_id, "r-terminal")
             end)
 
+            it("should process a terminal event at EOF without a blank delimiter", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.completed","response":{"id":"r-eof","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}'
+                })
+
+                local done_result: any = nil
+                local _, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {
+                    on_done = function(value) done_result = value end
+                })
+
+                test.is_nil(err)
+                test.eq(done_result.response_id, "r-eof")
+                test.eq(result.response_id, "r-eof")
+                test.not_nil(result.response)
+            end)
+
+            it("should process a failed event at EOF without a blank delimiter", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.failed","response":{"id":"r-eof-failed","status":"failed","error":{"message":"eof failure","type":"server_error"}}}'
+                })
+
+                local seen_error = nil
+                local _, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {
+                    on_error = function(value) seen_error = value end
+                })
+
+                test.eq(err, "eof failure")
+                test.not_nil(seen_error)
+                test.eq(result.error.message, "eof failure")
+            end)
+
             it("should process CRLF framing split across stream reads", function()
                 local mock_stream = build_mock_stream({
                     'data: {"type":"response.output_text.delta","delta":"Hello"}\r\n\r',
