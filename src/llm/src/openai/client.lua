@@ -297,7 +297,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
         })
     end
 
-    local function build_result()
+    local function build_result(response_override)
         local tool_calls_out = {}
         for _, call in pairs(pending_calls) do
             if call.call_id and call.name then
@@ -309,14 +309,23 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
             end
         end
 
+        local terminal_response = response_override or final_response
+        local terminal_usage = terminal_response and terminal_response.usage or final_usage
+        local terminal_status = terminal_response and terminal_response.status or response_status
+        local terminal_response_id = terminal_response and terminal_response.id or response_id
+        local terminal_incomplete_reason = incomplete_reason
+        if terminal_response and terminal_response.incomplete_details then
+            terminal_incomplete_reason = terminal_response.incomplete_details.reason
+        end
+
         return {
             content = full_content,
             tool_calls = tool_calls_out,
-            usage = final_usage,
-            status = response_status,
-            incomplete_reason = incomplete_reason,
-            response_id = response_id,
-            response = final_response,
+            usage = terminal_usage,
+            status = terminal_status,
+            incomplete_reason = terminal_incomplete_reason,
+            response_id = terminal_response_id,
+            response = terminal_response,
             metadata = metadata
         }
     end
@@ -328,11 +337,11 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
         end
     end
 
-    local function finish_stream(): (string, any, any)
+    local function finish_stream(response_override): (string, any, any)
         for key, _ in pairs(pending_calls) do
             emit_call(key)
         end
-        local result: any = build_result()
+        local result: any = build_result(response_override)
         close_stream()
         on_done(result)
         return full_content, nil, result
@@ -348,7 +357,15 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
             return nil, err
         end
 
-        if not chunk then break end
+        if not chunk then
+            if leftover == "" then break end
+            -- Be tolerant of a transport that closes immediately after its
+            -- final data line instead of sending the terminating SSE blank
+            -- line. Complete the frame locally so terminal success and error
+            -- events are still observed.
+            chunk = leftover .. "\n\n"
+            leftover = ""
+        end
         if chunk == "" then goto continue end
 
         if leftover ~= "" then
@@ -467,7 +484,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
                     -- response.completed is the terminal event. Some
                     -- Responses transports keep the HTTP connection alive,
                     -- so waiting for EOF can block an otherwise finished turn.
-                    return finish_stream()
+                    return finish_stream(parsed.response)
                 end
             elseif etype == "response.incomplete" then
                 if parsed.response then
@@ -477,7 +494,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
                     if parsed.response.incomplete_details then
                         incomplete_reason = parsed.response.incomplete_details.reason
                     end
-                    return finish_stream()
+                    return finish_stream(parsed.response)
                 end
             elseif etype == "response.failed" or etype == "error" or etype == "response.error" then
                 local err_payload = parsed.response and parsed.response.error or parsed.error or parsed
