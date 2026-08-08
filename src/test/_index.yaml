@@ -61,6 +61,16 @@ entries:
       - json
       - ctx
 
+  # wippy.test:runner_policy
+  - name: runner_policy
+    kind: security.policy
+    meta:
+      comment: Root scope for the CLI test runner. The runner discovers and executes arbitrary registry entries, so it requires unrestricted access; the CLI launcher installing it is the trust anchor.
+    policy:
+      resources: '*'
+      actions: '*'
+      effect: allow
+
   # wippy.test:runner
   - name: runner
     kind: process.lua
@@ -70,6 +80,11 @@ entries:
         name: test
         short: Run tests
         use_case: test
+        security:
+          actor:
+            id: wippy.test:runner
+          policies:
+            - wippy.test:runner_policy
     source: file://runner.lua
     method: main
     modules:
