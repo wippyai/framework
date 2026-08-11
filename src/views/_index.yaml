@@ -9,6 +9,7 @@ entries:
     - name: api_router
       kind: ns.requirement
       meta:
+        value_kind: http.router
         description: Public API router for view endpoints
         parent: app.deps:__dependency.wippy.views
       targets:
@@ -39,6 +40,7 @@ entries:
     - name: server
       kind: ns.requirement
       meta:
+        value_kind: http.service
         description: HTTP service that hosts the experimental Web Fragments gateway router. Defaults to app:gateway; override only if your http.service entry has a different id. A consumer needs no other fragment wiring — the gateway owns its own /@fragment router.
         parent: app.deps:__dependency.wippy.views
       default: app:gateway
@@ -53,6 +55,7 @@ entries:
     - name: env_storage
       kind: ns.requirement
       meta:
+        value_kind: env.storage
         description: Environment storage for PUBLIC_API_URL
       targets:
         - entry: wippy.views:public_api_url
