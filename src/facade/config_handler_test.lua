@@ -23,7 +23,7 @@ local REQ_NAMES: {string} = {
 
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
-        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.54",
+        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.55",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
         render_engine = "iframe",
@@ -188,7 +188,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.54"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.55"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -266,7 +266,7 @@ local function define_tests()
 
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
-                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.54")
+                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.55")
 
                 entry = registry.get(NS .. "fe_entry_path")
                 test.eq(entry.data.default, "/iframe.html")
