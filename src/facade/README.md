@@ -78,7 +78,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.55` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.56` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 | `render_engine` | `iframe` | Global page render engine for packaged `view.page` micro-frontends: `iframe` (default — legacy srcdoc iframe) or `fragment` (Web Fragment / reframed realm reflected into a shadow root). `fragment` **requires** the `wippy/views` fragment gateway and a fragment-capable host bundle serving `/@wippy-fe/proxy-fragment.js`. Flows to the host as `hostConfig.renderEngine`; the child app is engine-agnostic (same package renders under either engine). |
@@ -390,9 +390,9 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.55",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.56",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.55/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.56/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {
