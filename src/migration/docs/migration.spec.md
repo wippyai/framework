@@ -365,6 +365,50 @@ up(function(db)
 end)
 ```
 
+## Renaming or Moving Migrations (`meta.alias`)
+
+A migration is identified by its registry entry ID (`namespace:name`), and that exact string is recorded in the
+`_migrations` ledger when the migration is applied. Renaming an entry or moving a module to another namespace changes
+the ID — without extra care the same migration would run again on databases where it was applied under the old ID.
+
+Declare the former ID(s) in the entry's `meta.alias` to keep the ledger history valid. The value is either a single
+full ID or an array of full IDs (`namespace:name`):
+
+```yaml
+entries:
+  - name: 01_create_orders_table
+    kind: function.lua
+    meta:
+      type: migration
+      description: Create orders table
+      timestamp: "2025-04-08T10:00:00Z"
+      # Former ID after a namespace move; also accepts an array:
+      # alias: [acme.shop.migrations:01_create_orders_table, acme.legacy:01_orders]
+      alias: acme.shop.migrations:01_create_orders_table
+    source: file://01_create_orders_table.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+```
+
+Semantics:
+
+- A ledger row recorded under any alias counts as applied — the migration is never re-applied. The entry's own ID is
+  checked first, then aliases in declaration order; the first match wins.
+- New applications are always recorded under the **current** ID; aliases are read-only matching keys.
+- Rolling back a row recorded under an old ID executes the **current** entry's `down` and deletes the old ledger row.
+- `allowed_ids` options of the runner accept old IDs as well as current ones.
+- The `status()` report exposes `applied_id` — the ledger row ID that matched (differs from `id` for alias matches).
+
+Rules and edge cases:
+
+- Aliases must be full IDs in `namespace:name` form.
+- An alias must not equal the ID of a live migration, and one alias cannot be claimed by two entries — both are
+  configuration errors that abort the run (and application boot) with an explicit message.
+- If the ledger somehow contains rows for both the old and the new ID, the entry's own ID wins; remove the stale old
+  row manually.
+- Keep the alias for as long as any deployment's ledger may still hold the old ID; it is safe to keep it indefinitely.
+
 ## Testing Migrations
 
 Before finalizing any migration:
