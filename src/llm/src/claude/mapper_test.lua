@@ -172,6 +172,34 @@ local function define_tests()
                 test.contains(tostring(first_content.text), "<developer-instruction>Be concise</developer-instruction>")
             end)
 
+            it("should append developer messages to an image-only previous message", function()
+                local contract_messages = {
+                    { role = prompt.ROLE.USER, content = { { type = "text", text = "Look at this" } } },
+                    {
+                        role = prompt.ROLE.USER,
+                        content = {
+                            { type = "image", source = { type = "url", url = "https://example.com/a.png" } }
+                        }
+                    },
+                    { role = prompt.ROLE.DEVELOPER, content = "Be concise" }
+                }
+
+                local result = mapper.map_messages(contract_messages)
+                local last_msg = result.messages[#result.messages] :: any
+
+                local found = false
+                for _, part in ipairs(last_msg.content) do
+                    if (part :: any).type == "text" and
+                       tostring((part :: any).text):find("<developer-instruction>Be concise</developer-instruction>", 1, true) then
+                        found = true
+                    end
+                end
+                test.is_true(found, "developer instruction must survive an image-only previous message")
+
+                -- The image itself must still be there.
+                test.eq((last_msg.content[1] :: any).type, "image")
+            end)
+
             it("should convert function calls to assistant tool_use format", function()
                 local contract_messages = {
                     {
