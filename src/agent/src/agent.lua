@@ -177,6 +177,23 @@ local function extract_memory_ids_from_messages(messages: any, scan_limit: any):
     return memory_ids
 end
 
+local function part_text(message: any): string
+    local part = message and message.content and message.content[1]
+    if not part then
+        return "nil"
+    end
+    if type(part.text) == "string" then
+        return part.text
+    end
+    if part.type == "image" then
+        return "[image]"
+    end
+    if part.type == "document" then
+        return "[document]"
+    end
+    return "[non-text content]"
+end
+
 local function extract_recent_actions(messages: any, max_actions: any, message_types: any): any
     if not messages or #messages == 0 then
         return {}
@@ -199,16 +216,14 @@ local function extract_recent_actions(messages: any, max_actions: any, message_t
         local message = messages[i]
         if message.role and type_lookup[message.role] then
             if message.role == prompt.ROLE.USER and message.content and message.content[1] then
-                table.insert(actions, 1, "user: " .. message.content[1].text)
+                table.insert(actions, 1, "user: " .. part_text(message))
             elseif message.role == prompt.ROLE.ASSISTANT and message.content and message.content[1] then
-                table.insert(actions, 1, "assistant: " .. message.content[1].text)
+                table.insert(actions, 1, "assistant: " .. part_text(message))
             elseif message.role == prompt.ROLE.FUNCTION_RESULT and message.name then
-                local content = message.content and message.content[1] and message.content[1].text or "nil"
-                table.insert(actions, 1, "tool: " .. message.name .. " -> " .. content)
+                table.insert(actions, 1, "tool: " .. message.name .. " -> " .. part_text(message))
             elseif message.role == prompt.ROLE.DEVELOPER and message.content and message.content[1] then
                 if not (message.metadata and message.metadata.memory_ids) then
-                    local content = message.content[1].text
-                    table.insert(actions, 1, "system: " .. content)
+                    table.insert(actions, 1, "system: " .. part_text(message))
                 end
             end
         end
