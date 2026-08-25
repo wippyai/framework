@@ -339,13 +339,21 @@ function mapper.map_messages(contract_messages)
                 else
                     -- Try to merge into previous message (existing logic)
                     local last_msg = claude_messages[#claude_messages]
+                    local merged = false
                     for j = #last_msg.content, 1, -1 do
                         local part = last_msg.content[j] :: any
                         if part.type == "text" then
                             part.text = part.text ..
                                 "\n<developer-instruction>" .. dev_text .. "</developer-instruction>"
+                            merged = true
                             break
                         end
+                    end
+                    if not merged then
+                        table.insert(last_msg.content, {
+                            type = "text",
+                            text = "<developer-instruction>" .. dev_text .. "</developer-instruction>"
+                        })
                     end
                 end
             end
