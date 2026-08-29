@@ -12,6 +12,7 @@ type RunOptions = {
     direction: string?,
     force: boolean?,
     id: string?,
+    aliases: {string}?,
 }
 
 type RunResult = {
@@ -81,6 +82,25 @@ local function execute_migration(migration_item: any, options: any): any
                 error = "Failed to check migration status: " .. tostring(check_err),
                 name = migration_item.description
             }
+        end
+
+        if not is_applied and type(options.aliases) == "table" then
+            for _, alias in ipairs(options.aliases) do
+                local alias_applied, alias_err = repository.is_applied(db, tostring(alias))
+                if alias_err then
+                    return {
+                        status = "error",
+                        description = migration_item.description,
+                        error = "Failed to check migration status: " .. tostring(alias_err),
+                        name = migration_item.description
+                    }
+                end
+
+                if alias_applied then
+                    is_applied = true
+                    break
+                end
+            end
         end
 
         if is_applied and not options.force then
@@ -291,6 +311,7 @@ function migration.run(fn: () -> (), options: RunOptions?): any
                 direction = opts.direction,
                 force = opts.force,
                 id = opts.id,
+                aliases = opts.aliases,
             })
 
             table.insert(results.migrations, result)

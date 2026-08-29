@@ -13,3 +13,38 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
+
+  - name: db
+    kind: db.sql.sqlite
+    meta:
+      comment: In-memory database for migration runner tests
+    file: ":memory:"
+
+  # Fixtures for wippy.migration:runner_alias_test
+  - name: alias_mig_one
+    kind: function.lua
+    meta:
+      type: migration
+      target_db: app:db
+      description: Alias fixture migration with a string alias
+      timestamp: "2025-01-01T00:00:00Z"
+      alias: app.legacy:alias_mig_one
+    source: file://alias_mig_one.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+
+  - name: alias_mig_two
+    kind: function.lua
+    meta:
+      type: migration
+      target_db: app:db
+      description: Alias fixture migration with an array of aliases
+      timestamp: "2025-01-02T00:00:00Z"
+      alias:
+        - app.legacy:alias_mig_two_a
+        - app.legacy:alias_mig_two_b
+    source: file://alias_mig_two.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate

@@ -129,3 +129,20 @@ entries:
     imports:
       migration_registry: wippy.migration:registry
       test: wippy.test:test
+
+  # wippy.migration:runner_alias_test
+  - name: runner_alias_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-runner
+      comment: Integration tests for alias-aware runner against a real database
+    source: file://runner_alias_test.lua
+    method: run
+    modules:
+      - sql
+      - funcs
+    imports:
+      runner: wippy.migration:runner
+      repository: wippy.migration:repository
+      test: wippy.test:test

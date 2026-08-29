@@ -40,6 +40,58 @@ function migrations.compare(a: any, b: any): boolean
     return tostring(a and a.id or "") < tostring(b and b.id or "")
 end
 
+function migrations.get_aliases(entry: any): {string}
+    local meta = entry and entry.meta
+    if type(meta) ~= "table" or meta.alias == nil then
+        return {}
+    end
+
+    local candidates: any
+    if type(meta.alias) == "string" then
+        candidates = { meta.alias }
+    elseif type(meta.alias) == "table" then
+        candidates = meta.alias
+    else
+        return {}
+    end
+
+    local own_id = tostring(entry and entry.id or "")
+    local seen = {}
+    local result = {}
+    for _, alias in ipairs(candidates) do
+        if type(alias) == "string" and alias ~= "" and alias ~= own_id and not seen[alias] then
+            seen[alias] = true
+            table.insert(result, alias)
+        end
+    end
+
+    return result
+end
+
+function migrations.build_alias_index(entries: {any}?): ({[string]: any}?, string?)
+    local by_id = {}
+    for _, entry in ipairs(entries or {}) do
+        by_id[tostring(entry.id)] = entry
+    end
+
+    local index = {}
+    for _, entry in ipairs(entries or {}) do
+        for _, alias in ipairs(migrations.get_aliases(entry)) do
+            if by_id[alias] then
+                return nil, "alias '" .. alias .. "' on migration '" .. tostring(entry.id)
+                    .. "' collides with an existing migration id"
+            end
+            if index[alias] then
+                return nil, "alias '" .. alias .. "' is claimed by both '"
+                    .. tostring(index[alias].id) .. "' and '" .. tostring(entry.id) .. "'"
+            end
+            index[alias] = entry
+        end
+    end
+
+    return index
+end
+
 -- Find migrations in registry based on provided options
 function migrations.find(options: any?): ({MigrationEntry}?, string?)
     local opts = options or {}
