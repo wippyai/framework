@@ -200,6 +200,52 @@ local function define_tests()
                 test.eq((last_msg.content[1] :: any).type, "image")
             end)
 
+            it("should start a new user message for developer content after an assistant message", function()
+                local contract_messages = {
+                    { role = prompt.ROLE.USER, content = { { type = "text", text = "Import the document" } } },
+                    { role = prompt.ROLE.ASSISTANT, content = { { type = "text", text = "I'll write the sections" } } },
+                    { role = prompt.ROLE.DEVELOPER, content = "Your previous response was truncated. Retry with a shorter response." }
+                }
+
+                local result = mapper.map_messages(contract_messages)
+                test.eq(#result.messages, 3)
+
+                -- The assistant message carries only what the model produced.
+                local assistant_msg = result.messages[2] :: any
+                test.eq(assistant_msg.role, "assistant")
+                test.eq(#assistant_msg.content, 1)
+                test.eq(tostring((assistant_msg.content[1] :: any).text), "I'll write the sections")
+
+                -- Developer guidance lands in the user channel, so the request
+                -- never ends on an assistant turn (rejected as prefill).
+                local last_msg = result.messages[3] :: any
+                test.eq(last_msg.role, "user")
+                test.contains(tostring((last_msg.content[1] :: any).text), "truncated")
+            end)
+
+            it("should never end the mapped conversation with an assistant message when developer feedback follows tool use", function()
+                local contract_messages = {
+                    { role = prompt.ROLE.USER, content = { { type = "text", text = "Ingest the file" } } },
+                    {
+                        role = prompt.ROLE.FUNCTION_CALL,
+                        function_call = { name = "kb_write", arguments = { title = "A" }, id = "call_1" },
+                        content = { { type = "text", text = "Writing the first section" } }
+                    },
+                    {
+                        role = prompt.ROLE.FUNCTION_RESULT,
+                        function_call_id = "call_1",
+                        name = "kb_write",
+                        content = { { type = "text", text = "ok" } }
+                    },
+                    { role = prompt.ROLE.ASSISTANT, content = { { type = "text", text = "Continuing with" } } },
+                    { role = prompt.ROLE.DEVELOPER, content = "Response truncated, retry in smaller steps." }
+                }
+
+                local result = mapper.map_messages(contract_messages)
+                local last_msg = result.messages[#result.messages] :: any
+                test.eq(last_msg.role, "user")
+            end)
+
             it("should convert function calls to assistant tool_use format", function()
                 local contract_messages = {
                     {
