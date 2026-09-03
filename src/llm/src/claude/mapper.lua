@@ -311,15 +311,21 @@ function mapper.map_messages(contract_messages)
                 (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
 
             if dev_text ~= "" then
-                -- Check if previous message is tool_result (or if no previous messages)
+                -- Developer guidance merges only into a preceding plain user
+                -- message. Anywhere else it opens a new user message: gluing
+                -- it into an assistant message would attribute text the model
+                -- never produced and leave the request ending on an assistant
+                -- turn, which the API treats as a prefill and current models
+                -- reject; after a tool_result it stays a separate message.
                 local should_create_new_message = false
 
                 if #claude_messages == 0 then
                     should_create_new_message = true
                 else
                     local last_msg = claude_messages[#claude_messages]
-                    -- If last message is tool_result, create new user message
-                    if last_msg.role == "user" and last_msg.content and last_msg.content[1] and
+                    if last_msg.role ~= "user" then
+                        should_create_new_message = true
+                    elseif last_msg.content and last_msg.content[1] and
                        last_msg.content[1].type == "tool_result" then
                         should_create_new_message = true
                     end

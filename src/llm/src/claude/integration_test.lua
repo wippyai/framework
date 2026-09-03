@@ -164,6 +164,45 @@ local function define_tests()
                 test.contains(response.result.content, "Absolutely")
             end)
 
+            it("should recover a truncated turn on a model that rejects assistant prefill", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping integration test - not enabled")
+                    return
+                end
+
+                -- The truncation-recovery shape the agent loop produces: the
+                -- truncated assistant turn followed by developer feedback.
+                -- Models from Sonnet 4.6 on reject any request that ends on an
+                -- assistant turn, so the feedback must reach the model as a
+                -- user message.
+                local contract_args = {
+                    model = "claude-sonnet-5",
+                    messages = {
+                        {
+                            role = "user",
+                            content = {{ type = "text", text = "List three colors, one per line." }}
+                        },
+                        {
+                            role = "assistant",
+                            content = {{ type = "text", text = "Red\nGre" }}
+                        },
+                        {
+                            role = "developer",
+                            content = "Your previous response was truncated. Retry with a complete, shorter response."
+                        }
+                    },
+                    options = {
+                        max_tokens = 100
+                    }
+                }
+
+                local response, err = generate_handler.handler(contract_args)
+
+                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                assert(response.success)
+                test.is_true(#response.result.content > 0, "No content returned")
+            end)
+
             it("should generate text with tool calling using haiku", function()
                 if not RUN_INTEGRATION_TESTS then
                     print("Skipping tool calling test - not enabled")
