@@ -298,12 +298,22 @@ local function define_tests()
                 test.is_true(output.detect_truncation(result))
             end)
 
-            it("should not detect truncation when finish_reason is LENGTH without tool_calls", function()
+            it("should not detect truncation when a LENGTH-cut response still carries text", function()
                 local result = {
                     finish_reason = output.FINISH_REASON.LENGTH,
-                    tool_calls = {}
+                    tool_calls = {},
+                    content = "a partial but usable answer"
                 }
                 test.is_false(output.detect_truncation(result))
+            end)
+
+            it("should detect truncation when LENGTH is hit with no tool calls and no content", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.LENGTH,
+                    tool_calls = {},
+                    content = ""
+                }
+                test.is_true(output.detect_truncation(result))
             end)
 
             it("should not detect truncation when finish_reason is STOP with tool_calls", function()
@@ -330,10 +340,19 @@ local function define_tests()
                 test.is_false(output.detect_truncation(nil))
             end)
 
-            it("should not detect truncation when tool_calls is nil", function()
+            it("should detect truncation when tool_calls is nil and nothing was produced", function()
                 local result = {
                     finish_reason = output.FINISH_REASON.LENGTH,
                     tool_calls = nil
+                }
+                test.is_true(output.detect_truncation(result))
+            end)
+
+            it("should not detect truncation when tool_calls is nil but result text exists", function()
+                local result = {
+                    finish_reason = output.FINISH_REASON.LENGTH,
+                    tool_calls = nil,
+                    result = "text under the alternate field name"
                 }
                 test.is_false(output.detect_truncation(result))
             end)

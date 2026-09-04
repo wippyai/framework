@@ -431,12 +431,20 @@ end
 -- Message injected into conversation when LLM output is truncated mid-tool-call
 output.TRUNCATION_MSG = "Your previous response was truncated because it exceeded the maximum token limit. The tool calls you attempted were incomplete and have been discarded. Please retry with a shorter response. Break your work into smaller steps if needed."
 
--- Detect truncated LLM responses that contain incomplete tool calls
+-- Detect LLM responses cut off by the token limit that produced nothing
+-- usable: partial tool calls, or no tool calls and no content at all (the
+-- whole budget can burn inside thinking before any deliverable output).
+-- A length-cut response that still carries text is a partial answer and is
+-- returned to the caller as such.
 function output.detect_truncation(result)
     if not result then return false end
     if result.finish_reason ~= output.FINISH_REASON.LENGTH then return false end
-    if not result.tool_calls or #result.tool_calls == 0 then return false end
-    return true
+    if result.tool_calls and #result.tool_calls > 0 then return true end
+    local content = result.content
+    if content == nil or content == "" then
+        content = result.result
+    end
+    return content == nil or content == ""
 end
 
 return output
