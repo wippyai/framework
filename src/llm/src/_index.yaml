@@ -94,7 +94,7 @@ entries:
     meta:
       description: "Security policy groups referenced by background services"
     component: "wippy/security"
-    version: ">=v0.4.0"
+    version: ">=v0.3.0"
 
   # wippy.llm:embedder
   - name: embedder
