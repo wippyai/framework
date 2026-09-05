@@ -55,6 +55,25 @@ entries:
       - time
       - registry
 
+  # wippy.embeddings:embeddings_test
+  - name: embeddings_test
+    kind: function.lua
+    meta:
+      name: Embeddings Library Test
+      type: test
+      comment: Tests the embeddings library error reporting
+      group: LLM / Embeddings (SQL)
+      tags:
+        - embeddings
+        - tests
+    source: file://embeddings_test.lua
+    modules:
+      - uuid
+    imports:
+      embeddings: wippy.embeddings:embeddings
+      test: wippy.test:test
+    method: run
+
   # wippy.embeddings:embedding_repo_test
   - name: embedding_repo_test
     kind: function.lua

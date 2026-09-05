@@ -59,13 +59,13 @@ local function generate_embedding(text)
     end
 
     -- Use text-embedding model for embeddings
-    local response = llm.embed(text, {
+    local response, err = llm.embed(text, {
         model = EMBEDDING_MODEL,
         dimensions = EMBEDDING_DIMENSIONS
     })
 
-    if not response or response.error then
-        return nil, "Failed to generate embedding: " .. (response and response.error_message or "Unknown error")
+    if not response then
+        return nil, "Failed to generate embedding: " .. (err or "Unknown error")
     end
 
     return response.result
@@ -93,13 +93,13 @@ local function generate_batch_embeddings(texts)
     end
 
     -- Use text-embedding model for embeddings in batch
-    local response = llm.embed(texts, {
+    local response, err = llm.embed(texts, {
         model = EMBEDDING_MODEL,
         dimensions = EMBEDDING_DIMENSIONS
     })
 
-    if not response or response.error then
-        return nil, "Failed to generate batch embeddings: " .. (response and response.error_message or "Unknown error")
+    if not response then
+        return nil, "Failed to generate batch embeddings: " .. (err or "Unknown error")
     end
 
     return response.result
