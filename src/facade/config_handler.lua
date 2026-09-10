@@ -165,6 +165,8 @@ local function handler()
         host_config.stateCache = state_cache
     end
 
+    local attention = non_empty_map_or_nil(get_req_json_any("attention"))
+
     local additional_tags = non_empty_map_or_nil(get_req_json_any("allow_additional_tags"))
     if additional_tags then
         host_config.allowAdditionalTags = additional_tags
@@ -230,6 +232,7 @@ local function handler()
         themePersist = theme_persist,
         themeStorageKey = theme_storage_key,
         apiRoutes = api_routes,
+        attention = attention,
         axiosDefaults = axios_defaults,
         tanstack = tanstack,
         extraScripts = extra_scripts,

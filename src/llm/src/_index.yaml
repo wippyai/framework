@@ -394,6 +394,46 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  # wippy.llm:context_attachments
+  - name: context_attachments
+    kind: library.lua
+    meta:
+      type: library
+      comment: Versioned registry for rendering untrusted message context attachments into model content parts
+    source: file://context_attachments.lua
+    modules:
+      - json
+      - hash
+      - time
+      - base64
+    imports:
+      prompt: wippy.llm:prompt
+
+  # wippy.llm:context_attachments_test
+  - name: context_attachments_test
+    kind: function.lua
+    meta:
+      name: Context Attachment Rendering Test
+      type: test
+      comment: Tests version dispatch, prompt trust boundaries, and render budgets
+      group: LLM / General
+      tags:
+        - llm
+        - prompts
+        - context
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://context_attachments_test.lua
+    modules:
+      - json
+      - hash
+      - time
+    imports:
+      context_attachments: wippy.llm:context_attachments
+      test: wippy.test:test
+    method: run_tests
+
   - name: process_security_test
     kind: function.lua
     meta:

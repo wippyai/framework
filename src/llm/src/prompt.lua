@@ -236,7 +236,7 @@ function prompt.new(messages: {Message}?)
             local last_msg = self.messages[#self.messages]
             if last_msg and mergeable_roles[role] and last_msg.role == role and
                 (not name or name == last_msg.name) and
-                (not meta or not last_msg.metadat) then -- Don't merge if either has metadata
+                (not meta or not last_msg.metadata) then -- Don't merge if either has metadata
                 -- Same mergeable role, merge content
                 for _, part in ipairs(content_parts) do
                     -- For text content, merge with previous text content if present

@@ -100,3 +100,112 @@ entries:
       - time
       - ctx
     method: delayed_echo
+
+  # wippy.agent.tools:ui_action_highlight
+  - name: ui_action_highlight
+    kind: function.lua
+    meta:
+      name: Highlight interface target
+      type: tool
+      comment: Ask the current authenticated Host connection to highlight one or more Attention targets
+      group: User Interface
+      exclusive: true
+      private: true
+      input_schema: |
+        {"type":"object","properties":{"prompt":{"type":"string","maxLength":512},"targets":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","properties":{"snapshot_id":{"type":"string","minLength":1,"maxLength":128},"target_id":{"type":"string","minLength":1,"maxLength":128},"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"mount_id":{"type":"string","minLength":1,"maxLength":160},"generation":{"type":"integer","minimum":0},"path_digest":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"rect":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","minimum":0},"height":{"type":"number","minimum":0}},"required":["x","y","width","height"],"additionalProperties":false},"label":{"type":"string","maxLength":256}},"required":["snapshot_id","target_id","host_instance_id","mount_id","generation","path_digest","rect"],"additionalProperties":false}},"allow_pointer":{"type":"boolean","default":true},"allow_keyboard":{"type":"boolean","default":true},"capture_region":{"type":"boolean","default":false}},"required":["targets"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+    method: highlight
+
+  # wippy.agent.tools:ui_action_confirm
+  - name: ui_action_confirm
+    kind: function.lua
+    meta:
+      name: Confirm interface target
+      type: tool
+      comment: Ask the user to confirm one of the supplied Attention targets in the current Host instance
+      group: User Interface
+      exclusive: true
+      private: true
+      input_schema: |
+        {"type":"object","properties":{"prompt":{"type":"string","maxLength":512},"targets":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","properties":{"snapshot_id":{"type":"string","minLength":1,"maxLength":128},"target_id":{"type":"string","minLength":1,"maxLength":128},"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"mount_id":{"type":"string","minLength":1,"maxLength":160},"generation":{"type":"integer","minimum":0},"path_digest":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"rect":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","minimum":0},"height":{"type":"number","minimum":0}},"required":["x","y","width","height"],"additionalProperties":false},"label":{"type":"string","maxLength":256}},"required":["snapshot_id","target_id","host_instance_id","mount_id","generation","path_digest","rect"],"additionalProperties":false}},"allow_pointer":{"type":"boolean","default":true},"allow_keyboard":{"type":"boolean","default":true},"capture_region":{"type":"boolean","default":false}},"required":["targets"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+    method: confirm
+
+  # wippy.agent.tools:ui_action_select
+  - name: ui_action_select
+    kind: function.lua
+    meta:
+      name: Select interface target
+      type: tool
+      comment: Ask the user to choose a supplied Attention target, or pass no targets with capture_region=true so they can click or keyboard-select the area they mean
+      group: User Interface
+      exclusive: true
+      private: true
+      input_schema: |
+        {"type":"object","properties":{"prompt":{"type":"string","maxLength":512},"targets":{"type":"array","maxItems":32,"items":{"type":"object","properties":{"snapshot_id":{"type":"string","minLength":1,"maxLength":128},"target_id":{"type":"string","minLength":1,"maxLength":128},"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"mount_id":{"type":"string","minLength":1,"maxLength":160},"generation":{"type":"integer","minimum":0},"path_digest":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"rect":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","minimum":0},"height":{"type":"number","minimum":0}},"required":["x","y","width","height"],"additionalProperties":false},"label":{"type":"string","maxLength":256}},"required":["snapshot_id","target_id","host_instance_id","mount_id","generation","path_digest","rect"],"additionalProperties":false}},"allow_pointer":{"type":"boolean","default":true},"allow_keyboard":{"type":"boolean","default":true},"capture_region":{"type":"boolean","default":false}},"required":[],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+    method: select
+
+  # wippy.agent.tools:ui_action_capture_visual
+  - name: ui_action_capture_visual
+    kind: function.lua
+    meta:
+      name: Prepare interface image
+      type: tool
+      comment: Ask the user to review and prepare an image of an Attention target or region as a removable composer file; this never sends the message
+      group: User Interface
+      exclusive: true
+      private: true
+      input_schema: |
+        {"type":"object","properties":{"prompt":{"type":"string","maxLength":512},"targets":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","properties":{"snapshot_id":{"type":"string","minLength":1,"maxLength":128},"target_id":{"type":"string","minLength":1,"maxLength":128},"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"mount_id":{"type":"string","minLength":1,"maxLength":160},"generation":{"type":"integer","minimum":0},"path_digest":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"rect":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","minimum":0},"height":{"type":"number","minimum":0}},"required":["x","y","width","height"],"additionalProperties":false},"label":{"type":"string","maxLength":256}},"required":["snapshot_id","target_id","host_instance_id","mount_id","generation","path_digest","rect"],"additionalProperties":false}},"capture":{"type":"object","properties":{"scope":{"type":"string","enum":["target","region","viewport"],"default":"target"},"region":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number","exclusiveMinimum":0},"height":{"type":"number","exclusiveMinimum":0}},"required":["x","y","width","height"],"additionalProperties":false},"allow_adjustment":{"type":"boolean","default":true},"allow_viewport_choice":{"type":"boolean","default":false},"format":{"type":"string","enum":["image/png","image/webp"],"default":"image/png"}},"required":[],"additionalProperties":false},"allow_pointer":{"type":"boolean","default":true},"allow_keyboard":{"type":"boolean","default":true}},"required":["targets"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+    method: capture_visual
+
+  # wippy.agent.tools:ui_action_test_broker
+  - name: ui_action_test_broker
+    kind: function.lua
+    meta:
+      type: test-helper
+      comment: Process-level broker fixture for UI action inbox delivery tests
+    source: file://ui_action_test_broker.lua
+    modules:
+      - time
+    method: run
+
+  # wippy.agent.tools:ui_action_tool_test
+  - name: ui_action_tool_test
+    kind: function.lua
+    meta:
+      name: UI Action Tool Test
+      type: test
+      comment: Process-level tests for authenticated UI action result delivery
+      group: Agent Framework
+      tags:
+        - tools
+        - ui_action
+        - process
+        - tests
+    source: file://ui_action_tool_test.lua
+    modules:
+      - funcs
+      - hash
+      - time
+    imports:
+      test: wippy.test:test
+    method: run_tests

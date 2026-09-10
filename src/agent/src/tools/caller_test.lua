@@ -14,6 +14,7 @@ local function define_tests()
         local tool_caller
         local wrapper_calls
         local wrapper_behaviors
+        local execution_contexts
 
         -- Mock tool schemas
         local tool_schemas = {
@@ -46,6 +47,18 @@ local function define_tests()
                 name = "failing_tool",
                 description = "A tool that fails",
                 meta = { type = "tool" }
+            },
+            ["wippy.agent.tools:ui_action_highlight"] = {
+                id = "wippy.agent.tools:ui_action_highlight",
+                name = "highlight",
+                description = "Highlight a UI target",
+                meta = { type = "tool", exclusive = true }
+            },
+            ["wippy.agent.tools:ui_action_highlight_evil"] = {
+                id = "wippy.agent.tools:ui_action_highlight_evil",
+                name = "highlight_evil",
+                description = "Near-match tool",
+                meta = { type = "tool" }
             }
         }
 
@@ -55,7 +68,9 @@ local function define_tests()
             ["test:weather"] = { result = "Sunny, 25°C" },
             ["test:exclusive"] = { result = "exclusive_result" },
             ["test:non_exclusive"] = { result = "regular_result" },
-            ["test:failing_tool"] = { error = "Tool execution failed" }
+            ["test:failing_tool"] = { error = "Tool execution failed" },
+            ["wippy.agent.tools:ui_action_highlight"] = { result = { status = "confirmed" } },
+            ["wippy.agent.tools:ui_action_highlight_evil"] = { result = { status = "ok" } }
         }
 
         before_each(function()
@@ -65,10 +80,13 @@ local function define_tests()
                 ["test:weather"] = { result = "Sunny, 25°C" },
                 ["test:exclusive"] = { result = "exclusive_result" },
                 ["test:non_exclusive"] = { result = "regular_result" },
-                ["test:failing_tool"] = { error = "Tool execution failed" }
+                ["test:failing_tool"] = { error = "Tool execution failed" },
+                ["wippy.agent.tools:ui_action_highlight"] = { result = { status = "confirmed" } },
+                ["wippy.agent.tools:ui_action_highlight_evil"] = { result = { status = "ok" } }
             }
             wrapper_calls = {}
             wrapper_behaviors = {}
+            execution_contexts = {}
 
             -- Create mock modules
             local mock_json = {
@@ -106,6 +124,7 @@ local function define_tests()
                     local executor = {
                         context = {},
                         with_context = function(self, ctx)
+                            table.insert(execution_contexts, ctx)
                             local new_executor = {
                                 context = ctx,
                                 call = function(self, registry_id, args)
@@ -220,6 +239,7 @@ local function define_tests()
             tool_caller = nil
             wrapper_calls = nil
             wrapper_behaviors = nil
+            execution_contexts = nil
         end)
 
         describe("Constructor and Strategy", function()
@@ -261,6 +281,99 @@ local function define_tests()
 
                 test.eq(result, caller)
                 test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
+            end)
+        end)
+
+        describe("Ephemeral runtime context", function()
+            it("merges runtime context last only for exact first-party UI action IDs", function()
+                local caller = tool_caller.new()
+                local resolver_calls = 0
+                caller:set_runtime_context_resolver(function(call_id, tool_call)
+                    resolver_calls = resolver_calls + 1
+                    test.eq(call_id, "call_ui")
+                    test.eq(tool_call.registry_id, "wippy.agent.tools:ui_action_highlight")
+                    return {
+                        shared = "runtime",
+                        ui_action_runtime = { delivery_handle = "live-only" }
+                    }
+                end)
+
+                local validated = caller:validate({
+                    {
+                        id = "call_ui",
+                        name = "highlight",
+                        arguments = {},
+                        registry_id = "wippy.agent.tools:ui_action_highlight",
+                        context = { shared = "tool" }
+                    }
+                })
+                local results = caller:execute({ shared = "session" }, validated)
+
+                test.is_nil(results.call_ui.error)
+                test.eq(resolver_calls, 1)
+                test.eq(execution_contexts[1].shared, "runtime")
+                test.eq(execution_contexts[1].ui_action_runtime.delivery_handle, "live-only")
+                test.is_nil(validated.call_ui.context.ui_action_runtime)
+                test.is_nil(caller:get_last_tool_calls()[1].ui_action_runtime)
+            end)
+
+            it("does not invoke the resolver for near-match or unrelated tool IDs", function()
+                local caller = tool_caller.new()
+                local resolver_calls = 0
+                caller:set_runtime_context_resolver(function()
+                    resolver_calls = resolver_calls + 1
+                    return { ui_action_runtime = { delivery_handle = "must-not-leak" } }
+                end)
+
+                local validated = caller:validate({
+                    {
+                        id = "near_match",
+                        name = "highlight_evil",
+                        arguments = {},
+                        registry_id = "wippy.agent.tools:ui_action_highlight_evil"
+                    },
+                    {
+                        id = "ordinary",
+                        name = "calculator",
+                        arguments = {},
+                        registry_id = "test:calculator"
+                    }
+                })
+                caller:execute({}, validated)
+
+                test.eq(resolver_calls, 0)
+                test.is_nil(execution_contexts[1].ui_action_runtime)
+                test.is_nil(execution_contexts[2].ui_action_runtime)
+            end)
+
+            it("keeps runtime context out of before and after wrapper payloads", function()
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "audit",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE, tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test:wrapper"
+                    }
+                })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                caller:set_runtime_context_resolver(function()
+                    return { ui_action_runtime = { delivery_handle = "live-only" } }
+                end)
+
+                local validated = caller:validate({
+                    {
+                        id = "call_ui",
+                        name = "highlight",
+                        arguments = {},
+                        registry_id = "wippy.agent.tools:ui_action_highlight"
+                    }
+                })
+                caller:execute({}, validated)
+
+                test.eq(#wrapper_calls, 2)
+                test.is_nil(wrapper_calls[1].payload.tool_calls[1].ui_action_runtime)
+                test.is_nil(wrapper_calls[2].payload.tool_calls[1].ui_action_runtime)
+                test.is_nil(wrapper_calls[2].payload.tool_results.call_ui.tool_call.ui_action_runtime)
             end)
         end)
 

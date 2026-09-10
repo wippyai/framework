@@ -1,6 +1,7 @@
 local test = require("test")
 local json = require("json")
 local registry = require("registry")
+local fs = require("fs")
 
 local NS = "wippy.facade:"
 
@@ -14,7 +15,7 @@ local REQ_NAMES: {string} = {
     "content_fs",
     "app_title", "app_icon", "app_name", "login_path",
     "login_redirect_param",
-    "api_routes", "additional_nav_items", "state_cache",
+    "api_routes", "additional_nav_items", "state_cache", "attention",
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts", "host_config_layout", "theme_mode",
     "theme_persist", "theme_storage_key",
@@ -52,6 +53,7 @@ local function setup_registry(overrides: {[string]: string}?)
         api_routes = "{}",
         additional_nav_items = "[]",
         state_cache = "{}",
+        attention = "{}",
         allow_additional_tags = "{}",
         chat = "{}",
         axios_defaults = "{}",
@@ -72,22 +74,18 @@ local function setup_registry(overrides: {[string]: string}?)
     local snap = registry.snapshot()
     local changes = snap:changes()
     for name, value in pairs(defaults) do
-        changes:create({
-            id = NS .. name,
-            kind = "ns.requirement",
-            data = { default = value },
-        })
+        local id = NS .. name
+        if registry.get(id) then
+            changes:update({ id = id, kind = "ns.requirement", data = { default = value } })
+        else
+            changes:create({ id = id, kind = "ns.requirement", data = { default = value } })
+        end
     end
     changes:apply()
 end
 
 local function teardown_registry()
-    local snap = registry.snapshot()
-    local changes = snap:changes()
-    for _, name in ipairs(REQ_NAMES) do
-        changes:delete(NS .. name)
-    end
-    changes:apply()
+    setup_registry()
 end
 
 local function derive_ws_url(api_url: string): string
@@ -310,6 +308,34 @@ local function define_tests()
                 test.eq(decoded.panels.main.id, "home")
             end)
 
+            test.it("attention requirement defaults to empty JSON object", function()
+                local entry = registry.get(NS .. "attention")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "{}")
+            end)
+
+            test.it("attention decodes a valid opt-in config JSON", function()
+                local attention_json = '{"enabled":true,"messageContext":{"enabled":true,"defaultInclude":true},"sampling":{"radiusCssPx":20,"stepCssPx":5}}'
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                changes:update({
+                    id = NS .. "attention",
+                    kind = "ns.requirement",
+                    data = { default = attention_json },
+                })
+                changes:apply()
+
+                local entry = registry.get(NS .. "attention")
+                local decoded, err = json.decode(entry.data.default :: string)
+                test.is_nil(err)
+                test.not_nil(decoded)
+                test.is_true(decoded.enabled)
+                test.is_true(decoded.messageContext.enabled)
+                test.is_true(decoded.messageContext.defaultInclude)
+                test.eq(decoded.sampling.radiusCssPx, 20)
+                test.eq(decoded.sampling.stepCssPx, 5)
+            end)
+
             test.it("tanstack requirement defaults to empty JSON object", function()
                 local entry = registry.get(NS .. "tanstack")
                 test.not_nil(entry)
@@ -402,6 +428,20 @@ local function define_tests()
         end)
 
         test.describe("config JSON structure (wippy-context-2.0)", function()
+            test.it("forwards global attention config through both facade shells", function()
+                local source_fs, fs_err = fs.get('app.facade_test:source')
+                test.is_nil(fs_err)
+                test.not_nil(source_fs)
+                local template, template_err = source_fs:readfile('/index.jet')
+                test.is_nil(template_err)
+                test.not_nil(template)
+                local static_shell, shell_err = source_fs:readfile('/public/index.html')
+                test.is_nil(shell_err)
+                test.not_nil(static_shell)
+                test.not_nil(string.find(template, "attention: cfg.attention", 1, true))
+                test.not_nil(string.find(static_shell, "attention: cfg.attention", 1, true))
+            end)
+
             test.it("builds complete config object", function()
                 local config = {
                     facade_url = "https://front.wippy.ai",
@@ -414,6 +454,10 @@ local function define_tests()
                         APP_WEBSOCKET_URL = "ws://localhost:8085",
                     },
                     routePrefix = "http://localhost:8085",
+                    attention = {
+                        enabled = true,
+                        messageContext = { enabled = true, defaultInclude = false },
+                    },
                     themeMode = "auto",
                     themePersist = "cookie",
                     themeStorageKey = "@wippy-theme-mode",
@@ -453,6 +497,10 @@ local function define_tests()
                 test.eq(decoded.facade_url, "https://front.wippy.ai")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
+                test.is_true(decoded.attention.enabled)
+                test.is_true(decoded.attention.messageContext.enabled)
+                test.is_false(decoded.attention.messageContext.defaultInclude)
+                test.is_nil(decoded.hostConfig.attention)
                 test.eq(decoded.hostConfig.session.type, "non-persistent")
                 test.is_true(decoded.hostConfig.showAdmin)
                 test.is_false(decoded.hostConfig.allowSelectModel)

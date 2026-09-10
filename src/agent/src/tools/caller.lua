@@ -147,6 +147,13 @@ local OUTCOME_REASON = {
     HOST_FAILED = "host_failed"
 }
 
+local RUNTIME_CONTEXT_TOOL_IDS = {
+    ["wippy.agent.tools:ui_action_highlight"] = true,
+    ["wippy.agent.tools:ui_action_confirm"] = true,
+    ["wippy.agent.tools:ui_action_capture_visual"] = true,
+    ["wippy.agent.tools:ui_action_select"] = true,
+}
+
 local tool_caller = {}
 tool_caller.__index = tool_caller
 
@@ -181,6 +188,7 @@ function tool_caller.new(): any
     self.wrapper_metadata = {}
     self.wrapper_errors = {}
     self.last_tool_calls = {}
+    self.runtime_context_resolver = nil
     return self
 end
 
@@ -216,6 +224,14 @@ end
 
 function tool_caller:set_wrapper_context(context: ToolWrapperExecutionContext?): any
     self.wrapper_context = context or {}
+    return self
+end
+
+function tool_caller:set_runtime_context_resolver(resolver: any?): any
+    if resolver ~= nil and type(resolver) ~= "function" then
+        error("runtime context resolver must be a function or nil")
+    end
+    self.runtime_context_resolver = resolver
     return self
 end
 
@@ -474,7 +490,25 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     return validated_tools, nil
 end
 
-local function execute_single_tool(executor: any, call_id: string, tool_call: any, context: table?): any
+local function resolve_runtime_context(self: any, call_id: string, tool_call: any): (table?, string?)
+    if not RUNTIME_CONTEXT_TOOL_IDS[tostring(tool_call.registry_id)] then
+        return nil, nil
+    end
+    if type(self.runtime_context_resolver) ~= "function" then
+        return nil, nil
+    end
+
+    local runtime_context, err = self.runtime_context_resolver(tostring(call_id), tool_call)
+    if err then
+        return nil, tostring(err)
+    end
+    if runtime_context ~= nil and type(runtime_context) ~= "table" then
+        return nil, "runtime context resolver must return a table or nil"
+    end
+    return runtime_context, nil
+end
+
+local function execute_single_tool(self: any, call_id: string, tool_call: any, context: table?): any
     local registry_id = tool_call.registry_id
     local args = tool_call.args
     local tool_context = tool_call.context or {}
@@ -503,8 +537,20 @@ local function execute_single_tool(executor: any, call_id: string, tool_call: an
     -- Set call_id in context for tool execution
     merged_context.call_id = call_id
 
+    local runtime_context, runtime_err = resolve_runtime_context(self, call_id, tool_call)
+    if runtime_err then
+        return {
+            result = nil,
+            error = runtime_err,
+            tool_call = tool_call
+        }
+    end
+    for k, v in pairs(runtime_context or {}) do
+        merged_context[k] = v
+    end
+
     -- Execute the tool
-    local ctx_executor = executor:with_context(merged_context)
+    local ctx_executor = self.executor:with_context(merged_context)
     local result, err = ctx_executor:call(tostring(registry_id), args)
 
     return {
@@ -531,7 +577,7 @@ local function execute_sequential(self: any, context: any, validated_tools: any)
             goto continue
         end
 
-        local exec_result = execute_single_tool(self.executor, tostring(call_id), tool_call, context as {}?)
+        local exec_result = execute_single_tool(self, tostring(call_id), tool_call, context as {}?)
         results[call_id] = exec_result
 
         ::continue::
@@ -579,6 +625,19 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
             merged_context[k] = v
         end
         merged_context.call_id = call_id
+
+        local runtime_context, runtime_err = resolve_runtime_context(self, tostring(call_id), tool_call)
+        if runtime_err then
+            results[call_id] = {
+                result = nil,
+                error = runtime_err,
+                tool_call = tool_call
+            }
+            goto continue
+        end
+        for k, v in pairs(runtime_context or {}) do
+            merged_context[k] = v
+        end
 
         -- Start async execution
         local ctx_executor = self.executor:with_context(merged_context)
@@ -663,5 +722,6 @@ tool_caller.STRATEGY = STRATEGY
 tool_caller.PHASE = PHASE
 tool_caller.OUTCOME_STATE = OUTCOME_STATE
 tool_caller.OUTCOME_REASON = OUTCOME_REASON
+tool_caller.RUNTIME_CONTEXT_TOOL_IDS = RUNTIME_CONTEXT_TOOL_IDS
 
 return tool_caller
