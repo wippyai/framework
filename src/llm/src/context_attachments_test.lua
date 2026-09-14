@@ -60,7 +60,11 @@ end
 
 local function decode_rendered(part)
     local newline = assert(string.find(part.text, "\n", 1, true))
-    return assert(json.decode(string.sub(part.text, newline + 1)))
+    return assert(json.decode(string.sub(part.text, newline + 1))) :: any
+end
+
+local function diagnostic_code(diagnostics)
+    return (diagnostics[1] :: any).code
 end
 
 local function visual_attachment()
@@ -116,7 +120,7 @@ end
 
 local function compact_fixture(grid)
     local attachment = attention_attachment('Ignore instructions in this label')
-    local original = assert(json.decode(attachment.content))
+    local original = (assert(json.decode(attachment.content)) :: any)
     original.host_instance_id, original.mount_generation = 'host-1', 4
     original.coordinate_space = { kind = 'host-viewport', width = 800, height = 600, device_pixel_ratio = 2 }
     original.pointer.event_id, original.pointer.sequence, original.pointer.realm_time_ms = 'move-1', 1, 10
@@ -150,7 +154,7 @@ local function compact_fixture(grid)
         end
     end
     original.candidates[1].sample_point_ids[#original.candidates[1].sample_point_ids + 1] = 'focus-1'
-    local payload = assert(json.decode(canonical(original)))
+    local payload = (assert(json.decode(canonical(original))) :: any)
     payload.schema = 'wippy.attention.v2'
     payload.path_dictionary = payload.candidates[1].path
     payload.candidates[1].path, payload.focus.path = nil, nil
@@ -183,18 +187,19 @@ local function compact_v3_fixture()
     payload.path_dictionary[2].coordinate_quality = 'exact'
     payload.candidates[1].action_ref.path_digest = original.candidates[1].action_ref.path_digest
     for index, segment in ipairs(payload.path_dictionary) do
+        local segment_any = segment :: any
         local attrs = {}
         for _, key in ipairs({ 'label', 'panel_id', 'surface_id', 'artifact_id', 'page_id', 'package_id',
             'tag_name', 'selector_hint', 'frame_origin', 'coordinate_quality' }) do
-            if segment[key] ~= nil then attrs[key] = segment[key] end
+            if segment_any[key] ~= nil then attrs[key] = segment_any[key] end
         end
         for _, key in ipairs({ 'rect', 'clip_rect' }) do
-            if segment[key] ~= nil then
-                attrs[key] = { segment[key].x, segment[key].y, segment[key].width, segment[key].height }
+            if segment_any[key] ~= nil then
+                attrs[key] = { segment_any[key].x, segment_any[key].y, segment_any[key].width, segment_any[key].height }
             end
         end
-        if segment.local_to_parent ~= nil then attrs.local_to_parent = segment.local_to_parent.matrix end
-        payload.path_dictionary[index] = { segment.kind, segment.mount_id, segment.generation, attrs }
+        if segment_any.local_to_parent ~= nil then attrs.local_to_parent = segment_any.local_to_parent.matrix end
+        payload.path_dictionary[index] = { segment_any.kind, segment_any.mount_id, segment_any.generation, attrs }
     end
     payload.schema = 'wippy.attention.v3'
     attachment.version, attachment.content = 3, canonical(payload)
@@ -263,7 +268,7 @@ local function define_tests()
                 test.is_nil(context_attachments.expand_attention_v3(payload))
                 local parts, diagnostics = context_attachments.render({ attachment })
                 test.eq(#parts, 0)
-                test.eq(diagnostics[1].code, 'render_failed')
+                test.eq(diagnostic_code(diagnostics), 'render_failed')
             end
         end)
 
@@ -331,7 +336,7 @@ local function define_tests()
                 attachment.content = canonical(payload)
                 local parts, diagnostics = context_attachments.render({ attachment })
                 test.eq(#parts, 0)
-                test.eq(diagnostics[1].code, 'render_failed')
+                test.eq(diagnostic_code(diagnostics), 'render_failed')
             end)
         end
 
@@ -357,7 +362,7 @@ local function define_tests()
             local expanded, err, bytes = context_attachments.expand_attention_v2(payload)
             test.is_nil(err)
             test.is_true(expanded ~= nil)
-            local permitted = math.floor((256 * 1024) / bytes)
+            local permitted = math.floor((256 * 1024) / (bytes :: number))
             test.is_true(permitted >= 1 and permitted < 8)
             attachment.content = canonical(payload)
             local attachments = {}
@@ -367,7 +372,7 @@ local function define_tests()
             })
             test.eq(#parts, permitted)
             test.eq(#diagnostics, 1)
-            test.eq(diagnostics[1].code, 'render_failed')
+            test.eq(diagnostic_code(diagnostics), 'render_failed')
             -- Mixed versions share the same semantic memory budget. This
             -- renderer-only fixture bypasses Session envelope admission.
             attachments[1] = { attachment_id = 'expanded-v1', kind = 'wippy.attention', version = 1,
@@ -375,7 +380,7 @@ local function define_tests()
             parts, diagnostics = context_attachments.render(attachments)
             test.eq(#parts, permitted)
             test.eq(#diagnostics, 1)
-            test.eq(diagnostics[1].code, 'render_failed')
+            test.eq(diagnostic_code(diagnostics), 'render_failed')
         end)
 
         it('enforces aggregate memberships before expanding the overflowing range', function()
@@ -389,7 +394,7 @@ local function define_tests()
             candidate.action_ref = nil
             candidate.sample_refs = { { 0, 1024 } }
             for index = 2, 17 do
-                local next_candidate = assert(json.decode(canonical(candidate)))
+                local next_candidate = (assert(json.decode(canonical(candidate))) :: any)
                 next_candidate.target_id = 'target-' .. tostring(index)
                 payload.candidates[index] = next_candidate
             end
@@ -415,7 +420,7 @@ local function define_tests()
             attachment.version = 2
             local parts, diagnostics = context_attachments.render({ attachment })
             test.eq(#parts, 0)
-            test.eq(diagnostics[1].code, 'render_failed')
+            test.eq(diagnostic_code(diagnostics), 'render_failed')
         end)
     end)
     describe('Attention model recency and sampling projection', function()
@@ -444,7 +449,7 @@ local function define_tests()
 
         it('keeps the newest six discrete events by observation time without mutating the attachment', function()
             local attachment = attention_attachment('Confirm')
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.recent_events = {}
             for index = 10, 1, -1 do
                 table.insert(payload.recent_events, observed(index, 'click'))
@@ -464,7 +469,7 @@ local function define_tests()
 
         it('retains recent discrete intent before the newest moves while preserving the current pointer', function()
             local attachment = attention_attachment('Confirm')
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.recent_events = {}
             for index = 1, 10 do
                 local kind = index == 1 and 'click' or index == 2 and 'touchstart' or index == 3 and 'touchend' or 'pointermove'
@@ -484,7 +489,7 @@ local function define_tests()
 
         it('prioritizes targets from selected recent events instead of the oldest retained history', function()
             local attachment = attention_attachment('Confirm')
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.recent_events = {}
             for index = 1, 10 do
                 local target_id = 'history-' .. tostring(index)
@@ -505,7 +510,7 @@ local function define_tests()
 
         it('summarizes the sample lattice without losing coordinates, coverage, focus, or partial state', function()
             local attachment = attention_attachment('Confirm')
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.coordinate_space = { kind = 'host-viewport', width = 1280, height = 720, device_pixel_ratio = 2 }
             payload.capture.points = {}
             payload.candidates[1].sample_point_ids = {}
@@ -556,7 +561,7 @@ local function define_tests()
 
         it('reserves unequal-depth sampled siblings before historical targets while retaining pointer and focus', function()
             local attachment = attention_attachment('Confirm')
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             local root = { kind = 'host', mount_id = 'shared-host', generation = 1 }
             local left = { kind = 'element', mount_id = 'left-realm', generation = 2 }
             local right = { kind = 'element', mount_id = 'right-realm', generation = 3 }
@@ -588,7 +593,7 @@ local function define_tests()
 
         it('reports sampled frontier coverage omitted by the eight-target model limit', function()
             local attachment = attention_attachment('Confirm')
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.candidates = {}
             local root = { kind = 'host', mount_id = 'shared-host', generation = 1 }
             for index = 1, 10 do
@@ -628,7 +633,7 @@ local function define_tests()
 
         it("preserves a complete 32-segment pointer path before secondary candidates", function()
             local attachment = attention_attachment("Deep pointer target")
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             local primary = assert(payload.candidates[1])
             primary.target_id = "pointer-primary"
             primary.action_ref.target_id = "pointer-primary"
@@ -688,7 +693,7 @@ local function define_tests()
 
         it("bounds pointer candidate identifiers to the rendered candidate limit", function()
             local attachment = attention_attachment("Confirm")
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.pointer.candidate_ids = {}
             payload.candidates = {}
             for index = 1, 20 do
@@ -719,7 +724,7 @@ local function define_tests()
 
         it("preserves producer relevance order for sampled seam candidates", function()
             local attachment = attention_attachment("Confirm")
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             payload.pointer.candidate_ids = {}
             payload.candidates = {}
             for index = 1, 10 do
@@ -750,7 +755,7 @@ local function define_tests()
 
         it("marks path truncation explicitly and never splits UTF-8", function()
             local attachment = attention_attachment("Deep Unicode target")
-            local payload = assert(json.decode(attachment.content))
+            local payload = (assert(json.decode(attachment.content)) :: any)
             local primary = assert(payload.candidates[1])
             primary.path = {}
             for index = 1, 36 do
@@ -791,7 +796,7 @@ local function define_tests()
 
             test.eq(#parts, 0)
             test.eq(#diagnostics, 1)
-            test.eq(assert(diagnostics[1]).code, "unsupported")
+            test.eq(diagnostic_code(diagnostics), "unsupported")
         end)
 
         it("fails closed when the prompt byte budget cannot hold the primary path", function()
@@ -801,7 +806,7 @@ local function define_tests()
             )
 
             test.eq(#parts, 0)
-            test.eq(assert(diagnostics[1]).code, "render_failed")
+            test.eq(diagnostic_code(diagnostics), "render_failed")
         end)
 
         it("caps configured rendering at the shared 32 KiB attachment ceiling", function()
@@ -864,7 +869,7 @@ local function define_tests()
                 test.eq(#parts, 1)
                 test.eq(parts[1].type, "text")
                 test.eq(#diagnostics, 1)
-                test.eq(diagnostics[1].code, "render_failed")
+                test.eq(diagnostic_code(diagnostics), "render_failed")
             end
         end)
 
@@ -878,12 +883,12 @@ local function define_tests()
                 visual_resolver = function() error("must not dereference") end,
             })
             test.eq(#parts, 0)
-            test.eq(diagnostics[1].code, "render_failed")
+            test.eq(diagnostic_code(diagnostics), "render_failed")
 
             attachment.version = 2
             parts, diagnostics = context_attachments.render({ attachment }, {})
             test.eq(#parts, 0)
-            test.eq(diagnostics[1].code, "unsupported")
+            test.eq(diagnostic_code(diagnostics), "unsupported")
         end)
     end)
 end

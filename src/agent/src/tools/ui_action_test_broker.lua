@@ -2,6 +2,14 @@ local time = require("time")
 
 local broker = {}
 
+type BrokerArgs = {
+    probe_receiver_pid: string?,
+    probe_topics: { string }?,
+    reply_pid: string,
+    report_payload: boolean?,
+    send_noise: boolean?,
+}
+
 local function wait_for_request(timeout_duration)
     local inbox = process.inbox()
     local timeout = time.after(timeout_duration or "5s")
@@ -19,32 +27,37 @@ local function wait_for_request(timeout_duration)
 end
 
 function broker.run(args)
-    if args.probe_receiver_pid then
-        local topics = args.probe_topics or { "session_ui_action_result" }
+    local options = args :: BrokerArgs
+    if options.probe_receiver_pid then
+        local receiver_pid = options.probe_receiver_pid
+        local topics = options.probe_topics or { "session_ui_action_result" }
         for index, topic in ipairs(topics) do
-            local result_sent, result_err = process.send(args.probe_receiver_pid, topic, {
+            if type(topic) ~= "string" then
+                return nil, "unexpected probe topic"
+            end
+            local result_sent, result_err = process.send(receiver_pid, topic, {
                 schema = "wippy.ui-action.v1",
                 message_type = "result",
                 result_id = "result-route-probe-" .. index,
             })
             if not result_sent then
-                return nil, result_err
+                return nil, tostring(result_err)
             end
         end
-        local noise_sent, noise_err = process.send(args.probe_receiver_pid, "ui_action_test_noise", {
+        local noise_sent, noise_err = process.send(receiver_pid, "ui_action_test_noise", {
             sender_pid = process.pid(),
         })
         if not noise_sent then
-            return nil, noise_err
+            return nil, tostring(noise_err)
         end
         return true
     end
 
-    local ready_sent, ready_err = process.send(args.reply_pid, "ui_action_test_broker_ready", {
+    local ready_sent, ready_err = process.send(options.reply_pid, "ui_action_test_broker_ready", {
         broker_pid = process.pid(),
     })
     if not ready_sent then
-        return nil, ready_err
+        return nil, tostring(ready_err)
     end
 
     local request, request_err = wait_for_request("5s")
@@ -60,6 +73,13 @@ function broker.run(args)
     end
     if type(request_data) ~= "table" then
         return nil, "unexpected request payload"
+    end
+    if type(sender_pid) ~= "string"
+        or type(request_data.call_id) ~= "string"
+        or type(request_data.session_id) ~= "string"
+        or type(request_data.host_instance_id) ~= "string"
+        or type(request_data.reply_topic) ~= "string" then
+        return nil, "unexpected request identity"
     end
 
     local result = {
@@ -78,11 +98,11 @@ function broker.run(args)
     }
     local sent, send_err = process.send(sender_pid, request_data.reply_topic, result)
     if not sent then
-        return nil, send_err
+        return nil, tostring(send_err)
     end
 
-    if args.report_payload then
-        process.send(args.reply_pid, "ui_action_test_audit", {
+    if options.report_payload then
+        process.send(options.reply_pid, "ui_action_test_audit", {
             broker_pid = process.pid(),
             requester_pid = sender_pid,
             request_payload_type = type(request_payload),
@@ -90,8 +110,8 @@ function broker.run(args)
             request_reply_topic = request_data.reply_topic,
         })
     end
-    if args.send_noise then
-        process.send(args.reply_pid, "ui_action_test_noise", {
+    if options.send_noise then
+        process.send(options.reply_pid, "ui_action_test_noise", {
             broker_pid = process.pid(),
         })
     end
