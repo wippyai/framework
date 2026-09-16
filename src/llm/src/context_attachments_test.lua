@@ -258,8 +258,8 @@ local function define_tests()
                 collapsed = false,
                 direction = 'forward',
                 text = 'Safe text for the left nested target',
-                anchor_path = original.candidates[1].path,
-                focus_path = original.candidates[1].path,
+                anchor_path_indices = payload.candidates[1].path_indices,
+                focus_path_indices = payload.candidates[1].path_indices,
                 ranges = {
                     {
                         rect = { x = 12, y = 24, width = 80, height = 24 },
