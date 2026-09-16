@@ -197,6 +197,27 @@ local function copy_without(value, excluded)
     return result
 end
 
+local function semantic_path(path)
+    local result = {}
+    local dynamic = { rect = true, clip_rect = true, local_to_parent = true, coordinate_quality = true }
+    for index, segment in ipairs(path or {}) do
+        result[index] = copy_without(segment, dynamic)
+    end
+    return result
+end
+
+local function matches_path_digest(path, digest)
+    local semantic = canonical_json(semantic_path(path))
+    if semantic then
+        local semantic_hash, semantic_err = hash.sha256(semantic)
+        if not semantic_err and digest == 'sha256:' .. semantic_hash then return true end
+    end
+    local legacy = canonical_json(path)
+    if not legacy then return false end
+    local legacy_hash, legacy_err = hash.sha256(legacy)
+    return not legacy_err and digest == 'sha256:' .. legacy_hash
+end
+
 local function bounded_array(value, maximum, minimum)
     return array(value) and #value <= maximum and #value >= (minimum or 0)
 end
@@ -386,7 +407,7 @@ local function expand_attention_v2(payload, remaining_bytes)
                 or action.target_id ~= candidate.target_id or action.host_instance_id ~= payload.host_instance_id
                 or action.mount_id ~= leaf.mount_id or action.generation ~= leaf.generation
                 or not rect(action.rect) or canonical_json(action.rect) ~= canonical_json(candidate.rect)
-                or action.path_digest ~= 'sha256:' .. hash.sha256(canonical_json(expanded.path)) then return nil, invalid end
+                or not matches_path_digest(expanded.path, action.path_digest) then return nil, invalid end
         end
         output.candidates[#output.candidates + 1], candidate_ids[candidate.target_id] = expanded, true
     end

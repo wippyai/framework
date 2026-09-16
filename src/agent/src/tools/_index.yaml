@@ -101,6 +101,25 @@ entries:
       - ctx
     method: delayed_echo
 
+  # wippy.agent.tools:attention_context_set
+  - name: attention_context_set
+    kind: function.lua
+    meta:
+      name: Set session Attention context
+      type: tool
+      comment: Enable or disable semantic Attention attachments for the current authenticated Session
+      group: User Interface
+      exclusive: true
+      private: true
+      input_schema: |
+        {"type":"object","properties":{"enabled":{"type":"boolean","description":"Whether semantic Attention context is enabled for later messages in this Session"},"expected_revision":{"type":"integer","minimum":0,"description":"Optional optimistic revision from the current Session state"}},"required":["enabled"],"additionalProperties":false}
+    source: file://attention_context_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+    method: set
+
   # wippy.agent.tools:ui_action_highlight
   - name: ui_action_highlight
     kind: function.lua

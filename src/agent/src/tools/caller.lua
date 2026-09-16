@@ -148,6 +148,7 @@ local OUTCOME_REASON = {
 }
 
 local RUNTIME_CONTEXT_TOOL_IDS = {
+    ["wippy.agent.tools:attention_context_set"] = true,
     ["wippy.agent.tools:ui_action_highlight"] = true,
     ["wippy.agent.tools:ui_action_confirm"] = true,
     ["wippy.agent.tools:ui_action_capture_visual"] = true,
