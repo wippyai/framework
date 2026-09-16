@@ -13,6 +13,8 @@ local MAX_SAMPLE_POINT_IDS = 3
 local MAX_POINTER_CANDIDATE_IDS = MAX_TARGETS
 local MAX_PRIMARY_PATH_SEGMENTS = 32
 local MAX_SECONDARY_PATH_SEGMENTS = 12
+local MAX_SELECTION_RANGES = 4
+local MAX_SELECTION_TEXT_BYTES = 1024
 local VISUAL_MAX_BYTES = 1024 * 1024
 local VISUAL_MAX_DIMENSION = 2048
 local VISUAL_MAX_PIXELS = 4194304
@@ -636,6 +638,43 @@ local function project_summary(summary)
     }
 end
 
+local function project_selection_path(path: any): table
+    if type(path) ~= 'table' then return {} end
+    local filtered = {}
+    for _, segment in ipairs(path) do
+        if type(segment) == 'table' then table.insert(filtered, segment) end
+    end
+    return project_path(filtered, MAX_SECONDARY_PATH_SEGMENTS)
+end
+
+local function project_selection(selection: any): table?
+    if type(selection) ~= 'table' or selection.collapsed ~= false then
+        return nil
+    end
+    local ranges = {}
+    local source_ranges = type(selection.ranges) == 'table' and selection.ranges or {}
+    for index, range in ipairs(source_ranges) do
+        if index > MAX_SELECTION_RANGES then break end
+        if type(range) == 'table' and type(range.rect) == 'table' then
+            table.insert(ranges, {
+                rect = project_rect(range.rect),
+                coordinate_space = range.coordinate_space and truncate_utf8(range.coordinate_space, 64) or nil,
+            })
+        end
+    end
+    return {
+        selection_id = selection.selection_id and truncate_utf8(selection.selection_id, 128) or nil,
+        selected_at = selection.selected_at and truncate_utf8(selection.selected_at, 64) or nil,
+        kind = selection.kind and truncate_utf8(selection.kind, 32) or nil,
+        collapsed = false,
+        direction = selection.direction and truncate_utf8(selection.direction, 16) or nil,
+        text = selection.text and truncate_utf8(selection.text, MAX_SELECTION_TEXT_BYTES) or nil,
+        anchor_path = project_selection_path(selection.anchor_path),
+        focus_path = project_selection_path(selection.focus_path),
+        ranges = ranges,
+    }
+end
+
 project_rect = function(rect)
     if type(rect) ~= "table" then
         return nil
@@ -921,13 +960,24 @@ local function attention_handler(attachment, remaining_bytes, options)
     if decode_err or type(payload) ~= "table" then
         return nil, "attention attachment content is invalid"
     end
-    if attachment.version == 2 or attachment.version == 3 then
-        local expand = attachment.version == 3 and expand_attention_v3 or expand_attention_v2
-        local expanded, expansion_err, bytes = expand(payload, options._attention_expansion.remaining)
+    local original_version = attachment.version
+    local v4_selection
+    if original_version == 2 or original_version == 3 or original_version == 4 then
+        local expand = original_version == 2 and expand_attention_v2 or expand_attention_v3
+        local compact_payload = payload
+        if original_version == 4 then
+            v4_selection = payload.selection
+            compact_payload = copy_without(payload, { selection = true })
+            compact_payload.schema = 'wippy.attention.v3'
+        end
+        local expanded, expansion_err, bytes = expand(compact_payload, options._attention_expansion.remaining)
         if not expanded then return nil, expansion_err end
         payload = expanded
+        if original_version == 4 then
+            payload.selection = v4_selection
+        end
         options._attention_expansion.remaining = options._attention_expansion.remaining - bytes
-    elseif payload.schema ~= 'wippy.attention.v1' then
+    elseif payload.schema ~= 'wippy.attention.v1' and payload.schema ~= 'wippy.attention.v4' then
         return nil, 'attention attachment content is invalid'
     else
         local encoded = canonical_json(payload)
@@ -938,6 +988,10 @@ local function attention_handler(attachment, remaining_bytes, options)
     end
     local recent_events = selected_recent_events(payload)
     local frontier = sampled_frontier(payload)
+    local rendered_selection = original_version == 4 and project_selection(payload.selection) or nil
+    if original_version == 4 and payload.selection ~= nil and rendered_selection == nil then
+        return nil, 'attention selection is invalid'
+    end
     local rendered = {
         schema = payload.schema,
         trust = "untrusted_user_observation",
@@ -948,6 +1002,7 @@ local function attention_handler(attachment, remaining_bytes, options)
         created_at = payload.created_at,
         coordinate_space = payload.coordinate_space,
         capture = project_capture(payload.capture),
+        selection = rendered_selection,
         pointer = project_event(payload.pointer),
         focus = payload.focus and {
             event_id = payload.focus.event_id,
@@ -1148,6 +1203,7 @@ end
 context_attachments.register("wippy.attention", 1, attention_handler)
 context_attachments.register("wippy.attention", 2, attention_handler)
 context_attachments.register("wippy.attention", 3, attention_handler)
+context_attachments.register("wippy.attention", 4, attention_handler)
 context_attachments.register("wippy.attention.visual", 1, visual_handler)
 
 return context_attachments

@@ -248,6 +248,38 @@ local function define_tests()
             test.eq(decode_rendered(parts[1]).schema, 'wippy.attention.v1')
         end)
 
+        it('expands v4 compact paths while preserving the current document selection', function()
+            local attachment, payload, original = compact_v3_fixture()
+            payload.schema = 'wippy.attention.v4'
+            payload.selection = {
+                selection_id = 'selection-1',
+                selected_at = '2026-09-16T12:00:00.000Z',
+                kind = 'text',
+                collapsed = false,
+                direction = 'forward',
+                text = 'Safe text for the left nested target',
+                anchor_path = original.candidates[1].path,
+                focus_path = original.candidates[1].path,
+                ranges = {
+                    {
+                        rect = { x = 12, y = 24, width = 80, height = 24 },
+                        coordinate_space = 'host-viewport',
+                    },
+                },
+            }
+            attachment.version, attachment.content = 4, canonical(payload)
+
+            local parts, diagnostics = context_attachments.render({ attachment })
+            test.eq(#diagnostics, 0)
+            test.eq(#parts, 1)
+            local rendered = decode_rendered(parts[1])
+            test.eq(rendered.candidates[1].path[3].package_id, 'fixture/package@1')
+            test.eq(rendered.selection.selection_id, 'selection-1')
+            test.eq(rendered.selection.text, 'Safe text for the left nested target')
+            test.eq(rendered.selection.anchor_path[3].package_id, 'fixture/package@1')
+            test.eq(rendered.selection.ranges[1].coordinate_space, 'host-viewport')
+        end)
+
         it('rejects malformed v3 tuples before rendering or byte accounting', function()
             local malformed = {
                 function(p) p.path_dictionary[1][5] = 'extra' end,
@@ -410,6 +442,7 @@ local function define_tests()
             test.eq(context_attachments.supports('wippy.attention', 1), true)
             test.eq(context_attachments.supports('wippy.attention', 2), true)
             test.eq(context_attachments.supports('wippy.attention', 3), true)
+            test.eq(context_attachments.supports('wippy.attention', 4), true)
             test.eq(context_attachments.supports('unknown', 1), false)
             test.eq(context_attachments.supports('wippy.attention', '2'), false)
             test.eq(context_attachments.supports(nil, 2), false)
@@ -791,7 +824,7 @@ local function define_tests()
 
         it("ignores unknown versions with a diagnostic", function()
             local attachment = attention_attachment("Confirm")
-            attachment.version = 4
+            attachment.version = 99
             local parts, diagnostics = context_attachments.render({ attachment })
 
             test.eq(#parts, 0)

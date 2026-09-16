@@ -269,6 +269,7 @@ local function route_to_plugin(state: UserState, prefix: string, plugin_config: 
                 type = message_data.type,
                 data = message_data.data,
                 start_token = message_data.start_token,
+                attention_context_enabled = message_data.attention_context_enabled,
                 context = message_data.context
             }
 
