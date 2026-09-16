@@ -243,6 +243,7 @@ local function expand_attention_v2(payload, remaining_bytes)
         or not canonical_json(payload) then
         return nil, invalid
     end
+    invalid = 'invalid compressed Attention context: capture'
     local capture = payload.capture
     if not only_keys(capture, { radius_css_px = true, grid_step_css_px = true, sampled_points = true,
         points = true, point_encoding = true, duration_ms = true, complete = true })
@@ -252,6 +253,7 @@ local function expand_attention_v2(payload, remaining_bytes)
         or (capture.points == nil) == (capture.point_encoding == nil) then
         return nil, invalid
     end
+    invalid = 'invalid compressed Attention context: observations'
     local observations = {}
     local function observation(event, focus)
         if type(event) ~= 'table' or not nonempty(event.event_id, 128) then return false end
@@ -285,6 +287,7 @@ local function expand_attention_v2(payload, remaining_bytes)
     end
     if not charge(0) then return nil, 'Attention expansion byte budget exceeded' end
 
+    invalid = 'invalid compressed Attention context: points'
     local point_ids, points = {}, output.capture.points
     local function append_point(point)
         if not query_point(point) or point_ids[point.point_id] or #points >= limits.points
@@ -337,6 +340,7 @@ local function expand_attention_v2(payload, remaining_bytes)
     end
     if #points ~= capture.sampled_points then return nil, invalid end
 
+    invalid = 'invalid compressed Attention context: dictionary'
     local dictionary, encoded_segments, canonical_seen = payload.path_dictionary, {}, {}
     for index, segment in ipairs(dictionary) do
         if not only_keys(segment, { kind = true, mount_id = true, generation = true, label = true,
@@ -365,6 +369,7 @@ local function expand_attention_v2(payload, remaining_bytes)
         end
         return path
     end
+    invalid = 'invalid compressed Attention context: candidates'
     local candidate_ids, memberships = {}, 0
     for _, candidate in ipairs(payload.candidates) do
         if not only_keys(candidate, { target_id = true, path_indices = true, rect = true, clip_rect = true,
@@ -411,11 +416,13 @@ local function expand_attention_v2(payload, remaining_bytes)
         end
         output.candidates[#output.candidates + 1], candidate_ids[candidate.target_id] = expanded, true
     end
+    invalid = 'invalid compressed Attention context: focus'
     if output.focus then
         output.focus.path = expand_path(payload.focus.path_indices)
         if not output.focus.path or (output.focus.candidate_id ~= nil and not candidate_ids[output.focus.candidate_id]) then return nil, invalid end
     end
     if next_segment ~= #dictionary + 1 then return nil, invalid end
+    invalid = 'invalid compressed Attention context: links'
     local function linked(event)
         for _, id in ipairs(event.candidate_ids) do
             if not candidate_ids[id] then return false end
@@ -428,6 +435,7 @@ local function expand_attention_v2(payload, remaining_bytes)
     end
     -- Accounting uses the exact reconstructed canonical representation; this
     -- final equality is a guard against future fields bypassing incremental caps.
+    invalid = 'invalid compressed Attention context: accounting'
     local encoded = canonical_json(output)
     if not encoded or #encoded ~= used or #encoded > budget then return nil, invalid end
     return output, nil, used
@@ -524,38 +532,228 @@ local function v3_transform(value)
     return { matrix = matrix, convention = 'dommatrix-column-major', direction = 'local-to-parent' }
 end
 
-local function expand_attention_v3(payload, remaining_bytes)
-    if type(payload) ~= 'table' or payload.schema ~= 'wippy.attention.v3'
-        or not bounded_array(payload.path_dictionary, context_attachments.ATTENTION_V2_LIMITS.dictionary) then
-        return nil, 'invalid compressed Attention context'
+local function unpack_attention_v3_dictionary(dictionary)
+    if not bounded_array(dictionary, context_attachments.ATTENTION_V2_LIMITS.dictionary) then
+        return nil
     end
-    local normalized = copy_without(payload, {})
-    normalized.schema, normalized.path_dictionary = 'wippy.attention.v2', {}
-    for index, packed in ipairs(payload.path_dictionary) do
+    local unpacked = {}
+    for index, packed in ipairs(dictionary) do
         if not fixed_tuple(packed, 4) or type(packed[4]) ~= 'table' or not only_keys(packed[4], v3_attribute_keys)
             or not nonempty(packed[1], 32) or not nonempty(packed[2], 160) or not integer(packed[3], 0) then
-            return nil, 'invalid compressed Attention context'
+            return nil
         end
         local attrs = packed[4]
         local segment = { kind = packed[1], mount_id = packed[2], generation = packed[3] }
         for key, value in pairs(attrs) do
             if key == 'rect' or key == 'clip_rect' then
                 segment[key] = v3_rect(value)
-                if not segment[key] then return nil, 'invalid compressed Attention context' end
+                if not segment[key] then return nil end
             elseif key == 'local_to_parent' then
                 segment[key] = v3_transform(value)
-                if not segment[key] then return nil, 'invalid compressed Attention context' end
+                if not segment[key] then return nil end
             else
                 segment[key] = value
             end
         end
-        if not v1_segment(segment) then return nil, 'invalid compressed Attention context' end
-        normalized.path_dictionary[index] = segment
+        if not v1_segment(segment) then return nil end
+        unpacked[index] = segment
     end
+    return unpacked
+end
+
+local function expand_attention_v3(payload, remaining_bytes)
+    if type(payload) ~= 'table' or payload.schema ~= 'wippy.attention.v3' then
+        return nil, 'invalid compressed Attention context: v3 envelope'
+    end
+    local dictionary = unpack_attention_v3_dictionary(payload.path_dictionary)
+    if not dictionary then return nil, 'invalid compressed Attention context: v3 dictionary' end
+    local normalized = copy_without(payload, {})
+    normalized.schema, normalized.path_dictionary = 'wippy.attention.v2', dictionary
     return expand_attention_v2(normalized, remaining_bytes)
 end
 
 context_attachments.expand_attention_v3 = expand_attention_v3
+
+local selection_directions = { none = true, forward = true, backward = true }
+
+local function selection_coordinate_space(value)
+    return value == 'host-viewport'
+        or (type(value) == 'table'
+            and only_keys(value, { mount_id = true, generation = true })
+            and nonempty(value.mount_id, 160)
+            and integer(value.generation, 0))
+end
+
+local function valid_attention_selection(selection)
+    if type(selection) ~= 'table'
+        or not only_keys(selection, {
+            selection_id = true, selected_at = true, kind = true, collapsed = true,
+            direction = true, text = true, anchor_path = true, focus_path = true, ranges = true,
+        })
+        or not nonempty(selection.selection_id, 128)
+        or not timestamp(selection.selected_at)
+        or selection.kind ~= 'text'
+        or selection.collapsed ~= false
+        or not selection_directions[selection.direction]
+        or type(selection.text) ~= 'string' or #selection.text > MAX_SELECTION_TEXT_BYTES
+        or not bounded_array(selection.anchor_path, context_attachments.ATTENTION_V2_LIMITS.path, 1)
+        or not bounded_array(selection.focus_path, context_attachments.ATTENTION_V2_LIMITS.path, 1)
+        or not bounded_array(selection.ranges, MAX_SELECTION_RANGES) then
+        return false
+    end
+    for _, segment in ipairs(selection.anchor_path) do
+        if not v1_segment(segment) then return false end
+    end
+    for _, segment in ipairs(selection.focus_path) do
+        if not v1_segment(segment) then return false end
+    end
+    for _, range in ipairs(selection.ranges) do
+        if type(range) ~= 'table'
+            or not only_keys(range, { rect = true, coordinate_space = true })
+            or not rect(range.rect)
+            or not selection_coordinate_space(range.coordinate_space) then
+            return false
+        end
+    end
+    return true
+end
+
+local function expand_attention_v4_selection(selection, packed_dictionary)
+    if selection == nil then return nil end
+    if type(selection) ~= 'table' then return nil, 'invalid compact Attention selection' end
+    if selection.anchor_path ~= nil or selection.focus_path ~= nil then
+        return selection
+    end
+    if not only_keys(selection, {
+        selection_id = true, selected_at = true, kind = true, collapsed = true,
+        direction = true, text = true, anchor_path_indices = true,
+        focus_path_indices = true, ranges = true,
+    }) then return nil, 'invalid compact Attention selection' end
+    local dictionary = unpack_attention_v3_dictionary(packed_dictionary)
+    if not dictionary then return nil, 'invalid compact Attention selection' end
+    local function path(indices)
+        if not bounded_array(indices, context_attachments.ATTENTION_V2_LIMITS.path) or #indices == 0 then return nil end
+        local result = {}
+        for _, index in ipairs(indices) do
+            if not integer(index, 0) or dictionary[index + 1] == nil then return nil end
+            table.insert(result, dictionary[index + 1])
+        end
+        return result
+    end
+    local anchor_path, focus_path = path(selection.anchor_path_indices), path(selection.focus_path_indices)
+    if not anchor_path or not focus_path then return nil, 'invalid compact Attention selection' end
+    local expanded = copy_without(selection, { anchor_path_indices = true, focus_path_indices = true })
+    expanded.anchor_path, expanded.focus_path = anchor_path, focus_path
+    if not valid_attention_selection(expanded) then return nil, 'invalid compact Attention selection' end
+    return expanded
+end
+
+local function valid_attention_v4_dictionary_usage(payload)
+    local dictionary = payload.path_dictionary
+    if type(dictionary) ~= 'table' then return false end
+    local seen, next_index = {}, 0
+    local function use(indices)
+        if type(indices) ~= 'table' then return false end
+        for _, index in ipairs(indices) do
+            if not integer(index, 0) or dictionary[index + 1] == nil then return false end
+            if not seen[index] then
+                if index ~= next_index then return false end
+                seen[index], next_index = true, next_index + 1
+            end
+        end
+        return true
+    end
+    for _, candidate in ipairs(payload.candidates or {}) do
+        if type(candidate) ~= 'table' or not use(candidate.path_indices) then return false end
+    end
+    if payload.focus ~= nil and (type(payload.focus) ~= 'table' or not use(payload.focus.path_indices)) then
+        return false
+    end
+    if payload.selection ~= nil then
+        if type(payload.selection) ~= 'table'
+            or not use(payload.selection.anchor_path_indices)
+            or not use(payload.selection.focus_path_indices) then
+            return false
+        end
+    end
+    return next_index == #dictionary
+end
+
+local function compact_attention_v4_for_v3(payload)
+    if type(payload) ~= 'table' or type(payload.path_dictionary) ~= 'table'
+        or type(payload.candidates) ~= 'table' then
+        return nil, 'invalid compressed Attention context: v4 envelope'
+    end
+
+    local dictionary, remap = {}, {}
+    local function remap_path(indices)
+        if type(indices) ~= 'table' then return nil, 'path' end
+        local result = {}
+        for _, index in ipairs(indices) do
+            if not integer(index, 0) or payload.path_dictionary[index + 1] == nil then return nil, index end
+            if remap[index] == nil then
+                remap[index] = #dictionary
+                dictionary[#dictionary + 1] = payload.path_dictionary[index + 1]
+            end
+            result[#result + 1] = remap[index]
+        end
+        return result
+    end
+
+    local compact = copy_without(payload, {
+        selection = true,
+        path_dictionary = true,
+        candidates = true,
+        focus = true,
+    })
+    compact.schema, compact.path_dictionary, compact.candidates = 'wippy.attention.v3', dictionary, {}
+    for candidate_index, candidate in ipairs(payload.candidates) do
+        if type(candidate) ~= 'table' then
+            return nil, 'invalid compressed Attention context: v4 candidate ' .. tostring(candidate_index)
+        end
+        local normalized = copy_without(candidate, { path_indices = true })
+        local missing_index
+        normalized.path_indices, missing_index = remap_path(candidate.path_indices)
+        if not normalized.path_indices then
+            return nil, 'invalid compressed Attention context: v4 candidate remap '
+                .. tostring(candidate_index) .. ':' .. tostring(missing_index)
+        end
+        compact.candidates[#compact.candidates + 1] = normalized
+    end
+    if payload.focus ~= nil then
+        compact.focus = copy_without(payload.focus, { path_indices = true })
+        local missing_index
+        compact.focus.path_indices, missing_index = remap_path(payload.focus.path_indices)
+        if not compact.focus.path_indices then
+            return nil, 'invalid compressed Attention context: v4 focus remap ' .. tostring(missing_index)
+        end
+    end
+    return compact
+end
+
+local function expand_attention_v4(payload, remaining_bytes)
+    if type(payload) ~= 'table' or payload.schema ~= 'wippy.attention.v4'
+        or not valid_attention_v4_dictionary_usage(payload) then
+        return nil, 'invalid compressed Attention context: v4 envelope'
+    end
+    local selection, decode_err = expand_attention_v4_selection(payload.selection, payload.path_dictionary)
+    if decode_err then return nil, decode_err end
+    local compact_payload
+    compact_payload, decode_err = compact_attention_v4_for_v3(payload)
+    if not compact_payload then return nil, decode_err end
+    local expanded, expansion_err = expand_attention_v3(compact_payload, remaining_bytes)
+    if not expanded then return nil, expansion_err end
+    expanded.selection = selection
+    local expanded_json = canonical_json(expanded)
+    local budget = math.min(remaining_bytes or context_attachments.ATTENTION_V2_LIMITS.expanded_bytes,
+        context_attachments.ATTENTION_V2_LIMITS.expanded_bytes)
+    if not expanded_json or #expanded_json > budget then
+        return nil, 'expanded Attention context exceeds the byte limit'
+    end
+    return expanded, nil, #expanded_json
+end
+
+context_attachments.expand_attention_v4 = expand_attention_v4
 
 local function truncate_utf8(value, max_bytes)
     value = tostring(value or ""):gsub("\r\n", "\n"):gsub("\r", "\n")
@@ -669,7 +867,7 @@ local function project_selection_path(path: any): table
 end
 
 local function project_selection(selection: any): table?
-    if type(selection) ~= 'table' or selection.collapsed ~= false then
+    if not valid_attention_selection(selection) then
         return nil
     end
     local ranges = {}
@@ -677,9 +875,15 @@ local function project_selection(selection: any): table?
     for index, range in ipairs(source_ranges) do
         if index > MAX_SELECTION_RANGES then break end
         if type(range) == 'table' and type(range.rect) == 'table' then
+            local coordinate_space = range.coordinate_space == 'host-viewport'
+                and 'host-viewport'
+                or {
+                    mount_id = truncate_utf8(range.coordinate_space.mount_id, 160),
+                    generation = range.coordinate_space.generation,
+                }
             table.insert(ranges, {
                 rect = project_rect(range.rect),
-                coordinate_space = range.coordinate_space and truncate_utf8(range.coordinate_space, 64) or nil,
+                coordinate_space = coordinate_space,
             })
         end
     end
@@ -982,21 +1186,13 @@ local function attention_handler(attachment, remaining_bytes, options)
         return nil, "attention attachment content is invalid"
     end
     local original_version = attachment.version
-    local v4_selection
     if original_version == 2 or original_version == 3 or original_version == 4 then
-        local expand = original_version == 2 and expand_attention_v2 or expand_attention_v3
-        local compact_payload = payload
-        if original_version == 4 then
-            v4_selection = payload.selection
-            compact_payload = copy_without(payload, { selection = true })
-            compact_payload.schema = 'wippy.attention.v3'
-        end
-        local expanded, expansion_err, bytes = expand(compact_payload, options._attention_expansion.remaining)
+        local expand = original_version == 2 and expand_attention_v2
+            or original_version == 3 and expand_attention_v3
+            or expand_attention_v4
+        local expanded, expansion_err, bytes = expand(payload, options._attention_expansion.remaining)
         if not expanded then return nil, expansion_err end
         payload = expanded
-        if original_version == 4 then
-            payload.selection = v4_selection
-        end
         options._attention_expansion.remaining = options._attention_expansion.remaining - bytes
     elseif payload.schema ~= 'wippy.attention.v1' and payload.schema ~= 'wippy.attention.v4' then
         return nil, 'attention attachment content is invalid'
