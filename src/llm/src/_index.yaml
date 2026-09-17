@@ -389,10 +389,58 @@ entries:
     source: file://prompt_test.lua
     modules:
       - json
+      - time
     imports:
       prompt: wippy.llm:prompt
       test: wippy.test:test
     method: run_tests
+
+  # Internal Attention codecs. Split from the registry so each unit is independently type-checked.
+  - name: context_attention_codec_v2
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validates and expands Attention v2 payloads
+    source: file://context_attention_codec_v2.lua
+    modules:
+      - json
+      - time
+      - hash
+
+  - name: context_attention_codec_v34
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validates and expands Attention v3 and v4 payloads
+    source: file://context_attention_codec_v34.lua
+    modules:
+      - json
+      - time
+    imports:
+      codec_v2: wippy.llm:context_attention_codec_v2
+
+  - name: context_attention_codec
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validates and expands versioned compact Attention payloads
+    source: file://context_attention_codec.lua
+    imports:
+      codec_v2: wippy.llm:context_attention_codec_v2
+      codec_v34: wippy.llm:context_attention_codec_v34
+
+  - name: context_attention_renderer
+    kind: library.lua
+    meta:
+      type: library
+      comment: Projects expanded Attention payloads into bounded model context
+    source: file://context_attention_renderer.lua
+    modules:
+      - json
+      - time
+    imports:
+      prompt: wippy.llm:prompt
+      codec: wippy.llm:context_attention_codec
 
   # wippy.llm:context_attachments
   - name: context_attachments
@@ -408,6 +456,8 @@ entries:
       - base64
     imports:
       prompt: wippy.llm:prompt
+      codec: wippy.llm:context_attention_codec
+      attention_renderer: wippy.llm:context_attention_renderer
 
   # wippy.llm:context_attachments_test
   - name: context_attachments_test
