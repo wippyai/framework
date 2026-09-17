@@ -47,6 +47,8 @@ function attention_context_tool.set(args)
         or runtime.controller_pid == ""
         or type(runtime.agent_id) ~= "string"
         or runtime.agent_id == ""
+        or type(runtime.capability) ~= "string"
+        or runtime.capability == ""
         or type(all_context.call_id) ~= "string"
         or all_context.call_id == "" then
         return unavailable("the current Session did not grant update authority")
@@ -65,6 +67,7 @@ function attention_context_tool.set(args)
         reply_topic = reply_topic,
         session_id = runtime.session_id,
         agent_id = runtime.agent_id,
+        capability = runtime.capability,
         enabled = args.enabled,
         expected_revision = args.expected_revision,
     })
