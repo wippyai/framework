@@ -65,7 +65,7 @@ local function generate_embedding(text)
     })
 
     if not response then
-        return nil, "Failed to generate embedding: " .. (err or "Unknown error")
+        return nil, "Failed to generate embedding: " .. tostring(err)
     end
 
     return response.result
@@ -99,7 +99,7 @@ local function generate_batch_embeddings(texts)
     })
 
     if not response then
-        return nil, "Failed to generate batch embeddings: " .. (err or "Unknown error")
+        return nil, "Failed to generate batch embeddings: " .. tostring(err)
     end
 
     return response.result
