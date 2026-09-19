@@ -1,5 +1,5 @@
 test:
-	wippy run test \
+	wippy test \
 		-o wippy.usage:target_db:default=app:db \
 		-o wippy.migration:app_db:default=app:db \
 		-o wippy.bootloader:application_host:default=app:processes \

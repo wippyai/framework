@@ -325,6 +325,27 @@ entries:
         scope: dev
       component: wippy/test
       version: '*'
+    - name: page_access_probe
+      kind: function.lua
+      meta:
+        scope: dev
+        comment: Test seam - calls page_registry.can_access under a funcs.call-supplied security context
+      source: file://page_access_probe.lua
+      method: run
+      imports:
+        page_registry: wippy.views:page_registry
+    - name: test_page_view_policy
+      kind: security.policy
+      meta:
+        scope: dev
+        comment: Test-only policy granting view access to the fixture secure pages, used as a positive control for page_access_probe
+      policy:
+        resources:
+          - page:wippy.views.test:test_secure
+          - page:app:test_tmpl_settings
+        actions:
+          - view
+        effect: allow
     - name: page_registry_test
       kind: function.lua
       meta:
@@ -338,6 +359,8 @@ entries:
         page_registry: wippy.views:page_registry
       modules:
         - registry
+        - security
+        - funcs
 
     - name: component_registry_test
       kind: function.lua

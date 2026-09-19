@@ -62,16 +62,16 @@ local function define_tests()
                 pg_groups = { ["workspace.1"] = "app:scope" },
             })
 
-            test.expect(snapshot.relay_user_upgrade).to_equal(true)
-            test.expect(snapshot.active_plugins.session_.pid).to_equal("app:plugin:1")
-            test.expect(snapshot.connected_clients["app:client:1"]).to_equal(true)
-            test.expect(snapshot.pg_groups["workspace.1"]).to_equal("app:scope")
+            test.eq(snapshot.relay_user_upgrade, true)
+            test.eq(snapshot.active_plugins.session_.pid, "app:plugin:1")
+            test.eq(snapshot.connected_clients["app:client:1"], true)
+            test.eq(snapshot.pg_groups["workspace.1"], "app:scope")
 
             local encoded = user._encode_upgrade_state(snapshot)
-            test.expect(type(encoded)).to_equal("string")
+            test.is_string(encoded)
             local decoded = user._decode_upgrade_state(encoded)
-            test.expect(decoded.active_plugins.session_.pid).to_equal("app:plugin:1")
-            test.expect(decoded.connected_clients["app:client:1"]).to_equal(true)
+            test.eq(decoded.active_plugins.session_.pid, "app:plugin:1")
+            test.eq(decoded.connected_clients["app:client:1"], true)
         end)
     end)
 end

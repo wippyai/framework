@@ -253,7 +253,7 @@ function prompt.new(messages: {Message}?)
                 end
             else
                 -- Create new message
-                local message = {
+                local message: Message = {
                     role = role,
                     content = content_parts,
                     metadata = metadata
@@ -305,7 +305,7 @@ function prompt.new(messages: {Message}?)
     -- Add a function call by assistant
     builder.add_function_call = function(self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?)
         if function_name and arguments then
-            local message = {
+            local message: Message = {
                 role = prompt.ROLE.FUNCTION_CALL,
                 content = {}, -- Empty content when there's a function call
                 function_call = {
@@ -330,7 +330,7 @@ function prompt.new(messages: {Message}?)
     -- Add a function result message
     builder.add_function_result = function(self: any, name: string, content: any, function_call_id: string?)
         if name and content then
-            local message = {
+            local message: Message = {
                 role = prompt.ROLE.FUNCTION_RESULT,
                 name = name,
                 content = { prompt.text(content) }
@@ -348,19 +348,21 @@ function prompt.new(messages: {Message}?)
     -- Add a cache marker message (special message that can be interpreted by provider adapters)
     builder.add_cache_marker = function(self: any, marker_id: string?)
         -- Add a simple marker message that can be recognized by adapter layers
-        table.insert(self.messages, {
+        local message: Message = {
             role = prompt.ROLE.CACHE_MARKER,
             marker_id = marker_id or "default"
-        })
+        }
+        table.insert(self.messages, message)
         return self
     end
 
     -- Get all messages in the current builder (with image processing)
-    builder.get_messages = function(self: any)
-        local processed_messages = {}
-        local collected_images = {}
+    builder.get_messages = function(self: any): {Message}
+        local processed_messages: {Message} = {}
+        local collected_images: {ContentPart} = {}
+        local existing_messages: {Message} = self.messages :: {Message}
 
-        for i, msg in ipairs(self.messages) do
+        for i, msg in ipairs(existing_messages) do
             if msg.role == prompt.ROLE.FUNCTION_RESULT then
                 -- Process function result for images
                 local original_content = msg.content
@@ -373,7 +375,7 @@ function prompt.new(messages: {Message}?)
                 local cleaned_content, images = process_function_result_content(original_content)
 
                 -- Create processed message with cleaned content
-                local processed_msg = {
+                local processed_msg: Message = {
                     role = msg.role,
                     name = msg.name,
                     content = { prompt.text(type(cleaned_content) == "table" and json.encode(cleaned_content) or cleaned_content) }
@@ -399,16 +401,17 @@ function prompt.new(messages: {Message}?)
             -- Check if we need to insert collected images
             -- Insert when: we have images AND the next message is not a function_call/function_result (or we're at the end)
             if #collected_images > 0 then
-                local next_msg = self.messages[i + 1]
+                local next_msg = existing_messages[i + 1]
                 local should_insert = not next_msg or
                     (next_msg.role ~= prompt.ROLE.FUNCTION_CALL and next_msg.role ~= prompt.ROLE.FUNCTION_RESULT)
 
                 if should_insert then
                     -- Create new user message with all collected images
-                    table.insert(processed_messages, {
+                    local image_msg: Message = {
                         role = prompt.ROLE.USER,
                         content = collected_images
-                    })
+                    }
+                    table.insert(processed_messages, image_msg)
 
                     -- Clear collected images for next cluster
                     collected_images = {}
