@@ -89,6 +89,13 @@ entries:
     component: "wippy/test"
     version: ">=v0.4.0"
 
+  - name: dep.wippy.security
+    kind: "ns.dependency"
+    meta:
+      description: "Security policy groups referenced by background services"
+    component: "wippy/security"
+    version: ">=v0.3.0"
+
   # wippy.llm:embedder
   - name: embedder
     kind: contract.definition
