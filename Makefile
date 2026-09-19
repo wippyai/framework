@@ -28,7 +28,7 @@ run-tests:
 	@failed=0; \
 	for mod in $(TEST_MODULES); do \
 		printf "%-14s " "$$mod"; \
-		output=$$(cd src/$$mod/test && wippy run test 2>&1); \
+		output=$$(cd src/$$mod/test && wippy test 2>&1); \
 		if echo "$$output" | grep -q "PASSED"; then \
 			echo "PASSED"; \
 		else \

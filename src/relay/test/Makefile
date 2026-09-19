@@ -1,5 +1,5 @@
 test:
-	wippy run test \
+	wippy test \
 		-o wippy.relay:application_host:default=wippy.terminal:host \
 		-o wippy.relay:user_security_scope:default=app:user
 

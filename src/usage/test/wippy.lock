@@ -15,8 +15,8 @@ modules:
       version: 0.4.2
       hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
     - name: wippy/test
-      version: 0.4.11
-      hash: 235f2f1d222dabeec1a83f6f9f48a7f75abf2143860b833437c1d96da3cd3e95
+      version: 0.4.17
+      hash: 37a304cc20aa3005004255e9fda16835a94119db520c0c97e1db044c7844a229
 replacements:
     - from: wippy/bootloader
       to: ../../bootloader/src
