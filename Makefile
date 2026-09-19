@@ -28,7 +28,7 @@ run-tests:
 	@failed=0; \
 	for mod in $(TEST_MODULES); do \
 		printf "%-14s " "$$mod"; \
-		output=$$(cd src/$$mod/test && wippy test 2>&1); \
+		output=$$($(MAKE) -s -C src/$$mod/test test 2>&1); \
 		if echo "$$output" | grep -q "PASSED"; then \
 			echo "PASSED"; \
 		else \
@@ -44,7 +44,7 @@ run-lint:
 	@failed=0; \
 	for mod in $(TEST_MODULES); do \
 		printf "%-14s " "$$mod"; \
-		output=$$(cd src/$$mod/test && wippy lint 2>&1); \
+		output=$$($(MAKE) -s -C src/$$mod/test lint 2>&1); \
 		if echo "$$output" | grep -q "errors"; then \
 			echo "$$output" | grep -oP 'Checked.*'; \
 			failed=1; \
