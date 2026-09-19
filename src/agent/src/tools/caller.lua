@@ -582,7 +582,15 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
 
         -- Start async execution
         local ctx_executor = self.executor:with_context(merged_context)
-        local command = ctx_executor:async(tostring(registry_id), args)
+        local command, start_err = ctx_executor:async(tostring(registry_id), args)
+        if not command then
+            results[call_id] = {
+                result = nil,
+                error = start_err,
+                tool_call = tool_call
+            }
+            goto continue
+        end
 
         commands[call_id] = {
             command = command,
