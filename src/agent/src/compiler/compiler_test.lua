@@ -855,6 +855,16 @@ local function define_tests()
                                                         },
                                                         required = { "operation", "input_data" }
                                                     }
+                                                },
+                                                {
+                                                    id = "fs:read",
+                                                    schema = {
+                                                        type = "object",
+                                                        properties = {
+                                                            path = { type = "string", enum = { "a.txt", "b.txt" } }
+                                                        },
+                                                        required = { "path" }
+                                                    }
                                                 }
                                             },
                                             prompt = "You can call external APIs and process data dynamically."
@@ -1549,6 +1559,19 @@ local function define_tests()
             test.eq(api_tool.context.agent_id, "test:with_tool_schemas")
 
             test.contains(compiled_spec.prompt, "You can call external APIs and process data dynamically.")
+        end)
+
+        it("should keep a registered tool's description when a trait build method supplies only its schema", function()
+            local compiled_spec, err = compiler.compile(spec_with_tool_schemas)
+
+            test.is_nil(err)
+            test.is_true(tool_exists(compiled_spec.tools, "read"))
+
+            local read_tool = compiled_spec.tools["read"]
+            test.eq(read_tool.registry_id, "fs:read")
+            test.eq(read_tool.description, "Mock description for fs:read")
+            test.eq(read_tool.schema.properties.path.enum[1], "a.txt")
+            test.eq(read_tool.schema.required[1], "path")
         end)
 
         it("should compile agent with delegates in unified tool structure", function()

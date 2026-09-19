@@ -1117,10 +1117,15 @@ local function process_tools(raw_spec: any, additional_tools: any, trait_context
         }
 
         if tool_info.inline_schema then
-            tool_entry.description = tool_info.description or ("Inline tool: " .. canonical_name)
+            -- An inline schema replaces only the input schema; a registered tool
+            -- keeps its own description and meta.
+            local registered = get_tools().get_tool_schema(tool_info.id)
+            tool_entry.description = tool_info.description
+                or (registered and registered.description)
+                or ("Inline tool: " .. canonical_name)
             tool_entry.schema = get_tools().run_input_schema_processors(tool_info.inline_schema, tool_info.id, canonical_name)
-            tool_entry.registry_id = tool_info.id  -- FIX: Preserve registry_id even with inline schema
-            tool_entry.meta = {}
+            tool_entry.registry_id = tool_info.id
+            tool_entry.meta = registered and registered.meta or {}
         else
             if trait_tool_schemas[canonical_name] then
                 tool_entry.description = tool_info.description or trait_tool_schemas[canonical_name].description or ("Trait tool: " .. canonical_name)
