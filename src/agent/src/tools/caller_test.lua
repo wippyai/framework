@@ -65,7 +65,8 @@ local function define_tests()
                 ["test:weather"] = { result = "Sunny, 25°C" },
                 ["test:exclusive"] = { result = "exclusive_result" },
                 ["test:non_exclusive"] = { result = "regular_result" },
-                ["test:failing_tool"] = { error = "Tool execution failed" }
+                ["test:failing_tool"] = { error = "Tool execution failed" },
+                ["test:denied_tool"] = { start_error = "not allowed: test:denied_tool" }
             }
             wrapper_calls = {}
             wrapper_behaviors = {}
@@ -122,6 +123,9 @@ local function define_tests()
                                 end,
                                 async = function(self, registry_id, args)
                                     local result_data = (tool_results :: any)[registry_id]
+                                    if result_data and result_data.start_error then
+                                        return nil, result_data.start_error
+                                    end
                                     local final_result = nil
                                     local final_error = nil
 
@@ -664,6 +668,36 @@ local function define_tests()
                 test.is_nil(results["call_123"].error)
                 test.is_nil(results["call_456"].result)
                 test.eq(results["call_456"].error, "Tool execution failed")
+            end)
+
+            it("should report a tool that cannot be started as that call's error", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    },
+                    ["call_789"] = {
+                        call_id = "call_789",
+                        name = "denied_tool",
+                        args = {},
+                        registry_id = "test:denied_tool",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.eq(results["call_123"].result, 42)
+                test.is_nil(results["call_123"].error)
+                test.is_nil(results["call_789"].result)
+                test.eq(results["call_789"].error, "not allowed: test:denied_tool")
+                test.eq(results["call_789"].tool_call.name, "denied_tool")
             end)
 
             it("should handle parallel execution with invalid tools", function()
