@@ -2,6 +2,9 @@ directories:
     modules: .wippy
     src: ..
 modules:
+    - name: wippy/security
+      version: 0.4.2
+      hash: 9020016afc9de612f5297d38ce99e8500c63a2986077e8b0e560d8636c506627
     - name: wippy/terminal
       version: 0.4.2
       hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
