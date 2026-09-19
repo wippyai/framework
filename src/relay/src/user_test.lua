@@ -11,17 +11,19 @@ local function define_tests()
             local scope, scope_err = security.named_scope("app:user")
             test.is_nil(scope_err)
 
+            local config = consts.get_config()
+            local hub_host = assert(config.user_hub_host, "relay application_host is not configured")
             local hub_pid, spawn_err = process.with_context({})
                 :with_actor(actor)
                 :with_scope(scope)
                 :spawn_linked_monitored(
                     consts.USER_HUB_PROCESS_ID,
-                    "wippy.terminal:host",
+                    hub_host,
                     {
                         user_id = "relay-user-test@wippy.local",
                         user_metadata = {},
                         plugins = {},
-                        config = consts.get_config(),
+                        config = config,
                     }
                 )
 
