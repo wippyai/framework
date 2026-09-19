@@ -34,6 +34,13 @@ entries:
     component: "wippy/migration"
     version: ">=v0.0.7"
 
+  - name: dep.wippy.llm
+    kind: "ns.dependency"
+    meta:
+      description: "LLM component defining the usage_tracker contract this module binds"
+    component: "wippy/llm"
+    version: ">=v0.4.0"
+
   # wippy.usage:token_usage_repo
   - name: token_usage_repo
     kind: library.lua
