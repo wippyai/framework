@@ -44,6 +44,7 @@ type GenerateResponse = {
 
 type EmbedResponse = {
     result: {number} | {{number}},
+    model: string?,
     tokens: TokenUsage,
     finish_reason: string?,
     metadata: table?,
@@ -725,6 +726,8 @@ function llm.embed(text, options)
             return nil, "Failed to normalize provider response"
         end
 
+        normalized.model = raw_result.model or options.model
+
         -- Track usage if available
         local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
         if usage_id then
@@ -788,6 +791,8 @@ function llm.embed(text, options)
         if not normalized then
             return nil, "Failed to normalize provider response"
         end
+
+        normalized.model = raw_result.model or model_card.name
 
         -- Track usage
         local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)

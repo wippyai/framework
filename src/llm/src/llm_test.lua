@@ -586,6 +586,16 @@ local function define_tests()
                 test.eq(#result.result, 1)
                 test.eq(#result.result[1], 1536)
             end)
+
+            it("should report the requested model for direct provider embed calls", function()
+                local result, err = llm.embed("Test text", {
+                    model = "custom-embed-model",
+                    provider_id = "wippy.llm.openai:provider"
+                })
+
+                test.is_nil(err)
+                test.eq(result.model, "custom-embed-model")
+            end)
         end)
 
         describe("Text Generation", function()
@@ -732,6 +742,33 @@ local function define_tests()
 
                 test.is_nil(result)
                 test.eq(err, "Model is required in options")
+            end)
+
+            it("should report the resolved model name, not the class alias", function()
+                local result, err = llm.embed("Test text", { model = "class:embedding" })
+
+                test.is_nil(err)
+                test.eq(result.model, "text-embedding-3-small")
+            end)
+
+            it("should keep the provider-reported model over the resolved name", function()
+                mock_providers.open = function(provider_id, options)
+                    return {
+                        embed = function(self, args)
+                            return {
+                                success = true,
+                                result = { embeddings = { { 0.1, 0.2, 0.3 } } },
+                                model = "text-embedding-3-small-002",
+                                tokens = { prompt_tokens = 5, total_tokens = 5 }
+                            }
+                        end
+                    }
+                end
+
+                local result, err = llm.embed("Test text", { model = "text-embedding-3-small" })
+
+                test.is_nil(err)
+                test.eq(result.model, "text-embedding-3-small-002")
             end)
         end)
 
