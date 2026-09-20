@@ -17,3 +17,11 @@ entries:
       icon: tabler:test-pipe
     variable: ENABLE_INTEGRATION_TESTS
     storage: wippy.llm.env:envs
+
+  - name: enable_typesafe_integration_tests
+    kind: env.variable
+    meta:
+      scope: dev
+      comment: Run only the TypeSafe integration tests against the real API
+    variable: TYPESAFE_INTEGRATION_TESTS
+    storage: wippy.llm.env:envs

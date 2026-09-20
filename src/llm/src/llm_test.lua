@@ -65,6 +65,36 @@ local function define_tests()
                                 }
                             }
                         }
+                    elseif name == "jev" then
+                        return {
+                            id = "app.models:jev",
+                            name = "jev",
+                            title = "Jev System One",
+                            capabilities = { "evaluate" },
+                            classes = { "evaluate" },
+                            priority = 100,
+                            providers = {
+                                {
+                                    id = "wippy.llm.typesafe:provider",
+                                    provider_model = "jev-2026-01",
+                                    options = { calibration = "platt" }
+                                }
+                            }
+                        }
+                    elseif name == "jev-open" then
+                        return {
+                            id = "app.models:jev-open",
+                            name = "jev-open",
+                            title = "Jev Without Declared Capabilities",
+                            priority = 90,
+                            providers = {
+                                {
+                                    id = "wippy.llm.typesafe:provider",
+                                    provider_model = "jev-open-2026-01",
+                                    options = {}
+                                }
+                            }
+                        }
                     else
                         return nil, "Model not found: " .. name
                     end
@@ -187,6 +217,7 @@ local function define_tests()
             -- Create mock providers module
             mock_providers = {
                 last_open = nil,
+                last_evaluate_args = nil,
                 open = function(provider_id, options)
                     options = options or {}
                     mock_providers.last_open = {
@@ -305,6 +336,39 @@ local function define_tests()
                                     total_tokens = 32
                                 },
                                 finish_reason = "stop"
+                            }
+                        end
+                    elseif provider_id == "wippy.llm.typesafe:provider" then
+                        instance.evaluate = function(self, args)
+                            mock_providers.last_evaluate_args = args
+                            return {
+                                success = true,
+                                result = {
+                                    readings = {
+                                        intent = {
+                                            type = "choice",
+                                            choice = "technical",
+                                            probabilities = { billing = 0.08, technical = 0.85, sales = 0.07 },
+                                            confidence = 0.82
+                                        },
+                                        resolved = {
+                                            type = "predicate",
+                                            probability = 0.92
+                                        },
+                                        mood = {
+                                            type = "score",
+                                            score = 2.6,
+                                            level = 3,
+                                            probabilities = { 0.05, 0.3, 0.65 }
+                                        }
+                                    }
+                                },
+                                tokens = {
+                                    prompt_tokens = 120,
+                                    completion_tokens = 0,
+                                    total_tokens = 120
+                                },
+                                metadata = { request_id = "req_typesafe_123" }
                             }
                         end
                     else
@@ -869,6 +933,420 @@ local function define_tests()
                 test.not_nil(result.finish_reason)
                 test.not_nil(result.metadata)
                 test.not_nil(result.tool_calls)
+            end)
+        end)
+        describe("Evaluation", function()
+            local questions = {
+                intent = {
+                    type = "choice",
+                    instructions = "Which queue owns this conversation",
+                    domain = {
+                        billing = "Payments, refunds and invoices",
+                        technical = "Bugs, outages and integrations"
+                    }
+                },
+                resolved = {
+                    type = "predicate",
+                    instructions = "The customer considers the issue closed"
+                },
+                mood = {
+                    type = "score",
+                    instructions = "Emotional temperature of the customer",
+                    domain = { "calm", "frustrated", "angry" }
+                }
+            }
+
+            it("should require model parameter", function()
+                local result, err = llm.evaluate("I was charged twice", questions, {})
+
+                test.is_nil(result)
+                test.eq(err, "Model is required in options")
+            end)
+
+            it("should reject a questions that is not a table", function()
+                local result, err = llm.evaluate("text", "intent", { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Questions must be a table")
+            end)
+
+            it("should reject an empty questions", function()
+                local result, err = llm.evaluate("text", {}, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Questions must declare at least one slot")
+            end)
+
+            it("should reject non-string slot keys", function()
+                local result, err = llm.evaluate("text", {
+                    { type = "predicate", instructions = "Holds" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Question keys must be nonempty strings")
+            end)
+
+            it("should reject a slot that is not a table", function()
+                local result, err = llm.evaluate("text", { mood = "score" }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Slot must be a table in slot: mood")
+            end)
+
+            it("should reject a slot without a type", function()
+                local result, err = llm.evaluate("text", {
+                    mood = { instructions = "Emotional temperature" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Slot type is required in slot: mood")
+            end)
+
+            it("should reject an unknown slot type", function()
+                local result, err = llm.evaluate("text", {
+                    mood = { type = "ranking", instructions = "Emotional temperature" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Unknown slot type 'ranking' in slot: mood")
+            end)
+
+            it("should reject a slot without instructions", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = { type = "predicate" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Instructions are required in slot: resolved")
+            end)
+
+            it("should reject empty instructions", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = { type = "predicate", instructions = "" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Instructions must not be empty in slot: resolved")
+            end)
+
+            it("should reject instructions that are neither a string nor a table", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = { type = "predicate", instructions = 42 }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Instructions must be a JSON-compatible string or table in slot: resolved")
+            end)
+
+            it("should accept table instructions", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = {
+                        type = "predicate",
+                        instructions = { question = "Is the issue closed", examples = { "yes", "no" } }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(result.result.resolved.probability, 0.92)
+            end)
+
+            it("should reject unknown slot fields", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = { type = "predicate", instructions = "Holds", weight = 2 }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Unknown slot field 'weight' in slot: resolved")
+            end)
+
+            it("should reject a choice slot without a domain", function()
+                local result, err = llm.evaluate("text", {
+                    intent = { type = "choice", instructions = "Which queue" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Choice domain is required in slot: intent")
+            end)
+
+            it("should reject a choice domain with fewer than two options", function()
+                local result, err = llm.evaluate("text", {
+                    intent = { type = "choice", instructions = "Which queue", domain = { "billing" } }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Choice domain must declare at least two options in slot: intent")
+            end)
+
+            it("should reject a choice domain map with fewer than two options", function()
+                local result, err = llm.evaluate("text", {
+                    intent = {
+                        type = "choice",
+                        instructions = "Which queue",
+                        domain = { billing = "Payments and refunds" }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Choice domain must declare at least two options in slot: intent")
+            end)
+
+            it("should reject a choice domain with non-string option names", function()
+                local result, err = llm.evaluate("text", {
+                    intent = { type = "choice", instructions = "Which queue", domain = { "billing", 7 } }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Choice domain options must be strings in slot: intent")
+            end)
+
+            it("should reject a choice domain with non-string descriptions", function()
+                local result, err = llm.evaluate("text", {
+                    intent = {
+                        type = "choice",
+                        instructions = "Which queue",
+                        domain = { billing = "Payments and refunds", technical = true }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Choice domain descriptions must be strings in slot: intent")
+            end)
+
+            it("should reject a score slot without a domain", function()
+                local result, err = llm.evaluate("text", {
+                    mood = { type = "score", instructions = "Temperature" }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Score domain must be an ordered array of at least two level descriptions in slot: mood")
+            end)
+
+            it("should reject a score domain with fewer than two levels", function()
+                local result, err = llm.evaluate("text", {
+                    mood = { type = "score", instructions = "Temperature", domain = { "calm" } }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Score domain must be an ordered array of at least two level descriptions in slot: mood")
+            end)
+
+            it("should reject a score domain that is a map", function()
+                local result, err = llm.evaluate("text", {
+                    mood = {
+                        type = "score",
+                        instructions = "Temperature",
+                        domain = { calm = "Relaxed", angry = "Shouting" }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Score domain must be an ordered array of at least two level descriptions in slot: mood")
+            end)
+
+            it("should reject a score domain with non-string levels", function()
+                local result, err = llm.evaluate("text", {
+                    mood = { type = "score", instructions = "Temperature", domain = { "calm", 3 } }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Score domain levels must be strings in slot: mood")
+            end)
+
+            it("should reject a predicate domain with keys other than yes and no", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = {
+                        type = "predicate",
+                        instructions = "Holds",
+                        domain = { yes = "Closed", maybe = "Unclear" }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Predicate domain accepts only the keys yes and no in slot: resolved")
+            end)
+
+            it("should reject a predicate domain with non-string descriptions", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = {
+                        type = "predicate",
+                        instructions = "Holds",
+                        domain = { yes = "Closed", no = 0 }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Predicate domain descriptions must be strings in slot: resolved")
+            end)
+
+            it("should accept a predicate domain describing both outcomes", function()
+                local result, err = llm.evaluate("text", {
+                    resolved = {
+                        type = "predicate",
+                        instructions = "Holds",
+                        domain = { yes = "Customer is satisfied", no = "Customer is still waiting" }
+                    }
+                }, { model = "jev" })
+
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(result.result.resolved.probability, 0.92)
+            end)
+
+            it("should reject a state that is not a string or a table", function()
+                local result, err = llm.evaluate(42, questions, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "State must be a string or a table")
+            end)
+
+            it("should reject a nil state", function()
+                local result, err = llm.evaluate(nil, questions, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "State must be a string or a table")
+                test.is_nil(mock_providers.last_evaluate_args)
+            end)
+
+            it("should accept a table state", function()
+                local state = { thread = { "I was charged twice", "Still waiting" }, tier = "pro" }
+                local result, err = llm.evaluate(state, questions, { model = "jev" })
+
+                test.is_nil(err)
+                test.eq(mock_providers.last_evaluate_args.state.tier, "pro")
+                test.eq(#mock_providers.last_evaluate_args.state.thread, 2)
+            end)
+
+            it("should validate the questions before opening a provider", function()
+                local result, err = llm.evaluate("text", { mood = { type = "score" } }, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Instructions are required in slot: mood")
+                test.is_nil(mock_providers.last_open)
+            end)
+
+            it("should build contract arguments on the direct provider path", function()
+                local result, err = llm.evaluate("I was charged twice", questions, {
+                    model = "jev-custom",
+                    provider_id = "wippy.llm.typesafe:provider"
+                })
+
+                test.is_nil(err)
+                test.not_nil(result)
+
+                local args = mock_providers.last_evaluate_args
+                test.eq(args.state, "I was charged twice")
+                test.eq(args.model, "jev-custom")
+                test.eq(args._provider_id, "wippy.llm.typesafe:provider")
+                test.eq(args.questions.intent.type, "choice")
+                test.eq(args.questions.intent.domain.billing, "Payments, refunds and invoices")
+                test.eq(args.questions.mood.domain[3], "angry")
+                test.is_nil(args.options.model)
+                test.is_nil(args.options.provider_id)
+            end)
+
+            it("should map provider_model and merge provider options on the resolved path", function()
+                local result, err = llm.evaluate("I was charged twice", questions, { model = "jev" })
+
+                test.is_nil(err)
+
+                local args = mock_providers.last_evaluate_args
+                test.eq(args.model, "jev-2026-01")
+                test.eq(args._provider_id, "wippy.llm.typesafe:provider")
+                test.eq(args.options.calibration, "platt")
+            end)
+
+            it("should reject a model that does not declare the evaluate capability", function()
+                local result, err = llm.evaluate("text", questions, { model = "gpt-4o" })
+
+                test.is_nil(result)
+                test.eq(err, "Model does not declare the evaluate capability: gpt-4o")
+            end)
+
+            it("should accept a model card without a capabilities list", function()
+                local result, err = llm.evaluate("text", questions, { model = "jev-open" })
+
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(mock_providers.last_evaluate_args.model, "jev-open-2026-01")
+            end)
+
+            it("should normalize a reading for every declared slot", function()
+                local result, err = llm.evaluate("I was charged twice", questions, { model = "jev" })
+
+                test.is_nil(err)
+
+                local intent = result.result.intent
+                test.eq(intent.type, "choice")
+                test.eq(intent.choice, "technical")
+                test.eq(intent.probabilities.technical, 0.85)
+                test.eq(intent.probabilities.billing, 0.08)
+                test.eq(intent.confidence, 0.82)
+
+                local resolved = result.result.resolved
+                test.eq(resolved.type, "predicate")
+                test.eq(resolved.probability, 0.92)
+
+                local mood = result.result.mood
+                test.eq(mood.type, "score")
+                test.eq(mood.score, 2.6)
+                test.eq(mood.level, 3)
+
+                local probabilities = mood.probabilities :: {number}
+                test.eq(#probabilities, 3)
+                test.eq(probabilities[1], 0.05)
+                test.eq(probabilities[3], 0.65)
+                test.is_nil(mood.confidence)
+            end)
+
+            it("should pass through tokens and metadata", function()
+                local result, err = llm.evaluate("text", questions, { model = "jev" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.prompt_tokens, 120)
+                test.eq(result.tokens.total_tokens, 120)
+                test.eq(result.metadata.request_id, "req_typesafe_123")
+            end)
+
+            it("should track usage under the resolved model name", function()
+                local result, err = llm.evaluate("text", questions, { model = "jev" })
+
+                test.is_nil(err)
+                test.eq(mock_usage_tracker.last_model_id, "jev")
+                test.not_nil(result.usage_record)
+                test.contains(result.usage_record.usage_id, "usage_")
+            end)
+
+            it("should propagate provider errors", function()
+                mock_providers.open = function(provider_id, options)
+                    return {
+                        evaluate = function(self, args)
+                            return nil, errors.new("Questions rejected by model")
+                        end
+                    }
+                end
+
+                local result, err = llm.evaluate("text", questions, { model = "jev" })
+
+                test.is_nil(result)
+                test.eq(err, "Questions rejected by model")
+            end)
+
+            it("should hoist timeout and retry out of options", function()
+                local result, err = llm.evaluate("text", questions, {
+                    model = "jev-custom",
+                    provider_id = "wippy.llm.typesafe:provider",
+                    timeout = 30,
+                    retry = { attempts = 2 }
+                })
+
+                test.is_nil(err)
+
+                local args = mock_providers.last_evaluate_args
+                test.eq(args.timeout, 30)
+                test.eq(args.retry.attempts, 2)
+                test.is_nil(args.options.timeout)
+                test.is_nil(args.options.retry)
             end)
         end)
     end)
