@@ -137,11 +137,16 @@ function generate_handler.handler(contract_args)
         context.name_to_id_map = name_to_id_map
     end
 
+    local request_options = {
+        timeout = contract_args.timeout or 600,
+        retry = contract_args.retry
+    }
+
     if contract_args.stream and contract_args.stream.reply_to then
         local stream_response, stream_err = generate_handler._client.converse_stream(
             contract_args.model,
             converse_payload,
-            { timeout = contract_args.timeout or 600 }
+            request_options
         )
 
         if stream_err then
@@ -154,7 +159,7 @@ function generate_handler.handler(contract_args)
     local response, request_err = generate_handler._client.converse(
         contract_args.model,
         converse_payload,
-        { timeout = contract_args.timeout or 600 }
+        request_options
     )
 
     if request_err then

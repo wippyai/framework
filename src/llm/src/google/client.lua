@@ -265,7 +265,7 @@ local function handle_stream_response(response, http_options)
     }
 end
 
-function client.request(method, url, http_options)
+function client.request(method, url, http_options, retry: transport.Retry?)
     http_options.headers["Accept"] = "application/json"
 
     if http_options.stream then
@@ -282,7 +282,7 @@ function client.request(method, url, http_options)
         return transport.dispatch(client._http_client, method, url, http_options)
     end
 
-    local response, request_error = transport.send(send_once, parse_error_response, nil)
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
     if not response then
         return nil, request_error
     end

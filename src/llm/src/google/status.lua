@@ -31,7 +31,7 @@ function status.handler(contract_args)
 
     local response = client_instance:request({
         model = contract_args.model,
-        options = { method = "GET" }
+        options = { method = "GET", retry = false }
     })
 
     if response and response.status_code and response.status_code ~= 200 then

@@ -12,7 +12,7 @@ function status_handler.handler()
     local _, request_err = status_handler._client.request(
         "/v1/models",
         nil,
-        { method = "GET", timeout = 15 }
+        { method = "GET", timeout = 15, retry = false }
     )
     if request_err then
         return transport.health_failure(request_err)

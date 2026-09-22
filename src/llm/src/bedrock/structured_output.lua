@@ -127,7 +127,7 @@ function structured_output_handler.handler(contract_args)
     local response, request_err = structured_output_handler._client.converse(
         contract_args.model,
         converse_payload,
-        { timeout = contract_args.timeout }
+        { timeout = contract_args.timeout, retry = contract_args.retry }
     )
 
     if request_err then

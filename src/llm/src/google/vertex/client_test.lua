@@ -26,6 +26,10 @@ local function define_tests()
 
             it("should use OAuth2 token from config", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -64,6 +68,10 @@ local function define_tests()
         describe("HTTP Method Support", function()
             it("should default to POST method", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -100,6 +108,10 @@ local function define_tests()
 
             it("should support GET method", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -149,6 +161,10 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -190,6 +206,10 @@ local function define_tests()
 
             it("should encode empty payload as empty object for POST", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -226,6 +246,10 @@ local function define_tests()
 
             it("should not include body for GET requests", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -265,6 +289,10 @@ local function define_tests()
         describe("URL Construction", function()
             it("should construct URL with project, location, model and endpoint_path", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -301,6 +329,10 @@ local function define_tests()
 
             it("should construct URL with only model when endpoint_path is missing", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -336,6 +368,10 @@ local function define_tests()
 
             it("should use base URL without model when model is empty", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -369,6 +405,10 @@ local function define_tests()
 
             it("should use custom project and location from options", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -409,6 +449,10 @@ local function define_tests()
 
             it("should use custom base URL from options", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -444,6 +488,10 @@ local function define_tests()
 
             it("should not include project and location for non-required endpoints", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -482,6 +530,10 @@ local function define_tests()
         describe("Timeout Handling", function()
             it("should use default timeout from config", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -518,6 +570,10 @@ local function define_tests()
 
             it("should use custom timeout from options", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -591,6 +647,10 @@ local function define_tests()
 
             it("should return error from HTTP client", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -647,6 +707,10 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -695,6 +759,10 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -731,6 +799,81 @@ local function define_tests()
                 tests.eq(response.error.code, 400)
                 tests.eq(response.error.message, "Invalid request")
                 tests.eq(response.error.status, "INVALID_ARGUMENT")
+            end)
+        end)
+
+        describe("Retry", function()
+            local function use_config(context_retry)
+                client._config = {
+                    get_oauth2_token = function()
+                        return { access_token = "test-oauth2-token" }
+                    end,
+                    get_vertex_base_url = function()
+                        return "https://us-central1-aiplatform.googleapis.com/v1", nil
+                    end,
+                    get_vertex_timeout = function()
+                        return 60
+                    end,
+                    get_project_id = function()
+                        return "test-project"
+                    end,
+                    get_vertex_location = function()
+                        return "us-central1"
+                    end,
+                    get_retry = function()
+                        return context_retry
+                    end
+                }
+            end
+
+            local function capture_retry()
+                local state: {retry: any, called: boolean} = { retry = nil, called = false }
+                client._client = {
+                    request = function(method, url, options, retry)
+                        state.called = true
+                        state.retry = retry
+                        return { status_code = 200 }
+                    end
+                }
+                return state
+            end
+
+            it("should pass the context retry policy to the HTTP client", function()
+                use_config({ attempts = 2, backoff_ms = 0 })
+                local captured = capture_retry()
+
+                client.request({ model = "gemini-2.5-flash", endpoint_path = "generateContent" })
+
+                tests.is_true(captured.called)
+                tests.eq(captured.retry.attempts, 2)
+                tests.eq(captured.retry.backoff_ms, 0)
+            end)
+
+            it("should let the request retry policy override the context", function()
+                use_config({ attempts = 2, backoff_ms = 0 })
+                local captured = capture_retry()
+
+                client.request({
+                    model = "gemini-2.5-flash",
+                    endpoint_path = "generateContent",
+                    options = { retry = { attempts = 4, backoff_ms = 10 } }
+                })
+
+                tests.eq(captured.retry.attempts, 4)
+                tests.eq(captured.retry.backoff_ms, 10)
+            end)
+
+            it("should disable retry when the request sets false", function()
+                use_config({ attempts = 2, backoff_ms = 0 })
+                local captured = capture_retry()
+
+                client.request({
+                    model = "gemini-2.5-flash",
+                    options = { method = "GET", retry = false }
+                })
+
+                tests.is_true(captured.called)
+                tests.is_nil(captured.retry)
             end)
         end)
     end)

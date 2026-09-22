@@ -220,6 +220,7 @@ local function define_tests()
             mock_providers = {
                 last_open = nil,
                 last_evaluate_args = nil,
+                last_generate_args = nil,
                 open = function(provider_id, options)
                     options = options or {}
                     mock_providers.last_open = {
@@ -234,6 +235,7 @@ local function define_tests()
 
                     if provider_id == "wippy.llm.openai:provider" then
                         instance.generate = function(self, args)
+                            mock_providers.last_generate_args = args
                             return {
                                 success = true,
                                 result = {
@@ -525,6 +527,66 @@ local function define_tests()
                 test.eq(mock_providers.last_open.options.api_key, "stored-profile-key")
                 test.eq(mock_providers.last_open.options.base_url, "https://profile.example/v1")
                 test.eq(mock_providers.last_open.options.timeout, 60)
+            end)
+
+            it("should deliver resolver provider retry through the provider context", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return {
+                            id = "custom:with-retry",
+                            name = "custom-with-retry",
+                            providers = {
+                                {
+                                    id = "wippy.llm.openai:provider",
+                                    provider_model = "gpt-4o-2024-11-20",
+                                    context = {
+                                        retry = { attempts = 3, backoff_ms = 50 },
+                                    },
+                                    options = {},
+                                },
+                            },
+                        }
+                    end,
+                }
+
+                local result, err = llm.generate("Hello", { model = "custom-with-retry" })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_providers.last_open.options.retry.attempts, 3)
+                test.eq(mock_providers.last_open.options.retry.backoff_ms, 50)
+                test.is_nil(mock_providers.last_generate_args.retry)
+            end)
+
+            it("should forward per-call retry to the provider call", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return {
+                            id = "custom:per-call-retry",
+                            name = "custom-per-call-retry",
+                            providers = {
+                                {
+                                    id = "wippy.llm.openai:provider",
+                                    provider_model = "gpt-4o-2024-11-20",
+                                    context = {
+                                        retry = { attempts = 3, backoff_ms = 50 },
+                                    },
+                                    options = {},
+                                },
+                            },
+                        }
+                    end,
+                }
+
+                local result, err = llm.generate("Hello", {
+                    model = "custom-per-call-retry",
+                    retry = { attempts = 5 },
+                })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.eq(mock_providers.last_generate_args.retry.attempts, 5)
+                test.is_nil(mock_providers.last_generate_args.options.retry)
             end)
 
             it("should fall back to discovery when the resolver returns no card", function()

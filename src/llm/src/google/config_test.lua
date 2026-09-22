@@ -615,6 +615,33 @@ local function define_tests()
                 tests.eq(config.CLIENT_CONTRACT_ID, "wippy.llm.google:client_contract")
             end)
         end)
+
+        describe("Retry Configuration", function()
+            it("should normalize retry from context", function()
+                config._ctx = {
+                    get = function(key)
+                        if key == "retry" then
+                            return { attempts = 2, backoff_ms = 0 }
+                        end
+                        return nil
+                    end
+                }
+
+                local retry = config.get_retry()
+                tests.eq(retry.attempts, 2)
+                tests.eq(retry.backoff_ms, 0)
+            end)
+
+            it("should return nil when retry is not configured", function()
+                config._ctx = {
+                    get = function(key)
+                        return nil
+                    end
+                }
+
+                tests.is_nil(config.get_retry())
+            end)
+        end)
     end)
 end
 

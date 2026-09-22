@@ -9,7 +9,7 @@ type OpenAIConfig = {
     base_url: string,
     organization: string?,
     timeout: number,
-    retry: table?,
+    retry: transport.Retry?,
     headers: {[string]: string}?
 }
 
@@ -197,7 +197,7 @@ function openai_client.request(endpoint_path, payload, options)
         return transport.dispatch(openai_client._http_client, method, full_url, http_options)
     end
 
-    local retry = transport.normalize_retry(options.retry) or config.retry
+    local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry)
     if not response then
         return nil, request_error

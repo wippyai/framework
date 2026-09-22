@@ -120,7 +120,8 @@ function structured_output_handler.handler(contract_args)
     end
 
     local request_options = {
-        timeout = contract_args.timeout
+        timeout = contract_args.timeout,
+        retry = contract_args.retry
     }
 
     local response, request_err = structured_output_handler._client.request(

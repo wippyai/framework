@@ -33,6 +33,7 @@ local function resolve_config()
         base_url = resolve_string("base_url", "BEDROCK_BASE_URL")
             or ("https://bedrock-runtime." .. region .. ".amazonaws.com"),
         timeout = tonumber(resolve_string("timeout", "BEDROCK_TIMEOUT")) or 600,
+        retry = transport.normalize_retry(ctx_all.retry),
         headers = ctx_all.headers
     }
 end
@@ -167,7 +168,8 @@ local function signed_request(path, payload, options)
         return transport.dispatch(bedrock_client._http_client, "POST", full_url, request_opts)
     end
 
-    local response, request_error = transport.send(send_once, parse_error_response, nil)
+    local retry = transport.request_retry(options.retry, config.retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
     if not response then
         return nil, request_error
     end

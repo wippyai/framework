@@ -611,6 +611,68 @@ local function define_tests()
                 test.is_true(response.success)
             end)
 
+            it("should forward retry to the client request", function()
+                structured_output_handler._client._ctx = {
+                    all = function()
+                        return { api_key = "test-api-key" }
+                    end
+                }
+
+                structured_output_handler._client._env = {
+                    get = function(key)
+                        return nil
+                    end
+                }
+
+                local calls = 0
+                structured_output_handler._client._http_client = {
+                    post = function(url, options)
+                        calls = calls + 1
+                        if calls == 1 then
+                            return {
+                                status_code = 503,
+                                body = '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+                                headers = {}
+                            }
+                        end
+                        return {
+                            status_code = 200,
+                            body = json.encode({
+                                content = {
+                                    {
+                                        type = "tool_use",
+                                        name = "structured_output",
+                                        id = "tool_retry",
+                                        input = { test = true }
+                                    }
+                                },
+                                stop_reason = "tool_use",
+                                usage = { input_tokens = 10, output_tokens = 5 }
+                            }),
+                            headers = {}
+                        }
+                    end
+                }
+
+                local response, err = structured_output_handler.handler({
+                    model = "claude-sonnet-4-20250514",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Generate data" }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { test = { type = "boolean" } },
+                        required = { "test" },
+                        additionalProperties = false
+                    },
+                    retry = { attempts = 1, backoff_ms = 0 }
+                })
+
+                test.is_nil(err)
+                test.is_true(response.success)
+                test.eq(calls, 2)
+            end)
+
             it("should handle thinking configuration for Claude 3.7", function()
                 structured_output_handler._client._ctx = {
                     all = function()

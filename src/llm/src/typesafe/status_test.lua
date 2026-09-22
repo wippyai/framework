@@ -175,6 +175,44 @@ local function define_tests()
                 test.eq(response.message, "Service experiencing issues")
             end)
         end)
+
+        describe("Retry", function()
+            it("should probe once despite a context retry policy", function()
+                status_handler._client._ctx = {
+                    all = function()
+                        return {
+                            api_key = "test-api-key",
+                            base_url = "https://provider.example.test",
+                            retry = { attempts = 3, backoff_ms = 0 }
+                        }
+                    end
+                }
+
+                status_handler._client._env = {
+                    get = function(key)
+                        return nil
+                    end
+                }
+
+                local calls = 0
+                status_handler._client._http_client = {
+                    get = function(url, options)
+                        calls = calls + 1
+                        return {
+                            status_code = 503,
+                            body = '{"error":{"message":"Service unavailable"}}',
+                            headers = {}
+                        }
+                    end
+                }
+
+                local response = status_handler.handler()
+
+                test.is_false(response.success)
+                test.eq(response.status, "degraded")
+                test.eq(calls, 1)
+            end)
+        end)
     end)
 end
 

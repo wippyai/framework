@@ -756,6 +756,79 @@ local function define_tests()
 
                 generate.handler(contract_args)
             end)
+
+            it("should forward retry to client request", function()
+                generate._mapper = {
+                    map_messages = function(messages, options)
+                        return {
+                            { role = "user", parts = {{ text = "Test" }} }
+                        }, {}
+                    end,
+                    map_options = function(options)
+                        return {}
+                    end,
+                    map_success_response = function(response)
+                        return {
+                            success = true,
+                            result = { content = "Response" },
+                            tokens = { prompt_tokens = 5, completion_tokens = 5, total_tokens = 10 },
+                            finish_reason = "stop",
+                            metadata = {}
+                        }
+                    end
+                }
+
+                generate._ctx = {
+                    all = function()
+                        return {}
+                    end,
+                    get = function(key)
+                        return "test-client-id"
+                    end
+                }
+
+                local captured_options = nil
+                local mock_client_instance = {
+                    request = function(self, args)
+                        captured_options = args.options
+
+                        return {
+                            status_code = 200,
+                            candidates = {{ content = { parts = {{ text = "Response" }} }, finishReason = "STOP" }},
+                            usageMetadata = { promptTokenCount = 5, candidatesTokenCount = 5, totalTokenCount = 10 }
+                        }
+                    end
+                }
+
+                local mock_contract = {
+                    with_context = function(self, context)
+                        return self
+                    end,
+                    open = function(self, client_id)
+                        return mock_client_instance, nil
+                    end
+                }
+
+                generate._contract = {
+                    get = function(contract_id)
+                        return mock_contract, nil
+                    end
+                }
+
+                local contract_args = {
+                    model = "gemini-1.5-pro",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Test" }} }
+                    },
+                    retry = { attempts = 2, backoff_ms = 0 }
+                }
+
+                generate.handler(contract_args)
+
+                local options = captured_options :: any
+                tests.eq(options.retry.attempts, 2)
+                tests.eq(options.retry.backoff_ms, 0)
+            end)
         end)
 
         describe("Error Handling", function()

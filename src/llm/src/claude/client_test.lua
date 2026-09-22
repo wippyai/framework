@@ -1470,6 +1470,75 @@ local function define_tests()
                 test.eq(err.request_id, "req_stream_error")
             end)
         end)
+
+        describe("Retry", function()
+            local function use_context(context)
+                claude_client._ctx = {
+                    all = function()
+                        return context
+                    end
+                }
+                claude_client._env = {
+                    get = function(key)
+                        return nil
+                    end
+                }
+            end
+
+            local function flaky_http(statuses: {number})
+                local state = { calls = 0 }
+                claude_client._http_client = {
+                    post = function(url, options)
+                        state.calls = state.calls + 1
+                        local status = statuses[state.calls]
+                        if status == 200 then
+                            return { status_code = 200, body = '{"id":"msg_ok"}', headers = {} }
+                        end
+                        return {
+                            status_code = status,
+                            body = '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+                            headers = {}
+                        }
+                    end
+                }
+                return state
+            end
+
+            it("should retry a transient failure with context retry", function()
+                use_context({ api_key = "test-key", retry = { attempts = 2, backoff_ms = 0 } })
+                local http = flaky_http({ 503, 200 })
+
+                local response, err = claude_client.request("/v1/messages", {})
+
+                test.is_nil(err)
+                test.eq(response.id, "msg_ok")
+                test.eq(http.calls, 2)
+            end)
+
+            it("should send once without retry", function()
+                use_context({ api_key = "test-key" })
+                local http = flaky_http({ 503, 200 })
+
+                local response, err = claude_client.request("/v1/messages", {})
+
+                test.is_nil(response)
+                test.eq(err.status_code, 503)
+                test.eq(http.calls, 1)
+            end)
+
+            it("should let request retry override context retry", function()
+                use_context({ api_key = "test-key", retry = { attempts = 1, backoff_ms = 0 } })
+                local http = flaky_http({ 503, 503, 200 })
+
+                local response, err = claude_client.request("/v1/messages", {}, {
+                    retry = { attempts = 3, backoff_ms = 0 }
+                })
+
+                test.is_nil(err)
+                test.eq(response.id, "msg_ok")
+                test.eq(http.calls, 3)
+            end)
+        end)
     end)
 end
 

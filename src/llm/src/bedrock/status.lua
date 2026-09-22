@@ -20,7 +20,7 @@ function status_handler.handler(contract_args)
     local response, request_err = status_handler._client.converse(
         model,
         payload,
-        { timeout = 15 }
+        { timeout = 15, retry = false }
     )
 
     if request_err then
