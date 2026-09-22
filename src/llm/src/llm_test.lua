@@ -744,11 +744,39 @@ local function define_tests()
                 test.eq(err, "Model is required in options")
             end)
 
-            it("should report the resolved model name, not the class alias", function()
+            it("should report the resolved provider model, not the class alias", function()
                 local result, err = llm.embed("Test text", { model = "class:embedding" })
 
                 test.is_nil(err)
                 test.eq(result.model, "text-embedding-3-small")
+            end)
+
+            it("should report the provider model when the card name differs and the provider is silent", function()
+                local get_by_name = mock_models.get_by_name
+                mock_models.get_by_name = function(name)
+                    if name == "local-embed" then
+                        return {
+                            id = "app.models:local-embed",
+                            name = "local-embed",
+                            capabilities = { "embed" },
+                            class = { "embedding" },
+                            dimensions = 768,
+                            providers = {
+                                {
+                                    id = "wippy.llm.openai:provider",
+                                    provider_model = "nomic-embed-text-v1.5",
+                                    options = {}
+                                }
+                            }
+                        }
+                    end
+                    return get_by_name(name)
+                end
+
+                local result, err = llm.embed("Test text", { model = "local-embed" })
+
+                test.is_nil(err)
+                test.eq(result.model, "nomic-embed-text-v1.5")
             end)
 
             it("should keep the provider-reported model over the resolved name", function()

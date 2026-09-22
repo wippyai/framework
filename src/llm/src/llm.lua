@@ -792,7 +792,7 @@ function llm.embed(text, options)
             return nil, "Failed to normalize provider response"
         end
 
-        normalized.model = raw_result.model or model_card.name
+        normalized.model = raw_result.model or provider_info.provider_model
 
         -- Track usage
         local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
