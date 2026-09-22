@@ -376,6 +376,14 @@ local function collect_message_text(message_items)
     return text, refusal
 end
 
+-- Collect the assistant text carried by the `message` items of a Responses
+-- output array. Shared with the streaming client, which reads it from the
+-- terminal response when a backend sends no output_text deltas.
+function openai_mapper.collect_output_text(output_items): (string, string?)
+    local messages = partition_output(output_items)
+    return collect_message_text(messages)
+end
+
 function openai_mapper.collect_reasoning_text(output_items)
     local thinking = ""
     if not output_items then
