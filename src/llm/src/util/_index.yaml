@@ -46,3 +46,35 @@ entries:
       test: wippy.test:test
     method: run_tests
     
+  # wippy.llm.util:transport
+  - name: transport
+    kind: library.lua
+    meta:
+      type: library
+      comment: Shared provider HTTP transport - context config lookup, method dispatch, bounded retry and health classification
+      tags:
+        - llm
+        - http
+        - retry
+    source: file://transport.lua
+    modules:
+      - time
+
+  # wippy.llm.util:transport_test
+  - name: transport_test
+    kind: function.lua
+    meta:
+      name: Provider Transport Test
+      type: test
+      comment: Tests config lookup, method dispatch, retry and health classification of the shared provider transport
+      group: LLM / Utils
+      tags:
+        - llm
+        - http
+        - retry
+        - tests
+    source: file://transport_test.lua
+    imports:
+      transport: wippy.llm.util:transport
+      test: wippy.test:test
+    method: run_tests

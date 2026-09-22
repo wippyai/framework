@@ -104,6 +104,8 @@ entries:
       - ctx
       - store
       - time
+    imports:
+      transport: wippy.llm.util:transport
 
   - name: client
     kind: library.lua
@@ -119,6 +121,7 @@ entries:
     imports:
       sigv4: wippy.llm.bedrock:sigv4
       bedrock_credentials: wippy.llm.bedrock:credentials
+      transport: wippy.llm.util:transport
 
   - name: mapper
     kind: library.lua
@@ -221,6 +224,7 @@ entries:
     source: file://status.lua
     imports:
       bedrock_client: wippy.llm.bedrock:client
+      transport: wippy.llm.util:transport
     method: handler
 
   # Driver binding

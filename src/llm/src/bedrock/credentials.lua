@@ -4,6 +4,7 @@ local env = require("env")
 local ctx = require("ctx")
 local store = require("store")
 local time = require("time")
+local transport = require("transport")
 
 local credentials = {}
 
@@ -16,22 +17,9 @@ credentials._time = time
 credentials.CACHE_KEY = "aws_bedrock_credentials"
 credentials.DEFAULT_CACHE_ID = "app:cache"
 
-local function resolve_string(key, default_env)
-    local ctx_all = credentials._ctx.all() or {}
-
-    if ctx_all[key] then
-        return tostring(ctx_all[key])
-    end
-    local env_key = key .. "_env"
-    if ctx_all[env_key] then
-        local val = credentials._env.get(tostring(ctx_all[env_key]))
-        if val and val ~= "" then return val end
-    end
-    if default_env then
-        local val = credentials._env.get(default_env)
-        if val and val ~= "" then return val end
-    end
-    return nil
+local function resolve_string(key: string, default_env: string?): string?
+    local ctx_all = (credentials._ctx.all() or {}) :: {[string]: any}
+    return transport.config_value(ctx_all, credentials._env, key, default_env)
 end
 
 -- Fetch temporary credentials from ECS/EKS container metadata endpoint

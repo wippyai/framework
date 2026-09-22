@@ -115,6 +115,7 @@ entries:
       - http_client
     imports:
       output: wippy.llm:output
+      transport: wippy.llm.util:transport
 
   # wippy.llm.google:client_test
   - name: client_test
@@ -268,6 +269,7 @@ entries:
       - ctx
     imports:
       google_config: wippy.llm.google:config
+      transport: wippy.llm.util:transport
     method: handler
 
   # wippy.llm.google:status_test
