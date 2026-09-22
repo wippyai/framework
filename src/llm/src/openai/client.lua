@@ -1,4 +1,5 @@
 local json = require("json")
+local openai_mapper = require("openai_mapper")
 local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
@@ -337,10 +338,24 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
         end
     end
 
+    -- A Responses backend may deliver the assistant message only inside the
+    -- terminal response payload, without output_text deltas. The output array
+    -- holds the whole message, so take the text from there when the delta
+    -- stream produced none.
+    local function recover_terminal_content(terminal_response)
+        if full_content ~= "" then return end
+        if not terminal_response or not terminal_response.output then return end
+        local text = openai_mapper.collect_output_text(terminal_response.output)
+        if text == "" then return end
+        full_content = text
+        on_content(text)
+    end
+
     local function finish_stream(response_override): (string, any, any)
         for key, _ in pairs(pending_calls) do
             emit_call(key)
         end
+        recover_terminal_content(response_override or final_response)
         local result: any = build_result(response_override)
         close_stream()
         on_done(result)

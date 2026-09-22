@@ -31,6 +31,8 @@ entries:
       - ctx
       - security
       - time
+    imports:
+      openai_mapper: wippy.llm.openai:mapper
 
   # wippy.llm.openai:client_test
   - name: client_test
