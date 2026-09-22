@@ -530,7 +530,8 @@ Wildcard syntax: `*` matches one segment, `**` matches zero or more segments.
 ### Release Flow
 
 Every module is a separate release-please package (`release-please-config.json`, keyed by
-`src/<module>`) and is versioned and published on its own:
+`src/<module>`) and is versioned and published on its own. Before 1.0 a breaking change bumps the
+minor version, and features and fixes bump the patch version.
 
 1. Land conventional commits on `master`. A commit belongs to the modules whose files it touches;
    scope the message by module (`fix(llm): ...`) so the changelog entry reads well.
