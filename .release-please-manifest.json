@@ -1,7 +1,7 @@
 {
   "src/actor": "0.4.2",
   "src/agent": "0.5.0",
-  "src/bootloader": "0.3.15",
+  "src/bootloader": "0.3.16",
   "src/docs": "0.3.11",
   "src/embeddings": "0.3.16",
   "src/facade": "0.6.40",
