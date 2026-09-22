@@ -278,6 +278,9 @@ entries:
         description: Request timeout in seconds
         default_env: BEDROCK_TIMEOUT
         default_value: 600
+      retry:
+        type: object
+        description: Provider-level retry policy for transient transport/provider failures
 
   # Provider registry entry
   - name: provider
@@ -329,6 +332,25 @@ entries:
       - time
     imports:
       sigv4: wippy.llm.bedrock:sigv4
+      test: wippy.test:test
+    method: run_tests
+
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Bedrock Client Unit Tests
+      type: test
+      comment: Unit tests for the Bedrock Runtime client covering transport retry
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - client
+        - bedrock
+    source: file://client_test.lua
+    modules:
+      - json
+    imports:
+      bedrock_client: wippy.llm.bedrock:client
       test: wippy.test:test
     method: run_tests
 

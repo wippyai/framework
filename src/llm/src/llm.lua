@@ -398,9 +398,6 @@ local function apply_provider_transport(contract_args, provider_info)
     if contract_args.timeout == nil and context.timeout ~= nil then
         contract_args.timeout = context.timeout
     end
-    if contract_args.retry == nil and context.retry ~= nil then
-        contract_args.retry = context.retry
-    end
 end
 
 local function hoist_transport_options(contract_args)

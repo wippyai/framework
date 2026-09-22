@@ -10,6 +10,7 @@ type ClaudeConfig = {
     api_version: string,
     beta_features: {string},
     timeout: number,
+    retry: transport.Retry?,
     headers: {[string]: string}?
 }
 
@@ -42,6 +43,7 @@ local function resolve_config()
         api_version = resolve_string("api_version", "ANTHROPIC_API_VERSION") or "2023-06-01",
         beta_features = ctx_all.beta_features or {},
         timeout = tonumber(resolve_string("timeout", "ANTHROPIC_TIMEOUT")) or 600,
+        retry = transport.normalize_retry(ctx_all.retry),
         headers = ctx_all.headers
     }
     return config
@@ -168,7 +170,8 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
         return transport.dispatch(claude_client._http_client, method, full_url, http_options)
     end
 
-    local response, request_error = transport.send(send_once, parse_error_response, nil)
+    local retry = transport.request_retry(options.retry, config.retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
     if not response then
         return nil, request_error
     end

@@ -941,6 +941,49 @@ local function define_tests()
                 end
             end)
         end)
+
+        describe("Retry", function()
+            it("should disable retry for the probe", function()
+                status._ctx = {
+                    all = function()
+                        return { api_key = "test-api-key", retry = { attempts = 3, backoff_ms = 0 } }
+                    end,
+                    get = function(key)
+                        if key == "client_id" then
+                            return "test-client-id"
+                        end
+                        return nil
+                    end
+                }
+
+                local captured_options = nil
+                local mock_client_instance = {
+                    request = function(self, args)
+                        captured_options = args.options
+                        return { status_code = 503, message = "Service unavailable" }
+                    end
+                }
+
+                status._contract = {
+                    get = function(contract_id)
+                        return {
+                            with_context = function(self, context)
+                                return self
+                            end,
+                            open = function(self, client_id)
+                                return mock_client_instance, nil
+                            end
+                        }, nil
+                    end
+                }
+
+                local response = status.handler({ model = "gemini-test" })
+
+                tests.eq(response.status, "degraded")
+                tests.eq((captured_options :: any).method, "GET")
+                tests.eq((captured_options :: any).retry, false)
+            end)
+        end)
     end)
 end
 

@@ -72,6 +72,7 @@ entries:
     imports:
       google_client: wippy.llm.google:client
       google_config: wippy.llm.google:config
+      transport: wippy.llm.util:transport
     method: request
 
   # wippy.llm.google.generative_ai:client_test

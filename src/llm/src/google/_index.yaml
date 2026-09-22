@@ -151,6 +151,8 @@ entries:
       - env
       - store
       - ctx
+    imports:
+      transport: wippy.llm.util:transport
 
   # wippy.llm.google:config_test
   - name: config_test

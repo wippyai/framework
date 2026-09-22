@@ -510,6 +510,50 @@ local function define_tests()
                 tests.not_nil(response)
             end)
         end)
+
+        describe("Retry", function()
+            local function flaky_http(statuses: {number})
+                local state = { calls = 0 }
+                client._http_client = {
+                    post = function(url, options)
+                        state.calls = state.calls + 1
+                        local status = statuses[state.calls]
+                        if status == 200 then
+                            return { status_code = 200, body = json.encode({ data = "ok" }) }
+                        end
+                        return {
+                            status_code = status,
+                            body = json.encode({ error = { code = status, message = "Unavailable" } })
+                        }
+                    end
+                }
+                return state
+            end
+
+            it("should retry a transient failure with a retry policy", function()
+                local http = flaky_http({ 503, 200 })
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", {
+                    headers = {}
+                }, { attempts = 2, backoff_ms = 0 })
+
+                tests.is_nil(err)
+                tests.eq(response.data, "ok")
+                tests.eq(http.calls, 2)
+            end)
+
+            it("should send once without a retry policy", function()
+                local http = flaky_http({ 503, 200 })
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", {
+                    headers = {}
+                })
+
+                tests.is_nil(response)
+                tests.eq(err.status_code, 503)
+                tests.eq(http.calls, 1)
+            end)
+        end)
     end)
 end
 

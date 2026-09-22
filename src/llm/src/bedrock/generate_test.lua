@@ -63,6 +63,31 @@ local function define_tests()
                 test.eq(captured_model, "us.anthropic.claude-haiku-4-5-20251001-v1:0")
             end)
 
+            it("should forward retry to the client request", function()
+                local captured_options = nil
+                generate_handler._client = {
+                    converse = function(model_id, payload, options)
+                        captured_options = options
+                        return {
+                            output = { message = { role = "assistant", content = { { text = "Hi" } } } },
+                            stopReason = "end_turn",
+                            usage = { inputTokens = 5, outputTokens = 2 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                generate_handler.handler({
+                    model = "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                    messages = { { role = "user", content = { { type = "text", text = "Hi" } } } },
+                    retry = { attempts = 2, backoff_ms = 0 }
+                })
+
+                local options = captured_options :: any
+                test.eq(options.retry.attempts, 2)
+                test.eq(options.retry.backoff_ms, 0)
+            end)
+
             it("should include inferenceConfig in payload", function()
                 local captured_payload = nil
                 generate_handler._client = {

@@ -49,6 +49,19 @@ local result = llm.generate(builder, {
 })
 ```
 
+### Retry
+
+Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.
+
+```lua
+llm.generate(builder, {
+    model = "claude",
+    retry = { attempts = 3, backoff_ms = 500 }  -- retries after the first attempt; backoff doubles each time
+})
+```
+
+A per-call `retry` replaces the provider policy, which is set in the provider entry's `driver.options.retry` or in a resolved provider's `context` and reaches the driver through its context. `attempts` is capped at 10 and `backoff_ms` at 60000.
+
 ### Response Format
 
 ```lua

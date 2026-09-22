@@ -121,6 +121,56 @@ local function define_tests()
             end)
         end)
 
+        describe("Retry", function()
+            it("should forward retry to Titan requests", function()
+                local captured_options = nil
+                embed_handler._client = {
+                    invoke = function(model_id, payload, options)
+                        captured_options = options
+                        return {
+                            embedding = { 0.1, 0.2, 0.3 },
+                            inputTextTokenCount = 3
+                        }
+                    end
+                }
+
+                local response = embed_handler.handler({
+                    model = "amazon.titan-embed-text-v2:0",
+                    input = "Hello world",
+                    retry = { attempts = 2, backoff_ms = 0 }
+                })
+
+                test.is_true(response.success)
+                local options = captured_options :: any
+                test.eq(options.retry.attempts, 2)
+                test.eq(options.retry.backoff_ms, 0)
+            end)
+
+            it("should forward retry to Cohere requests", function()
+                local captured_options = nil
+                embed_handler._client = {
+                    invoke = function(model_id, payload, options)
+                        captured_options = options
+                        return {
+                            embeddings = { { 0.1, 0.2, 0.3 } },
+                            response_type = "embeddings_floats"
+                        }
+                    end
+                }
+
+                local response = embed_handler.handler({
+                    model = "cohere.embed-v4:0",
+                    input = "Hello world",
+                    retry = { attempts = 2, backoff_ms = 0 }
+                })
+
+                test.is_true(response.success)
+                local options = captured_options :: any
+                test.eq(options.retry.attempts, 2)
+                test.eq(options.retry.backoff_ms, 0)
+            end)
+        end)
+
         describe("Cohere Embed", function()
             it("should handle single text input as batch of one", function()
                 embed_handler._client = {

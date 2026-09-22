@@ -115,7 +115,7 @@ function structured_output.handler(contract_args)
         endpoint_path = "generateContent",
         model = contract_args.model,
         payload = payload,
-        options = { timeout = contract_args.timeout }
+        options = { timeout = contract_args.timeout, retry = contract_args.retry }
     })
 
     if response.status_code < 200 or response.status_code >= 300 then

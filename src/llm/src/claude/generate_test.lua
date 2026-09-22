@@ -187,6 +187,35 @@ local function define_tests()
                 test.eq(response.result.content, "Response with custom options")
             end)
 
+            it("should forward retry to the client request", function()
+                local captured_options = nil
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(endpoint, payload, options)
+                        captured_options = options
+                        return {
+                            content = { { type = "text", text = "Retried response" } },
+                            stop_reason = "end_turn",
+                            usage = { input_tokens = 10, output_tokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = generate_handler.handler({
+                    model = "claude-3-5-sonnet-20241022",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Test" } } }
+                    },
+                    retry = { attempts = 2, backoff_ms = 0 }
+                })
+
+                test.is_true(response.success)
+                local options = captured_options :: any
+                test.eq(options.retry.attempts, 2)
+                test.eq(options.retry.backoff_ms, 0)
+            end)
+
             it("should handle thinking models with effort configuration", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },

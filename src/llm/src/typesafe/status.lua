@@ -6,7 +6,7 @@ local status_handler = {
 }
 
 function status_handler.handler()
-    local _, request_err = status_handler._client.request("/models", nil, { method = "GET" })
+    local _, request_err = status_handler._client.request("/models", nil, { method = "GET", retry = false })
     if request_err then
         return transport.health_failure(request_err)
     end

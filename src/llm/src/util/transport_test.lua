@@ -61,6 +61,24 @@ local function define_tests()
             end)
         end)
 
+        describe("request_retry", function()
+            it("should use the context policy when the request sets none", function()
+                local context_retry = { attempts = 2, backoff_ms = 0 }
+                test.eq(transport.request_retry(nil, context_retry), context_retry)
+                test.is_nil(transport.request_retry(nil, nil))
+            end)
+
+            it("should prefer the normalized request policy", function()
+                local retry = transport.request_retry({ attempts = 4, backoff_ms = 10 }, { attempts = 2, backoff_ms = 0 })
+                test.eq(retry.attempts, 4)
+                test.eq(retry.backoff_ms, 10)
+            end)
+
+            it("should disable retry when the request sets false", function()
+                test.is_nil(transport.request_retry(false, { attempts = 2, backoff_ms = 0 }))
+            end)
+        end)
+
         describe("retryable", function()
             it("should retry connection failures, timeouts, conflicts, throttling and server errors", function()
                 for _, status in ipairs({ 0, 408, 409, 425, 429, 500, 503, 599 }) do

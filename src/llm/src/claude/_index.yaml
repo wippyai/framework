@@ -109,6 +109,9 @@ entries:
         description: Request timeout in seconds
         default_env: ANTHROPIC_TIMEOUT
         default_value: 240
+      retry:
+        type: object
+        description: Provider-level retry policy for transient transport/provider failures
 
   # wippy.llm.claude:generate
   - name: generate

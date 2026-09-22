@@ -26,6 +26,10 @@ local function define_tests()
 
             it("should use API key from config", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -57,6 +61,10 @@ local function define_tests()
         describe("HTTP Method Support", function()
             it("should default to POST method", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -85,6 +93,10 @@ local function define_tests()
 
             it("should support GET method", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -126,6 +138,10 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -159,6 +175,10 @@ local function define_tests()
 
             it("should encode empty payload as empty object for POST", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -187,6 +207,10 @@ local function define_tests()
 
             it("should not include body for GET requests", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -218,6 +242,10 @@ local function define_tests()
         describe("URL Construction", function()
             it("should construct URL with model and endpoint_path", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -246,6 +274,10 @@ local function define_tests()
 
             it("should construct URL with only model when endpoint_path is missing", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -273,6 +305,10 @@ local function define_tests()
 
             it("should use base URL without model when model is empty", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -298,6 +334,10 @@ local function define_tests()
 
             it("should use custom base URL from options", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -331,6 +371,10 @@ local function define_tests()
         describe("Timeout Handling", function()
             it("should use default timeout from config", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -359,6 +403,10 @@ local function define_tests()
 
             it("should use custom timeout from options", function()
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -404,6 +452,10 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -444,6 +496,10 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_retry = function()
+                        return nil
+                    end,
+
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,
@@ -472,6 +528,75 @@ local function define_tests()
                 tests.eq(response.error.code, test_response.error.code)
                 tests.eq(response.error.message, test_response.error.message)
                 tests.eq(response.error.status, test_response.error.status)
+            end)
+        end)
+
+        describe("Retry", function()
+            local function use_config(context_retry)
+                client._config = {
+                    get_gemini_api_key = function()
+                        return "test-gemini-api-key"
+                    end,
+                    get_generative_ai_base_url = function()
+                        return "https://generativelanguage.googleapis.com/v1beta/models"
+                    end,
+                    get_generative_ai_timeout = function()
+                        return 60
+                    end,
+                    get_retry = function()
+                        return context_retry
+                    end
+                }
+            end
+
+            local function capture_retry()
+                local state: {retry: any, called: boolean} = { retry = nil, called = false }
+                client._client = {
+                    request = function(method, url, options, retry)
+                        state.called = true
+                        state.retry = retry
+                        return { status_code = 200 }
+                    end
+                }
+                return state
+            end
+
+            it("should pass the context retry policy to the HTTP client", function()
+                use_config({ attempts = 2, backoff_ms = 0 })
+                local captured = capture_retry()
+
+                client.request({ model = "gemini-2.5-flash", endpoint_path = "generateContent" })
+
+                tests.is_true(captured.called)
+                tests.eq(captured.retry.attempts, 2)
+                tests.eq(captured.retry.backoff_ms, 0)
+            end)
+
+            it("should let the request retry policy override the context", function()
+                use_config({ attempts = 2, backoff_ms = 0 })
+                local captured = capture_retry()
+
+                client.request({
+                    model = "gemini-2.5-flash",
+                    endpoint_path = "generateContent",
+                    options = { retry = { attempts = 4, backoff_ms = 10 } }
+                })
+
+                tests.eq(captured.retry.attempts, 4)
+                tests.eq(captured.retry.backoff_ms, 10)
+            end)
+
+            it("should disable retry when the request sets false", function()
+                use_config({ attempts = 2, backoff_ms = 0 })
+                local captured = capture_retry()
+
+                client.request({
+                    model = "gemini-2.5-flash",
+                    options = { method = "GET", retry = false }
+                })
+
+                tests.is_true(captured.called)
+                tests.is_nil(captured.retry)
             end)
         end)
     end)

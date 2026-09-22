@@ -73,6 +73,13 @@ function transport.normalize_retry(raw: any): Retry?
     }
 end
 
+-- Resolves the policy for one request: a request value replaces the context
+-- policy, and `false` sends the request once.
+function transport.request_retry(request_retry: any, context_retry: Retry?): Retry?
+    if request_retry == nil then return context_retry end
+    return transport.normalize_retry(request_retry)
+end
+
 function transport.retryable(error_info: RequestError): boolean
     local status = error_info.status_code
     return status == 0

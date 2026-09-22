@@ -81,7 +81,7 @@ function generate.handler(contract_args)
     end
 
     local endpoint_path = "generateContent"
-    local request_options = { timeout = contract_args.timeout }
+    local request_options = { timeout = contract_args.timeout, retry = contract_args.retry }
 
     if contract_args.stream and contract_args.stream.reply_to then
         endpoint_path = "streamGenerateContent"
