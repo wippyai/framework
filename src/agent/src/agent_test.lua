@@ -223,12 +223,9 @@ local function define_tests()
             memory = {},
             memory_contract = nil,
             agent_options = {
-                compact = {
-                    token_threshold = 16000,
-                    function_id = "agent.compact:test"
-                },
                 checkpoint = {
-                    token_threshold = 32000
+                    token_threshold = 16000,
+                    function_id = "agent.checkpoint:test"
                 }
             },
             prompt_funcs = {},
@@ -690,9 +687,8 @@ local function define_tests()
 
                 test.not_nil(test_agent)
                 test.not_nil(test_agent.agent_options)
-                test.eq(test_agent.agent_options.compact.token_threshold, 16000)
-                test.eq(test_agent.agent_options.compact.function_id, "agent.compact:test")
-                test.eq(test_agent.agent_options.checkpoint.token_threshold, 32000)
+                test.eq(test_agent.agent_options.checkpoint.token_threshold, 16000)
+                test.eq(test_agent.agent_options.checkpoint.function_id, "agent.checkpoint:test")
             end)
         end)
 
@@ -850,7 +846,7 @@ local function define_tests()
                 test.eq(#result.delegate_calls, 1)
                 test.eq(#test_agent.tool_wrappers, 1)
                 test.eq(test_agent.tool_wrappers[1].binding, "test.wrapper:audit_provider")
-                test.eq(test_agent.agent_options.compact.token_threshold, 16000)
+                test.eq(test_agent.agent_options.checkpoint.token_threshold, 16000)
             end)
 
             it("should preserve tool calls when no delegates are triggered", function()
