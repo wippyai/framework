@@ -194,7 +194,7 @@ local function define_tests()
                     domain = { "billing", "technical", "sales" }
                 }
             }
-            it("should accept a rounded Laya distribution and zero-output-token usage", function()
+            it("should accept a four-decimal rounded distribution and zero-output-token usage", function()
                 local readings, err = typesafe_mapper.map_response({ answers = {
                     topic = { type = "choice", choice = "billing", probabilities = {billing = 0.3333, technical = 0.3333, sales = 0.3333} }
                 } }, choice_questions)
@@ -207,16 +207,28 @@ local function define_tests()
 
             it("should reject invalid distributions, inconsistent choices and invalid confidence", function()
                 local invalid = {
-                    { choice = "billing", probabilities = { billing = 1.1, technical = -0.1, sales = 0 } },
-                    { choice = "billing", probabilities = { billing = 0.2, technical = 0.5, sales = 0.3 } },
-                    { choice = "billing", probabilities = { billing = 0.1, technical = 0.1, sales = 0.1 } },
-                    { choice = "billing", probabilities = { billing = 0.8, technical = 0.1, sales = 0.1 }, confidence = 2 }
+                    {
+                        answer = { choice = "billing", probabilities = { billing = 1.1, technical = -0.1, sales = 0 } },
+                        err = "invalid probability for option 'billing'"
+                    },
+                    {
+                        answer = { choice = "billing", probabilities = { billing = 0.2, technical = 0.5, sales = 0.3 } },
+                        err = "selected choice is not a highest-probability option"
+                    },
+                    {
+                        answer = { choice = "billing", probabilities = { billing = 0.1, technical = 0.1, sales = 0.1 } },
+                        err = "probabilities must sum to 1"
+                    },
+                    {
+                        answer = { choice = "billing", probabilities = { billing = 0.8, technical = 0.1, sales = 0.1 }, confidence = 2 },
+                        err = "invalid confidence"
+                    }
                 }
-                for _, answer in ipairs(invalid) do
-                    answer.type = "choice"
-                    local readings, err = typesafe_mapper.map_response({ answers = {topic = answer} }, choice_questions)
+                for _, case in ipairs(invalid) do
+                    case.answer.type = "choice"
+                    local readings, err = typesafe_mapper.map_response({ answers = {topic = case.answer} }, choice_questions)
                     test.is_nil(readings)
-                    assert(err)
+                    test.contains(err, case.err :: string)
                 end
             end)
             it("should map a choice answer", function()

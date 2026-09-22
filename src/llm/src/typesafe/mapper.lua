@@ -47,7 +47,7 @@ local function probability(value: any): boolean
     return type(value) == "number" and value == value and value >= 0 and value <= 1
 end
 
--- Both Jev and Laya can round each probability to four decimal places.
+-- Providers may round each probability to four decimal places.
 local function normalized(total: number, count: number): boolean
     return math.abs(total - 1) <= math.max(0.002, count * 0.00005 + 0.0001)
 end

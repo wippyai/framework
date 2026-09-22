@@ -922,18 +922,15 @@ function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
             return nil, err
         end
 
-        -- A card that lists capabilities must list evaluate among them
-        if model_card.capabilities then
-            local declared = false
-            for _, capability in ipairs(model_card.capabilities) do
-                if capability == llm.CAPABILITY.EVALUATE then
-                    declared = true
-                    break
-                end
+        local declared = false
+        for _, capability in ipairs(model_card.capabilities) do
+            if capability == llm.CAPABILITY.EVALUATE then
+                declared = true
+                break
             end
-            if not declared then
-                return nil, "Model does not declare the evaluate capability: " .. model_card.name
-            end
+        end
+        if not declared then
+            return nil, "Model does not declare the evaluate capability: " .. model_card.name
         end
 
         -- Get first provider (highest priority)

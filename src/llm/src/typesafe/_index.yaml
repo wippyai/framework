@@ -30,7 +30,8 @@ entries:
       - env
       - ctx
       - security
-      - time
+    imports:
+      transport: wippy.llm.util:transport
 
   # wippy.llm.typesafe:client_test
   - name: client_test
@@ -176,6 +177,7 @@ entries:
       comment: Status handler for TypeSafe API health checks
     source: file://status.lua
     imports:
+      transport: wippy.llm.util:transport
       typesafe_client: wippy.llm.typesafe:client
     method: handler
     pool:

@@ -2,13 +2,13 @@ local json = require("json")
 local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
-local time = require("time")
+local transport = require("transport")
 
 type TypeSafeConfig = {
     api_key: string?,
     base_url: string,
     timeout: number,
-    retry: table?,
+    retry: transport.Retry?,
     headers: any
 }
 
@@ -23,61 +23,18 @@ typesafe_client._http_client = http_client
 typesafe_client._env = env
 typesafe_client._ctx = ctx
 
-local function normalize_retry(raw)
-    if type(raw) ~= "table" then return nil end
-    local attempts = math.floor(tonumber(raw.attempts) or 0)
-    if attempts <= 0 then return nil end
-    if attempts > 10 then attempts = 10 end
-
-    local backoff_ms = math.floor(tonumber(raw.backoff_ms) or 500)
-    if backoff_ms < 0 then backoff_ms = 0 end
-    if backoff_ms > 60000 then backoff_ms = 60000 end
-
-    return { attempts = attempts, backoff_ms = backoff_ms }
-end
-
-local function retryable_error(error_info)
-    local status = tonumber(error_info and error_info.status_code) or 0
-    return status == 0
-        or status == 408
-        or status == 409
-        or status == 425
-        or status == 429
-        or (status >= 500 and status < 600)
-end
-
-local function sleep_for_retry(retry, attempt)
-    if not retry then return end
-    local delay_ms = (tonumber(retry.backoff_ms) or 500) * (2 ^ math.max(0, attempt - 1))
-    if delay_ms <= 0 then return end
-    if delay_ms > 60000 then delay_ms = 60000 end
-    time.sleep(tostring(math.floor(delay_ms)) .. "ms")
-end
-
 local function resolve_config(): TypeSafeConfig
-    local ctx_all = typesafe_client._ctx.all() or {}
+    local ctx_all = (typesafe_client._ctx.all() or {}) :: {[string]: any}
 
     local function resolve_string(key: string, default_env: string?): string?
-        if ctx_all[key] then
-            return tostring(ctx_all[key])
-        end
-        local env_key = key .. "_env"
-        if ctx_all[env_key] then
-            local val = typesafe_client._env.get(tostring(ctx_all[env_key]))
-            if val and val ~= "" then return val end
-        end
-        if default_env then
-            local val = typesafe_client._env.get(default_env)
-            if val and val ~= "" then return val end
-        end
-        return nil
+        return transport.config_value(ctx_all, typesafe_client._env, key, default_env)
     end
 
     local config = {
         api_key = resolve_string("api_key", "TYPESAFE_API_KEY"),
         base_url = resolve_string("base_url", "TYPESAFE_BASE_URL") or "https://api.typesafe.ai/v1",
         timeout = tonumber(resolve_string("timeout", "TYPESAFE_TIMEOUT")) or 60,
-        retry = normalize_retry(ctx_all.retry),
+        retry = transport.normalize_retry(ctx_all.retry),
         headers = ctx_all.headers
     }
     return config
@@ -150,16 +107,15 @@ local function describe_detail(detail: any): string?
     return nil
 end
 
-local function parse_error_response(http_response)
-    local status_code = http_response and http_response.status_code or 0
-    local error_info = {
-        status_code = status_code,
-        message = "TypeSafe API error: " .. tostring(status_code)
+local function parse_error_response(http_response: transport.HttpResponse): transport.RequestError
+    local error_info: transport.RequestError = {
+        status_code = http_response.status_code,
+        message = "TypeSafe API error: " .. tostring(http_response.status_code)
     }
 
-    local body = http_response and http_response.body
+    local body = http_response.body
     if body and body ~= "" and body ~= "no body" then
-        local parsed, decode_err = json.decode(tostring(body))
+        local parsed, decode_err = json.decode(body)
 
         if not decode_err and type(parsed) == "table" then
             local described = describe_detail(parsed.detail)
@@ -167,10 +123,10 @@ local function parse_error_response(http_response)
                 error_info.message = described
             end
             if type(parsed.detail) == "table" and parsed.detail.error_type then
-                error_info.error_type = parsed.detail.error_type
+                error_info.error_type = tostring(parsed.detail.error_type)
             end
         else
-            error_info.message = error_info.message .. ": " .. tostring(body)
+            error_info.message = error_info.message .. ": " .. body
         end
     end
 
@@ -226,37 +182,13 @@ function typesafe_client.request(endpoint_path, payload, options)
     end
 
     local function send_once()
-        if method == "GET" then
-            return typesafe_client._http_client.get(full_url, http_options)
-        end
-        return typesafe_client._http_client.post(full_url, http_options)
+        return transport.dispatch(typesafe_client._http_client, method, full_url, http_options)
     end
 
-    local retry = normalize_retry(options.retry) or config.retry
-    local response, err
-    local request_error = nil
-    local retry_count = 0
-    while true do
-        response, err = send_once()
-
-        if not response then
-            request_error = {
-                status_code = 0,
-                message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
-            }
-        elseif response.status_code < 200 or response.status_code >= 300 then
-            request_error = parse_error_response(response)
-        else
-            request_error = nil
-        end
-
-        if not request_error then break end
-        if not retry or retry_count >= retry.attempts or not retryable_error(request_error) then
-            return nil, request_error
-        end
-
-        retry_count = retry_count + 1
-        sleep_for_retry(retry, retry_count)
+    local retry = transport.normalize_retry(options.retry) or config.retry
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
+    if not response then
+        return nil, request_error
     end
 
     local parsed, parse_err = json.decode(response.body or "")

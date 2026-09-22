@@ -247,7 +247,7 @@ local result, err = llm.evaluate(conversation, {
 }
 ```
 
-`result.result` holds the readings; the raw evaluator contract uses `result.readings`. Preserve the full distributions: an expected ordinal score can hide ambiguity between very different levels. Confidence is a provider-defined statistic derived from a distribution; do not transfer a confidence threshold between Jev and Laya without evaluation. Calibration is an empirical property of a model on your own data, not guaranteed by this contract. Laya uses the same three wire primitives and could use a separate local-serving driver; it does not ship a TypeSafe HTTP endpoint.
+`result.result` holds the readings; the raw evaluator contract uses `result.readings`. Preserve the full distributions: an expected ordinal score can hide ambiguity between very different levels. Confidence is a provider-defined statistic derived from a distribution; do not transfer a confidence threshold between models without evaluation. Calibration is an empirical property of a model on your own data, not guaranteed by this contract.
 
 ### Registering an evaluation model
 

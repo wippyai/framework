@@ -71,7 +71,7 @@ local function define_tests()
                             name = "jev",
                             title = "Jev System One",
                             capabilities = { "evaluate" },
-                            classes = { "evaluate" },
+                            class = { "evaluate" },
                             priority = 100,
                             providers = {
                                 {
@@ -81,16 +81,18 @@ local function define_tests()
                                 }
                             }
                         }
-                    elseif name == "jev-open" then
+                    elseif name == "jev-undeclared" then
                         return {
-                            id = "app.models:jev-open",
-                            name = "jev-open",
+                            id = "app.models:jev-undeclared",
+                            name = "jev-undeclared",
                             title = "Jev Without Declared Capabilities",
+                            capabilities = {},
+                            class = {},
                             priority = 90,
                             providers = {
                                 {
                                     id = "wippy.llm.typesafe:provider",
-                                    provider_model = "jev-open-2026-01",
+                                    provider_model = "jev-undeclared-2026-01",
                                     options = {}
                                 }
                             }
@@ -1263,12 +1265,12 @@ local function define_tests()
                 test.eq(err, "Model does not declare the evaluate capability: gpt-4o")
             end)
 
-            it("should accept a model card without a capabilities list", function()
-                local result, err = llm.evaluate("text", questions, { model = "jev-open" })
+            it("should reject a model card that declares no capabilities", function()
+                local result, err = llm.evaluate("text", questions, { model = "jev-undeclared" })
 
-                test.is_nil(err)
-                test.not_nil(result)
-                test.eq(mock_providers.last_evaluate_args.model, "jev-open-2026-01")
+                test.is_nil(result)
+                test.eq(err, "Model does not declare the evaluate capability: jev-undeclared")
+                test.is_nil(mock_providers.last_evaluate_args)
             end)
 
             it("should normalize a reading for every declared slot", function()
