@@ -171,7 +171,7 @@ local function define_tests()
                                         object = "embedding"
                                     }
                                 },
-                                model = "text-embedding-3-small",
+                                model = "text-embedding-3-small-002",
                                 usage = {
                                     prompt_tokens = 5,
                                     total_tokens = 5
@@ -201,6 +201,7 @@ local function define_tests()
                 test.eq(response.result.embeddings[1][3], 0.789)
                 test.eq(response.tokens.prompt_tokens, 5)
                 test.eq(response.tokens.total_tokens, 5)
+                test.eq(response.model, "text-embedding-3-small-002")
             end)
 
             it("should handle dimensions parameter", function()

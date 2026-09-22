@@ -652,6 +652,16 @@ local function define_tests()
                 test.eq(#result.result, 1)
                 test.eq(#result.result[1], 1536)
             end)
+
+            it("should report the requested model for direct provider embed calls", function()
+                local result, err = llm.embed("Test text", {
+                    model = "custom-embed-model",
+                    provider_id = "wippy.llm.openai:provider"
+                })
+
+                test.is_nil(err)
+                test.eq(result.model, "custom-embed-model")
+            end)
         end)
 
         describe("Text Generation", function()
@@ -798,6 +808,61 @@ local function define_tests()
 
                 test.is_nil(result)
                 test.eq(err, "Model is required in options")
+            end)
+
+            it("should report the resolved provider model, not the class alias", function()
+                local result, err = llm.embed("Test text", { model = "class:embedding" })
+
+                test.is_nil(err)
+                test.eq(result.model, "text-embedding-3-small")
+            end)
+
+            it("should report the provider model when the card name differs and the provider is silent", function()
+                local get_by_name = mock_models.get_by_name
+                mock_models.get_by_name = function(name)
+                    if name == "local-embed" then
+                        return {
+                            id = "app.models:local-embed",
+                            name = "local-embed",
+                            capabilities = { "embed" },
+                            class = { "embedding" },
+                            dimensions = 768,
+                            providers = {
+                                {
+                                    id = "wippy.llm.openai:provider",
+                                    provider_model = "nomic-embed-text-v1.5",
+                                    options = {}
+                                }
+                            }
+                        }
+                    end
+                    return get_by_name(name)
+                end
+
+                local result, err = llm.embed("Test text", { model = "local-embed" })
+
+                test.is_nil(err)
+                test.eq(result.model, "nomic-embed-text-v1.5")
+            end)
+
+            it("should keep the provider-reported model over the resolved name", function()
+                mock_providers.open = function(provider_id, options)
+                    return {
+                        embed = function(self, args)
+                            return {
+                                success = true,
+                                result = { embeddings = { { 0.1, 0.2, 0.3 } } },
+                                model = "text-embedding-3-small-002",
+                                tokens = { prompt_tokens = 5, total_tokens = 5 }
+                            }
+                        end
+                    }
+                end
+
+                local result, err = llm.embed("Test text", { model = "text-embedding-3-small" })
+
+                test.is_nil(err)
+                test.eq(result.model, "text-embedding-3-small-002")
             end)
         end)
 
