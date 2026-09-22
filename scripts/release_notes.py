@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Print the changelog section for one version of a release-please CHANGELOG.md."""
+"""Print the changelog section for one version of a release-please CHANGELOG.md.
+
+With --line the section is condensed to one line ("Features: a; b. Bug Fixes: c."),
+because wippy publish sends release notes in an HTTP header, which cannot carry
+line breaks."""
 
 from pathlib import Path
 import re
@@ -18,13 +22,33 @@ def section(changelog: str, version: str) -> str:
     return body.strip() + "\n"
 
 
+LINK = re.compile(r"\s*\(\[[^\]]*\]\([^)]*\)\)")
+MARKUP = re.compile(r"\[([^\]]*)\]\([^)]*\)|\*\*")
+
+
+def one_line(body: str) -> str:
+    groups: list[str] = []
+    heading, entries = "", []
+    for line in body.splitlines() + ["### "]:
+        if line.startswith("### "):
+            if entries:
+                groups.append(f"{heading}: " + "; ".join(entries) + ".")
+            heading, entries = line[4:].strip(), []
+        elif line.startswith("* "):
+            entry = MARKUP.sub(lambda m: m.group(1) or "", LINK.sub("", line[2:])).strip()
+            entries.append(entry)
+    return " ".join(groups) + "\n"
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        print("usage: release_notes.py <CHANGELOG.md> <version>", file=sys.stderr)
+    args = [a for a in argv[1:] if a != "--line"]
+    if len(args) != 2:
+        print("usage: release_notes.py [--line] <CHANGELOG.md> <version>", file=sys.stderr)
         return 2
-    path, version = Path(argv[1]), argv[2]
+    path, version = Path(args[0]), args[1]
     try:
-        sys.stdout.write(section(path.read_text(), version))
+        body = section(path.read_text(), version)
+        sys.stdout.write(one_line(body) if "--line" in argv else body)
     except (OSError, ValueError) as error:
         print(f"{path}: {error}", file=sys.stderr)
         return 1
