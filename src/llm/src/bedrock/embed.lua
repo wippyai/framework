@@ -95,7 +95,7 @@ function embed_handler.handler(contract_args)
     local model_id = contract_args.model
     local input = contract_args.input
     local options = contract_args.options or {}
-    local request_options = { timeout = options.timeout, retry = contract_args.retry }
+    local request_options = { timeout = contract_args.timeout, retry = contract_args.retry }
     local result, err
 
     if family == "titan" then
