@@ -274,6 +274,101 @@ local function define_tests()
 
         end)
 
+        -- ------------------------------------------------------------------ --
+        test.describe("resolve_overrides", function()
+            local logged
+            local opened
+
+            local function resolver_contract(spec)
+                return {
+                    implementations = function(_)
+                        return spec.implementations, spec.implementations_err
+                    end,
+                    open = function(_)
+                        opened = opened + 1
+                        if spec.open_err then
+                            return nil, spec.open_err
+                        end
+                        return {
+                            resolve = function(_, _)
+                                return spec.overrides, spec.resolve_err
+                            end
+                        }
+                    end
+                }
+            end
+
+            local function bind(spec)
+                helpers._contract = {
+                    get = function(_)
+                        return resolver_contract(spec), nil
+                    end
+                }
+            end
+
+            test.before_each(function()
+                logged = {}
+                opened = 0
+                helpers._logger = {
+                    warn = function(_, message, fields)
+                        table.insert(logged, { message = message, fields = fields })
+                    end
+                }
+            end)
+
+            test.after_each(function()
+                helpers._contract = nil
+                helpers._logger = nil
+            end)
+
+            test.it("uses static defaults without opening when no resolver is bound", function()
+                bind({ implementations = {} })
+                local overrides = helpers.resolve_overrides()
+                test.eq(next(overrides), nil)
+                test.eq(opened, 0)
+                test.eq(#logged, 0)
+            end)
+
+            test.it("returns the bound resolver's overrides", function()
+                bind({ implementations = { "app:resolver" }, overrides = { app_title = "Tenant" } })
+                local overrides = helpers.resolve_overrides()
+                test.eq(overrides.app_title, "Tenant")
+                test.eq(#logged, 0)
+            end)
+
+            test.it("logs and uses static defaults when the bound resolver fails to open", function()
+                bind({ implementations = { "app:resolver" }, open_err = "binding misconfigured" })
+                local overrides = helpers.resolve_overrides()
+                test.eq(next(overrides), nil)
+                test.eq(#logged, 1)
+                test.contains(tostring(logged[1].fields.error), "binding misconfigured")
+            end)
+
+            test.it("logs and uses static defaults when the bound resolver returns an error", function()
+                bind({ implementations = { "app:resolver" }, resolve_err = "settings unavailable" })
+                local overrides = helpers.resolve_overrides()
+                test.eq(next(overrides), nil)
+                test.eq(#logged, 1)
+                test.contains(tostring(logged[1].fields.error), "settings unavailable")
+            end)
+
+            test.it("logs and uses static defaults when the resolver returns a non-table", function()
+                bind({ implementations = { "app:resolver" }, overrides = "not a map" })
+                local overrides = helpers.resolve_overrides()
+                test.eq(next(overrides), nil)
+                test.eq(#logged, 1)
+            end)
+
+            test.it("logs and uses static defaults when implementations cannot be inspected", function()
+                bind({ implementations_err = "registry unavailable" })
+                local overrides = helpers.resolve_overrides()
+                test.eq(next(overrides), nil)
+                test.eq(opened, 0)
+                test.eq(#logged, 1)
+                test.contains(tostring(logged[1].fields.error), "registry unavailable")
+            end)
+        end)
+
     end)
 end
 
