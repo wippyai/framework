@@ -122,6 +122,28 @@ local function define_tests()
         end)
 
         describe("Retry", function()
+            it("should forward the hoisted request timeout", function()
+                local captured_options = nil
+                embed_handler._client = {
+                    invoke = function(model_id, payload, options)
+                        captured_options = options
+                        return {
+                            embedding = { 0.1, 0.2, 0.3 },
+                            inputTextTokenCount = 3
+                        }
+                    end
+                }
+
+                local response = embed_handler.handler({
+                    model = "amazon.titan-embed-text-v2:0",
+                    input = "Hello world",
+                    timeout = 42
+                })
+
+                test.is_true(response.success)
+                test.eq((captured_options :: any).timeout, 42)
+            end)
+
             it("should forward retry to Titan requests", function()
                 local captured_options = nil
                 embed_handler._client = {
