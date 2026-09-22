@@ -102,13 +102,15 @@ local function define_tests()
                     },
                     options = {
                         temperature = 0,
-                        max_tokens = 10
+                        max_tokens = 16
                     }
                 }
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(tostring(response.result.content), "Integration test successful")
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -143,7 +145,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(tostring(response.result.content), "Absolutely")
             end)
@@ -183,7 +187,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -243,7 +249,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Multiple tool calls failed: " .. (err or "unknown error"))
+                test.is_nil(err, "Multiple tool calls failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -275,7 +283,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(tostring(response.result.content), "160")  -- 120 + 40 = 160 miles
                 test.not_nil(response.tokens.thinking_tokens, "No thinking tokens reported")
@@ -309,7 +319,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "gpt-5-mini request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "gpt-5-mini request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
                 test.not_nil(response.tokens.thinking_tokens, "No thinking tokens")
@@ -356,7 +368,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(tostring(response.result.content), "1")
                 test.contains(tostring(response.result.content), "5")
@@ -408,7 +422,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Streaming request failed: " .. (err or "unknown"))
+                test.is_nil(err, "Streaming request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in streaming response")
                 test.contains(tostring(response.result.content), "1")
@@ -532,7 +548,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Streaming tool call failed: " .. (err or "unknown"))
+                test.is_nil(err, "Streaming tool call failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -604,9 +622,11 @@ local function define_tests()
                     }
                 }
 
-                local initial_response = generate_handler.handler(initial_args)
+                local initial_response, initial_err = generate_handler.handler(initial_args)
 
-                test.is_true(initial_response.success, "Initial streaming request failed")
+                test.is_nil(initial_err, "Initial streaming request failed: " .. tostring(initial_err))
+
+                assert(initial_response)
                 assert(initial_response.success)
                 test.not_nil(initial_response.result.tool_calls, "No tool calls in initial response")
                 test.is_true(#initial_response.result.tool_calls > 0, "Expected tool call")
@@ -648,7 +668,9 @@ local function define_tests()
 
                 local continuation_response, continuation_err = generate_handler.handler(continuation_args)
 
-                test.is_true(continuation_response.success, "Continuation streaming failed: " .. (continuation_err or "unknown"))
+                test.is_nil(continuation_err, "Continuation streaming failed: " .. tostring(continuation_err))
+
+                assert(continuation_response)
                 assert(continuation_response.success)
                 test.contains(tostring(continuation_response.result.content), "12")
                 test.eq(continuation_response.finish_reason, "stop")
@@ -694,7 +716,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "gpt-5-mini streaming failed: " .. (err or "unknown"))
+                test.is_nil(err, "gpt-5-mini streaming failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
                 test.is_true(#response.result.content > 0, "Response should have content")
@@ -745,7 +769,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "gpt-5-mini percentage streaming failed: " .. (err or "unknown"))
+                test.is_nil(err, "gpt-5-mini percentage streaming failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
                 test.is_true(#response.result.content > 0, "Response should have content")
@@ -771,7 +797,9 @@ local function define_tests()
 
                 local response, err = embed_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.embeddings, "No embeddings in response")
                 test.eq(#response.result.embeddings, 1, "Expected 1 embedding")
@@ -797,7 +825,9 @@ local function define_tests()
 
                 local response, err = embed_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.embeddings, "No embeddings in response")
                 test.eq(#response.result.embeddings, 2, "Expected 2 embeddings")
@@ -823,7 +853,9 @@ local function define_tests()
 
                 local response, err = embed_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.embeddings, "No embeddings in response")
                 test.eq(#response.result.embeddings[1], 512, "Expected 512 dimensions")
@@ -865,7 +897,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 assert(response.result.data)
@@ -926,7 +960,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 assert(response.result.data)
@@ -991,7 +1027,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "gpt-5-mini structured output failed: " .. (err or "unknown error"))
+                test.is_nil(err, "gpt-5-mini structured output failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 assert(response.result.data)
@@ -1131,10 +1169,14 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Large context request failed: " .. (err or "unknown"))
+                test.is_nil(err, "Large context request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
-                test.is_true(response.tokens.prompt_tokens > 1000, "Expected many prompt tokens")
+                -- Cached prompt tokens are reported apart from prompt_tokens
+                local input_tokens = (response.tokens.prompt_tokens or 0) + (response.tokens.cache_read_tokens or 0)
+                test.is_true(input_tokens > 1000, "Expected many input tokens, got " .. tostring(input_tokens))
             end)
 
             it("should preserve metadata across all handler types", function()
@@ -1144,28 +1186,32 @@ local function define_tests()
                 end
 
                 -- Test metadata in text generation
-                local gen_response = generate_handler.handler({
+                local gen_response, gen_err = generate_handler.handler({
                     model = "gpt-4o-mini",
                     messages = {{ role = "user", content = {{ type = "text", text = "Hello" }} }},
-                    options = { temperature = 0, max_tokens = 5 }
+                    options = { temperature = 0, max_tokens = 16 }
                 })
 
-                test.is_true(gen_response.success, "Text generation failed")
+                test.is_nil(gen_err, "Text generation failed: " .. tostring(gen_err))
+
+                assert(gen_response)
                 assert(gen_response.success)
                 test.not_nil(gen_response.metadata, "No metadata in text generation")
 
                 -- Test metadata in embeddings
-                local embed_response = embed_handler.handler({
+                local embed_response, embed_err = embed_handler.handler({
                     model = "text-embedding-3-small",
                     input = "Test metadata"
                 })
 
-                test.is_true(embed_response.success, "Embeddings failed")
+                test.is_nil(embed_err, "Embeddings failed: " .. tostring(embed_err))
+
+                assert(embed_response)
                 assert(embed_response.success)
                 test.not_nil(embed_response.metadata, "No metadata in embeddings")
 
                 -- Test metadata in structured output
-                local struct_response = structured_output_handler.handler({
+                local struct_response, struct_err = structured_output_handler.handler({
                     model = "gpt-4o",
                     messages = {{ role = "user", content = {{ type = "text", text = "Generate test data" }} }},
                     schema = {
@@ -1176,7 +1222,9 @@ local function define_tests()
                     }
                 })
 
-                test.is_true(struct_response.success, "Structured output failed")
+                test.is_nil(struct_err, "Structured output failed: " .. tostring(struct_err))
+
+                assert(struct_response)
                 assert(struct_response.success)
                 test.not_nil(struct_response.metadata, "No metadata in structured output")
             end)
@@ -1304,7 +1352,8 @@ local function define_tests()
                     all = function()
                         return {
                             api_key = actual_api_key,
-                            base_url = "https://httpstat.us/200?sleep=5000",
+                            -- Non-routable address: the connection attempt hangs until the client timeout
+                            base_url = "http://10.255.255.1",
                             timeout = 1
                         }
                     end
@@ -1314,7 +1363,7 @@ local function define_tests()
 
                 test.is_false(response.success, "Expected timeout")
                 test.eq(response.status, "unhealthy")
-                test.contains(tostring(response.message), "Connection failed")
+                test.contains(tostring(response.message), "Connection failed", "status message was: " .. tostring(response.message))
             end)
 
             it("should resolve API key from environment", function()

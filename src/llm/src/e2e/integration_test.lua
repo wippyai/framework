@@ -1,13 +1,22 @@
 local llm = require("llm")
 local env = require("env")
+local bedrock_credentials = require("bedrock_credentials")
 
 local function define_tests()
     local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS")
+    local RUN_BEDROCK_TESTS = false
 
     describe("LLM Integration Tests", function()
         before_all(function()
             if not RUN_INTEGRATION_TESTS then
                 print("Integration tests disabled - set ENABLE_INTEGRATION_TESTS=true to enable")
+                return
+            end
+            local _, creds_err = bedrock_credentials.resolve()
+            if creds_err then
+                print("Bedrock integration tests disabled - " .. tostring(creds_err))
+            else
+                RUN_BEDROCK_TESTS = true
             end
         end)
 
@@ -124,7 +133,7 @@ local function define_tests()
         end)
 
         it("should generate text via Bedrock provider using Converse API", function()
-            if not RUN_INTEGRATION_TESTS then return end
+            if not RUN_BEDROCK_TESTS then return end
 
             local messages = {
                 { role = "user", content = { { type = "text", text = "Say 'Hello from Bedrock'" } } }
@@ -148,7 +157,7 @@ local function define_tests()
         end)
 
         it("should handle Bedrock tool calling via Converse API", function()
-            if not RUN_INTEGRATION_TESTS then return end
+            if not RUN_BEDROCK_TESTS then return end
 
             local messages = {
                 { role = "user", content = { { type = "text", text = "What is 15 * 23? Use the calculator tool." } } }
@@ -187,7 +196,7 @@ local function define_tests()
         end)
 
         it("should handle Bedrock structured output via Converse API", function()
-            if not RUN_INTEGRATION_TESTS then return end
+            if not RUN_BEDROCK_TESTS then return end
 
             local messages = {
                 { role = "user", content = { { type = "text", text = "Extract: Alice is 28 and lives in Paris" } } }
@@ -222,7 +231,7 @@ local function define_tests()
         end)
 
         it("should handle Bedrock Titan embedding via InvokeModel", function()
-            if not RUN_INTEGRATION_TESTS then return end
+            if not RUN_BEDROCK_TESTS then return end
 
             local options = {
                 provider_id = "wippy.llm.bedrock:provider",
@@ -241,7 +250,7 @@ local function define_tests()
         end)
 
         it("should handle Bedrock Cohere embedding via InvokeModel", function()
-            if not RUN_INTEGRATION_TESTS then return end
+            if not RUN_BEDROCK_TESTS then return end
 
             local options = {
                 provider_id = "wippy.llm.bedrock:provider",
@@ -260,7 +269,7 @@ local function define_tests()
         end)
 
         it("should handle Bedrock streaming via ConverseStream", function()
-            if not RUN_INTEGRATION_TESTS then return end
+            if not RUN_BEDROCK_TESTS then return end
 
             local messages = {
                 { role = "user", content = { { type = "text", text = "Count 1 2 3" } } }

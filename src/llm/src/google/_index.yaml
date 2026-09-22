@@ -212,6 +212,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: Google Integration Tests
       type: test
       comment: Integration tests for Google LLM driver

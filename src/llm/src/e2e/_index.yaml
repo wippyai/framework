@@ -6,6 +6,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: LLM E2E Integration Test
       type: test
       comment: End-to-end integration test for LLM provider calls through contract routing
@@ -19,6 +20,7 @@ entries:
     modules:
       - env
     imports:
+      bedrock_credentials: wippy.llm.bedrock:credentials
       llm: wippy.llm:llm
       test: wippy.test:test
     method: run_tests
