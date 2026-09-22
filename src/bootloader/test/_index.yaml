@@ -24,3 +24,52 @@ entries:
     imports:
       bootloader: wippy.bootloader:bootloader
       test: wippy.test:test
+
+  # Chain fixtures: plain functions handed to run_chain directly. They carry
+  # no meta.type bootloader, so the boot chain of this test app never runs them.
+  - name: chain_first
+    kind: function.lua
+    meta:
+      order: 10
+    source: |
+      return { run = function() return { status = "success", message = "first ran" } end }
+    method: run
+
+  - name: chain_needs_prior
+    kind: function.lua
+    meta:
+      order: 20
+      requires:
+        - app.fixture:prior
+    source: |
+      return { run = function() return { status = "success", message = "needs_prior ran" } end }
+    method: run
+
+  - name: chain_fails
+    kind: function.lua
+    meta:
+      order: 30
+    source: |
+      return { run = function() return { status = "error", message = "cache warm failed: no such table" } end }
+    method: run
+
+  - name: chain_last
+    kind: function.lua
+    meta:
+      order: 40
+    source: |
+      return { run = function() return { status = "success", message = "last ran" } end }
+    method: run
+
+  - name: run_chain_test
+    kind: function.lua
+    meta:
+      name: Bootloader Chain Tests
+      type: test
+      suite: bootloader
+      comment: Runs a given bootloader chain with prerequisites that are already satisfied.
+    source: file://run_chain_test.lua
+    method: run_tests
+    imports:
+      bootloader: wippy.bootloader:bootloader
+      test: wippy.test:test
