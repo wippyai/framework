@@ -1,3 +1,16 @@
 {
-  ".": "0.5.0"
+  "src/actor": "0.4.2",
+  "src/agent": "0.5.0",
+  "src/bootloader": "0.3.15",
+  "src/docs": "0.3.11",
+  "src/embeddings": "0.3.16",
+  "src/facade": "0.6.40",
+  "src/llm": "0.5.0",
+  "src/migration": "0.3.19",
+  "src/relay": "0.3.15",
+  "src/security": "0.4.3",
+  "src/terminal": "0.4.6",
+  "src/test": "0.4.19",
+  "src/usage": "0.3.25",
+  "src/views": "0.5.11"
 }

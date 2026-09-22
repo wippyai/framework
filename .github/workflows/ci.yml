@@ -2,9 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [master, feature/*]
+    branches: [feature/*]
   pull_request:
     branches: [master]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   manifests:
@@ -38,7 +43,7 @@ jobs:
         run: |
           curl -fsSL https://hub.wippy.ai/install.sh -o /tmp/wippy-install.sh
           . /tmp/wippy-install.sh
-          echo "$HOME/.wippy/bin" >> $GITHUB_PATH
+          echo "$HOME/.wippy/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         working-directory: src/${{ matrix.module }}/test
@@ -72,7 +77,7 @@ jobs:
         run: |
           curl -fsSL https://hub.wippy.ai/install.sh -o /tmp/wippy-install.sh
           . /tmp/wippy-install.sh
-          echo "$HOME/.wippy/bin" >> $GITHUB_PATH
+          echo "$HOME/.wippy/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         working-directory: src/${{ matrix.module }}/test
