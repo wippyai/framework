@@ -40,6 +40,7 @@ entries:
     imports:
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
+      transport: wippy.llm.util:transport
 
   # wippy.llm.claude:client_test
   - name: client_test
@@ -249,6 +250,7 @@ entries:
       claude_client: wippy.llm.claude:client
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
+      transport: wippy.llm.util:transport
     method: handler
 
   # wippy.llm.claude:status_test

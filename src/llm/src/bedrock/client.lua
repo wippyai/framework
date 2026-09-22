@@ -3,6 +3,7 @@ local http_client = require("http_client")
 local base64 = require("base64")
 local env = require("env")
 local ctx = require("ctx")
+local transport = require("transport")
 local sigv4 = require("sigv4")
 local credentials = require("bedrock_credentials")
 
@@ -17,22 +18,10 @@ bedrock_client._credentials = credentials
 bedrock_client.SERVICE = "bedrock"
 
 local function resolve_config()
-    local ctx_all = bedrock_client._ctx.all() or {}
+    local ctx_all = (bedrock_client._ctx.all() or {}) :: {[string]: any}
 
-    local function resolve_string(key, default_env)
-        if ctx_all[key] then
-            return tostring(ctx_all[key])
-        end
-        local env_key = key .. "_env"
-        if ctx_all[env_key] then
-            local val = bedrock_client._env.get(tostring(ctx_all[env_key]))
-            if val and val ~= "" then return val end
-        end
-        if default_env then
-            local val = bedrock_client._env.get(default_env)
-            if val and val ~= "" then return val end
-        end
-        return nil
+    local function resolve_string(key: string, default_env: string?): string?
+        return transport.config_value(ctx_all, bedrock_client._env, key, default_env)
     end
 
     local region = resolve_string("region", "AWS_REGION")
@@ -77,38 +66,38 @@ local function extract_response_metadata(http_response)
     return metadata
 end
 
-local function parse_error_response(http_response)
-    local error_info = {
-        status_code = http_response and http_response.status_code or 0,
-        message = "Bedrock API error: " .. (http_response and http_response.status_code or "connection failed")
+local function parse_error_response(http_response: transport.HttpResponse): transport.RequestError
+    local error_info: transport.RequestError = {
+        status_code = http_response.status_code,
+        message = "Bedrock API error: " .. tostring(http_response.status_code)
     }
 
-    if http_response and http_response.headers then
-        error_info.request_id = http_response.headers["x-amzn-requestid"]
-            or http_response.headers["x-amz-request-id"]
+    local headers = http_response.headers or {}
+    local header_request_id = headers["x-amzn-requestid"] or headers["x-amz-request-id"]
+    if header_request_id then
+        error_info.request_id = tostring(header_request_id)
     end
 
-    local resp = http_response :: any
-    local error_body = resp and resp.body
-    if resp and resp.stream then
-        error_body = resp.stream:read(4096)
+    local error_body = http_response.body
+    if http_response.stream then
+        error_body = http_response.stream:read(4096) :: string?
     end
 
     if error_body and #error_body > 0 then
-        local parsed, parse_err = json.decode(tostring(error_body))
+        local parsed, parse_err = json.decode(error_body)
         if not parse_err and parsed then
             if parsed.error then
                 error_info.error = parsed.error
                 error_info.message = parsed.error.message or error_info.message
             elseif parsed.message then
-                error_info.message = parsed.message
+                error_info.message = tostring(parsed.message)
             elseif parsed.Message then
-                error_info.message = parsed.Message
+                error_info.message = tostring(parsed.Message)
             end
         end
     end
 
-    error_info.metadata = extract_response_metadata(http_response :: any)
+    error_info.metadata = extract_response_metadata(http_response)
     return error_info
 end
 
@@ -174,17 +163,13 @@ local function signed_request(path, payload, options)
         request_opts.stream = true
     end
 
-    local response, err = (bedrock_client._http_client :: any).post(full_url, request_opts)
-
-    if not response then
-        return nil, {
-            status_code = 0,
-            message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
-        }
+    local function send_once()
+        return transport.dispatch(bedrock_client._http_client, "POST", full_url, request_opts)
     end
 
-    if response.status_code < 200 or response.status_code >= 300 then
-        return nil, parse_error_response(response)
+    local response, request_error = transport.send(send_once, parse_error_response, nil)
+    if not response then
+        return nil, request_error
     end
 
     if options.stream and response.stream then
@@ -205,7 +190,7 @@ local function signed_request(path, payload, options)
         }
     end
 
-    parsed.metadata = extract_response_metadata(response :: any)
+    parsed.metadata = extract_response_metadata(response)
     return parsed
 end
 
