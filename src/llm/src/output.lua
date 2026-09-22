@@ -245,11 +245,13 @@ output.errors = {
     generate          = builder_factory("generate"),
     structured_output = builder_factory("structured_output"),
     embed             = builder_factory("embed"),
+    evaluate        = builder_factory("evaluate"),
     status            = builder_factory("status"),
 } :: {
     generate:          ErrorBuilderFactory,
     structured_output: ErrorBuilderFactory,
     embed:             ErrorBuilderFactory,
+    evaluate:        ErrorBuilderFactory,
     status:            ErrorBuilderFactory,
 }
 
