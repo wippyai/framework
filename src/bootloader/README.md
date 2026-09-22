@@ -223,6 +223,13 @@ For detailed specification and advanced usage, see:
 
 The bootloader runs automatically during application startup as a service with `auto_start: true`. It must complete successfully before other services start.
 
+A component that brings modules online after boot runs their bootloaders through
+the same path with `run_chain(entries, options, satisfied)`: it executes the given
+entries in the given order with the same dependency checks, status handling and
+stop-on-error, and treats the ids in `satisfied` (bootloaders that already ran in
+this runtime) as completed prerequisites. `run` is `run_chain` over every
+discovered bootloader with nothing satisfied.
+
 Other components can provide their own bootloaders by:
 - Adding `wippy/bootloader` as a dependency
 - Defining bootloader functions with appropriate `order` values
