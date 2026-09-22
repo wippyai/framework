@@ -429,6 +429,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: Bedrock Integration Tests
       type: test
       comment: Integration tests for Bedrock using real API calls
@@ -445,6 +446,7 @@ entries:
       status_handler: wippy.llm.bedrock:status
       structured_output_handler: wippy.llm.bedrock:structured_output
       embed_handler: wippy.llm.bedrock:embed
+      bedrock_credentials: wippy.llm.bedrock:credentials
       output: wippy.llm:output
       test: wippy.test:test
     method: run_tests

@@ -185,6 +185,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: OpenAI-Compatible Integration Tests
       type: test
       comment: Integration tests for OpenAI-compatible contract handlers using real API calls when enabled
