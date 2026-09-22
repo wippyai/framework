@@ -132,7 +132,6 @@ local OUTCOME_STATE = {
     CONTINUES = "continues",
     COMPLETED = "completed",
     FAILED = "failed",
-    COMPACTED = "compacted",
     DELEGATED = "delegated"
 }
 

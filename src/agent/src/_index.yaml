@@ -694,7 +694,7 @@ entries:
                     "properties": {
                       "state": {
                         "type": "string",
-                        "enum": ["continues", "completed", "failed", "compacted", "delegated"]
+                        "enum": ["continues", "completed", "failed", "delegated"]
                       },
                       "reason": {
                         "type": "string",
