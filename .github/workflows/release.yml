@@ -95,7 +95,7 @@ jobs:
         id: notes
         run: |
           set -euo pipefail
-          python3 scripts/release_notes.py "$MODULE_PATH/CHANGELOG.md" "$RELEASE_VERSION" > release-notes.md
+          python3 scripts/release_notes.py --line "$MODULE_PATH/CHANGELOG.md" "$RELEASE_VERSION" > release-notes.md
           test -s release-notes.md
 
       - name: Publish dry run
