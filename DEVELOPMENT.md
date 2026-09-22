@@ -480,7 +480,7 @@ Tests communicate with the runner via process messages on topic `test:update`:
 organization: wippy
 module: relay
 description: WebSocket relay and messaging infrastructure
-license: Apache-2.0
+license: MPL-2.0
 repository: https://github.com/wippyai/framework
 homepage: https://wippy.ai
 keywords:
