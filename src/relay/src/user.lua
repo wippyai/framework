@@ -265,6 +265,8 @@ local function route_to_plugin(state: UserState, prefix: string, plugin_config: 
             local payload_data = {
                 conn_pid = from_pid,
                 request_id = message_data.request_id,
+                message_id = message_data.message_id,
+                client_message_id = message_data.client_message_id,
                 session_id = message_data.session_id,
                 type = message_data.type,
                 data = message_data.data,
@@ -559,6 +561,7 @@ end
 
 return {
     run = run,
+    _route_to_plugin = route_to_plugin,
     _snapshot_state = snapshot_state,
     _encode_upgrade_state = encode_upgrade_state,
     _decode_upgrade_state = decode_upgrade_state,

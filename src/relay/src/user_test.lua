@@ -6,6 +6,36 @@ local user = require("user")
 
 local function define_tests()
     test.describe("relay user hub", function()
+        test.it("preserves message identity and request identity through plugin routing", function()
+            local pid = process.pid() :: string
+            local plugin: { prefix: string, process_id: string, auto_start: boolean, host: string? } = {
+                prefix = "session_", process_id = "unused", auto_start = false,
+            }
+            local state = {
+                user_id = "relay-routing-test", user_metadata = {}, config = {},
+                plugins = { session_ = plugin },
+                active_plugins = { session_ = { pid = pid, restart_count = 0, status = "running" } },
+                connected_clients = {}, client_count = 0, pg_scopes = {}, pg_groups = {},
+            }
+            local routed = process.listen("steering.routing.test")
+            local ok, err = (user :: any)._route_to_plugin(state, "session_", plugin, "steering.routing.test", {
+                type = "session_message", session_id = "session-1",
+                message_id = "client-message-1", client_message_id = "legacy-client-1",
+                request_id = "request-1", data = { text = "steering input" },
+            }, pid)
+            test.is_true(ok)
+            test.is_nil(err)
+            local timer = time.after(3000 * time.MILLISECOND)
+            local result = channel.select({ routed:case_receive(), timer:case_receive() })
+            test.is_false(result.channel == timer)
+            test.eq(result.value.message_id, "client-message-1")
+            test.eq(result.value.client_message_id, "legacy-client-1")
+            test.eq(result.value.request_id, "request-1")
+            test.eq(result.value.session_id, "session-1")
+            test.eq(result.value.data.text, "steering input")
+            test.eq(result.value.conn_pid, pid)
+        end)
+
         test.it("sends a legacy-compatible welcome payload on join", function()
             local actor = security.new_actor("relay-user-test@wippy.local", {})
             local scope, scope_err = security.named_scope("app:user")
@@ -18,7 +48,7 @@ local function define_tests()
                 :with_scope(scope)
                 :spawn_linked_monitored(
                     consts.USER_HUB_PROCESS_ID,
-                    hub_host,
+                    hub_host :: string,
                     {
                         user_id = "relay-user-test@wippy.local",
                         user_metadata = {},
