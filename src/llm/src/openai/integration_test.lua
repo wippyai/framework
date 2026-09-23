@@ -1212,8 +1212,11 @@ local function define_tests()
                     test.eq(response.tokens.cache_creation_input_tokens, 0)
                 end
 
-                local first_input = first.tokens.prompt_tokens + first.tokens.cache_read_tokens
-                local second_input = second.tokens.prompt_tokens + second.tokens.cache_read_tokens
+                local first_prompt, first_cached = first.tokens.prompt_tokens, first.tokens.cache_read_tokens
+                local second_prompt, second_cached = second.tokens.prompt_tokens, second.tokens.cache_read_tokens
+                assert(first_prompt and first_cached and second_prompt and second_cached)
+                local first_input = first_prompt + first_cached
+                local second_input = second_prompt + second_cached
                 test.eq(first_input, second_input)
                 test.is_true(first_input > 1024, "Expected a cacheable prompt, got " .. tostring(first_input))
             end)
