@@ -494,7 +494,6 @@ function openai_mapper.map_tokens(openai_usage)
     if openai_usage.prompt_tokens_details and openai_usage.prompt_tokens_details.cached_tokens then
         local cached = tonumber(openai_usage.prompt_tokens_details.cached_tokens) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
         tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 
