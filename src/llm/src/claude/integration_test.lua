@@ -766,6 +766,81 @@ local function define_tests()
             end)
         end)
 
+        describe("Model Profile Integration (claude-opus-5-5)", function()
+            local profile = { forced_tool_choice = false, thinking_mode = "adaptive_only", structured_output_mode = "native" }
+
+            it("should call the finish tool when a forced choice is sent as auto under the fallback", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping model profile tool test - not enabled")
+                    return
+                end
+
+                local response, err = generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Report the number 42 by calling the finish tool." }} }
+                    },
+                    tools = {
+                        {
+                            name = "finish",
+                            description = "Return the final answer",
+                            schema = {
+                                type = "object",
+                                properties = { answer = { type = "number" } },
+                                required = { "answer" },
+                                additionalProperties = false
+                            }
+                        }
+                    },
+                    tool_choice = "any",
+                    options = { max_tokens = 2000, thinking_effort = 20, model_profile = profile, tool_choice_fallback = "auto" }
+                })
+
+                test.is_nil(err, "API request failed: " .. tostring(err))
+                assert(response and response.success)
+                test.eq(response.metadata.tool_choice.sent, "auto")
+                test.eq(response.result.tool_calls[1].name, "finish")
+                test.eq(response.result.tool_calls[1].arguments.answer, 42)
+            end)
+
+            it("should return native structured output", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping model profile structured output test - not enabled")
+                    return
+                end
+
+                local response, err = structured_output_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Name one primary colour and list the numbers 1 and 2." }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = {
+                            colour = { type = "string" },
+                            numbers = {
+                                type = "array",
+                                items = {
+                                    type = "object",
+                                    properties = { n = { type = "number" } },
+                                    required = { "n" },
+                                    additionalProperties = false
+                                }
+                            }
+                        },
+                        required = { "colour", "numbers" },
+                        additionalProperties = false
+                    },
+                    options = { max_tokens = 2000, thinking_effort = 20, model_profile = profile }
+                })
+
+                test.is_nil(err, "API request failed: " .. tostring(err))
+                assert(response and response.success)
+                test.eq(type(response.result.data.colour), "string")
+                test.eq(#response.result.data.numbers, 2)
+            end)
+        end)
+
         describe("Error Handling Integration", function()
             it("should handle model not found errors", function()
                 if not RUN_INTEGRATION_TESTS then

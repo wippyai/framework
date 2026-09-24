@@ -257,7 +257,7 @@ entries:
                       {"type": "string", "enum": ["auto", "none", "any"]},
                       {"type": "string", "description": "Specific tool name to force"}
                     ],
-                    "description": "How the model should use tools"
+                    "description": "How the model should use tools. 'any' and a tool name force a tool call; a model whose options.model_profile sets forced_tool_choice = false rejects them unless options.tool_choice_fallback = 'auto'"
                   },
                   "options": {
                     "type": "object",
@@ -266,6 +266,17 @@ entries:
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
                       "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "tool_choice_fallback": {"type": "string", "enum": ["auto"], "description": "Permits sending a forced tool_choice as 'auto' to a model that cannot be forced; for callers that enforce tool use themselves. The response metadata.tool_choice reports the substitution"},
+                      "model_profile": {
+                        "type": "object",
+                        "description": "What the configured model accepts on the wire, set in the model's provider options; callers of resolved models cannot override it",
+                        "properties": {
+                          "forced_tool_choice": {"type": "boolean", "description": "false: the model rejects forced tool choice ('any' or a tool name)"},
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: thinking is always on and thinking_effort maps to an effort level, not a budget"},
+                          "structured_output_mode": {"type": "string", "enum": ["native"], "description": "native: structured output uses the provider's JSON schema output instead of a forced tool; every object in the schema must set additionalProperties: false"}
+                        },
+                        "additionalProperties": false
+                      },
                       "top_p": {"type": "number", "minimum": 0, "maximum": 1},
                       "frequency_penalty": {"type": "number", "minimum": -2, "maximum": 2},
                       "presence_penalty": {"type": "number", "minimum": -2, "maximum": 2},

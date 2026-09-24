@@ -49,6 +49,25 @@ local result = llm.generate(builder, {
 })
 ```
 
+### Model Profile
+
+A model entry declares what its provider accepts on the wire in `providers[].options.model_profile`. Missing fields keep the default behaviour; callers of a resolved model cannot override the profile.
+
+```yaml
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-opus-5-5
+    options:
+      model_profile:
+        forced_tool_choice: false        # rejects tool_choice "any" and named tools
+        thinking_mode: adaptive_only     # thinking always on; thinking_effort maps to low..max
+        structured_output_mode: native   # structured output via output_config.format
+```
+
+A forced `tool_choice` to such a model fails with `invalid_request` unless the caller permits `tool_choice_fallback = "auto"`, which a caller gives only when it enforces tool use itself (a dataflow agent that ends through its finish tool). The response then reports `metadata.tool_choice = { requested = "any", sent = "auto" }`.
+
+Native structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path, never rewritten.
+
 ### Retry
 
 Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.

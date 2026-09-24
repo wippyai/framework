@@ -833,6 +833,92 @@ local function define_tests()
             end)
         end)
 
+        describe("Model Profile", function()
+            local function contract_for(options)
+                return {
+                    model = "claude-opus-5-5",
+                    messages = { { role = "user", content = { { type = "text", text = "Finish" } } } },
+                    tools = {
+                        { name = "finish", description = "Return the answer", schema = { type = "object" } }
+                    },
+                    tool_choice = "any",
+                    options = options
+                }
+            end
+
+            it("should send auto when the model cannot be forced and the caller permits the fallback", function()
+                local sent: any = nil
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(endpoint, payload, options)
+                        sent = payload
+                        return {
+                            content = { { type = "tool_use", id = "toolu_1", name = "finish", input = { answer = "hi" } } },
+                            stop_reason = "tool_use",
+                            usage = { input_tokens = 10, output_tokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = generate_handler.handler(contract_for({
+                    model_profile = { forced_tool_choice = false },
+                    tool_choice_fallback = "auto"
+                }))
+
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(sent.tool_choice.type, "auto")
+                test.is_nil(sent.model_profile)
+                test.is_nil(sent.tool_choice_fallback)
+                test.eq(response.metadata.tool_choice.requested, "any")
+                test.eq(response.metadata.tool_choice.sent, "auto")
+                test.eq(#response.result.tool_calls, 1)
+            end)
+
+            it("should fail before any request when the model cannot be forced and no fallback is permitted", function()
+                local called = false
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        called = true
+                        return nil
+                    end
+                }
+
+                local response, err = generate_handler.handler(contract_for({ model_profile = { forced_tool_choice = false } }))
+
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "forced_tool_choice")
+                test.is_false(called)
+            end)
+
+            it("should force the tool and record nothing when the model accepts forcing", function()
+                local sent: any = nil
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(endpoint, payload, options)
+                        sent = payload
+                        return {
+                            content = { { type = "tool_use", id = "toolu_1", name = "finish", input = {} } },
+                            stop_reason = "tool_use",
+                            usage = { input_tokens = 10, output_tokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = generate_handler.handler(contract_for({ tool_choice_fallback = "auto" }))
+
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(sent.tool_choice.type, "any")
+                test.is_nil(response.metadata.tool_choice)
+            end)
+        end)
+
         describe("Streaming", function()
             it("should handle basic streaming responses", function()
                 local mock_streamer = {

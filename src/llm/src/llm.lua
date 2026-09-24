@@ -369,7 +369,9 @@ local function open_provider(providers_module, provider_info)
     return providers_module.open(provider_info.id, provider_open_context(provider_info))
 end
 
--- Merge user options into contract arguments
+-- Merge user options into contract arguments. On resolved-model calls the
+-- model_profile (what the configured model accepts on the wire) comes only from
+-- the model's provider options, so callers exclude it here.
 local function merge_user_options(contract_args, user_options, exclude_keys)
     exclude_keys = exclude_keys or {}
 
@@ -555,7 +557,7 @@ function llm.generate(prompt_input, options)
         apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model"})
+        merge_user_options(contract_args, options, {"model", "model_profile"})
         hoist_transport_options(contract_args)
 
         -- Call provider contract
@@ -694,7 +696,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "schema"})
+        merge_user_options(contract_args, options, {"model", "schema", "model_profile"})
         hoist_transport_options(contract_args)
 
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
@@ -822,7 +824,7 @@ function llm.embed(text, options)
         apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "dimensions"})
+        merge_user_options(contract_args, options, {"model", "dimensions", "model_profile"})
         hoist_transport_options(contract_args)
 
         local raw_result, err = (provider_instance as any):embed(contract_args)
@@ -961,7 +963,7 @@ function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
         apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model"})
+        merge_user_options(contract_args, options, {"model", "model_profile"})
         hoist_transport_options(contract_args)
 
         local raw_result, err = (provider_instance as any):evaluate(contract_args)
