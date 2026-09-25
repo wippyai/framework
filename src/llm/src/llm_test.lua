@@ -598,6 +598,35 @@ local function define_tests()
                 test.is_nil(mock_providers.last_generate_args.retry)
             end)
 
+            it("should keep the configured model_profile when a caller passes its own", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return {
+                            id = "custom:profiled",
+                            name = "custom-profiled",
+                            providers = {
+                                {
+                                    id = "wippy.llm.openai:provider",
+                                    provider_model = "gpt-4o-2024-11-20",
+                                    options = { model_profile = { forced_tool_choice = false } },
+                                },
+                            },
+                        }
+                    end,
+                }
+
+                local result, err = llm.generate("Hello", {
+                    model = "custom-profiled",
+                    model_profile = { forced_tool_choice = true },
+                    tool_choice_fallback = "auto",
+                })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.is_false(mock_providers.last_generate_args.options.model_profile.forced_tool_choice)
+                test.eq(mock_providers.last_generate_args.options.tool_choice_fallback, "auto")
+            end)
+
             it("should forward per-call retry to the provider call", function()
                 llm._model_resolver = {
                     resolve = function(self, args: { model: string }): ResolvedCard
