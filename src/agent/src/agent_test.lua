@@ -223,12 +223,9 @@ local function define_tests()
             memory = {},
             memory_contract = nil,
             agent_options = {
-                compact = {
-                    token_threshold = 16000,
-                    function_id = "agent.compact:test"
-                },
                 checkpoint = {
-                    token_threshold = 32000
+                    token_threshold = 16000,
+                    function_id = "agent.checkpoint:test"
                 }
             },
             prompt_funcs = {},
@@ -587,11 +584,85 @@ local function define_tests()
                 test.not_nil(test_agent)
                 test.eq(test_agent.model, "")
                 test.eq(test_agent.max_tokens, 512)
-                test.eq(test_agent.temperature, 0)
+                test.is_nil(test_agent.temperature)
                 test.eq(test_agent.thinking_effort, 0)
                 test.is_nil(next(test_agent.tools)) -- Empty tools table
                 test.not_nil(test_agent.tool_wrappers)
                 test.eq(#test_agent.tool_wrappers, 0)
+            end)
+
+            it("should carry an explicit temperature through to the model options", function()
+                local spec = {
+                    id = "explicit-temp-agent",
+                    name = "Explicit Temp Agent",
+                    description = "Sets its own temperature",
+                    prompt = "You are explicit.",
+                    temperature = 0.7
+                }
+
+                local test_agent = agent.new(spec)
+                test.eq(test_agent.temperature, 0.7)
+
+                local seen
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen = options
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                test_agent:step(mock_prompt.new())
+                test.eq(seen.temperature, 0.7)
+            end)
+
+            it("should carry an explicit zero temperature rather than treating it as unset", function()
+                local spec = {
+                    id = "zero-temp-agent",
+                    name = "Zero Temp Agent",
+                    description = "Asks for greedy decoding on purpose",
+                    prompt = "You are deterministic.",
+                    temperature = 0
+                }
+
+                local test_agent = agent.new(spec)
+                test.eq(test_agent.temperature, 0)
+
+                local seen
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen = options
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                test_agent:step(mock_prompt.new())
+                test.eq(seen.temperature, 0)
+            end)
+
+            it("should omit temperature from model options when the spec does not set one", function()
+                -- Claude 4.7+ and Opus/Sonnet 5 reject temperature, top_p and
+                -- top_k outright, so a fabricated default makes every agent that
+                -- never asked for one unusable on those models.
+                local spec = {
+                    id = "unset-temp-agent",
+                    name = "Unset Temp Agent",
+                    description = "Leaves sampling to the model",
+                    prompt = "You are unset."
+                }
+
+                local test_agent = agent.new(spec)
+
+                local seen
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen = options
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                test_agent:step(mock_prompt.new())
+
+                test.not_nil(seen)
+                test.is_nil(seen.temperature)
+                test.is_nil(seen.top_p)
+                test.is_nil(seen.top_k)
             end)
 
             it("should preserve tool wrapper specs from compiled specification", function()
@@ -616,9 +687,8 @@ local function define_tests()
 
                 test.not_nil(test_agent)
                 test.not_nil(test_agent.agent_options)
-                test.eq(test_agent.agent_options.compact.token_threshold, 16000)
-                test.eq(test_agent.agent_options.compact.function_id, "agent.compact:test")
-                test.eq(test_agent.agent_options.checkpoint.token_threshold, 32000)
+                test.eq(test_agent.agent_options.checkpoint.token_threshold, 16000)
+                test.eq(test_agent.agent_options.checkpoint.function_id, "agent.checkpoint:test")
             end)
         end)
 
@@ -776,7 +846,7 @@ local function define_tests()
                 test.eq(#result.delegate_calls, 1)
                 test.eq(#test_agent.tool_wrappers, 1)
                 test.eq(test_agent.tool_wrappers[1].binding, "test.wrapper:audit_provider")
-                test.eq(test_agent.agent_options.compact.token_threshold, 16000)
+                test.eq(test_agent.agent_options.checkpoint.token_threshold, 16000)
             end)
 
             it("should preserve tool calls when no delegates are triggered", function()
@@ -984,6 +1054,52 @@ local function define_tests()
             end)
         end)
 
+        describe("Prompt Caching", function()
+            local function capture(builder)
+                local captured = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured = messages
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+                local test_agent = agent.new(basic_compiled_spec)
+                test_agent:step(builder, { disable_memory_recall = true })
+                agent._llm = nil
+                return captured :: any
+            end
+
+            it("should mark the conversation tail after the newest user message", function()
+                local builder = mock_prompt.new()
+                builder:add_user("First message")
+                builder:add_assistant("First response")
+                builder:add_user("Second message")
+
+                local messages = capture(builder)
+                test.not_nil(messages)
+                local last = messages[#messages]
+                test.eq(last.role, prompt.ROLE.CACHE_MARKER)
+                test.eq(last.marker_id, "conversation_tail")
+                test.eq(messages[#messages - 1].role, "user")
+            end)
+
+            it("should not add a tail marker when the conversation ends with an assistant message", function()
+                local builder = mock_prompt.new()
+                builder:add_user("First message")
+                builder:add_assistant("First response")
+
+                local messages = capture(builder)
+                test.not_nil(messages)
+                for _, msg in ipairs(messages) do
+                    test.is_true(msg.marker_id ~= "conversation_tail")
+                end
+            end)
+        end)
+
         describe("Tool Schema Usage", function()
             it("should always use tools array for LLM", function()
                 -- Mock LLM that captures the options passed to it
@@ -1168,6 +1284,33 @@ local function define_tests()
 
                 -- Updated expectation: tool_call should be mapped to tool_choice
                 test.eq((captured_options :: any).tool_choice, "required")
+
+                agent._llm = nil
+            end)
+
+            it("should forward the tool choice fallback the caller permits", function()
+                local captured_options = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 1, completion_tokens = 1, total_tokens = 2 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Finish")
+                test_agent:step(prompt_builder, { tool_call = "any", tool_call_fallback = "auto" })
+
+                test.eq((captured_options :: any).tool_choice, "any")
+                test.eq((captured_options :: any).tool_choice_fallback, "auto")
+
+                test_agent:step(prompt_builder, { tool_call = "any" })
+                test.is_nil((captured_options :: any).tool_choice_fallback)
 
                 agent._llm = nil
             end)

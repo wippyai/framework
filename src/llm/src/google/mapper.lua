@@ -317,7 +317,6 @@ function mapper.map_tokens(google_usage)
     if google_usage.cachedContentTokenCount then
         local cached = tonumber(google_usage.cachedContentTokenCount) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
         tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 
@@ -369,7 +368,7 @@ function mapper.map_success_response(google_response)
     return response
 end
 
-function mapper.classify_error(google_error)
+function mapper.classify_error(google_error: any?): (string, string, table?)
     if not google_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown Google error", nil
     end
@@ -386,7 +385,7 @@ function mapper.classify_error(google_error)
         if google_error.metadata.request_id then details.request_id = google_error.metadata.request_id end
     end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 -- Standardize content to a simple string (for instructions)

@@ -11,12 +11,15 @@ modules:
     - name: wippy/migration
       version: 0.3.14
       hash: b7c28ba246cade1bcedad8b97e22b9da9b6f5b36d859a6cee7f3153f10b14847
+    - name: wippy/security
+      version: 0.4.2
+      hash: 9020016afc9de612f5297d38ce99e8500c63a2986077e8b0e560d8636c506627
     - name: wippy/terminal
       version: 0.4.2
       hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
     - name: wippy/test
-      version: 0.4.11
-      hash: 235f2f1d222dabeec1a83f6f9f48a7f75abf2143860b833437c1d96da3cd3e95
+      version: 0.4.18
+      hash: 048d88d2748ec6901fba703ed1317c27f7027650735f653a51d38c07741e1b99
 replacements:
     - from: wippy/bootloader
       to: ../../bootloader/src

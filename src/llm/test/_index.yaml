@@ -11,7 +11,7 @@ entries:
   - name: test_store
     kind: store.memory
     meta:
-      comment: Shared state for retry integration tests
+      comment: Shared state for retry delivery tests
     max_size: 100
     cleanup_interval: "1m"
 
@@ -22,8 +22,7 @@ entries:
     method: handler
     modules:
       - store
-    imports:
-      output: wippy.llm:output
+      - ctx
 
   # Permanent fail generate: always returns auth error
   - name: permanent_fail_generate
@@ -32,14 +31,12 @@ entries:
     method: handler
     modules:
       - store
-    imports:
-      output: wippy.llm:output
 
   # Flaky provider: binding with transient failures
   - name: flaky_driver
     kind: contract.binding
     meta:
-      comment: Flaky LLM driver for retry testing
+      comment: Flaky LLM driver recording its retry context
     contracts:
       - contract: wippy.llm:generator
         methods:

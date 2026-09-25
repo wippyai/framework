@@ -38,6 +38,12 @@ entries:
         path: ".storage"
       - entry: wippy.llm.openai_compat:timeout
         path: ".storage"
+      - entry: wippy.llm.typesafe:api_key
+        path: ".storage"
+      - entry: wippy.llm.typesafe:base_url
+        path: ".storage"
+      - entry: wippy.llm.typesafe:timeout
+        path: ".storage"
       - entry: wippy.llm.google.env:vertex_base_url
         path: ".storage"
       - entry: wippy.llm.google.env:generative_ai_base_url
@@ -89,6 +95,13 @@ entries:
     component: "wippy/test"
     version: ">=v0.4.0"
 
+  - name: dep.wippy.security
+    kind: "ns.dependency"
+    meta:
+      description: "Security policy groups referenced by background services"
+    component: "wippy/security"
+    version: ">=v0.3.0"
+
   # wippy.llm:embedder
   - name: embedder
     kind: contract.definition
@@ -127,7 +140,7 @@ entries:
               }
             format: application/schema+json
         output_schemas:
-          - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful embedding response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Embedding response\",\n          \"properties\": {\n            \"embeddings\": {\n              \"type\": \"array\",\n              \"description\": \"Array of embedding vectors\",\n              \"items\": {\n                \"type\": \"array\",\n                \"items\": {\"type\": \"number\"}\n              }\n            }\n          },\n          \"required\": [\"embeddings\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
+          - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful embedding response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Embedding response\",\n          \"properties\": {\n            \"embeddings\": {\n              \"type\": \"array\",\n              \"description\": \"Array of embedding vectors\",\n              \"items\": {\n                \"type\": \"array\",\n                \"items\": {\"type\": \"number\"}\n              }\n            }\n          },\n          \"required\": [\"embeddings\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"model\": {\"type\": \"string\", \"description\": \"Provider-reported model that produced the vectors\"},\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
             format: application/schema+json
 
   # wippy.llm:generator
@@ -244,7 +257,7 @@ entries:
                       {"type": "string", "enum": ["auto", "none", "any"]},
                       {"type": "string", "description": "Specific tool name to force"}
                     ],
-                    "description": "How the model should use tools"
+                    "description": "How the model should use tools. 'any' and a tool name force a tool call; a model whose options.model_profile sets forced_tool_choice = false rejects them unless options.tool_choice_fallback = 'auto'"
                   },
                   "options": {
                     "type": "object",
@@ -253,6 +266,17 @@ entries:
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
                       "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "tool_choice_fallback": {"type": "string", "enum": ["auto"], "description": "Permits sending a forced tool_choice as 'auto' to a model that cannot be forced; for callers that enforce tool use themselves. The response metadata.tool_choice reports the substitution"},
+                      "model_profile": {
+                        "type": "object",
+                        "description": "What the configured model accepts on the wire, set in the model's provider options; callers of resolved models cannot override it",
+                        "properties": {
+                          "forced_tool_choice": {"type": "boolean", "description": "false: the model rejects forced tool choice ('any' or a tool name)"},
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: thinking is always on and thinking_effort maps to an effort level, not a budget"},
+                          "structured_output_mode": {"type": "string", "enum": ["native"], "description": "native: structured output uses the provider's JSON schema output instead of a forced tool; every object in the schema must set additionalProperties: false"}
+                        },
+                        "additionalProperties": false
+                      },
                       "top_p": {"type": "number", "minimum": 0, "maximum": 1},
                       "frequency_penalty": {"type": "number", "minimum": -2, "maximum": 2},
                       "presence_penalty": {"type": "number", "minimum": -2, "maximum": 2},
@@ -289,6 +313,7 @@ entries:
       tags:
         - llm
         - generation
+        - evaluate
         - contracts
         - providers
     source: file://llm.lua
@@ -298,6 +323,13 @@ entries:
       contract: contract
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
+      evaluation: wippy.llm:evaluation
+
+  - name: evaluation
+    kind: library.lua
+    meta:
+      comment: Shared provider-independent validation for typed evaluation requests
+    source: file://evaluation.lua
 
   # wippy.llm:llm_test
   - name: llm_test
@@ -312,6 +344,7 @@ entries:
         - generation
         - structured_output
         - embeddings
+        - evaluate
         - contracts
         - providers
         - tests
@@ -521,6 +554,166 @@ entries:
             format: application/schema+json
         output_schemas:
           - definition: "{\n  \"oneOf\": [\n    {\n      \"type\": \"object\",\n      \"description\": \"Successful structured output response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": true},\n        \"result\": {\n          \"type\": \"object\",\n          \"description\": \"Structured output response\",\n          \"properties\": {\n            \"data\": {\n              \"type\": \"object\",\n              \"description\": \"Structured data matching the input schema\"\n            }\n          },\n          \"required\": [\"data\"]\n        },\n        \"tokens\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"prompt_tokens\": {\"type\": \"integer\"},\n            \"completion_tokens\": {\"type\": \"integer\"},\n            \"thinking_tokens\": {\"type\": \"integer\"},\n            \"total_tokens\": {\"type\": \"integer\"},\n            \"cache_creation_input_tokens\": {\"type\": \"integer\"},\n            \"cache_read_input_tokens\": {\"type\": \"integer\"}\n          }\n        },\n        \"finish_reason\": {\n          \"type\": \"string\",\n          \"enum\": [\"stop\", \"length\", \"filtered\", \"error\"]\n        },\n        \"metadata\": {\"type\": \"object\", \"description\": \"Provider-specific metadata\"}\n      },\n      \"required\": [\"success\", \"result\"],\n      \"additionalProperties\": true\n    },\n    {\n      \"type\": \"object\",\n      \"description\": \"Error response\",\n      \"properties\": {\n        \"success\": {\"type\": \"boolean\", \"const\": false},\n        \"error\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"invalid_request\", \n            \"authentication_error\", \n            \"model_error\", \n            \"rate_limit_exceeded\", \n            \"context_length_exceeded\", \n            \"content_filtered\", \n            \"server_error\", \n            \"timeout_error\",\n            \"network_error\"\n          ],\n          \"description\": \"Error type classification\"\n        },\n        \"error_message\": {\n          \"type\": \"string\", \n          \"description\": \"Human-readable error message\"\n        },\n        \"metadata\": {\n          \"type\": \"object\", \n          \"description\": \"Additional error context\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"success\", \"error\", \"error_message\"],\n      \"additionalProperties\": true\n    }\n  ]\n}\n"
+            format: application/schema+json
+
+  # wippy.llm:evaluator
+  - name: evaluator
+    kind: contract.definition
+    meta:
+      comment: Typed probabilistic evaluator contract
+      description: |
+        Evaluate a state against named typed questions and return model-estimated
+        probabilities. Application code owns thresholds, actions, and state changes.
+    methods:
+      - name: evaluate
+        description: Evaluate independent named questions against supplied context
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "description": "Input content to evaluate: text, a JSON object, or an array; not a state-machine state",
+                    "type": ["string", "object", "array"]
+                  },
+                  "questions": {
+                    "type": "object",
+                    "description": "Named independent questions about the same input; readings return under the same keys. Keys are caller identifiers and are never shown to the model.",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["choice", "predicate", "score"],
+                          "description": "Choice is categorical, predicate estimates proposition truth, score is an ordinal rubric"
+                        },
+                        "instructions": {
+                          "description": "What the model decides for this slot; a string or JSON structure"
+                        },
+                        "domain": {
+                          "description": "Slot domain. choice: array of option names or map of option to description; score: ordered array of at least two level descriptions; predicate: optional {yes, no} descriptions of each outcome"
+                        }
+                      },
+                      "required": ["type", "instructions"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Driver-specific model identifier"
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Evaluation parameters - core options plus driver-specific extensions",
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["state", "questions", "model"],
+                "additionalProperties": true
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "description": "Successful typed evaluation response",
+                    "properties": {
+                      "success": {"type": "boolean", "const": true},
+                      "result": {
+                        "type": "object",
+                        "properties": {
+                          "readings": {
+                            "type": "object",
+                            "description": "One reading per declared slot, keyed by the slot key",
+                            "additionalProperties": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {"type": "string", "const": "choice"},
+                                    "choice": {"type": "string", "description": "Highest-probability option"},
+                                    "probabilities": {
+                                      "type": "object",
+                                      "description": "Every option mapped to its probability; values sum to 1",
+                                      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+                                    },
+                                    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional provider-specific distribution statistic; not comparable across providers"}
+                                  },
+                                  "required": ["type", "choice", "probabilities"]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {"type": "string", "const": "predicate"},
+                                    "probability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Probability that the predicate holds"}
+                                  },
+                                  "required": ["type", "probability"]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {"type": "string", "const": "score"},
+                                    "score": {"type": "number", "description": "Expected ordinal level index (1-based); not a physical quantity or reward"},
+                                    "level": {"type": "integer", "minimum": 1, "description": "1-based index of the highest-probability level"},
+                                    "probabilities": {
+                                      "type": "array",
+                                      "description": "Probability per level, aligned with the declared domain; values sum to 1",
+                                      "items": {"type": "number", "minimum": 0, "maximum": 1},
+                                      "minItems": 2
+                                    },
+                                    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional provider-specific distribution statistic; not comparable across providers"}
+                                  },
+                                  "required": ["type", "score", "level", "probabilities"]
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": ["readings"]
+                      },
+                      "tokens": {
+                        "type": "object",
+                        "properties": {
+                          "prompt_tokens": {"type": "integer"},
+                          "completion_tokens": {"type": "integer"},
+                          "total_tokens": {"type": "integer"}
+                        }
+                      },
+                      "metadata": {"type": "object", "description": "Provider-specific metadata such as the versioned model id and request id"}
+                    },
+                    "required": ["success", "result"],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "description": "Error response",
+                    "properties": {
+                      "success": {"type": "boolean", "const": false},
+                      "error": {
+                        "type": "string",
+                        "enum": [
+                          "invalid_request",
+                          "authentication_error",
+                          "model_error",
+                          "rate_limit_exceeded",
+                          "context_length_exceeded",
+                          "server_error",
+                          "timeout_error",
+                          "network_error"
+                        ],
+                        "description": "Error type classification"
+                      },
+                      "error_message": {"type": "string", "description": "Human-readable error message"},
+                      "metadata": {"type": "object", "description": "Additional error context", "additionalProperties": true}
+                    },
+                    "required": ["success", "error", "error_message"],
+                    "additionalProperties": true
+                  }
+                ]
+              }
             format: application/schema+json
 
   # wippy.llm:usage_tracker

@@ -1,6 +1,7 @@
 local json = require("json")
 local http_client = require("http_client")
 local output = require("output")
+local transport = require("transport")
 
 type StreamInput = {
     stream: any,
@@ -41,14 +42,19 @@ local function extract_response_metadata(response_body: any)
     return metadata
 end
 
-local function parse_error_response(http_response)
-    local error_info = {
+local function parse_error_response(http_response: transport.HttpResponse): transport.RequestError
+    local error_info: transport.RequestError = {
         status_code = http_response.status_code,
-        message = "Google API error: " .. (http_response.status_code or "unknown status")
+        message = "Google API error: " .. tostring(http_response.status_code)
     }
 
-    if http_response.body then
-        local parsed, decode_err = json.decode(http_response.body)
+    local error_body = http_response.body
+    if not error_body and http_response.stream then
+        error_body = http_response.stream:read(4096) :: string?
+    end
+
+    if error_body then
+        local parsed, decode_err = json.decode(error_body)
         if not decode_err and parsed then
             error_info.metadata = extract_response_metadata(parsed)
             if parsed.error then
@@ -259,7 +265,7 @@ local function handle_stream_response(response, http_options)
     }
 end
 
-function client.request(method, url, http_options)
+function client.request(method, url, http_options, retry: transport.Retry?)
     http_options.headers["Accept"] = "application/json"
 
     if http_options.stream then
@@ -267,29 +273,18 @@ function client.request(method, url, http_options)
         http_options.headers["Accept"] = "text/event-stream"
     end
 
-    local response = nil
-    local err = nil
-    if method == "GET" then
-        response, err = client._http_client.get(url, http_options)
-    else
+    if method ~= "GET" then
+        method = "POST"
         http_options.headers["Content-Type"] = "application/json"
-        response, err = client._http_client.post(url, http_options)
     end
 
+    local function send_once()
+        return transport.dispatch(client._http_client, method, url, http_options)
+    end
+
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
     if not response then
-        return nil, {
-            status_code = 0,
-            message = "Connection failed: " .. tostring(err)
-        }
-    end
-
-    if response.status_code < 200 or response.status_code >= 300 then
-        if http_options.stream and response.stream and not response.body then
-            local body_data = response.stream:read(4096)
-            response.body = body_data
-        end
-        local parsed_error = parse_error_response(response)
-        return nil, parsed_error
+        return nil, request_error
     end
 
     -- Streaming: process stream, send chunks via streamer, return aggregated response

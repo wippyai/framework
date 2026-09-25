@@ -1,6 +1,7 @@
 local client = require("google_client")
 local config = require("google_config")
 local json = require("json")
+local transport = require("transport")
 
 local vertex_client = {
     _client = client,
@@ -76,7 +77,8 @@ function vertex_client.request(contract_args)
         end
     end
 
-    local response, err = vertex_client._client.request(contract_args.options.method, build_url(base_url, contract_args), options)
+    local retry = transport.request_retry(contract_args.options.retry, vertex_client._config.get_retry())
+    local response, err = vertex_client._client.request(contract_args.options.method, build_url(base_url, contract_args), options, retry)
 
     if err then
         return err

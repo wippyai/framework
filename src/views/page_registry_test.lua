@@ -1,6 +1,51 @@
 local test = require("test")
 local registry = require("registry")
 local page_registry = require("page_registry")
+local security = require("security")
+local funcs = require("funcs")
+
+-- can_access reads the ambient security actor/scope directly, so a "no
+-- actor" case cannot be produced by omission here: the CLI test runner
+-- (wippy/test 0.4.17) installs its own root actor and an unrestricted
+-- policy for the whole process so it can discover and run tests, and that
+-- security context is inherited by every call made from a test body.
+-- funcs.new():with_actor():with_scope() explicitly overrides the actor and
+-- scope for a single funcs.call, which is the only way to run can_access
+-- under a caller that holds no view permission on the page.
+local function can_access_as_unauthorized(page)
+    local unauthorized_actor = security.new_actor("wippy.views.test:unauthorized")
+    local empty_scope = security.new_scope()
+
+    local result, err = funcs.new()
+        :with_actor(unauthorized_actor)
+        :with_scope(empty_scope)
+        :call("wippy.views:page_access_probe", page)
+    if err then
+        error(err)
+    end
+    return result
+end
+
+-- Positive control for can_access_as_unauthorized: proves the funcs.call
+-- override in page_access_probe actually reaches can_access's policy check,
+-- rather than the probe failing closed for an unrelated reason.
+local function can_access_as_authorized(page)
+    local authorized_actor = security.new_actor("wippy.views.test:authorized")
+    local view_policy, err = security.policy("wippy.views:test_page_view_policy")
+    if err then
+        error(err)
+    end
+    local view_scope = security.new_scope():with(view_policy)
+
+    local result, call_err = funcs.new()
+        :with_actor(authorized_actor)
+        :with_scope(view_scope)
+        :call("wippy.views:page_access_probe", page)
+    if call_err then
+        error(call_err)
+    end
+    return result
+end
 
 local NS = "wippy.views.test:"
 local APP_NS = "app:"
@@ -352,10 +397,16 @@ local function define_tests()
                 test.is_true(page_registry.can_access(page))
             end)
 
-            test.it("can_access denies secure pages without actor", function()
+            test.it("can_access denies secure pages to an unauthorized actor", function()
                 local page, err = page_registry.get(NS .. "test_secure")
                 test.is_nil(err)
-                test.is_false(page_registry.can_access(page))
+                test.is_false(can_access_as_unauthorized(page))
+            end)
+
+            test.it("can_access allows secure pages to an actor with view permission", function()
+                local page, err = page_registry.get(NS .. "test_secure")
+                test.is_nil(err)
+                test.is_true(can_access_as_authorized(page))
             end)
 
             test.it("can_access allows non-secure template pages", function()
@@ -364,10 +415,10 @@ local function define_tests()
                 test.is_true(page_registry.can_access(page))
             end)
 
-            test.it("can_access denies secure template pages without actor", function()
+            test.it("can_access denies secure template pages to an unauthorized actor", function()
                 local page, err = page_registry.get(APP_NS .. "test_tmpl_settings")
                 test.is_nil(err)
-                test.is_false(page_registry.can_access(page))
+                test.is_false(can_access_as_unauthorized(page))
             end)
         end)
 

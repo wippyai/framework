@@ -1,0 +1,253 @@
+version: "1.0"
+namespace: wippy.llm.typesafe
+
+entries:
+  # wippy.llm.typesafe:api_key
+  - name: api_key
+    kind: env.variable
+    meta:
+      comment: API key for the TypeSafe System One API
+      icon: tabler:key
+    variable: TYPESAFE_API_KEY
+
+  # wippy.llm.typesafe:base_url
+  - name: base_url
+    kind: env.variable
+    meta:
+      comment: Base URL for the TypeSafe API
+      icon: tabler:world
+    variable: TYPESAFE_BASE_URL
+
+  # wippy.llm.typesafe:client
+  - name: client
+    kind: library.lua
+    meta:
+      comment: HTTP client for the TypeSafe System One API with bearer auth and retry
+    source: file://client.lua
+    modules:
+      - json
+      - http_client
+      - env
+      - ctx
+      - security
+    imports:
+      transport: wippy.llm.util:transport
+
+  # wippy.llm.typesafe:client_test
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Client Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe client covering context resolution, HTTP, retry, and error parsing
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - client
+        - http
+        - retry
+        - context
+    source: file://client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      typesafe_client: wippy.llm.typesafe:client
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.typesafe:driver
+  - name: driver
+    kind: contract.binding
+    meta:
+      name: TypeSafe Evaluation Driver
+      comment: Evaluates typed questions with Jev without generating text
+      tags:
+        - typesafe
+        - llm
+        - driver
+        - evaluate
+    contracts:
+      - contract: wippy.llm:evaluator
+        methods:
+          evaluate: wippy.llm.typesafe:evaluate
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.typesafe:status
+    optional_context:
+      api_key:
+        type: string
+        description: API key for the TypeSafe API
+        default_env: TYPESAFE_API_KEY
+      base_url:
+        type: string
+        description: Base URL of the TypeSafe API
+        default_env: TYPESAFE_BASE_URL
+        default_value: https://api.typesafe.ai/v1
+      timeout:
+        type: integer
+        description: Request timeout in seconds
+        default_env: TYPESAFE_TIMEOUT
+        default_value: 60
+      retry:
+        type: object
+        description: Provider-level retry policy for transient transport/provider failures
+
+  # wippy.llm.typesafe:integration_test
+  - name: integration_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Integration Tests
+      type: test
+      comment: Integration tests driving the TypeSafe contract binding against the real API when enabled
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - integration-test
+        - api
+        - evaluate
+        - status
+        - contract
+    source: file://integration_test.lua
+    modules:
+      - env
+      - contract
+    imports:
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.typesafe:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Mapper between the evaluator contract and the TypeSafe System One wire format
+    source: file://mapper.lua
+    imports:
+      output: wippy.llm:output
+
+  # wippy.llm.typesafe:mapper_test
+  - name: mapper_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Mapper Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe mapper covering questions, readings, tokens, and error classification
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - mapper
+        - evaluate
+        - readings
+    source: file://mapper_test.lua
+    imports:
+      typesafe_mapper: wippy.llm.typesafe:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.typesafe:provider
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: typesafe
+      type: llm.provider
+      title: TypeSafe
+      comment: Provider for typed probabilistic evaluations via the TypeSafe System One API (Jev)
+      tags:
+        - llm
+        - provider
+        - typesafe
+        - evaluate
+    depends_on:
+      - wippy.llm.typesafe:api_key
+      - wippy.llm.typesafe:base_url
+      - wippy.llm.typesafe:timeout
+    driver:
+      id: wippy.llm.typesafe:driver
+      options:
+        api_key_env: wippy.llm.typesafe:api_key
+        base_url_env: wippy.llm.typesafe:base_url
+        timeout_env: wippy.llm.typesafe:timeout
+
+  # wippy.llm.typesafe:status
+  - name: status
+    kind: function.lua
+    meta:
+      comment: Status handler for TypeSafe API health checks
+    source: file://status.lua
+    imports:
+      transport: wippy.llm.util:transport
+      typesafe_client: wippy.llm.typesafe:client
+    method: handler
+    pool:
+      max_size: 10
+
+  # wippy.llm.typesafe:status_test
+  - name: status_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Status Handler Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe status handler covering health checks and connection testing
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+    source: file://status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.typesafe:status
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm.typesafe:timeout
+  - name: timeout
+    kind: env.variable
+    meta:
+      comment: Request timeout in seconds for TypeSafe API calls
+      icon: tabler:clock
+    variable: TYPESAFE_TIMEOUT
+
+  # wippy.llm.typesafe:evaluate
+  - name: evaluate
+    kind: function.lua
+    meta:
+      comment: Typed evaluator handler for the TypeSafe System One endpoint
+    source: file://evaluate.lua
+    imports:
+      typesafe_client: wippy.llm.typesafe:client
+      typesafe_mapper: wippy.llm.typesafe:mapper
+      output: wippy.llm:output
+      evaluation: wippy.llm:evaluation
+    method: handler
+    pool:
+      max_size: 50
+
+  # wippy.llm.typesafe:evaluate_test
+  - name: evaluate_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Evaluation Handler Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe evaluate handler covering validation, request building, readings, and errors
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - evaluate
+        - readings
+        - contract
+    source: file://evaluate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      evaluate_handler: wippy.llm.typesafe:evaluate
+      test: wippy.test:test
+    method: run_tests

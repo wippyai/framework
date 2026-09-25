@@ -348,6 +348,41 @@ local function define_tests()
                 end
                 test.is_true(found_normal)
             end)
+
+            it("should handle image-only content parts from the _images channel", function()
+                local memory_contract = create_mock_memory_contract()
+                mock_contract._current_instance = memory_contract
+
+                local spec = {
+                    id = "test-agent",
+                    name = "Test Agent",
+                    prompt = "Test agent",
+                    tools = {},
+                    memory_contract = {
+                        implementation_id = "test:memory"
+                    }
+                }
+
+                local test_agent = agent.new(spec)
+                local prompt_builder = mock_prompt.new()
+
+                prompt_builder:add_user("What is in this picture?")
+                prompt_builder:add_function_result("look_at_image", '{"success":true}', "call_1")
+
+                -- Exactly what get_messages() appends for a stripped `_images` payload.
+                local messages = prompt_builder:get_messages()
+                table.insert(messages, create_message("user", {
+                    { type = "image", source = { type = "url", url = "https://example.com/a.png" } }
+                }))
+
+                test_agent:step(prompt_builder)
+
+                local call_log = memory_contract:get_call_log()
+                test.eq(#call_log, 1)
+
+                local recent_actions = (call_log[1] :: any).recent_actions
+                test.eq(recent_actions[#recent_actions], "user: [image]")
+            end)
         end)
 
         describe("Memory ID Extraction and Deduplication", function()

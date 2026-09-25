@@ -104,6 +104,8 @@ entries:
       - ctx
       - store
       - time
+    imports:
+      transport: wippy.llm.util:transport
 
   - name: client
     kind: library.lua
@@ -119,6 +121,7 @@ entries:
     imports:
       sigv4: wippy.llm.bedrock:sigv4
       bedrock_credentials: wippy.llm.bedrock:credentials
+      transport: wippy.llm.util:transport
 
   - name: mapper
     kind: library.lua
@@ -221,6 +224,7 @@ entries:
     source: file://status.lua
     imports:
       bedrock_client: wippy.llm.bedrock:client
+      transport: wippy.llm.util:transport
     method: handler
 
   # Driver binding
@@ -274,6 +278,9 @@ entries:
         description: Request timeout in seconds
         default_env: BEDROCK_TIMEOUT
         default_value: 600
+      retry:
+        type: object
+        description: Provider-level retry policy for transient transport/provider failures
 
   # Provider registry entry
   - name: provider
@@ -325,6 +332,25 @@ entries:
       - time
     imports:
       sigv4: wippy.llm.bedrock:sigv4
+      test: wippy.test:test
+    method: run_tests
+
+  - name: client_test
+    kind: function.lua
+    meta:
+      name: Bedrock Client Unit Tests
+      type: test
+      comment: Unit tests for the Bedrock Runtime client covering transport retry
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - client
+        - bedrock
+    source: file://client_test.lua
+    modules:
+      - json
+    imports:
+      bedrock_client: wippy.llm.bedrock:client
       test: wippy.test:test
     method: run_tests
 
@@ -425,6 +451,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: Bedrock Integration Tests
       type: test
       comment: Integration tests for Bedrock using real API calls
@@ -441,6 +468,7 @@ entries:
       status_handler: wippy.llm.bedrock:status
       structured_output_handler: wippy.llm.bedrock:structured_output
       embed_handler: wippy.llm.bedrock:embed
+      bedrock_credentials: wippy.llm.bedrock:credentials
       output: wippy.llm:output
       test: wippy.test:test
     method: run_tests

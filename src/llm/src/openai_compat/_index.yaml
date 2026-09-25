@@ -30,7 +30,8 @@ entries:
       - env
       - ctx
       - security
-      - time
+    imports:
+      transport: wippy.llm.util:transport
 
   # wippy.llm.openai_compat:client_test
   - name: client_test
@@ -184,6 +185,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: OpenAI-Compatible Integration Tests
       type: test
       comment: Integration tests for OpenAI-compatible contract handlers using real API calls when enabled
@@ -288,6 +290,7 @@ entries:
     source: file://status.lua
     imports:
       openai_client: wippy.llm.openai_compat:client
+      transport: wippy.llm.util:transport
     method: handler
     pool:
       max_size: 10

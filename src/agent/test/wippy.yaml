@@ -1,0 +1,7 @@
+organization: wippy
+module: agent-test
+type: application
+description: Test stub for agent module
+exclude_meta:
+  type:
+    - e2e

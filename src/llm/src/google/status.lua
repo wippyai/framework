@@ -1,6 +1,7 @@
 local contract = require("contract")
 local config = require("google_config")
 local ctx = require("ctx")
+local transport = require("transport")
 
 local status = {
     _ctx = ctx,
@@ -30,29 +31,11 @@ function status.handler(contract_args)
 
     local response = client_instance:request({
         model = contract_args.model,
-        options = { method = "GET" }
+        options = { method = "GET", retry = false }
     })
 
     if response and response.status_code and response.status_code ~= 200 then
-        local result = { success = false }
-        result.status = "unhealthy"
-        result.message = response.message or "Connection failed"
-
-        -- Network/connection errors
-        if response.status_code == 0 or not response.status_code then
-            result.status = "unhealthy"
-            result.message = "Connection failed"
-        -- Rate limit - degraded but service is available
-        elseif response.status_code == 429 then
-            result.status = "degraded"
-            result.message = "Rate limited but service is available"
-        -- Server errors - degraded
-        elseif response.status_code and response.status_code >= 500 and response.status_code < 600 then
-            result.status = "degraded"
-            result.message = "Service experiencing issues"
-        end
-
-        return result
+        return transport.health_failure(response :: transport.RequestError)
     end
 
     return {

@@ -2,6 +2,7 @@ local generate_handler = require("generate_handler")
 local status_handler = require("status_handler")
 local structured_output_handler = require("structured_output_handler")
 local embed_handler = require("embed_handler")
+local bedrock_credentials = require("bedrock_credentials")
 local output = require("output")
 local json = require("json")
 local env = require("env")
@@ -22,6 +23,12 @@ local function define_tests()
 
         before_all(function()
             if RUN_INTEGRATION_TESTS then
+                local _, creds_err = bedrock_credentials.resolve()
+                if creds_err then
+                    print("Bedrock integration tests disabled - " .. tostring(creds_err))
+                    RUN_INTEGRATION_TESTS = false
+                    return
+                end
                 print("Bedrock integration tests enabled")
                 print("  Claude: " .. CLAUDE_MODEL)
                 print("  Llama: " .. LLAMA_MODEL)
@@ -58,7 +65,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 32 }
                 })
 
-                test.is_true(response.success, "Generation failed: " .. (err or "unknown"))
+                test.is_nil(err, "Generation failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content)
                 test.is_true(#response.result.content > 0)
@@ -78,7 +87,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 5 }
                 })
 
-                test.is_true(response.success, "Generation failed: " .. (err or "unknown"))
+                test.is_nil(err, "Generation failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content)
             end)
@@ -110,7 +121,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 200 }
                 })
 
-                test.is_true(response.success, "Tool call failed: " .. (err or "unknown"))
+                test.is_nil(err, "Tool call failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls)
                 test.is_true(#response.result.tool_calls > 0)
@@ -144,7 +157,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 200 }
                 })
 
-                test.is_true(response.success, "Structured output failed: " .. (err or "unknown"))
+                test.is_nil(err, "Structured output failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data)
                 local data = (response :: any).result.data
@@ -206,7 +221,9 @@ local function define_tests()
                     input = "Hello world"
                 })
 
-                test.is_true(response.success, "Titan embed failed: " .. (err or "unknown"))
+                test.is_nil(err, "Titan embed failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.embeddings)
                 test.eq(#response.result.embeddings, 1)
@@ -222,7 +239,9 @@ local function define_tests()
                     input = { "First text", "Second text" }
                 })
 
-                test.is_true(response.success, "Titan batch embed failed: " .. (err or "unknown"))
+                test.is_nil(err, "Titan batch embed failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings, 2)
                 test.is_true(#response.result.embeddings[1] > 0)
@@ -238,7 +257,9 @@ local function define_tests()
                     options = { dimensions = 256 }
                 })
 
-                test.is_true(response.success, "Titan dimensions failed: " .. (err or "unknown"))
+                test.is_nil(err, "Titan dimensions failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings[1], 256)
             end)
@@ -253,7 +274,9 @@ local function define_tests()
                     input = "Hello world"
                 })
 
-                test.is_true(response.success, "Cohere embed failed: " .. (err or "unknown"))
+                test.is_nil(err, "Cohere embed failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.embeddings)
                 test.eq(#response.result.embeddings, 1)
@@ -268,7 +291,9 @@ local function define_tests()
                     input = { "First", "Second", "Third" }
                 })
 
-                test.is_true(response.success, "Cohere batch embed failed: " .. (err or "unknown"))
+                test.is_nil(err, "Cohere batch embed failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings, 3)
             end)
@@ -282,7 +307,8 @@ local function define_tests()
                     messages = { { role = "user", content = { { type = "text", text = "Say hi in 3 words" } } } },
                     options = { temperature = 0, max_tokens = 30 }
                 })
-                test.is_true(response.success, "Llama failed: " .. (err or "unknown"))
+                test.is_nil(err, "Llama failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
             end)
@@ -294,7 +320,8 @@ local function define_tests()
                     messages = { { role = "user", content = { { type = "text", text = "Say hi in 3 words" } } } },
                     options = { temperature = 0, max_tokens = 30 }
                 })
-                test.is_true(response.success, "Mistral failed: " .. (err or "unknown"))
+                test.is_nil(err, "Mistral failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
             end)
@@ -306,7 +333,8 @@ local function define_tests()
                     messages = { { role = "user", content = { { type = "text", text = "Say hi in 3 words" } } } },
                     options = { temperature = 0, max_tokens = 30 }
                 })
-                test.is_true(response.success, "Nova failed: " .. (err or "unknown"))
+                test.is_nil(err, "Nova failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
             end)
@@ -331,7 +359,8 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Nova tool call failed: " .. (err or "unknown"))
+                test.is_nil(err, "Nova tool call failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "get_weather")
@@ -358,7 +387,8 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Llama 3.3 fallback failed: " .. (err or "unknown"))
+                test.is_nil(err, "Llama 3.3 fallback failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "get_weather")
@@ -383,7 +413,8 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Mistral structured output failed: " .. (err or "unknown"))
+                test.is_nil(err, "Mistral structured output failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq((response.result.data :: any).name, "Bob")
                 test.eq((response.result.data :: any).age, 45)
@@ -410,7 +441,8 @@ local function define_tests()
                     },
                     options = { temperature = 0, max_tokens = 200 }
                 })
-                test.is_true(response.success, "Llama tool call failed: " .. (err or "unknown"))
+                test.is_nil(err, "Llama tool call failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "get_weather")
@@ -428,7 +460,9 @@ local function define_tests()
                     options = { thinking_effort = 10, max_tokens = 5000 }
                 })
 
-                test.is_true(response.success, "Thinking failed: " .. (err or "unknown"))
+                test.is_nil(err, "Thinking failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.is_true(#response.result.content > 0)
                 test.not_nil(response.metadata.thinking_blocks)
@@ -444,7 +478,8 @@ local function define_tests()
                     model = COHERE_V4_EMBED_MODEL,
                     input = "Hello from Cohere v4"
                 })
-                test.is_true(response.success, "Cohere v4 failed: " .. (err or "unknown"))
+                test.is_nil(err, "Cohere v4 failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings, 1)
                 test.is_true(#response.result.embeddings[1] > 0)
@@ -457,7 +492,8 @@ local function define_tests()
                     input = "Test dimensions",
                     options = { dimensions = 512 }
                 })
-                test.is_true(response.success, "Cohere v4 dim failed: " .. (err or "unknown"))
+                test.is_nil(err, "Cohere v4 dim failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings[1], 512)
             end)
@@ -469,7 +505,8 @@ local function define_tests()
                     input = "search query text",
                     options = { input_type = "search_query" }
                 })
-                test.is_true(response.success, "Cohere v4 input_type failed: " .. (err or "unknown"))
+                test.is_nil(err, "Cohere v4 input_type failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings, 1)
             end)
@@ -482,7 +519,8 @@ local function define_tests()
                     model = TITAN_V1_EMBED_MODEL,
                     input = "Hello from Titan v1"
                 })
-                test.is_true(response.success, "Titan v1 failed: " .. (err or "unknown"))
+                test.is_nil(err, "Titan v1 failed: " .. tostring(err))
+                assert(response)
                 assert(response.success)
                 test.eq(#response.result.embeddings, 1)
                 -- Titan v1 has fixed 1536 dimensions

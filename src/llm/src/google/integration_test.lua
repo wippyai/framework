@@ -84,7 +84,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content, "Integration test successful")
                 tests.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -128,7 +130,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content, "Hello")
                 tests.contains(response.result.content, "Gemini")
@@ -175,7 +179,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 assert(response.result.content)
                 tests.contains(response.result.content:lower(), "ahoy")
@@ -225,7 +231,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 assert(response.result.content)
                 tests.contains(response.result.content:lower(), "blue")
@@ -266,7 +274,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.is_true(response.tokens.completion_tokens <= 15, "Response exceeded token limit significantly")
                 -- Google might finish early or hit length limit
@@ -316,7 +326,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request with empty assistant message failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request with empty assistant message failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
             end)
@@ -360,7 +372,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content:upper(), "ACK")
             end)
@@ -400,7 +414,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request with stop sequences failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request with stop sequences failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 -- Response should stop before or at "5"
@@ -491,7 +507,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content, "END")
             end)
@@ -552,7 +570,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
                 assert(response.result.tool_calls and response.result.tool_calls[1])
@@ -612,7 +632,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 -- Should respond with text, no tool calls
                 tests.not_nil(response.result.content, "No content in response")
@@ -679,7 +701,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
                 assert(response.result.tool_calls and response.result.tool_calls[1])
@@ -734,9 +758,11 @@ local function define_tests()
                     }
                 }
 
-                local initial_response = generate_handler.handler(initial_args)
+                local initial_response, initial_err = generate_handler.handler(initial_args)
 
-                tests.is_true(initial_response.success, "Initial request failed")
+                tests.is_nil(initial_err, "Initial request failed: " .. tostring(initial_err))
+
+                assert(initial_response)
                 assert(initial_response.success)
                 tests.not_nil(initial_response.result.tool_calls, "No tool calls")
                 tests.is_true(#initial_response.result.tool_calls > 0, "Expected tool call")
@@ -775,7 +801,9 @@ local function define_tests()
 
                 local continuation_response, continuation_err = generate_handler.handler(continuation_args)
 
-                tests.is_true(continuation_response.success, "Continuation failed: " .. (continuation_err or "unknown"))
+                tests.is_nil(continuation_err, "Continuation failed: " .. tostring(continuation_err))
+
+                assert(continuation_response)
                 assert(continuation_response.success)
                 tests.contains(continuation_response.result.content, "42")
                 tests.eq(continuation_response.finish_reason, "stop")
@@ -828,7 +856,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 tests.is_true(#response.result.content > 10, "Response should have substantial content")
@@ -883,7 +913,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 assert(response.result.content)
@@ -937,7 +969,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 tests.is_true(#response.result.content > 20, "Response should describe the image")
@@ -1001,7 +1035,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 assert(type(response.result.content) == "string")
                 -- Should mention colors
@@ -1058,7 +1094,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data in response")
                 tests.not_nil((response :: any).result.data.name, "Missing name")
@@ -1125,7 +1163,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data")
                 tests.not_nil((response :: any).result.data.languages, "Missing languages array")
@@ -1203,7 +1243,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data")
                 tests.not_nil((response :: any).result.data.name, "Missing restaurant name")
@@ -1276,7 +1318,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data")
                 tests.not_nil((response :: any).result.data.name, "Missing name")
@@ -1326,7 +1370,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content, "Vertex AI test successful")
                 tests.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -1370,7 +1416,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content, "Hello")
                 tests.contains(response.result.content, "Vertex AI")
@@ -1417,7 +1465,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content:upper(), "BEEP")
                 tests.eq(response.finish_reason, "stop")
@@ -1466,7 +1516,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.contains(response.result.content, "42")
                 tests.eq(response.finish_reason, "stop")
@@ -1506,7 +1558,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.is_true(response.tokens.completion_tokens <= 15, "Response exceeded token limit significantly")
                 tests.is_true(response.finish_reason == "stop" or response.finish_reason == "length", "Expected stop or length finish reason")
@@ -1547,7 +1601,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request with stop sequences failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request with stop sequences failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
             end)
@@ -1608,7 +1664,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
                 assert(response.result.tool_calls and response.result.tool_calls[1])
@@ -1667,7 +1725,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.is_true(#response.result.tool_calls == 0, "Expected no tool calls")
                 tests.not_nil(response.result.content, "No content in response")
@@ -1734,7 +1794,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.tool_calls, "No tool calls in response")
                 assert(response.result.tool_calls and response.result.tool_calls[1])
@@ -1789,7 +1851,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 tests.is_true(#response.result.content > 10, "Response should have substantial content")
@@ -1844,7 +1908,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 assert(response.result.content)
@@ -1897,7 +1963,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil(response.result.content, "No content in response")
                 tests.is_true(#response.result.content > 20, "Response should describe the image")
@@ -1960,7 +2028,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 assert(type(response.result.content) == "string")
                 -- Should mention colors
@@ -2017,7 +2087,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data in response")
                 tests.not_nil((response :: any).result.data.name, "Missing name")
@@ -2084,7 +2156,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data")
                 tests.not_nil((response :: any).result.data.company_name, "Missing company_name")
@@ -2161,7 +2235,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                tests.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                tests.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 tests.not_nil((response :: any).result.data, "No structured data")
                 tests.not_nil((response :: any).result.data.store_name, "Missing store_name")

@@ -1,15 +1,8 @@
 # Wippy Framework
-# Modules with flat structure (wippy.yaml at package root)
-PACKAGES_FLAT = migration embeddings facade views security docs terminal test
-
-# Modules with src subfolder (wippy.yaml inside src/)
-PACKAGES_SRC = actor agent bootloader llm relay usage
-
 # Modules that have test directories with wippy.lock
-TEST_MODULES = actor bootloader embeddings facade llm migration relay usage views
+TEST_MODULES = actor agent bootloader embeddings facade llm migration relay usage views
 
-.PHONY: help check-manifests run-tests run-lint install publish-all \
-	publish-flat-% publish-src-%
+.PHONY: help check-manifests run-tests run-lint install
 
 help:
 	@echo "Wippy Framework"
@@ -19,7 +12,6 @@ help:
 	@echo "  make run-lint       Run lint for all modules"
 	@echo "  make check-manifests Validate package and test-app module types"
 	@echo "  make install        Install dependencies for all test modules"
-	@echo "  make publish-all    Publish all packages (skips unchanged)"
 
 check-manifests:
 	@python3 scripts/check_module_manifests.py
@@ -28,7 +20,7 @@ run-tests:
 	@failed=0; \
 	for mod in $(TEST_MODULES); do \
 		printf "%-14s " "$$mod"; \
-		output=$$(cd src/$$mod/test && wippy run test 2>&1); \
+		output=$$($(MAKE) -s -C src/$$mod/test test 2>&1); \
 		if echo "$$output" | grep -q "PASSED"; then \
 			echo "PASSED"; \
 		else \
@@ -44,7 +36,7 @@ run-lint:
 	@failed=0; \
 	for mod in $(TEST_MODULES); do \
 		printf "%-14s " "$$mod"; \
-		output=$$(cd src/$$mod/test && wippy lint 2>&1); \
+		output=$$($(MAKE) -s -C src/$$mod/test lint 2>&1); \
 		if echo "$$output" | grep -q "errors"; then \
 			echo "$$output" | grep -oP 'Checked.*'; \
 			failed=1; \
@@ -60,16 +52,3 @@ install:
 		echo "Installing $$mod..."; \
 		(cd src/$$mod/test && wippy install 2>&1 | tail -1); \
 	done
-
-publish-all: check-manifests
-	@for pkg in $(PACKAGES_FLAT); do \
-		echo "Publishing $$pkg..."; \
-		cd src/$$pkg && wippy publish || echo "$$pkg unchanged or failed"; \
-		cd ../..; \
-	done
-	@for pkg in $(PACKAGES_SRC); do \
-		echo "Publishing $$pkg..."; \
-		cd src/$$pkg/src && wippy publish || echo "$$pkg unchanged or failed"; \
-		cd ../../..; \
-	done
-	@echo "All packages processed"

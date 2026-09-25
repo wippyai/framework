@@ -1,0 +1,45 @@
+name: Setup verified latest Wippy runtime
+description: Installs the latest stable Wippy runtime after signature verification.
+
+outputs:
+  path:
+    description: Absolute path to the verified Wippy executable.
+    value: ${{ steps.install.outputs.path }}
+  version:
+    description: Installed Wippy release tag.
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: 1.26.5
+        check-latest: false
+        cache: false
+    - name: Install and verify Wippy runtime
+      id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        wippy_version="$(gh api repos/wippyai/runtime/releases/latest --jq .tag_name)"
+        test -n "$wippy_version"
+
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        gh release download "$wippy_version" --repo wippyai/runtime --dir "$tmp" \
+          --pattern wippy-linux-amd64 --pattern wippy-linux-amd64.sig
+        go run "$GITHUB_ACTION_PATH/verify-release.go" \
+          "$GITHUB_ACTION_PATH/wippy-runtime-release.pub" \
+          "$tmp/wippy-linux-amd64" \
+          "$tmp/wippy-linux-amd64.sig"
+
+        wippy_path="$HOME/.wippy/bin/wippy"
+        install -Dm0755 "$tmp/wippy-linux-amd64" "$wippy_path"
+        "$wippy_path" version
+        {
+          echo "path=$wippy_path"
+          echo "version=$wippy_version"
+        } >> "$GITHUB_OUTPUT"

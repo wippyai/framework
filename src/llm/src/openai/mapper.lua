@@ -376,6 +376,14 @@ local function collect_message_text(message_items)
     return text, refusal
 end
 
+-- Collect the assistant text carried by the `message` items of a Responses
+-- output array. Shared with the streaming client, which reads it from the
+-- terminal response when a backend sends no output_text deltas.
+function openai_mapper.collect_output_text(output_items): (string, string?)
+    local messages = partition_output(output_items)
+    return collect_message_text(messages)
+end
+
 function openai_mapper.collect_reasoning_text(output_items)
     local thinking = ""
     if not output_items then
@@ -469,7 +477,6 @@ function openai_mapper.map_tokens(usage)
     if usage.input_tokens_details and usage.input_tokens_details.cached_tokens then
         local cached = tonumber(usage.input_tokens_details.cached_tokens) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, prompt_tokens - cached)
         tokens.prompt_tokens = math.max(0, prompt_tokens - cached)
     end
 
@@ -536,7 +543,7 @@ end
 
 -- Pure classifier: turn an HTTP / transport error into (kind, message, details).
 -- Consumed by output.errors.<op>(...):classifier(openai_mapper.classify_error):from(err):build()
-function openai_mapper.classify_error(api_error)
+function openai_mapper.classify_error(api_error: any?): (string, string, table?)
     if not api_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown OpenAI error", nil
     end
@@ -555,7 +562,7 @@ function openai_mapper.classify_error(api_error)
         if api_error.metadata.organization then details.organization = api_error.metadata.organization end
     end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 return openai_mapper

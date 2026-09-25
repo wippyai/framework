@@ -80,6 +80,20 @@ local function define_tests()
             test.eq(response.status, "unhealthy")
         end)
 
+        it("should disable retry for the probe", function()
+            local captured_options = nil
+            status_handler._client = {
+                converse = function(model_id, payload, options)
+                    captured_options = options
+                    return nil, { status_code = 503, message = "Service unavailable" }
+                end
+            }
+
+            local response = status_handler.handler({})
+            test.eq(response.status, "degraded")
+            test.eq((captured_options :: any).retry, false)
+        end)
+
         it("should use custom model if provided", function()
             local captured_model = nil
             status_handler._client = {

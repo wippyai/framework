@@ -1,15 +1,16 @@
 local json = require("json")
+local openai_mapper = require("openai_mapper")
 local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
-local time = require("time")
+local transport = require("transport")
 
 type OpenAIConfig = {
     api_key: string?,
     base_url: string,
     organization: string?,
     timeout: number,
-    retry: table?,
+    retry: transport.Retry?,
     headers: {[string]: string}?
 }
 
@@ -27,54 +28,11 @@ openai_client._http_client = http_client
 openai_client._env = env
 openai_client._ctx = ctx
 
-local function normalize_retry(raw)
-    if type(raw) ~= "table" then return nil end
-    local attempts = math.floor(tonumber(raw.attempts) or 0)
-    if attempts <= 0 then return nil end
-    if attempts > 10 then attempts = 10 end
-
-    local backoff_ms = math.floor(tonumber(raw.backoff_ms) or 500)
-    if backoff_ms < 0 then backoff_ms = 0 end
-    if backoff_ms > 60000 then backoff_ms = 60000 end
-
-    return { attempts = attempts, backoff_ms = backoff_ms }
-end
-
-local function retryable_error(error_info)
-    local status = tonumber(error_info and error_info.status_code) or 0
-    return status == 0
-        or status == 408
-        or status == 409
-        or status == 425
-        or status == 429
-        or (status >= 500 and status < 600)
-end
-
-local function sleep_for_retry(retry, attempt)
-    if not retry then return end
-    local delay_ms = (tonumber(retry.backoff_ms) or 500) * (2 ^ math.max(0, attempt - 1))
-    if delay_ms <= 0 then return end
-    if delay_ms > 60000 then delay_ms = 60000 end
-    time.sleep(tostring(math.floor(delay_ms)) .. "ms")
-end
-
 local function resolve_config()
-    local ctx_all = openai_client._ctx.all() or {}
+    local ctx_all = (openai_client._ctx.all() or {}) :: {[string]: any}
 
     local function resolve_string(key: string, default_env: string?): string?
-        if ctx_all[key] then
-            return tostring(ctx_all[key])
-        end
-        local env_key = key .. "_env"
-        if ctx_all[env_key] then
-            local val = openai_client._env.get(tostring(ctx_all[env_key]))
-            if val and val ~= "" then return val end
-        end
-        if default_env then
-            local val = openai_client._env.get(default_env)
-            if val and val ~= "" then return val end
-        end
-        return nil
+        return transport.config_value(ctx_all, openai_client._env, key, default_env)
     end
 
     local config = {
@@ -82,7 +40,7 @@ local function resolve_config()
         base_url = resolve_string("base_url", "OPENAI_BASE_URL") or "https://api.openai.com/v1",
         organization = resolve_string("organization", "OPENAI_ORGANIZATION"),
         timeout = tonumber(resolve_string("timeout", "OPENAI_TIMEOUT")) or 600,
-        retry = normalize_retry(ctx_all.retry),
+        retry = transport.normalize_retry(ctx_all.retry),
         headers = ctx_all.headers
     }
     return config
@@ -115,20 +73,20 @@ local function extract_response_metadata(http_response)
     return metadata
 end
 
-local function parse_error_response(http_response)
-    local error_info = {
-        status_code = http_response and http_response.status_code or 0,
-        message = "OpenAI API error: " .. (http_response and http_response.status_code or "connection failed")
+local function parse_error_response(http_response: transport.HttpResponse): transport.RequestError
+    local error_info: transport.RequestError = {
+        status_code = http_response.status_code,
+        message = "OpenAI API error: " .. tostring(http_response.status_code)
     }
 
-    if http_response and http_response.headers and http_response.headers["x-request-id"] then
-        error_info.request_id = http_response.headers["x-request-id"]
+    local headers = http_response.headers or {}
+    if headers["x-request-id"] then
+        error_info.request_id = tostring(headers["x-request-id"])
     end
 
-    local resp = http_response :: any
-    local error_body = resp and resp.body
-    if resp and resp.stream and (not error_body or error_body == "" or error_body == "no body") then
-        error_body = resp.stream:read(4096)
+    local error_body = http_response.body
+    if http_response.stream and (not error_body or error_body == "" or error_body == "no body") then
+        error_body = http_response.stream:read(4096) :: string?
     end
 
     if error_body and error_body ~= "" and error_body ~= "no body" then
@@ -141,7 +99,7 @@ local function parse_error_response(http_response)
         end
     end
 
-    error_info.metadata = extract_response_metadata(http_response :: any)
+    error_info.metadata = extract_response_metadata(http_response)
     return error_info
 end
 
@@ -197,43 +155,13 @@ function openai_client.request(endpoint_path, payload, options)
     end
 
     local function send_once()
-        if method == "GET" then
-            return openai_client._http_client.get(full_url, http_options)
-        elseif method == "DELETE" then
-            return openai_client._http_client.delete(full_url, http_options)
-        elseif method == "PUT" then
-            return openai_client._http_client.put(full_url, http_options)
-        elseif method == "PATCH" then
-            return openai_client._http_client.patch(full_url, http_options)
-        end
-        return openai_client._http_client.post(full_url, http_options)
+        return transport.dispatch(openai_client._http_client, method, full_url, http_options)
     end
 
-    local retry = normalize_retry(options.retry) or config.retry
-    local response, err
-    local request_error = nil
-    local retry_count = 0
-    while true do
-        response, err = send_once()
-
-        if not response then
-            request_error = {
-                status_code = 0,
-                message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
-            }
-        elseif response.status_code < 200 or response.status_code >= 300 then
-            request_error = parse_error_response(response)
-        else
-            request_error = nil
-        end
-
-        if not request_error then break end
-        if not retry or retry_count >= retry.attempts or not retryable_error(request_error) then
-            return nil, request_error
-        end
-
-        retry_count = retry_count + 1
-        sleep_for_retry(retry, retry_count)
+    local retry = transport.request_retry(options.retry, config.retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
+    if not response then
+        return nil, request_error
     end
 
     if options.stream and response.stream then
@@ -254,7 +182,7 @@ function openai_client.request(endpoint_path, payload, options)
         }
     end
 
-    parsed.metadata = extract_response_metadata(response :: any)
+    parsed.metadata = extract_response_metadata(response)
     return parsed
 end
 
@@ -262,7 +190,7 @@ end
 -- Each chunk is a `data: <json>` line; the JSON carries a `type` field that
 -- names the event (e.g. response.output_text.delta). Multiple events are
 -- separated by a blank line (\n\n).
-function openai_client.process_stream(stream_response, callbacks)
+function openai_client.process_stream(stream_response, callbacks): (string?, any, any)
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -297,7 +225,7 @@ function openai_client.process_stream(stream_response, callbacks)
         })
     end
 
-    local function build_result()
+    local function build_result(response_override)
         local tool_calls_out = {}
         for _, call in pairs(pending_calls) do
             if call.call_id and call.name then
@@ -309,16 +237,56 @@ function openai_client.process_stream(stream_response, callbacks)
             end
         end
 
+        local terminal_response = response_override or final_response
+        local terminal_usage = terminal_response and terminal_response.usage or final_usage
+        local terminal_status = terminal_response and terminal_response.status or response_status
+        local terminal_response_id = terminal_response and terminal_response.id or response_id
+        local terminal_incomplete_reason = incomplete_reason
+        if terminal_response and terminal_response.incomplete_details then
+            terminal_incomplete_reason = terminal_response.incomplete_details.reason
+        end
+
         return {
             content = full_content,
             tool_calls = tool_calls_out,
-            usage = final_usage,
-            status = response_status,
-            incomplete_reason = incomplete_reason,
-            response_id = response_id,
-            response = final_response,
+            usage = terminal_usage,
+            status = terminal_status,
+            incomplete_reason = terminal_incomplete_reason,
+            response_id = terminal_response_id,
+            response = terminal_response,
             metadata = metadata
         }
+    end
+
+    local function close_stream()
+        local stream: any = stream_response.stream
+        if type(stream.close) == "function" then
+            pcall(function() stream:close() end)
+        end
+    end
+
+    -- A Responses backend may deliver the assistant message only inside the
+    -- terminal response payload, without output_text deltas. The output array
+    -- holds the whole message, so take the text from there when the delta
+    -- stream produced none.
+    local function recover_terminal_content(terminal_response)
+        if full_content ~= "" then return end
+        if not terminal_response or not terminal_response.output then return end
+        local text = openai_mapper.collect_output_text(terminal_response.output)
+        if text == "" then return end
+        full_content = text
+        on_content(text)
+    end
+
+    local function finish_stream(response_override): (string, any, any)
+        for key, _ in pairs(pending_calls) do
+            emit_call(key)
+        end
+        recover_terminal_content(response_override or final_response)
+        local result: any = build_result(response_override)
+        close_stream()
+        on_done(result)
+        return full_content, nil, result
     end
 
     local leftover = ""
@@ -331,13 +299,26 @@ function openai_client.process_stream(stream_response, callbacks)
             return nil, err
         end
 
-        if not chunk then break end
+        if not chunk then
+            if leftover == "" then break end
+            -- Be tolerant of a transport that closes immediately after its
+            -- final data line instead of sending the terminating SSE blank
+            -- line. Complete the frame locally so terminal success and error
+            -- events are still observed.
+            chunk = leftover .. "\n\n"
+            leftover = ""
+        end
         if chunk == "" then goto continue end
 
         if leftover ~= "" then
             chunk = leftover .. chunk
             leftover = ""
         end
+
+        -- SSE permits CRLF as well as LF. Normalize only after joining the
+        -- previous partial chunk so a CR/LF pair split across reads remains a
+        -- single line ending.
+        chunk = chunk:gsub("\r\n", "\n"):gsub("\r", "\n")
 
         local last_boundary = 0
         local pos = 1
@@ -442,6 +423,10 @@ function openai_client.process_stream(stream_response, callbacks)
                     if parsed.response.incomplete_details then
                         incomplete_reason = parsed.response.incomplete_details.reason
                     end
+                    -- response.completed is the terminal event. Some
+                    -- Responses transports keep the HTTP connection alive,
+                    -- so waiting for EOF can block an otherwise finished turn.
+                    return finish_stream(parsed.response)
                 end
             elseif etype == "response.incomplete" then
                 if parsed.response then
@@ -451,6 +436,7 @@ function openai_client.process_stream(stream_response, callbacks)
                     if parsed.response.incomplete_details then
                         incomplete_reason = parsed.response.incomplete_details.reason
                     end
+                    return finish_stream(parsed.response)
                 end
             elseif etype == "response.failed" or etype == "error" or etype == "response.error" then
                 local err_payload = parsed.response and parsed.response.error or parsed.error or parsed
@@ -461,6 +447,7 @@ function openai_client.process_stream(stream_response, callbacks)
                     param = err_payload and err_payload.param
                 }
                 on_error(error_info)
+                close_stream()
                 return nil, error_info.message, { error = error_info }
             end
 
@@ -470,13 +457,7 @@ function openai_client.process_stream(stream_response, callbacks)
         ::continue::
     end
 
-    for key, _ in pairs(pending_calls) do
-        emit_call(key)
-    end
-
-    local result = build_result()
-    on_done(result)
-    return full_content, nil, result
+    return finish_stream()
 end
 
 return openai_client

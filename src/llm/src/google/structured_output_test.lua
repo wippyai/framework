@@ -1325,6 +1325,96 @@ local function define_tests()
                 tests.is_true(response.success)
             end)
 
+            it("should forward retry to client request", function()
+                structured_output._mapper = {
+                    map_messages = function(messages, options)
+                        return {
+                            { role = "user", parts = {{ text = "Generate data" }} }
+                        }, {}
+                    end,
+                    map_options = function(options)
+                        return {}
+                    end,
+                    map_success_response = function(response)
+                        return {
+                            success = true,
+                            result = { content = '{"data":"test"}' },
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop",
+                            metadata = {}
+                        }
+                    end
+                }
+
+                structured_output._ctx = {
+                    all = function()
+                        return {}
+                    end,
+                    get = function(key)
+                        return "test-client-id"
+                    end
+                }
+
+                local captured_options = nil
+                local mock_client_instance = {
+                    request = function(self, args)
+                        captured_options = args.options
+
+                        return {
+                            status_code = 200,
+                            candidates = {
+                                {
+                                    content = {
+                                        parts = {{ text = '{"data":"test"}' }}
+                                    },
+                                    finishReason = "STOP"
+                                }
+                            },
+                            usageMetadata = {
+                                promptTokenCount = 10,
+                                candidatesTokenCount = 5,
+                                totalTokenCount = 15
+                            }
+                        }
+                    end
+                }
+
+                local mock_contract = {
+                    with_context = function(self, context)
+                        return self
+                    end,
+                    open = function(self, client_id)
+                        return mock_client_instance, nil
+                    end
+                }
+
+                structured_output._contract = {
+                    get = function(contract_id)
+                        return mock_contract, nil
+                    end
+                }
+
+                local contract_args = {
+                    model = "gemini-2.5-pro",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Generate data" }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { data = { type = "string" } }
+                    },
+                    retry = { attempts = 2, backoff_ms = 0 }
+                }
+
+                local response = structured_output.handler(contract_args)
+
+                tests.is_true(response.success)
+
+                local options = captured_options :: any
+                tests.eq(options.retry.attempts, 2)
+                tests.eq(options.retry.backoff_ms, 0)
+            end)
+
             it("should merge options with response_mime_type and responseSchema", function()
                 structured_output._mapper = {
                     map_messages = function(messages, options)

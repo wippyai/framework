@@ -2,14 +2,17 @@ local fs = require("fs")
 local json = require("json")
 local registry = require("registry")
 local contract = require("contract")
+local logger = require("logger"):named("facade")
 
 local helpers = {}
 
 local NS = "wippy.facade:"
 -- Optional contract an application binds to override facade requirement values at
--- request time (see the `resolver` contract.definition). When unbound, open() fails
--- and every read falls back to the static ns.requirement default.
+-- request time (see the `resolver` contract.definition).
 local RESOLVER_CONTRACT = "wippy.facade:resolver"
+
+local function get_contract(): any return helpers._contract or contract end
+local function get_logger(): any return helpers._logger or logger end
 
 -- Get a named filesystem instance by registry entry ID.
 -- Returns nil (does not raise) when entry_id is empty or the named filesystem
@@ -157,35 +160,42 @@ function helpers.build_variables_css(vars: {[string]: any}): string
     return table.concat(css_parts, "\n")
 end
 
--- resolve_overrides: optionally consult a bound wippy.facade:resolver to override
--- facade requirement values at request time. Returns a name->value(string) map, or
--- {} when no resolver is bound (the common case) or resolution fails. The view must
--- always render, so any failure degrades to the static requirement defaults; an
--- absent resolver (no binding) is silent, a bound-but-failing one is logged.
+-- Requirement overrides from the bound wippy.facade:resolver, as a name -> value
+-- map. An unbound resolver is detected structurally and yields {}. The view must
+-- always render, so a bound resolver that fails is logged and the static
+-- ns.requirement defaults apply.
 function helpers.resolve_overrides(): {[string]: any}
-    -- Any failure degrades to {} (static defaults) so the load-bearing config/CSS
-    -- endpoints never break. open() alone suffices: it fails cleanly when unbound,
-    -- and unbound vs errored both fall back to static, so nothing gates the open.
-    -- Ambient actor/scope; pcall guards against unexpected throws.
-    local ok, result = pcall(function(): {[string]: any}
-        local c, get_err = contract.get(RESOLVER_CONTRACT)
-        if get_err or not c then
-            return {}
-        end
-        local instance, open_err = (c :: any):open()
-        if open_err or not instance then
-            return {}
-        end
-        local overrides, resolve_err = (instance :: any):resolve({})
-        if resolve_err or type(overrides) ~= "table" then
-            return {}
-        end
-        return overrides :: {[string]: any}
-    end)
-    if not ok then
+    local resolver_contract, get_err = get_contract().get(RESOLVER_CONTRACT)
+    if get_err then
+        get_logger():warn("facade resolver contract unavailable", { error = tostring(get_err) })
         return {}
     end
-    return result :: {[string]: any}
+
+    local implementations, implementations_err = resolver_contract:implementations()
+    if implementations_err then
+        get_logger():warn("facade resolver implementations unavailable", { error = tostring(implementations_err) })
+        return {}
+    end
+    if not implementations or #implementations == 0 then
+        return {}
+    end
+
+    local instance, open_err = resolver_contract:open()
+    if open_err then
+        get_logger():warn("facade resolver failed to open", { error = tostring(open_err) })
+        return {}
+    end
+
+    local overrides, resolve_err = instance:resolve({})
+    if resolve_err then
+        get_logger():warn("facade resolver failed", { error = tostring(resolve_err) })
+        return {}
+    end
+    if type(overrides) ~= "table" then
+        get_logger():warn("facade resolver returned a non-table result", { error = "got " .. type(overrides) })
+        return {}
+    end
+    return overrides :: {[string]: any}
 end
 
 -- requirement: the value for a facade requirement, preferring a resolver override

@@ -29,7 +29,7 @@ local function approximate_token_count(text)
     return math.ceil(string.len(text) / 4)
 end
 
-function mapper.classify_error(bedrock_error)
+function mapper.classify_error(bedrock_error: any?): (string, string, table?)
     if not bedrock_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown Bedrock error", nil
     end
@@ -49,7 +49,7 @@ function mapper.classify_error(bedrock_error)
         if bedrock_error.metadata.request_id then details.request_id = bedrock_error.metadata.request_id end
     end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 function mapper.map_tokens(converse_usage)

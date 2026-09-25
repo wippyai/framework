@@ -6,6 +6,8 @@ local hash = require("hash")
 local config = require("google_config")
 local ctx = require("ctx")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local structured_output = {
     _ctx = ctx,
     _contract = contract,
@@ -36,7 +38,7 @@ end
 
 function structured_output.handler(contract_args)
     local err = output.errors.structured_output(contract_args)
-        :classifier(structured_output._mapper.classify_error)
+        :classifier(structured_output._mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
@@ -113,7 +115,7 @@ function structured_output.handler(contract_args)
         endpoint_path = "generateContent",
         model = contract_args.model,
         payload = payload,
-        options = { timeout = contract_args.timeout }
+        options = { timeout = contract_args.timeout, retry = contract_args.retry }
     })
 
     if response.status_code < 200 or response.status_code >= 300 then

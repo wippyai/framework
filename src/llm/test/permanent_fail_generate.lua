@@ -1,4 +1,3 @@
-local output = require("output")
 local store = require("store")
 
 local function handler(contract_args)

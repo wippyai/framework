@@ -49,6 +49,38 @@ local result = llm.generate(builder, {
 })
 ```
 
+### Model Profile
+
+A model entry declares what its provider accepts on the wire in `providers[].options.model_profile`. Missing fields keep the default behaviour; callers of a resolved model cannot override the profile.
+
+```yaml
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-opus-5-5
+    options:
+      model_profile:
+        forced_tool_choice: false        # rejects tool_choice "any" and named tools
+        thinking_mode: adaptive_only     # thinking always on; thinking_effort maps to low..max
+        structured_output_mode: native   # structured output via output_config.format
+```
+
+A forced `tool_choice` to such a model fails with `invalid_request` unless the caller permits `tool_choice_fallback = "auto"`, which a caller gives only when it enforces tool use itself (a dataflow agent that ends through its finish tool). The response then reports `metadata.tool_choice = { requested = "any", sent = "auto" }`.
+
+Native structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path, never rewritten.
+
+### Retry
+
+Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.
+
+```lua
+llm.generate(builder, {
+    model = "claude",
+    retry = { attempts = 3, backoff_ms = 500 }  -- retries after the first attempt; backoff doubles each time
+})
+```
+
+A per-call `retry` replaces the provider policy, which is set in the provider entry's `driver.options.retry` or in a resolved provider's `context` and reaches the driver through its context. `attempts` is capped at 10 and `backoff_ms` at 60000.
+
 ### Response Format
 
 ```lua
@@ -193,6 +225,82 @@ local result, err = llm.embed({"Hello", "World"}, {
 -- result.result = {{...}, {...}}
 ```
 
+## Typed evaluation
+
+`llm.evaluate(state, questions, options)` asks a model to assess a string or JSON-compatible state against independent named questions. It returns model-estimated probabilities, not generated text or a new application state. Your code chooses thresholds, validates business rules, and takes actions. `choice` is categorical, `predicate` is a probability that a statement holds, and `score` is an ordinal rubric (not an arbitrary numeric/reward score).
+
+```lua
+local result, err = llm.evaluate(conversation, {
+    intent = {
+        type = "choice",
+        instructions = "Which queue owns this conversation",
+        domain = {
+            billing = "Payments, refunds and invoices",
+            technical = "Bugs, outages and integrations",
+            other = "None of these"
+        }
+    },
+    resolved = {
+        type = "predicate",
+        instructions = "The customer considers the issue closed"
+    },
+    mood = {
+        type = "score",
+        instructions = "Emotional temperature of the customer",
+        domain = {"calm", "frustrated", "angry"}
+    }
+}, {model = "jev"})
+```
+
+`state` is input context, not a state-machine state. The model sees every question against that same context; answers are not a joint distribution or a guaranteed consistent assignment. Slot keys are caller identifiers and are never shown to the model. A `choice` domain is an array of unique option names or a map of option to description; include `other` when none may fit. A `score` domain is an ordered array of at least two level descriptions; a `predicate` domain is optional and describes the `yes` and `no` outcomes. A predicate is not a boolean: apply a domain-specific threshold in code.
+
+### Readings
+
+```lua
+-- result.result structure:
+{
+    intent = {
+        type = "choice",
+        choice = "technical",
+        probabilities = {billing = 0.08, technical = 0.85, other = 0.07},
+        confidence = 0.82   -- provider-specific certainty statistic, if supplied
+    },
+    resolved = {
+        type = "predicate",
+        probability = 0.92
+    },
+    mood = {
+        type = "score",
+        score = 2.6,                       -- expected 1-based level index, NOT a physical quantity
+        level = 3,                         -- 1-based index of the highest-probability level
+        probabilities = {0.05, 0.3, 0.65}, -- aligned with the declared domain
+        confidence = 0.78                 -- not interchangeable across providers
+    }
+}
+```
+
+`result.result` holds the readings; the raw evaluator contract uses `result.readings`. Preserve the full distributions: an expected ordinal score can hide ambiguity between very different levels. Confidence is a provider-defined statistic derived from a distribution; do not transfer a confidence threshold between models without evaluation. Calibration is an empirical property of a model on your own data, not guaranteed by this contract.
+
+### Registering an evaluation model
+
+```yaml
+entries:
+  - name: jev
+    kind: registry.entry
+    meta:
+      type: llm.model
+      name: jev
+      title: Jev (System One)
+      class: [evaluate]
+      capabilities: [evaluate]
+      priority: 100
+    providers:
+      - id: wippy.llm.typesafe:provider
+        provider_model: jev-latest
+```
+
+The module ships the `wippy.llm.typesafe:provider` entry bound to its driver and credential variables. Driver env vars: `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` (default `https://api.typesafe.ai/v1`), `TYPESAFE_TIMEOUT`.
+
 ## Streaming
 
 ```lua
@@ -263,6 +371,7 @@ llm.CAPABILITY = {
     TOOL_USE = "tool_use",
     STRUCTURED_OUTPUT = "structured_output",
     EMBED = "embed",
+    EVALUATE = "evaluate",
     THINKING = "thinking",
     VISION = "vision",
     CACHING = "caching"
@@ -409,6 +518,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 - `wippy.llm:generator` - Text generation with tool calling
 - `wippy.llm:embedder` - Embedding generation
+- `wippy.llm:evaluator` - Typed probabilistic evaluations
 - `wippy.llm:structured_output` - Schema-constrained generation
 - `wippy.llm:provider` - Provider health status
 - `wippy.llm:usage_tracker` - Token usage tracking
@@ -420,6 +530,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 - `wippy.llm.openai` - OpenAI native (Responses API)
 - `wippy.llm.openai_compat` - OpenAI-compatible (Chat Completions) for Ollama / vLLM / OpenRouter / Together / Groq / etc.
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
+- `wippy.llm.typesafe` - TypeSafe Jev evaluation provider
 - `wippy.llm.discovery` - Model and provider discovery
 - `wippy.llm.util` - Utilities (text compression)
 - `wippy.llm.env` - Environment configuration

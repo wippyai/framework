@@ -102,7 +102,7 @@ local function collapse_cache_positions(system_positions, message_positions)
     return final_system, final_message
 end
 
-function mapper.classify_error(claude_error)
+function mapper.classify_error(claude_error: any?): (string, string, table?)
     if not claude_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown Claude error", nil
     end
@@ -128,7 +128,7 @@ function mapper.classify_error(claude_error)
         if claude_error.metadata.request_id then details.request_id = claude_error.metadata.request_id end
     end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 function mapper.map_tokens(claude_usage)
@@ -311,15 +311,21 @@ function mapper.map_messages(contract_messages)
                 (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
 
             if dev_text ~= "" then
-                -- Check if previous message is tool_result (or if no previous messages)
+                -- Developer guidance merges only into a preceding plain user
+                -- message. Anywhere else it opens a new user message: gluing
+                -- it into an assistant message would attribute text the model
+                -- never produced and leave the request ending on an assistant
+                -- turn, which the API treats as a prefill and current models
+                -- reject; after a tool_result it stays a separate message.
                 local should_create_new_message = false
 
                 if #claude_messages == 0 then
                     should_create_new_message = true
                 else
                     local last_msg = claude_messages[#claude_messages]
-                    -- If last message is tool_result, create new user message
-                    if last_msg.role == "user" and last_msg.content and last_msg.content[1] and
+                    if last_msg.role ~= "user" then
+                        should_create_new_message = true
+                    elseif last_msg.content and last_msg.content[1] and
                        last_msg.content[1].type == "tool_result" then
                         should_create_new_message = true
                     end
@@ -339,13 +345,21 @@ function mapper.map_messages(contract_messages)
                 else
                     -- Try to merge into previous message (existing logic)
                     local last_msg = claude_messages[#claude_messages]
+                    local merged = false
                     for j = #last_msg.content, 1, -1 do
                         local part = last_msg.content[j] :: any
                         if part.type == "text" then
                             part.text = part.text ..
                                 "\n<developer-instruction>" .. dev_text .. "</developer-instruction>"
+                            merged = true
                             break
                         end
+                    end
+                    if not merged then
+                        table.insert(last_msg.content, {
+                            type = "text",
+                            text = "<developer-instruction>" .. dev_text .. "</developer-instruction>"
+                        })
                     end
                 end
             end
@@ -521,7 +535,16 @@ function mapper.map_tools(contract_tools)
     return claude_tools, name_to_id_map
 end
 
-function mapper.map_tool_choice(contract_choice, available_tools)
+-- A model whose provider options carry model_profile.forced_tool_choice = false
+-- rejects "any" and named tool choices. Such a choice is sent as "auto" only when
+-- the caller permits that fallback (tool_choice_fallback = "auto"), because only
+-- a caller that enforces tool use itself keeps the guarantee the choice promised.
+local function forced_choice_unsupported(options)
+    local profile = options and options.model_profile
+    return type(profile) == "table" and profile.forced_tool_choice == false
+end
+
+function mapper.map_tool_choice(contract_choice, available_tools, options)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -530,21 +553,42 @@ function mapper.map_tool_choice(contract_choice, available_tools)
         return { type = "auto" }
     elseif contract_choice == "none" then
         return { type = "none" }
-    elseif contract_choice == "any" then
-        return { type = "any" }
+    end
+
+    local forced
+    if contract_choice == "any" then
+        forced = { type = "any" }
     elseif type(contract_choice) == "string" then
         for _, tool in ipairs(available_tools) do
             if tool.name == contract_choice then
-                return {
-                    type = "tool",
-                    name = contract_choice
-                }
+                forced = { type = "tool", name = contract_choice }
+                break
             end
         end
-        return nil, "Tool '" .. contract_choice .. "' not found in available tools"
+        if not forced then
+            return nil, "Tool '" .. contract_choice .. "' not found in available tools"
+        end
+    else
+        return nil, "Invalid tool_choice format"
     end
 
-    return nil, "Invalid tool_choice format"
+    if not forced_choice_unsupported(options) then
+        return forced
+    end
+    if options.tool_choice_fallback == "auto" then
+        return { type = "auto" }
+    end
+    return nil, "Model does not accept a forced tool choice (model_profile.forced_tool_choice = false): tool_choice '"
+        .. contract_choice .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
+end
+
+-- thinking_effort (0-100) on the effort levels of adaptive-thinking models.
+local function effort_level(thinking_effort)
+    if thinking_effort >= 100 then return "max" end
+    if thinking_effort >= 80 then return "xhigh" end
+    if thinking_effort > 50 then return "high" end
+    if thinking_effort >= 20 then return "medium" end
+    return "low"
 end
 
 function mapper.map_options(contract_options, model)
@@ -559,7 +603,15 @@ function mapper.map_options(contract_options, model)
     claude_options.top_p = contract_options.top_p
     claude_options.stop_sequences = contract_options.stop_sequences
 
-    if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+    local profile = contract_options.model_profile
+    local adaptive_only = type(profile) == "table" and profile.thinking_mode == "adaptive_only"
+
+    if adaptive_only then
+        -- Thinking is always on and takes no budget: effort is its only control.
+        if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+            claude_options.output_config = { effort = effort_level(contract_options.thinking_effort) }
+        end
+    elseif contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
 

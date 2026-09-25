@@ -187,6 +187,35 @@ local function define_tests()
                 test.eq(response.result.content, "Response with custom options")
             end)
 
+            it("should forward retry to the client request", function()
+                local captured_options = nil
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(endpoint, payload, options)
+                        captured_options = options
+                        return {
+                            content = { { type = "text", text = "Retried response" } },
+                            stop_reason = "end_turn",
+                            usage = { input_tokens = 10, output_tokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = generate_handler.handler({
+                    model = "claude-3-5-sonnet-20241022",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Test" } } }
+                    },
+                    retry = { attempts = 2, backoff_ms = 0 }
+                })
+
+                test.is_true(response.success)
+                local options = captured_options :: any
+                test.eq(options.retry.attempts, 2)
+                test.eq(options.retry.backoff_ms, 0)
+            end)
+
             it("should handle thinking models with effort configuration", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
@@ -801,6 +830,92 @@ local function define_tests()
                 test.eq(#response.result.tool_calls, 1)
                 test.eq(response.result.tool_calls[1].name, "calculate")
                 test.eq(response.finish_reason, "tool_call")
+            end)
+        end)
+
+        describe("Model Profile", function()
+            local function contract_for(options)
+                return {
+                    model = "claude-opus-5-5",
+                    messages = { { role = "user", content = { { type = "text", text = "Finish" } } } },
+                    tools = {
+                        { name = "finish", description = "Return the answer", schema = { type = "object" } }
+                    },
+                    tool_choice = "any",
+                    options = options
+                }
+            end
+
+            it("should send auto when the model cannot be forced and the caller permits the fallback", function()
+                local sent: any = nil
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(endpoint, payload, options)
+                        sent = payload
+                        return {
+                            content = { { type = "tool_use", id = "toolu_1", name = "finish", input = { answer = "hi" } } },
+                            stop_reason = "tool_use",
+                            usage = { input_tokens = 10, output_tokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = generate_handler.handler(contract_for({
+                    model_profile = { forced_tool_choice = false },
+                    tool_choice_fallback = "auto"
+                }))
+
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(sent.tool_choice.type, "auto")
+                test.is_nil(sent.model_profile)
+                test.is_nil(sent.tool_choice_fallback)
+                test.eq(response.metadata.tool_choice.requested, "any")
+                test.eq(response.metadata.tool_choice.sent, "auto")
+                test.eq(#response.result.tool_calls, 1)
+            end)
+
+            it("should fail before any request when the model cannot be forced and no fallback is permitted", function()
+                local called = false
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        called = true
+                        return nil
+                    end
+                }
+
+                local response, err = generate_handler.handler(contract_for({ model_profile = { forced_tool_choice = false } }))
+
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "forced_tool_choice")
+                test.is_false(called)
+            end)
+
+            it("should force the tool and record nothing when the model accepts forcing", function()
+                local sent: any = nil
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(endpoint, payload, options)
+                        sent = payload
+                        return {
+                            content = { { type = "tool_use", id = "toolu_1", name = "finish", input = {} } },
+                            stop_reason = "tool_use",
+                            usage = { input_tokens = 10, output_tokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = generate_handler.handler(contract_for({ tool_choice_fallback = "auto" }))
+
+                test.is_true(response.success)
+                assert(response.success)
+                test.eq(sent.tool_choice.type, "any")
+                test.is_nil(response.metadata.tool_choice)
             end)
         end)
 

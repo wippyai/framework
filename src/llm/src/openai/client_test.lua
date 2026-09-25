@@ -538,6 +538,75 @@ local function define_tests()
                 test.eq(r.usage.output_tokens, 2)
             end)
 
+            it("should stop reading when response.completed arrives", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.completed","response":{"id":"r-terminal","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n',
+                    'data: {"type":"error","error":{"message":"read past terminal event"}}\n\n'
+                })
+
+                local _, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {})
+
+                test.is_nil(err)
+                test.eq(mock_stream.current, 1)
+                test.eq(result.response_id, "r-terminal")
+            end)
+
+            it("should process a terminal event at EOF without a blank delimiter", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.completed","response":{"id":"r-eof","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}'
+                })
+
+                local done_result: any = nil
+                local _, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {
+                    on_done = function(value) done_result = value end
+                })
+
+                test.is_nil(err)
+                test.eq(done_result.response_id, "r-eof")
+                test.eq(result.response_id, "r-eof")
+                test.not_nil(result.response)
+            end)
+
+            it("should process a failed event at EOF without a blank delimiter", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.failed","response":{"id":"r-eof-failed","status":"failed","error":{"message":"eof failure","type":"server_error"}}}'
+                })
+
+                local seen_error = nil
+                local _, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {
+                    on_error = function(value) seen_error = value end
+                })
+
+                test.eq(err, "eof failure")
+                test.not_nil(seen_error)
+                test.eq(result.error.message, "eof failure")
+            end)
+
+            it("should process CRLF framing split across stream reads", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.output_text.delta","delta":"Hello"}\r\n\r',
+                    '\ndata: {"type":"response.completed","response":{"id":"r-crlf","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\r\n\r\n'
+                })
+
+                local content, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {})
+
+                test.is_nil(err)
+                test.eq(content, "Hello")
+                test.eq(result.response_id, "r-crlf")
+            end)
+
             it("should process streaming tool calls", function()
                 -- Responses API tool call streaming:
                 --  output_item.added announces the function_call (id, call_id, name)
@@ -570,6 +639,97 @@ local function define_tests()
                 test.eq(tc.id, "call_123")
                 test.eq(tc.name, "test_tool")
                 test.eq(tc.arguments, '{"param": "value"}')
+            end)
+
+            it("should recover message text from the terminal response when no text deltas arrive", function()
+                -- Responses-compatible backends may stream the message item
+                -- structure only and deliver the text in the terminal
+                -- response.completed output array.
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.created","response":{"id":"r-nodelta","status":"in_progress"}}\n\n',
+                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[]}}\n\n',
+                    'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Terminal only answer"}]}}\n\n',
+                    'data: {"type":"response.completed","response":{"id":"r-nodelta","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Terminal only answer"}]}],"usage":{"input_tokens":4,"output_tokens":3,"total_tokens":7}}}\n\n'
+                })
+
+                local content_chunks = {}
+                local content, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {
+                    on_content = function(chunk)
+                        table.insert(content_chunks, chunk)
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(content, "Terminal only answer")
+                test.eq(result.content, "Terminal only answer")
+                test.eq(#content_chunks, 1)
+                test.eq(content_chunks[1], "Terminal only answer")
+                test.eq(result.usage.output_tokens, 3)
+            end)
+
+            it("should concatenate every terminal message item when deltas are absent", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.completed","response":{"id":"r-multi","status":"completed","output":[{"type":"reasoning","id":"rs_1","summary":[]},{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"first "}]},{"type":"message","id":"msg_2","role":"assistant","content":[{"type":"output_text","text":"second"}]}],"usage":{"input_tokens":1,"output_tokens":2}}}\n\n'
+                })
+
+                local content, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {})
+
+                test.is_nil(err)
+                test.eq(content, "first second")
+                test.eq(result.content, "first second")
+            end)
+
+            it("should not duplicate content when deltas and a terminal message both arrive", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[]}}\n\n',
+                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":1,"delta":"Hello"}\n\n',
+                    'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":2,"delta":" world"}\n\n',
+                    'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello world"}]}}\n\n',
+                    'data: {"type":"response.completed","response":{"id":"r-both","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello world"}]}],"usage":{"input_tokens":3,"output_tokens":2}}}\n\n'
+                })
+
+                local content_chunks = {}
+                local content, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {
+                    on_content = function(chunk)
+                        table.insert(content_chunks, chunk)
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(content, "Hello world")
+                test.eq(result.content, "Hello world")
+                test.eq(#content_chunks, 2)
+            end)
+
+            it("should keep content empty when the terminal response carries only a function call", function()
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_9","name":"lookup","arguments":""}}\n\n',
+                    'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"sequence_number":1,"name":"lookup","arguments":"{\\"q\\": \\"x\\"}"}\n\n',
+                    'data: {"type":"response.completed","response":{"id":"r-tool","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_9","name":"lookup","arguments":"{\\"q\\": \\"x\\"}"}],"usage":{"input_tokens":2,"output_tokens":4}}}\n\n'
+                })
+
+                local content, err, result = openai_client.process_stream({
+                    stream = mock_stream,
+                    metadata = {}
+                }, {})
+
+                test.is_nil(err)
+                test.eq(content, "")
+                test.eq(result.content, "")
+                test.eq(#result.tool_calls, 1)
+                local tc = assert(result.tool_calls[1])
+                test.eq(tc.id, "call_9")
+                test.eq(tc.name, "lookup")
+                test.eq(tc.arguments, '{"q": "x"}')
             end)
 
             it("should forward reasoning summary deltas via on_reasoning", function()

@@ -8,6 +8,12 @@
          window.wippyThemePersist. Render-blocking and first so there's no flash.
          In cookie mode the server already set the class on <html> above. -->
     <script src="/api/public/facade/theme-persist.js"></script>
+    <!-- Brand CSS variables, server-rendered from the css_variables requirement.
+         The loading overlay below paints before the Web Host bundle arrives, so
+         without this it renders on the loader's built-in fallback colours and
+         then shifts once the host injects the real theme. Same link the login
+         page uses. Must follow theme-persist, which sets the theme class. -->
+    <link rel="stylesheet" href="/api/public/facade/variables.css">
     <title>Wippy</title>
     <script src="/@wippy-fe/loading.js"></script>
     <style>

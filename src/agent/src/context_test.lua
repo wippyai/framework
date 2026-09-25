@@ -1004,12 +1004,9 @@ local function define_tests()
                     prompt = "You research thoroughly before answering.",
                     tools = { "research:search" },
                     agent_options = {
-                        compact = {
-                            token_threshold = 24000,
-                            function_id = "agent.compact:research"
-                        },
                         checkpoint = {
-                            token_threshold = 48000
+                            token_threshold = 24000,
+                            function_id = "agent.checkpoint:research"
                         }
                     },
                     tool_wrappers = {
@@ -1041,9 +1038,9 @@ local function define_tests()
                     name = "writer",
                     prompt = "You write concisely.",
                     agent_options = {
-                        compact = {
+                        checkpoint = {
                             token_threshold = 12000,
-                            function_id = "agent.compact:writer"
+                            function_id = "agent.checkpoint:writer"
                         }
                     },
                     tool_wrapper = {
@@ -1246,9 +1243,8 @@ local function define_tests()
                 context:load_agent("test-agent")
 
                 test.not_nil(compiled.agent_options)
-                test.eq(compiled.agent_options.compact.token_threshold, 24000)
-                test.eq(compiled.agent_options.compact.function_id, "agent.compact:research")
-                test.eq(compiled.agent_options.checkpoint.token_threshold, 48000)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 24000)
+                test.eq(compiled.agent_options.checkpoint.function_id, "agent.checkpoint:research")
             end)
 
             it("switches active traits by replacing tool wrapper sets", function()
@@ -1266,9 +1262,8 @@ local function define_tests()
                 test.eq(compiled.tool_wrappers[1].phases[1], "before_execute")
                 test.eq(compiled.tool_wrappers[1].options.style, "brief")
                 test.eq(compiled.tool_wrappers[1].options.max_calls, 2)
-                test.eq(compiled.agent_options.compact.token_threshold, 12000)
-                test.eq(compiled.agent_options.compact.function_id, "agent.compact:writer")
-                test.is_nil(compiled.agent_options.checkpoint)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 12000)
+                test.eq(compiled.agent_options.checkpoint.function_id, "agent.checkpoint:writer")
             end)
 
             it("deactivates trait-owned tool wrappers with an empty trait overlay", function()
@@ -1281,7 +1276,7 @@ local function define_tests()
                 context:load_agent("test-agent")
 
                 test.eq(#compiled.tool_wrappers, 0)
-                test.is_nil(compiled.agent_options.compact)
+                test.is_nil(compiled.agent_options.checkpoint)
             end)
 
             it("restores the agent's own trait wrappers when the overlay is cleared", function()
@@ -1302,7 +1297,7 @@ local function define_tests()
                 context:load_agent(inline_agent)
                 test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:research_guard")
                 test.eq(compiled.tool_wrappers[2].binding, "test.wrapper:research_audit")
-                test.eq(compiled.agent_options.compact.function_id, "agent.compact:research")
+                test.eq(compiled.agent_options.checkpoint.function_id, "agent.checkpoint:research")
             end)
 
             it("preserves trait-owned wrapper overlays across model switches on the same agent", function()
@@ -1317,7 +1312,7 @@ local function define_tests()
                 test.eq(#compiled.tool_wrappers, 2)
                 test.eq(compiled.tool_wrappers[1].binding, "test.wrapper:research_guard")
                 test.eq(compiled.tool_wrappers[2].binding, "test.wrapper:research_audit")
-                test.eq(compiled.agent_options.compact.token_threshold, 24000)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 24000)
             end)
 
             it("drops trait-owned wrapper overlays when switching to a different agent", function()
@@ -1331,7 +1326,7 @@ local function define_tests()
                 test.is_true(ok, tostring(err))
                 test.eq(context.current_agent_id, "specialist-agent")
                 test.eq(#compiled.tool_wrappers, 0)
-                test.is_nil(compiled.agent_options.compact)
+                test.is_nil(compiled.agent_options.checkpoint)
             end)
         end)
     end)

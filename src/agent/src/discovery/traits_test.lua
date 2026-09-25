@@ -209,28 +209,25 @@ local function define_tests()
                         policy_profile = "default"
                     },
                     agent_options = {
-                        compact = {
-                            token_threshold = 24000,
-                            max_memory_chars = 4096
-                        },
                         checkpoint = {
-                            token_threshold = 48000
+                            token_threshold = 48000,
+                            max_memory_chars = 4096
                         }
                     }
                 }
             },
 
-            ["wippy.agents:legacy_runtime_memory_trait"] = {
-                id = "wippy.agents:legacy_runtime_memory_trait",
+            ["wippy.agents:runtime_memory_trait"] = {
+                id = "wippy.agents:runtime_memory_trait",
                 kind = "registry.entry",
                 meta = {
                     type = "agent.trait",
-                    name = "Legacy Runtime Memory",
-                    comment = "Old lifecycle fields that should not become tool wrappers."
+                    name = "Runtime Memory",
+                    comment = "Runtime lifecycle fields that should not become tool wrappers."
                 },
                 data = {
                     runtime_hook = {
-                        id = "compact_context",
+                        id = "checkpoint_context",
                         phase = "checkpoint",
                         binding_id = "wippy.memory:runtime_provider"
                     },
@@ -266,6 +263,35 @@ local function define_tests()
                         }
                     },
                     context = {}
+                }
+            },
+
+            ["wippy.agents:checkpoint_behavior_trait"] = {
+                id = "wippy.agents:checkpoint_behavior_trait",
+                kind = "registry.entry",
+                meta = {
+                    type = "agent.trait",
+                    name = "Checkpoint Behavior",
+                    comment = "Trait that contributes a checkpoint behavior through the registry payload."
+                },
+                data = {
+                    prompt = "Persist useful memory at checkpoint cuts.",
+                    behaviors = {
+                        {
+                            id = "durable_checkpoint",
+                            kind = "memory",
+                            handles = { "checkpoint" },
+                            handlers = {
+                                checkpoint = "wippy.memory:checkpoint"
+                            },
+                            checkpoint = {
+                                token_threshold = 1200,
+                                checkpoint_model = "class:fast",
+                                checkpoint_max_tokens = 600,
+                                max_memory_chars = 2000
+                            }
+                        }
+                    }
                 }
             },
 
@@ -467,9 +493,8 @@ local function define_tests()
             test.not_nil(trait)
             test.eq(trait.id, "wippy.agents:tool_policy_trait")
             test.eq(trait.context.policy_profile, "default")
-            test.eq(trait.agent_options.compact.token_threshold, 24000)
-            test.eq(trait.agent_options.compact.max_memory_chars, 4096)
             test.eq(trait.agent_options.checkpoint.token_threshold, 48000)
+            test.eq(trait.agent_options.checkpoint.max_memory_chars, 4096)
             test.not_nil(trait.tool_wrappers)
             test.eq(#trait.tool_wrappers, 2)
 
@@ -490,8 +515,21 @@ local function define_tests()
             test.is_true(audit.options.include_results)
         end)
 
-        it("should not map old runtime and notify fields to tool wrappers", function()
-            local trait, err = traits.get_by_id("wippy.agents:legacy_runtime_memory_trait")
+        it("preserves checkpoint behaviors from registry data", function()
+            local trait, err = traits.get_by_id("wippy.agents:checkpoint_behavior_trait")
+
+            test.is_nil(err)
+            test.not_nil(trait)
+            test.eq(trait.prompt, "Persist useful memory at checkpoint cuts.")
+            test.not_nil(trait.behaviors)
+            test.eq(#trait.behaviors, 1)
+            test.eq(trait.behaviors[1].id, "durable_checkpoint")
+            test.eq(trait.behaviors[1].handlers.checkpoint, "wippy.memory:checkpoint")
+            test.eq(trait.behaviors[1].checkpoint.token_threshold, 1200)
+        end)
+
+        it("should not map runtime and notify fields to tool wrappers", function()
+            local trait, err = traits.get_by_id("wippy.agents:runtime_memory_trait")
 
             test.is_nil(err)
             test.not_nil(trait)
@@ -531,7 +569,7 @@ local function define_tests()
             local all_traits = traits.get_all()
 
             -- Should find all valid traits (excluding non-trait entry)
-            test.eq(#all_traits, 9)
+            test.eq(#all_traits, 10)
 
             -- Check that all traits have required fields
             for _, trait in ipairs(all_traits) do

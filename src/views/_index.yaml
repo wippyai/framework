@@ -9,6 +9,7 @@ entries:
     - name: api_router
       kind: ns.requirement
       meta:
+        value_kind: http.router
         description: Public API router for view endpoints
         parent: app.deps:__dependency.wippy.views
       targets:
@@ -39,6 +40,7 @@ entries:
     - name: server
       kind: ns.requirement
       meta:
+        value_kind: http.service
         description: HTTP service that hosts the experimental Web Fragments gateway router. Defaults to app:gateway; override only if your http.service entry has a different id. A consumer needs no other fragment wiring — the gateway owns its own /@fragment router.
         parent: app.deps:__dependency.wippy.views
       default: app:gateway
@@ -53,6 +55,7 @@ entries:
     - name: env_storage
       kind: ns.requirement
       meta:
+        value_kind: env.storage
         description: Environment storage for PUBLIC_API_URL
       targets:
         - entry: wippy.views:public_api_url
@@ -322,6 +325,27 @@ entries:
         scope: dev
       component: wippy/test
       version: '*'
+    - name: page_access_probe
+      kind: function.lua
+      meta:
+        scope: dev
+        comment: Test seam - calls page_registry.can_access under a funcs.call-supplied security context
+      source: file://page_access_probe.lua
+      method: run
+      imports:
+        page_registry: wippy.views:page_registry
+    - name: test_page_view_policy
+      kind: security.policy
+      meta:
+        scope: dev
+        comment: Test-only policy granting view access to the fixture secure pages, used as a positive control for page_access_probe
+      policy:
+        resources:
+          - page:wippy.views.test:test_secure
+          - page:app:test_tmpl_settings
+        actions:
+          - view
+        effect: allow
     - name: page_registry_test
       kind: function.lua
       meta:
@@ -335,6 +359,8 @@ entries:
         page_registry: wippy.views:page_registry
       modules:
         - registry
+        - security
+        - funcs
 
     - name: component_registry_test
       kind: function.lua

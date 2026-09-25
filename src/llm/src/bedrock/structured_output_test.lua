@@ -102,6 +102,53 @@ local function define_tests()
                 test.eq((response :: any).result.data.city, "NYC")
             end)
 
+            it("should forward retry to the client request", function()
+                local captured_options = nil
+                structured_output_handler._client = {
+                    converse = function(model_id, payload, options)
+                        captured_options = options
+                        return {
+                            output = {
+                                message = {
+                                    role = "assistant",
+                                    content = {
+                                        {
+                                            toolUse = {
+                                                toolUseId = "call_1",
+                                                name = "structured_output",
+                                                input = { name = "John" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            stopReason = "tool_use",
+                            usage = { inputTokens = 40, outputTokens = 20 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local response = structured_output_handler.handler({
+                    model = "test-model",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Extract: John" } } }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { name = { type = "string" } },
+                        required = { "name" },
+                        additionalProperties = false
+                    },
+                    retry = { attempts = 2, backoff_ms = 0 }
+                })
+
+                test.is_true(response.success)
+                local options = captured_options :: any
+                test.eq(options.retry.attempts, 2)
+                test.eq(options.retry.backoff_ms, 0)
+            end)
+
             it("should send forced tool_choice in payload", function()
                 local captured_payload = nil
                 structured_output_handler._client = {

@@ -2,6 +2,8 @@ local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local generate_handler = {
     _client = bedrock_client,
     _mapper = mapper,
@@ -76,7 +78,8 @@ local function handle_streaming(stream_response, context, stream_config, err)
 end
 
 function generate_handler.handler(contract_args)
-    local err = output.errors.generate(contract_args):classifier(generate_handler._mapper.classify_error)
+    local err = output.errors.generate(contract_args)
+        :classifier(generate_handler._mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
@@ -134,11 +137,16 @@ function generate_handler.handler(contract_args)
         context.name_to_id_map = name_to_id_map
     end
 
+    local request_options = {
+        timeout = contract_args.timeout or 600,
+        retry = contract_args.retry
+    }
+
     if contract_args.stream and contract_args.stream.reply_to then
         local stream_response, stream_err = generate_handler._client.converse_stream(
             contract_args.model,
             converse_payload,
-            { timeout = contract_args.timeout or 600 }
+            request_options
         )
 
         if stream_err then
@@ -151,7 +159,7 @@ function generate_handler.handler(contract_args)
     local response, request_err = generate_handler._client.converse(
         contract_args.model,
         converse_payload,
-        { timeout = contract_args.timeout or 600 }
+        request_options
     )
 
     if request_err then

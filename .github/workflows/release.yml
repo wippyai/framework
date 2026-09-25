@@ -1,20 +1,118 @@
-name: Release
+name: Release Please
 
 on:
   push:
     branches: [master]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: Checks
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   release:
-    uses: wippyai/template-module/.github/workflows/reusable-release.yml@v1
-    with:
-      publish: false
-    secrets: inherit
+    name: Release Please
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # Required for Release Please to create tags and GitHub releases.
+      pull-requests: write # Required for Release Please to create and update release pull requests.
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
+      # Per-path outputs (<path>--version, <path>--tag_name) are keyed dynamically, so the
+      # whole output map is forwarded and indexed by the publish matrix.
+      release_outputs: ${{ toJSON(steps.release.outputs) }}
+    steps:
+      # Release PRs opened with the app token trigger CI; GITHUB_TOKEN-authored PRs do not.
+      - name: Mint release app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    name: Publish ${{ matrix.path }}
+    needs: release
+    if: ${{ needs.release.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        path: ${{ fromJSON(needs.release.outputs.paths_released) }}
+    env:
+      MODULE_PATH: ${{ matrix.path }}
+      RELEASE_VERSION: ${{ fromJSON(needs.release.outputs.release_outputs)[format('{0}--version', matrix.path)] }}
+      RELEASE_TAG: ${{ fromJSON(needs.release.outputs.release_outputs)[format('{0}--tag_name', matrix.path)] }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - id: wippy
+        uses: ./.github/actions/setup-wippy
+
+      - name: Resolve module manifest
+        id: module
+        env:
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$RELEASE_VERSION"
+          test -n "$RELEASE_TAG"
+          if [ -z "${WIPPY_TOKEN:-}" ]; then
+            echo "WIPPY_TOKEN secret is required to publish to the Wippy hub" >&2
+            exit 1
+          fi
+          if [ -f "$MODULE_PATH/src/wippy.yaml" ]; then
+            dir="$MODULE_PATH/src"
+          else
+            dir="$MODULE_PATH"
+          fi
+          test -f "$dir/wippy.yaml"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes
+        id: notes
+        run: |
+          set -euo pipefail
+          python3 scripts/release_notes.py --line "$MODULE_PATH/CHANGELOG.md" "$RELEASE_VERSION" > release-notes.md
+          test -s release-notes.md
+
+      - name: Publish dry run
+        env:
+          WIPPY: ${{ steps.wippy.outputs.path }}
+          MODULE_DIR: ${{ steps.module.outputs.dir }}
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: |
+          set -euo pipefail
+          "$WIPPY" publish --config "$MODULE_DIR" --version "$RELEASE_VERSION" --dry-run
+
+      - name: Publish to the Wippy hub
+        env:
+          WIPPY: ${{ steps.wippy.outputs.path }}
+          MODULE_DIR: ${{ steps.module.outputs.dir }}
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: |
+          set -euo pipefail
+          "$WIPPY" publish --config "$MODULE_DIR" --version "$RELEASE_VERSION" \
+            --release-notes "$(cat release-notes.md)"

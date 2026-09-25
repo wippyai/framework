@@ -91,7 +91,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(response.result.content, "Integration test successful")
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -125,7 +127,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Haiku reasoning request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "Haiku reasoning request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(response.result.content, "160")  -- 120 + 40 = 160 miles
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
@@ -159,9 +163,52 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(response.result.content, "Absolutely")
+            end)
+
+            it("should recover a truncated turn on a model that rejects assistant prefill", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping integration test - not enabled")
+                    return
+                end
+
+                -- The truncation-recovery shape the agent loop produces: the
+                -- truncated assistant turn followed by developer feedback.
+                -- Models from Sonnet 4.6 on reject any request that ends on an
+                -- assistant turn, so the feedback must reach the model as a
+                -- user message.
+                local contract_args = {
+                    model = "claude-sonnet-5",
+                    messages = {
+                        {
+                            role = "user",
+                            content = {{ type = "text", text = "List three colors, one per line." }}
+                        },
+                        {
+                            role = "assistant",
+                            content = {{ type = "text", text = "Red\nGre" }}
+                        },
+                        {
+                            role = "developer",
+                            content = "Your previous response was truncated. Retry with a complete, shorter response."
+                        }
+                    },
+                    options = {
+                        max_tokens = 100
+                    }
+                }
+
+                local response, err = generate_handler.handler(contract_args)
+
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
+                assert(response.success)
+                test.is_true(#response.result.content > 0, "No content returned")
             end)
 
             it("should generate text with tool calling using haiku", function()
@@ -199,7 +246,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -254,7 +303,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Multiple tool calls failed: " .. (err or "unknown error"))
+                test.is_nil(err, "Multiple tool calls failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -300,7 +351,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "API request failed: " .. (err or "unknown error"))
+                test.is_nil(err, "API request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(response.result.content, "1")
                 test.contains(response.result.content, "5")
@@ -333,7 +386,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Complex reasoning failed: " .. (err or "unknown"))
+                test.is_nil(err, "Complex reasoning failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.contains(response.result.content, "10")  -- Answer: 5*4/2 = 10 handshakes
                 test.contains(response.result.content:lower(), "step")  -- Should show reasoning steps
@@ -385,7 +440,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Streaming request failed: " .. (err or "unknown"))
+                test.is_nil(err, "Streaming request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in streaming response")
                 test.contains(response.result.content, "1")
@@ -461,7 +518,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Streaming tool call failed: " .. (err or "unknown"))
+                test.is_nil(err, "Streaming tool call failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
@@ -521,7 +580,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Haiku streaming reasoning failed: " .. (err or "unknown"))
+                test.is_nil(err, "Haiku streaming reasoning failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
                 test.contains(response.result.content, "6")  -- 3 + 5 - 2 = 6
@@ -565,7 +626,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "Structured output failed: " .. (err or "unknown error"))
+                test.is_nil(err, "Structured output failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 test.not_nil(response.result.data.name, "Missing name in structured output")
@@ -624,7 +687,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "Complex structured output failed: " .. (err or "unknown error"))
+                test.is_nil(err, "Complex structured output failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 test.not_nil(response.result.data.company_name, "Missing company_name")
@@ -686,7 +751,9 @@ local function define_tests()
 
                 local response, err = structured_output_handler.handler(contract_args)
 
-                test.is_true(response.success, "Haiku structured reasoning failed: " .. (err or "unknown error"))
+                test.is_nil(err, "Haiku structured reasoning failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.data, "No structured data in response")
                 test.not_nil(response.result.data.problem_type, "Missing problem_type")
@@ -696,6 +763,81 @@ local function define_tests()
                 test.not_nil(response.result.data.solution_steps, "Missing solution steps")
                 test.is_true(#response.result.data.solution_steps > 0, "Should have solution steps")
                 test.is_true(response.tokens.prompt_tokens > 0, "No prompt tokens reported")
+            end)
+        end)
+
+        describe("Model Profile Integration (claude-opus-5-5)", function()
+            local profile = { forced_tool_choice = false, thinking_mode = "adaptive_only", structured_output_mode = "native" }
+
+            it("should call the finish tool when a forced choice is sent as auto under the fallback", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping model profile tool test - not enabled")
+                    return
+                end
+
+                local response, err = generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Report the number 42 by calling the finish tool." }} }
+                    },
+                    tools = {
+                        {
+                            name = "finish",
+                            description = "Return the final answer",
+                            schema = {
+                                type = "object",
+                                properties = { answer = { type = "number" } },
+                                required = { "answer" },
+                                additionalProperties = false
+                            }
+                        }
+                    },
+                    tool_choice = "any",
+                    options = { max_tokens = 2000, thinking_effort = 20, model_profile = profile, tool_choice_fallback = "auto" }
+                })
+
+                test.is_nil(err, "API request failed: " .. tostring(err))
+                assert(response and response.success)
+                test.eq(response.metadata.tool_choice.sent, "auto")
+                test.eq(response.result.tool_calls[1].name, "finish")
+                test.eq(response.result.tool_calls[1].arguments.answer, 42)
+            end)
+
+            it("should return native structured output", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping model profile structured output test - not enabled")
+                    return
+                end
+
+                local response, err = structured_output_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Name one primary colour and list the numbers 1 and 2." }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = {
+                            colour = { type = "string" },
+                            numbers = {
+                                type = "array",
+                                items = {
+                                    type = "object",
+                                    properties = { n = { type = "number" } },
+                                    required = { "n" },
+                                    additionalProperties = false
+                                }
+                            }
+                        },
+                        required = { "colour", "numbers" },
+                        additionalProperties = false
+                    },
+                    options = { max_tokens = 2000, thinking_effort = 20, model_profile = profile }
+                })
+
+                test.is_nil(err, "API request failed: " .. tostring(err))
+                assert(response and response.success)
+                test.eq(type(response.result.data.colour), "string")
+                test.eq(#response.result.data.numbers, 2)
             end)
         end)
 
@@ -816,10 +958,14 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Large context request failed: " .. (err or "unknown"))
+                test.is_nil(err, "Large context request failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.content, "No content in response")
-                test.is_true(response.tokens.prompt_tokens > 1000, "Expected many prompt tokens")
+                -- Cached prompt tokens are reported apart from prompt_tokens
+                local input_tokens = (response.tokens.prompt_tokens or 0) + (response.tokens.cache_read_tokens or 0)
+                test.is_true(input_tokens > 1000, "Expected many input tokens, got " .. tostring(input_tokens))
             end)
 
             it("should preserve metadata across all handler types", function()
@@ -829,18 +975,20 @@ local function define_tests()
                 end
 
                 -- Test metadata in text generation
-                local gen_response = generate_handler.handler({
+                local gen_response, gen_err = generate_handler.handler({
                     model = "claude-haiku-4-5-20251001",
                     messages = {{ role = "user", content = {{ type = "text", text = "Hello" }} }},
                     options = { temperature = 0, max_tokens = 5 }
                 })
 
-                test.is_true(gen_response.success, "Text generation failed")
+                test.is_nil(gen_err, "Text generation failed: " .. tostring(gen_err))
+
+                assert(gen_response)
                 assert(gen_response.success)
                 test.not_nil(gen_response.metadata, "No metadata in text generation")
 
                 -- Test metadata in structured output
-                local struct_response = structured_output_handler.handler({
+                local struct_response, struct_err = structured_output_handler.handler({
                     model = "claude-haiku-4-5-20251001",
                     messages = {{ role = "user", content = {{ type = "text", text = "Generate test data as JSON" }} }},
                     schema = {
@@ -851,7 +999,9 @@ local function define_tests()
                     }
                 })
 
-                test.is_true(struct_response.success, "Structured output failed")
+                test.is_nil(struct_err, "Structured output failed: " .. tostring(struct_err))
+
+                assert(struct_response)
                 assert(struct_response.success)
                 test.not_nil(struct_response.metadata, "No metadata in structured output")
             end)
@@ -863,18 +1013,20 @@ local function define_tests()
                 end
 
                 -- Test simple task with haiku
-                local simple_response = generate_handler.handler({
+                local simple_response, simple_err = generate_handler.handler({
                     model = "claude-haiku-4-5-20251001",
                     messages = {{ role = "user", content = {{ type = "text", text = "What is 2+2?" }} }},
                     options = { temperature = 0, max_tokens = 10 }
                 })
 
-                test.is_true(simple_response.success, "Haiku simple task failed")
+                test.is_nil(simple_err, "Haiku simple task failed: " .. tostring(simple_err))
+
+                assert(simple_response)
                 assert(simple_response.success)
                 test.contains(simple_response.result.content, "4")
 
                 -- Test complex task with haiku
-                local complex_response = generate_handler.handler({
+                local complex_response, complex_err = generate_handler.handler({
                     model = "claude-haiku-4-5-20251001",
                     messages = {{
                         role = "user",
@@ -886,7 +1038,9 @@ local function define_tests()
                     options = { temperature = 0, max_tokens = 200 }
                 })
 
-                test.is_true(complex_response.success, "Haiku complex task failed")
+                test.is_nil(complex_err, "Haiku complex task failed: " .. tostring(complex_err))
+
+                assert(complex_response)
                 assert(complex_response.success)
                 test.is_true(#complex_response.result.content > #simple_response.result.content, "Haiku should provide more detailed response")
                 test.contains(complex_response.result.content:lower(), "artificial")
@@ -1040,7 +1194,9 @@ local function define_tests()
 
                 local response, err = generate_handler.handler(contract_args)
 
-                test.is_true(response.success, "Claude 4 text editor failed: " .. (err or "unknown"))
+                test.is_nil(err, "Claude 4 text editor failed: " .. tostring(err))
+
+                assert(response)
                 assert(response.success)
                 test.not_nil(response.result.tool_calls, "No tool calls in response")
                 test.is_true(#response.result.tool_calls > 0, "Expected text editor tool call")

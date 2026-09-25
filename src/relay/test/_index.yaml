@@ -6,3 +6,8 @@ entries:
     kind: registry.entry
     meta:
       comment: Policy group for user relay hubs under test
+
+  - name: processes
+    kind: process.host
+    lifecycle:
+      auto_start: true

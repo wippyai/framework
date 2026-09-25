@@ -44,13 +44,19 @@ end
 
 -- Process to refresh tokens periodically
 local function run(args)
+    local events = process.events()
+
     if not config.has_credentials() then
         print("Google credentials are missing, Google OAuth2 token refresher will not start.")
-        local events = process.events()
         while true do
             local result = channel.select({
                 events:case_receive()
             })
+
+            if not result.ok then
+                break
+            end
+
             if result.value and result.value.kind == process.event.CANCEL then
                 break
             end
@@ -63,8 +69,6 @@ local function run(args)
     local ticker = time.ticker(REFRESH_INTERVAL)
     local ticker_channel = ticker:channel()
 
-    local events = process.events()
-
     refresh_token()
 
     while running do
@@ -72,6 +76,10 @@ local function run(args)
             ticker_channel:case_receive(),
             events:case_receive()
         })
+
+        if not result.ok then
+            break
+        end
 
         if result.channel == ticker_channel then
             refresh_token()

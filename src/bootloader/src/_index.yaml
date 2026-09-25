@@ -16,6 +16,13 @@ entries:
     component: "wippy/test"
     version: ">=v0.3.0"
 
+  - name: dep.wippy.security
+    kind: "ns.dependency"
+    meta:
+      description: "Security policy groups referenced by background services"
+    component: "wippy/security"
+    version: ">=v0.3.0"
+
   # Requirements
   - name: application_host
     kind: ns.requirement

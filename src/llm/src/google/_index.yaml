@@ -115,6 +115,7 @@ entries:
       - http_client
     imports:
       output: wippy.llm:output
+      transport: wippy.llm.util:transport
 
   # wippy.llm.google:client_test
   - name: client_test
@@ -150,6 +151,8 @@ entries:
       - env
       - store
       - ctx
+    imports:
+      transport: wippy.llm.util:transport
 
   # wippy.llm.google:config_test
   - name: config_test
@@ -211,6 +214,7 @@ entries:
   - name: integration_test
     kind: function.lua
     meta:
+      timeout: 300s
       name: Google Integration Tests
       type: test
       comment: Integration tests for Google LLM driver
@@ -268,6 +272,7 @@ entries:
       - ctx
     imports:
       google_config: wippy.llm.google:config
+      transport: wippy.llm.util:transport
     method: handler
 
   # wippy.llm.google:status_test

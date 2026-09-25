@@ -4,6 +4,8 @@ local output = require("output")
 local embed_titan = require("embed_titan")
 local embed_cohere = require("embed_cohere")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local embed_handler = {
     _client = bedrock_client,
     _titan = embed_titan,
@@ -21,7 +23,7 @@ local function detect_model_family(model_id)
     return nil
 end
 
-local function embed_with_titan(client, model_id, input, options)
+local function embed_with_titan(client, model_id, input, options, request_options)
     local texts
     if type(input) == "table" then texts = input else texts = { input } end
     local all_embeddings = {}
@@ -29,7 +31,7 @@ local function embed_with_titan(client, model_id, input, options)
 
     for _, text in ipairs(texts) do
         local payload = embed_titan.build_payload(text, options)
-        local response, err = client.invoke(model_id, payload, { timeout = options and options.timeout })
+        local response, err = client.invoke(model_id, payload, request_options)
 
         if err then
             return nil, err
@@ -50,11 +52,11 @@ local function embed_with_titan(client, model_id, input, options)
     }
 end
 
-local function embed_with_cohere(client, model_id, input, options)
+local function embed_with_cohere(client, model_id, input, options, request_options)
     local texts
     if type(input) == "table" then texts = input else texts = { input } end
     local payload = embed_cohere.build_payload(texts, options)
-    local response, err = client.invoke(model_id, payload, { timeout = options and options.timeout })
+    local response, err = client.invoke(model_id, payload, request_options)
 
     if err then
         return nil, err
@@ -72,7 +74,7 @@ local function embed_with_cohere(client, model_id, input, options)
 end
 
 function embed_handler.handler(contract_args)
-    local err_b = output.errors.embed(contract_args):classifier(mapper.classify_error)
+    local err_b = output.errors.embed(contract_args):classifier(mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err_b:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
@@ -93,12 +95,13 @@ function embed_handler.handler(contract_args)
     local model_id = contract_args.model
     local input = contract_args.input
     local options = contract_args.options or {}
+    local request_options = { timeout = contract_args.timeout, retry = contract_args.retry }
     local result, err
 
     if family == "titan" then
-        result, err = embed_with_titan(embed_handler._client, model_id, input, options)
+        result, err = embed_with_titan(embed_handler._client, model_id, input, options, request_options)
     elseif family == "cohere" then
-        result, err = embed_with_cohere(embed_handler._client, model_id, input, options)
+        result, err = embed_with_cohere(embed_handler._client, model_id, input, options, request_options)
     end
 
     if err then

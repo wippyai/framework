@@ -3,6 +3,8 @@ local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
 
+type ClassifyError = (http_err: any?) -> (string, string, table?)
+
 local generate_handler = {
     _client = claude_client,
     _mapper = mapper,
@@ -77,7 +79,8 @@ local function handle_streaming(stream_response, context, stream_config, err)
 end
 
 function generate_handler.handler(contract_args)
-    local err = output.errors.generate(contract_args):classifier(generate_handler._mapper.classify_error)
+    local err = output.errors.generate(contract_args)
+        :classifier(generate_handler._mapper.classify_error :: ClassifyError)
 
     if not contract_args.model then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("Model is required"):build()
@@ -90,7 +93,8 @@ function generate_handler.handler(contract_args)
     local context = {
         model = contract_args.model,
         has_tools = (contract_args.tools and #contract_args.tools > 0),
-        name_to_id_map = {}
+        name_to_id_map = {},
+        tool_choice = nil
     }
 
     local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
@@ -116,7 +120,8 @@ function generate_handler.handler(contract_args)
         local claude_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
         local tool_choice, tool_choice_error = generate_handler._mapper.map_tool_choice(
             contract_args.tool_choice,
-            claude_tools
+            claude_tools,
+            contract_args.options
         )
 
         if tool_choice_error then
@@ -127,6 +132,12 @@ function generate_handler.handler(contract_args)
             claude_payload.tools = claude_tools
             if tool_choice then
                 claude_payload.tool_choice = tool_choice
+                -- A forced choice sent as "auto" under the caller's fallback is
+                -- reported, so the caller can see what the model was asked.
+                local requested = contract_args.tool_choice
+                if tool_choice.type == "auto" and requested ~= nil and requested ~= "auto" then
+                    context.tool_choice = { requested = requested, sent = "auto" }
+                end
             end
         end
 
@@ -135,7 +146,8 @@ function generate_handler.handler(contract_args)
     end
 
     local request_options = {
-        timeout = contract_args.timeout or 600
+        timeout = contract_args.timeout or 600,
+        retry = contract_args.retry
     }
 
     local stream_config = nil
@@ -154,11 +166,19 @@ function generate_handler.handler(contract_args)
         return nil, err:from(request_err):build()
     end
 
+    local result, result_err
     if stream_config then
-        return handle_streaming(response, context, stream_config, err)
+        result, result_err = handle_streaming(response, context, stream_config, err)
     else
-        return generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
+        result = generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
     end
+
+    if result and context.tool_choice then
+        result.metadata = result.metadata or {}
+        result.metadata.tool_choice = context.tool_choice
+    end
+
+    return result, result_err
 end
 
 return generate_handler

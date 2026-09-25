@@ -494,7 +494,6 @@ function openai_mapper.map_tokens(openai_usage)
     if openai_usage.prompt_tokens_details and openai_usage.prompt_tokens_details.cached_tokens then
         local cached = tonumber(openai_usage.prompt_tokens_details.cached_tokens) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
         tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 
@@ -554,7 +553,7 @@ function openai_mapper.map_success_response(openai_response, context)
 end
 
 -- Pure classifier: turn an HTTP / transport error into (kind, message, details).
-function openai_mapper.classify_error(openai_error)
+function openai_mapper.classify_error(openai_error: any?): (string, string, table?)
     if not openai_error then
         return output.ERROR_TYPE.SERVER_ERROR, "Unknown OpenAI-compatible error", nil
     end
@@ -575,7 +574,7 @@ function openai_mapper.classify_error(openai_error)
     if openai_error.nested_error then details.nested_error = openai_error.nested_error end
     if openai_error.provider_name then details.upstream_provider = openai_error.provider_name end
 
-    return kind, message, details
+    return kind, tostring(message), details
 end
 
 -- Standardize content to a simple string (for assistant and tool messages)

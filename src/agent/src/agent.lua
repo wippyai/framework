@@ -46,7 +46,7 @@ type AgentRunner = {
     description: string,
     model: string,
     max_tokens: number,
-    temperature: number,
+    temperature: number?,
     thinking_effort: number,
     tools: {[string]: UnifiedTool},
     memory: {string},
@@ -67,7 +67,6 @@ local AGENT_CONFIG = {
     defaults = {
         model = "",
         max_tokens = 512,
-        temperature = 0,
         thinking_effort = 0
     },
     memory = {
@@ -178,6 +177,23 @@ local function extract_memory_ids_from_messages(messages: any, scan_limit: any):
     return memory_ids
 end
 
+local function part_text(message: any): string
+    local part = message and message.content and message.content[1]
+    if not part then
+        return "nil"
+    end
+    if type(part.text) == "string" then
+        return part.text
+    end
+    if part.type == "image" then
+        return "[image]"
+    end
+    if part.type == "document" then
+        return "[document]"
+    end
+    return "[non-text content]"
+end
+
 local function extract_recent_actions(messages: any, max_actions: any, message_types: any): any
     if not messages or #messages == 0 then
         return {}
@@ -200,16 +216,14 @@ local function extract_recent_actions(messages: any, max_actions: any, message_t
         local message = messages[i]
         if message.role and type_lookup[message.role] then
             if message.role == prompt.ROLE.USER and message.content and message.content[1] then
-                table.insert(actions, 1, "user: " .. message.content[1].text)
+                table.insert(actions, 1, "user: " .. part_text(message))
             elseif message.role == prompt.ROLE.ASSISTANT and message.content and message.content[1] then
-                table.insert(actions, 1, "assistant: " .. message.content[1].text)
+                table.insert(actions, 1, "assistant: " .. part_text(message))
             elseif message.role == prompt.ROLE.FUNCTION_RESULT and message.name then
-                local content = message.content and message.content[1] and message.content[1].text or "nil"
-                table.insert(actions, 1, "tool: " .. message.name .. " -> " .. content)
+                table.insert(actions, 1, "tool: " .. message.name .. " -> " .. part_text(message))
             elseif message.role == prompt.ROLE.DEVELOPER and message.content and message.content[1] then
                 if not (message.metadata and message.metadata.memory_ids) then
-                    local content = message.content[1].text
-                    table.insert(actions, 1, "system: " .. content)
+                    table.insert(actions, 1, "system: " .. part_text(message))
                 end
             end
         end
@@ -415,7 +429,10 @@ function agent.new(compiled_spec: any): (any, string?)
         description = compiled_spec.description,
         model = compiled_spec.model or AGENT_CONFIG.defaults.model,
         max_tokens = compiled_spec.max_tokens or AGENT_CONFIG.defaults.max_tokens,
-        temperature = compiled_spec.temperature or AGENT_CONFIG.defaults.temperature,
+        -- Left nil when the spec omits it: Claude 4.7+ and Opus/Sonnet 5 reject
+        -- temperature, top_p and top_k outright, and a value the author never
+        -- asked for is not ours to invent.
+        temperature = compiled_spec.temperature,
         thinking_effort = compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort,
         tools = compiled_spec.tools or {},
         memory = compiled_spec.memory or {},
@@ -490,6 +507,12 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.tool_choice = runtime_options.tool_call
     end
 
+    -- A caller that enforces tool use itself may let a forced tool_call be sent
+    -- as "auto" to a model that cannot be forced (see the provider's model_profile).
+    if runtime_options.tool_call_fallback ~= nil then
+        options.tool_choice_fallback = runtime_options.tool_call_fallback
+    end
+
     -- Get ongoing conversation messages (no clone needed)
     local conversation_messages = prompt_builder:get_messages()
     local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
@@ -506,6 +529,17 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     -- Add ongoing conversation
     for _, msg in ipairs(conversation_messages) do
         table.insert(final_messages, msg)
+    end
+
+    -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
+    -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
+    -- marker after the newest user/tool-result message lets the next turn read everything up to
+    -- here from cache. Placed before the memory recall, which changes turn to turn. Providers
+    -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
+    local tail = conversation_messages[#conversation_messages]
+    if tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
+        and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM then
+        table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
     end
 
     -- Append memory recall after conversation
