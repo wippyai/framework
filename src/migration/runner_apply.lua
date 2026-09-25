@@ -258,7 +258,8 @@ function runner_apply.run_next(runner_obj: any, options: ApplyOptions?): any
     local migration_options = {
         database_id = runner_obj.database_id,
         direction = "up",
-        id = target_migration.id
+        id = target_migration.id,
+        content_hash = target_migration.content_hash
     }
 
     local result = execute_migration(tostring(target_migration.id), migration_options)

@@ -177,4 +177,7 @@ entries:
       - sql
     imports:
       candidate: wippy.migration:candidate
+      migration_registry: wippy.migration:registry
+      repository: wippy.migration:repository
+      runner: wippy.migration:runner
       test: wippy.test:test

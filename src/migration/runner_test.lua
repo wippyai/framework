@@ -1,6 +1,9 @@
 local test = require("test")
 local sql = require("sql")
 local candidate = require("candidate")
+local runner = require("runner")
+local repository = require("repository")
+local migration_registry = require("migration_registry")
 
 local function entry(id: string, timestamp: string, statement: string)
     return {
@@ -159,6 +162,46 @@ local function define_tests()
             test.is_nil(result)
             test.eq(run_err:kind(), errors.INTERNAL)
             test.eq(run_err:details().code, "CANDIDATE_MIGRATION_FAILED")
+        end)
+    end)
+
+    test.describe("registry tag filter", function()
+        test.it("finds registry migrations by tag", function()
+            local found, err = migration_registry.find({ target_db = "app:db", tags = { "ledger-hash" } })
+            test.is_nil(err)
+            test.eq(#found, 1)
+            test.eq(found[1].id, "app:ledger_hash_fixture")
+        end)
+    end)
+
+    test.describe("registry single-step apply", function()
+        test.it("records the content hash when run_next applies a registry migration", function()
+            local db, err = sql.get("app:db")
+            test.is_nil(err)
+            db:execute("DROP TABLE IF EXISTS ledger_hash_fixture")
+            db:execute("DELETE FROM _migrations WHERE id = 'app:ledger_hash_fixture'")
+            db:release()
+
+            local fixture_runner = runner.setup("app:db")
+            local found, find_err = fixture_runner:find_migrations()
+            test.is_nil(find_err)
+            local expected_hash = nil
+            for _, migration in ipairs(found or {}) do
+                if migration.id == "app:ledger_hash_fixture" then expected_hash = migration.content_hash end
+            end
+            test.not_nil(expected_hash)
+
+            local result = fixture_runner:run_next({ allowed_ids = { "app:ledger_hash_fixture" } })
+            test.eq(result.status, "complete")
+            test.eq(result.migrations_applied, 1)
+
+            local verify_db, verify_err = sql.get("app:db")
+            test.is_nil(verify_err)
+            local record, record_err = repository.get_migration(verify_db, "app:ledger_hash_fixture")
+            verify_db:release()
+            test.is_nil(record_err)
+            test.not_nil(record)
+            test.eq(record.content_hash, expected_hash)
         end)
     end)
 end

@@ -17,3 +17,17 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
+
+  - name: ledger_hash_fixture
+    kind: function.lua
+    meta:
+      type: migration
+      target_db: app:db
+      timestamp: "2026-01-01T00:00:00Z"
+      tags:
+        - ledger-hash
+      description: Fixture table for the single-step ledger hash test
+    source: file://ledger_hash_fixture.lua
+    method: migrate
+    imports:
+      migration: wippy.migration:migration

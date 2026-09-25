@@ -55,10 +55,6 @@ function migrations.find(options: any?): ({MigrationEntry}?, string?)
         criteria["meta.target_db"] = opts.target_db
     end
 
-    if opts.tags and #opts.tags > 0 then
-        criteria["meta.tags"] = opts.tags
-    end
-
     -- Query the registry
     local entries, err = migrations._registry.find(criteria)
     if err then
@@ -67,6 +63,28 @@ function migrations.find(options: any?): ({MigrationEntry}?, string?)
 
     if not entries or #entries == 0 then
         return {}
+    end
+
+    -- Registry criteria compare scalar values only; a tag filter selects entries
+    -- carrying any requested tag.
+    if opts.tags and #opts.tags > 0 then
+        local wanted = {}
+        for _, tag in ipairs(opts.tags) do
+            wanted[tag] = true
+        end
+        local tagged = {}
+        for _, entry in ipairs(entries) do
+            local entry_tags = entry.meta and entry.meta.tags
+            if type(entry_tags) == "table" then
+                for _, tag in ipairs(entry_tags) do
+                    if wanted[tag] then
+                        table.insert(tagged, entry)
+                        break
+                    end
+                end
+            end
+        end
+        entries = tagged
     end
 
     table.sort(entries, migrations.compare)
