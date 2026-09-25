@@ -449,6 +449,46 @@ local function define_tests()
             end)
         end)
 
+        describe("Public Model Resolution", function()
+            it("should resolve a model card by name", function()
+                local card, err = llm.resolve_model("gpt-4o")
+
+                test.is_nil(err)
+                test.eq(card.name, "gpt-4o")
+            end)
+
+            it("should resolve a model card by class name and class: syntax", function()
+                local by_class, err = llm.resolve_model("coder")
+                test.is_nil(err)
+                test.eq(by_class.name, "claude-4-sonnet")
+
+                local by_prefix, prefix_err = llm.resolve_model("class:frontier")
+                test.is_nil(prefix_err)
+                test.eq(by_prefix.name, "gpt-4o")
+            end)
+
+            it("should return an error for an unknown model", function()
+                local card, err = llm.resolve_model("nonexistent")
+
+                test.is_nil(card)
+                test.contains(err, "Model or class not found")
+            end)
+
+            it("should prefer the model resolver contract when bound", function()
+                llm._model_resolver = {
+                    resolve = function(self, args)
+                        return { id = "custom:m", name = "custom-m", max_tokens = 64000 }
+                    end
+                }
+
+                local card, err = llm.resolve_model("anything")
+
+                test.is_nil(err)
+                test.eq(card.name, "custom-m")
+                test.eq(card.max_tokens, 64000)
+            end)
+        end)
+
         describe("Optional Model Resolver Contract", function()
             type ResolvedProvider = {
                 id: string,
@@ -801,6 +841,67 @@ local function define_tests()
                 test.not_nil(result.tool_calls)
                 test.eq(#result.tool_calls, 1)
                 test.eq(result.tool_calls[1].name, "test_tool")
+            end)
+
+            it("should report context_tokens as uncached plus cached input", function()
+                local open = mock_providers.open
+                mock_providers.open = function(provider_id, options)
+                    local instance = open(provider_id, options)
+                    instance.generate = function(self, args)
+                        return {
+                            success = true,
+                            result = { content = "ok", tool_calls = {} },
+                            tokens = {
+                                prompt_tokens = 10,
+                                completion_tokens = 4,
+                                total_tokens = 14,
+                                cache_read_tokens = 30,
+                                cache_write_tokens = 5
+                            },
+                            finish_reason = "stop"
+                        }
+                    end
+                    return instance
+                end
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.prompt_tokens, 10)
+                test.eq(result.tokens.context_tokens, 45)
+            end)
+
+            it("should report context_tokens from provider-specific cache field names", function()
+                local open = mock_providers.open
+                mock_providers.open = function(provider_id, options)
+                    local instance = open(provider_id, options)
+                    instance.generate = function(self, args)
+                        return {
+                            success = true,
+                            result = { content = "ok", tool_calls = {} },
+                            tokens = {
+                                prompt_tokens = 7,
+                                completion_tokens = 1,
+                                cache_read_input_tokens = 100,
+                                cache_creation_input_tokens = 20
+                            },
+                            finish_reason = "stop"
+                        }
+                    end
+                    return instance
+                end
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.context_tokens, 127)
+            end)
+
+            it("should report context_tokens equal to prompt_tokens without caching", function()
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.context_tokens, 20)
             end)
 
             it("should require model parameter", function()
