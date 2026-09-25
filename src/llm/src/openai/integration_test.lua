@@ -1179,6 +1179,48 @@ local function define_tests()
                 test.is_true(input_tokens > 1000, "Expected many input tokens, got " .. tostring(input_tokens))
             end)
 
+            it("should report cached input as cache reads without cache writes", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping prompt caching test - not enabled")
+                    return
+                end
+
+                local cached_prefix = string.rep("Prompt caching fixture sentence. ", 400)
+                local contract_args = {
+                    model = "gpt-4o-mini",
+                    messages = {
+                        {
+                            role = "user",
+                            content = {{ type = "text", text = cached_prefix .. " Reply with the single word ok." }}
+                        }
+                    },
+                    options = {
+                        temperature = 0,
+                        max_tokens = 16
+                    }
+                }
+
+                local first, first_err = generate_handler.handler(contract_args)
+                test.is_nil(first_err, "First request failed: " .. tostring(first_err))
+                local second, second_err = generate_handler.handler(contract_args)
+                test.is_nil(second_err, "Second request failed: " .. tostring(second_err))
+
+                assert(first and first.success)
+                assert(second and second.success)
+                for _, response in ipairs({ first, second }) do
+                    test.eq(response.tokens.cache_write_tokens, 0)
+                    test.eq(response.tokens.cache_creation_input_tokens, 0)
+                end
+
+                local first_prompt, first_cached = first.tokens.prompt_tokens, first.tokens.cache_read_tokens
+                local second_prompt, second_cached = second.tokens.prompt_tokens, second.tokens.cache_read_tokens
+                assert(first_prompt and first_cached and second_prompt and second_cached)
+                local first_input = first_prompt + first_cached
+                local second_input = second_prompt + second_cached
+                test.eq(first_input, second_input)
+                test.is_true(first_input > 1024, "Expected a cacheable prompt, got " .. tostring(first_input))
+            end)
+
             it("should preserve metadata across all handler types", function()
                 if not RUN_INTEGRATION_TESTS then
                     print("Skipping metadata test - not enabled")

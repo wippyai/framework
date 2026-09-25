@@ -27,7 +27,8 @@ type TokenUsage = {
     cache_read_input_tokens: number?,
     cache_read_tokens: number?,
     cache_creation_input_tokens: number?,
-    cache_write_tokens: number?
+    cache_write_tokens: number?,
+    context_tokens: number?
 }
 
 type UsageRecord = {
@@ -201,15 +202,22 @@ local function get_model_resolver(): any?
     return nil
 end
 
+-- Cached input under the contract names, falling back to provider-specific names.
+local function cached_input_tokens(tokens: TokenUsage): (number, number)
+    local read = tokens.cache_read_input_tokens or tokens.cache_read_tokens or 0
+    local write = tokens.cache_creation_input_tokens or tokens.cache_write_tokens or 0
+    return read, write
+end
+
 -- Smart model resolution: name → class → error, plus "class:abc" syntax.
 -- An optional resolver contract takes precedence when bound; if it returns no
 -- card, resolution falls back to the built-in discovery below.
-local function resolve_model(model_identifier)
+function llm.resolve_model(model_identifier: string): (ModelCard?, string?)
     local resolver = get_model_resolver()
     if resolver then
         local card, resolve_err = resolver:resolve({ model = model_identifier })
         if card and not resolve_err then
-            return card
+            return card :: ModelCard
         end
         -- resolver declined or errored: fall through to built-in discovery
     end
@@ -232,7 +240,7 @@ local function resolve_model(model_identifier)
     -- Try as model name first
     local model_card, err = models_module.get_by_name(model_identifier)
     if model_card then
-        return model_card
+        return model_card :: ModelCard
     end
 
     -- Try as class name
@@ -273,8 +281,12 @@ local function normalize_response(raw_result)
         return nil
     end
 
+    local tokens = (raw_result.tokens or {}) :: TokenUsage
+    local cache_read, cache_write = cached_input_tokens(tokens)
+    tokens.context_tokens = (tokens.prompt_tokens or 0) + cache_read + cache_write
+
     local normalized = {
-        tokens = raw_result.tokens or {},
+        tokens = tokens,
         finish_reason = raw_result.finish_reason,
         metadata = raw_result.metadata or {}
     }
@@ -519,7 +531,7 @@ function llm.generate(prompt_input, options)
     else
         -- Smart model resolution path
         local err
-        model_card, err = resolve_model(options.model :: string)
+        model_card, err = llm.resolve_model(options.model :: string)
         if not model_card then
             return nil, err
         end
@@ -657,7 +669,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
     else
         -- Smart model resolution path
         local err
-        model_card, err = resolve_model(options.model :: string)
+        model_card, err = llm.resolve_model(options.model :: string)
         if not model_card then
             return nil, err
         end
@@ -785,7 +797,7 @@ function llm.embed(text, options)
     else
         -- Smart model resolution path
         local err
-        model_card, err = resolve_model(options.model :: string)
+        model_card, err = llm.resolve_model(options.model :: string)
         if not model_card then
             return nil, err
         end
@@ -919,7 +931,7 @@ function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
     else
         -- Smart model resolution path
         local err
-        model_card, err = resolve_model(options.model :: string)
+        model_card, err = llm.resolve_model(options.model :: string)
         if not model_card then
             return nil, err
         end
@@ -1004,7 +1016,7 @@ function llm.status(options)
     if options.provider_id then
         provider_info = { id = options.provider_id, options = {} }
     else
-        local model_card, err = resolve_model(options.model :: string)
+        local model_card, err = llm.resolve_model(options.model :: string)
         if not model_card then
             return nil, err
         end
@@ -1088,8 +1100,7 @@ function llm.track_usage(response, model_id, options): (string?, string?)
         prompt_tokens = response.tokens.prompt_tokens or 0
         completion_tokens = response.tokens.completion_tokens or 0
         thinking_tokens = response.tokens.thinking_tokens or 0
-        cache_read_tokens = response.tokens.cache_read_input_tokens or response.tokens.cache_read_tokens or 0
-        cache_write_tokens = response.tokens.cache_creation_input_tokens or response.tokens.cache_write_tokens or 0
+        cache_read_tokens, cache_write_tokens = cached_input_tokens(response.tokens)
     end
 
     -- Prepare tracking options
