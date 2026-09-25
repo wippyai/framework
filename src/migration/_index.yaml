@@ -84,6 +84,28 @@ entries:
     modules:
       - sql
 
+  # wippy.migration:runner_util
+  - name: runner_util
+    kind: library.lua
+    meta:
+      comment: Shared migration runner result helpers
+    source: file://runner_util.lua
+
+  # wippy.migration:runner_apply
+  - name: runner_apply
+    kind: library.lua
+    meta:
+      comment: Migration execution (run, run_next, rollback)
+    source: file://runner_apply.lua
+    modules:
+      - sql
+      - time
+      - funcs
+    imports:
+      migration_registry: wippy.migration:registry
+      repository: wippy.migration:repository
+      runner_util: wippy.migration:runner_util
+
   # wippy.migration:runner
   - name: runner
     kind: library.lua
@@ -92,12 +114,12 @@ entries:
     source: file://runner.lua
     modules:
       - sql
-      - time
-      - funcs
     imports:
       migration_registry: wippy.migration:registry
       repository: wippy.migration:repository
       candidate: wippy.migration:candidate
+      runner_util: wippy.migration:runner_util
+      runner_apply: wippy.migration:runner_apply
 
   # wippy.migration:migration_bootloader
   - name: migration_bootloader

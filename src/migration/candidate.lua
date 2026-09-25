@@ -52,22 +52,54 @@ local function canonical(value: any, seen: any): (string?, string?)
     return table.concat(parts), nil
 end
 
-function candidate.sha256(value: any): (string?, string?)
+local ERROR_KINDS = {
+    CANDIDATE_INVALID = { kind = errors.INVALID, retryable = false },
+    CANDIDATE_UNKNOWN = { kind = errors.NOT_FOUND, retryable = false },
+    CANDIDATE_HASH_MISMATCH = { kind = errors.CONFLICT, retryable = false },
+    MIGRATION_HASH_MISMATCH = { kind = errors.CONFLICT, retryable = false },
+    CANDIDATE_HASH_FAILED = { kind = errors.INTERNAL, retryable = true },
+    CANDIDATE_UNAVAILABLE = { kind = errors.UNAVAILABLE, retryable = true },
+    CANDIDATE_TARGET_UNAVAILABLE = { kind = errors.UNAVAILABLE, retryable = true },
+    CANDIDATE_MIGRATION_FAILED = { kind = errors.INTERNAL, retryable = true },
+}
+
+local function failure(code: string, message: string, details: any?): (nil, any)
+    local mapping = ERROR_KINDS[code] or { kind = errors.UNKNOWN, retryable = false }
+    local info: any = { code = code }
+    if type(details) == "table" then
+        for key, value in pairs(details) do info[key] = value end
+    elseif details ~= nil then
+        info.detail = details
+    end
+    return nil, errors.new({
+        message = message,
+        kind = mapping.kind,
+        retryable = mapping.retryable,
+        details = info,
+    })
+end
+
+local function invalid_bytes(message: string): any
+    return errors.new({
+        message = message,
+        kind = errors.INVALID,
+        retryable = false,
+        details = { code = "CANDIDATE_INVALID" },
+    })
+end
+
+function candidate.sha256(value: any): (string?, any)
     local bytes, err = canonical(value, {})
-    if not bytes then return nil, err end
+    if not bytes then return nil, invalid_bytes(tostring(err)) end
     return hash.sha256(bytes)
 end
 
-function candidate.entry_hash(entry: any): (string?, string?)
+function candidate.entry_hash(entry: any): (string?, any)
     if type(entry) ~= "table" or not entry.id then
-        return nil, "migration entry id is required"
+        return nil, invalid_bytes("migration entry id is required")
     end
     return candidate.sha256({ id = entry.id, kind = entry.kind,
         meta = entry.meta, data = entry.data })
-end
-
-local function failure(code: string, message: string, details: any?): (nil, any)
-    return nil, { code = code, message = message, details = details }
 end
 
 local function is_migration(entry: any): boolean
