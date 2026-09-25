@@ -262,6 +262,48 @@ local function consolidate_messages(messages)
     return result
 end
 
+-- An assistant turn must not END with a thinking block (the API rejects it: "The final block in an
+-- assistant message cannot be `thinking`"). A step's thinking normally travels in an assistant
+-- message of its own and is merged into the tool_use that follows by consolidate_messages, but a
+-- user message that lands between the two (a user typing while the agent is mid-step) leaves a
+-- thinking-only assistant message behind, and every later request in that session is rejected.
+-- Move such orphaned thinking onto the next assistant message (thinking first, as the API
+-- requires), drop it when no assistant message follows, and keep thinking ahead of the other
+-- blocks within any assistant message.
+local THINKING_TYPES = { thinking = true, redacted_thinking = true }
+
+local function repair_thinking(messages)
+    local out, carry = {}, nil
+    for _, msg in ipairs(messages) do
+        if msg.role == "assistant" and type(msg.content) == "table" and #msg.content > 0 then
+            local lead, body = {}, {}
+            if carry then
+                for _, block in ipairs(carry) do table.insert(lead, block) end
+                carry = nil
+            end
+            for _, block in ipairs(msg.content) do
+                if type(block) == "table" and THINKING_TYPES[block.type] then
+                    table.insert(lead, block)
+                else
+                    table.insert(body, block)
+                end
+            end
+            if #body == 0 then
+                carry = lead
+            else
+                local content = {}
+                for _, block in ipairs(lead) do table.insert(content, block) end
+                for _, block in ipairs(body) do table.insert(content, block) end
+                msg.content = content
+                table.insert(out, msg)
+            end
+        else
+            table.insert(out, msg)
+        end
+    end
+    return out
+end
+
 local function ensure_content_exists(messages)
     for i = 1, #messages - 1 do
         if not messages[i].content or #messages[i].content == 0 then
@@ -481,6 +523,7 @@ function mapper.map_messages(contract_messages)
     end
 
     claude_messages = consolidate_messages(claude_messages)
+    claude_messages = repair_thinking(claude_messages)
     claude_messages = ensure_content_exists(claude_messages)
 
     return {

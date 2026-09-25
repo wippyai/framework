@@ -246,6 +246,47 @@ local function define_tests()
                 test.eq(last_msg.role, "user")
             end)
 
+            it("should never send an assistant message that ends with a thinking block", function()
+                local thinking = { type = "thinking", thinking = "", signature = "sig-1" }
+                local contract_messages = {
+                    { role = prompt.ROLE.USER, content = { { type = "text", text = "Draft the agreement" } } },
+                    -- the step's thinking arrives as its own assistant message...
+                    { role = prompt.ROLE.ASSISTANT, content = "", metadata = { thinking_blocks = { thinking } } },
+                    -- ...a user message lands mid-step...
+                    { role = prompt.ROLE.USER, content = { { type = "text", text = "go" } } },
+                    -- ...and the tool call follows it
+                    {
+                        role = prompt.ROLE.FUNCTION_CALL,
+                        function_call = { name = "search", arguments = { q = "x" }, id = "call_1" },
+                        content = {}
+                    },
+                    {
+                        role = prompt.ROLE.FUNCTION_RESULT,
+                        function_call_id = "call_1",
+                        name = "search",
+                        content = { { type = "text", text = "ok" } }
+                    },
+                    -- a trailing thinking-only assistant message with nothing after it
+                    { role = prompt.ROLE.ASSISTANT, content = "", metadata = { thinking_blocks = { thinking } } },
+                }
+
+                local result = mapper.map_messages(contract_messages)
+                for _, msg in ipairs(result.messages) do
+                    if msg.role == "assistant" then
+                        local last = msg.content[#msg.content] :: any
+                        test.is_true(last.type ~= "thinking" and last.type ~= "redacted_thinking")
+                    end
+                end
+                -- the orphaned thinking moved onto the tool_use message, ahead of it
+                local tool_msg = nil
+                for _, msg in ipairs(result.messages) do
+                    if msg.role == "assistant" then tool_msg = msg end
+                end
+                test.not_nil(tool_msg)
+                test.eq((tool_msg :: any).content[1].type, "thinking")
+                test.eq((tool_msg :: any).content[2].type, "tool_use")
+            end)
+
             it("should convert function calls to assistant tool_use format", function()
                 local contract_messages = {
                     {
