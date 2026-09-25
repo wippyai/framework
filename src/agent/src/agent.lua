@@ -531,6 +531,17 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         table.insert(final_messages, msg)
     end
 
+    -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
+    -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
+    -- marker after the newest user/tool-result message lets the next turn read everything up to
+    -- here from cache. Placed before the memory recall, which changes turn to turn. Providers
+    -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
+    local tail = conversation_messages[#conversation_messages]
+    if tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
+        and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM then
+        table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
+    end
+
     -- Append memory recall after conversation
     if memory_prompt then
         table.insert(final_messages, memory_prompt)
