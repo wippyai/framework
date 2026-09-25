@@ -62,6 +62,19 @@ entries:
     imports:
       base_registry: :registry
 
+  - name: candidate
+    kind: library.lua
+    meta:
+      comment: Staged candidate migration runner
+    source: file://candidate.lua
+    modules:
+      - sql
+      - hash
+      - eval_runner
+    imports:
+      repository: wippy.migration:repository
+      migration_registry: wippy.migration:registry
+
   # wippy.migration:repository
   - name: repository
     kind: library.lua
@@ -84,6 +97,7 @@ entries:
     imports:
       migration_registry: wippy.migration:registry
       repository: wippy.migration:repository
+      candidate: wippy.migration:candidate
 
   # wippy.migration:migration_bootloader
   - name: migration_bootloader
@@ -128,4 +142,17 @@ entries:
     method: run
     imports:
       migration_registry: wippy.migration:registry
+      test: wippy.test:test
+
+  - name: runner_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-candidate
+    source: file://runner_test.lua
+    method: run
+    modules:
+      - sql
+    imports:
+      candidate: wippy.migration:candidate
       test: wippy.test:test

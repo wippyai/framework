@@ -2,8 +2,18 @@ local migration = {}
 local sql = require("sql")
 local time = require("time")
 
-local migration_core = require("core")
-local repository = require("repository")
+local migration_core: any? = nil
+local repository: any? = nil
+
+local function core(): any
+    if migration_core == nil then migration_core = require("core") end
+    return migration_core
+end
+
+local function ledger(): any
+    if repository == nil then repository = require("repository") end
+    return repository
+end
 
 type RunOptions = {
     database_id: string?,
@@ -12,6 +22,7 @@ type RunOptions = {
     direction: string?,
     force: boolean?,
     id: string?,
+    content_hash: string?,
 }
 
 type RunResult = {
@@ -73,7 +84,7 @@ local function execute_migration(migration_item: any, options: any): any
     end
 
     if direction == "up" then
-        local is_applied, check_err = repository.is_applied(db, migration_id)
+        local existing, check_err = ledger().get_migration(db, migration_id)
         if check_err then
             return {
                 status = "error",
@@ -83,7 +94,16 @@ local function execute_migration(migration_item: any, options: any): any
             }
         end
 
-        if is_applied and not options.force then
+        if existing and not options.force then
+            if options.content_hash and existing.content_hash
+                and existing.content_hash ~= options.content_hash then
+                return {
+                    status = "error",
+                    description = migration_item.description,
+                    error = "Migration hash mismatch for " .. tostring(migration_id),
+                    name = migration_item.description
+                }
+            end
             return {
                 status = "skipped",
                 description = migration_item.description,
@@ -112,7 +132,7 @@ local function execute_migration(migration_item: any, options: any): any
         success, err = pcall(impl.down, tx)
 
         if success then
-            local remove_ok, remove_err = repository.remove_migration(tx, migration_id)
+            local remove_ok, remove_err = ledger().remove_migration(tx, migration_id)
             if not remove_ok then
                 tx:rollback()
                 return {
@@ -137,10 +157,11 @@ local function execute_migration(migration_item: any, options: any): any
     end
 
     if direction == "up" then
-        local record_ok, record_err = repository.record_migration(
+        local record_ok, record_err = ledger().record_migration(
             tx,
             migration_id,
-            tostring(migration_item.description)
+            tostring(migration_item.description),
+            options.content_hash
         )
 
         if not record_ok then
@@ -239,7 +260,7 @@ function migration.run(fn: () -> (), options: RunOptions?): any
         }
     end
 
-    local init_ok, init_err = repository.init_tracking_table(db)
+    local init_ok, init_err = ledger().init_tracking_table(db)
     if not init_ok then
         if need_release then db:release() end
 
@@ -259,7 +280,7 @@ function migration.run(fn: () -> (), options: RunOptions?): any
         }
     end
 
-    local success, implementations_or_err = pcall(migration_core.define, fn)
+    local success, implementations_or_err = pcall(core().define, fn)
     if not success then
         if need_release then db:release() end
 
@@ -291,6 +312,7 @@ function migration.run(fn: () -> (), options: RunOptions?): any
                 direction = opts.direction,
                 force = opts.force,
                 id = opts.id,
+                content_hash = opts.content_hash,
             })
 
             table.insert(results.migrations, result)

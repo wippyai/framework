@@ -3,6 +3,7 @@ local time = require("time")
 local funcs = require("funcs")
 local repository = require("repository")
 local registry_finder = require("migration_registry")
+local candidate = require("candidate")
 
 type RunnerResult = {
     status: string,
@@ -120,6 +121,13 @@ function Runner:find_migrations(options: RunnerOptions?): ({any}?, string?)
 
     for _, migration in ipairs(migrations) do
         local migration_id = migration.id
+        local content_hash, hash_err = candidate.entry_hash(migration)
+        if hash_err then
+            db:release()
+            return nil, "Failed to hash migration " .. tostring(migration_id)
+                .. ": " .. tostring(hash_err)
+        end
+        migration.content_hash = content_hash
         if applied_map[migration_id] then
             migration.applied = true
             migration.applied_at = applied_map[migration_id].applied_at
@@ -236,7 +244,8 @@ function Runner:run(options: RunnerOptions?): any
         local migration_options = {
             database_id = self.database_id,
             direction = "up",
-            id = migration.id
+            id = migration.id,
+            content_hash = migration.content_hash
         }
 
         local result = execute_migration(tostring(migration.id), migration_options)
