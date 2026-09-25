@@ -145,4 +145,5 @@ entries:
     imports:
       runner: wippy.migration:runner
       repository: wippy.migration:repository
+      migration_registry: wippy.migration:registry
       test: wippy.test:test

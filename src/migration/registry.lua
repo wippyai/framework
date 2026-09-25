@@ -68,28 +68,32 @@ function migrations.get_aliases(entry: any): {string}
     return result
 end
 
-function migrations.build_alias_index(entries: {any}?): ({[string]: any}?, string?)
+function migrations.validate_aliases(entries: {any}?): (boolean?, string?)
     local by_id = {}
     for _, entry in ipairs(entries or {}) do
         by_id[tostring(entry.id)] = entry
     end
 
-    local index = {}
+    local claimed_by = {}
     for _, entry in ipairs(entries or {}) do
         for _, alias in ipairs(migrations.get_aliases(entry)) do
+            if not alias:match("^[^:]+:[^:]+$") then
+                return nil, "alias '" .. alias .. "' on migration '" .. tostring(entry.id)
+                    .. "' must be a full id in namespace:name form"
+            end
             if by_id[alias] then
                 return nil, "alias '" .. alias .. "' on migration '" .. tostring(entry.id)
                     .. "' collides with an existing migration id"
             end
-            if index[alias] then
+            if claimed_by[alias] then
                 return nil, "alias '" .. alias .. "' is claimed by both '"
-                    .. tostring(index[alias].id) .. "' and '" .. tostring(entry.id) .. "'"
+                    .. tostring(claimed_by[alias].id) .. "' and '" .. tostring(entry.id) .. "'"
             end
-            index[alias] = entry
+            claimed_by[alias] = entry
         end
     end
 
-    return index
+    return true
 end
 
 -- Find migrations in registry based on provided options

@@ -3,11 +3,13 @@ local sql = require("sql")
 local funcs = require("funcs")
 local runner = require("runner")
 local repository = require("repository")
+local migration_registry = require("migration_registry")
 
 local DB_ID = "app:db"
 local MIG_ONE = "app:alias_mig_one"
 local MIG_TWO = "app:alias_mig_two"
 local OLD_ONE = "app.legacy:alias_mig_one"
+local OLD_TWO_A = "app.legacy:alias_mig_two_a"
 local OLD_TWO_B = "app.legacy:alias_mig_two_b"
 
 local function with_db(fn: (any) -> any): any
@@ -51,6 +53,35 @@ local function ledger_ids(): any
         end
         return ids
     end)
+end
+
+local function with_mock_registry(entries: {any}, fn: () -> ())
+    local original = migration_registry._registry
+    migration_registry._registry = {
+        find = function(criteria)
+            local results = {}
+            for _, entry in ipairs(entries) do
+                if entry.meta.target_db == criteria["meta.target_db"] then
+                    table.insert(results, entry)
+                end
+            end
+            return results
+        end,
+        get = function(id)
+            for _, entry in ipairs(entries) do
+                if entry.id == id then
+                    return entry
+                end
+            end
+            return nil
+        end,
+    }
+
+    local ok, err = pcall(fn)
+    migration_registry._registry = original
+    if not ok then
+        error(err, 0)
+    end
 end
 
 local function find_status_row(report: any, id: string): any
@@ -145,10 +176,47 @@ local function define_tests()
             test.is_nil(next(ledger_ids()))
         end)
 
+        test.it("rollback runs down once when both old and current rows exist", function()
+            seed(MIG_ONE)
+            seed(OLD_ONE)
+
+            local result = runner.setup(DB_ID):rollback({ count = 2 })
+            test.eq(result.status, "complete")
+            test.eq(result.migrations_found, 1)
+            test.eq(result.migrations_reverted, 1)
+            test.eq(result.migrations_failed, 0)
+            test.eq(result.migrations[1].id, MIG_ONE)
+
+            test.is_nil(next(ledger_ids()))
+
+            local report = runner.setup(DB_ID):status()
+            test.eq(find_status_row(report, MIG_ONE).status, "pending")
+        end)
+
         test.it("rollback allowed_ids accepts the current id for an old row", function()
             seed(OLD_ONE)
 
             local result = runner.setup(DB_ID):rollback({ allowed_ids = { MIG_ONE } })
+            test.eq(result.status, "complete")
+            test.eq(result.migrations_reverted, 1)
+
+            test.is_nil(next(ledger_ids()))
+        end)
+
+        test.it("rollback allowed_ids accepts an old id for a row applied under the current id", function()
+            seed(MIG_ONE)
+
+            local result = runner.setup(DB_ID):rollback({ allowed_ids = { OLD_ONE } })
+            test.eq(result.status, "complete")
+            test.eq(result.migrations_reverted, 1)
+
+            test.is_nil(next(ledger_ids()))
+        end)
+
+        test.it("rollback allowed_ids accepts a sibling old id of the recorded row", function()
+            seed(OLD_TWO_A)
+
+            local result = runner.setup(DB_ID):rollback({ allowed_ids = { OLD_TWO_B } })
             test.eq(result.status, "complete")
             test.eq(result.migrations_reverted, 1)
 
@@ -182,6 +250,43 @@ local function define_tests()
             local ids = ledger_ids()
             test.is_true(ids[OLD_ONE])
             test.is_nil(ids[MIG_ONE])
+        end)
+
+        test.it("run surfaces an invalid alias configuration as an error", function()
+            with_mock_registry({
+                {
+                    id = "app.mock:one",
+                    kind = "function.lua",
+                    meta = { type = "migration", target_db = DB_ID, alias = "app.legacy:shared" },
+                },
+                {
+                    id = "app.mock:two",
+                    kind = "function.lua",
+                    meta = { type = "migration", target_db = DB_ID, alias = "app.legacy:shared" },
+                },
+            }, function()
+                local result = runner.setup(DB_ID):run()
+                test.eq(result.status, "error")
+                test.contains(tostring(result.error), "Invalid migration aliases")
+                test.contains(tostring(result.error), "app.legacy:shared")
+            end)
+        end)
+
+        test.it("rollback surfaces a malformed alias as an error", function()
+            seed(MIG_ONE)
+
+            with_mock_registry({
+                {
+                    id = "app.mock:one",
+                    kind = "function.lua",
+                    meta = { type = "migration", target_db = DB_ID, alias = "alias_without_namespace" },
+                },
+            }, function()
+                local result = runner.setup(DB_ID):rollback({ count = 1 })
+                test.eq(result.status, "error")
+                test.contains(tostring(result.error), "Invalid migration aliases")
+                test.contains(tostring(result.error), "alias_without_namespace")
+            end)
         end)
     end)
 end

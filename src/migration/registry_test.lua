@@ -284,47 +284,57 @@ local function define_tests()
         end)
     end)
 
-    test.describe("build_alias_index", function()
-        test.it("maps aliases from multiple entries", function()
-            local one = { id = "m:one", meta = { type = "migration", alias = "legacy:one" } }
-            local two = {
-                id = "m:two",
-                meta = { type = "migration", alias = { "legacy:two_a", "legacy:two_b" } },
-            }
-            local index, err = migration_registry.build_alias_index({ one, two })
+    test.describe("validate_aliases", function()
+        test.it("accepts full-id aliases across entries", function()
+            local ok, err = migration_registry.validate_aliases({
+                { id = "m:one", meta = { type = "migration", alias = "legacy:one" } },
+                {
+                    id = "m:two",
+                    meta = { type = "migration", alias = { "legacy:two_a", "legacy:two_b" } },
+                },
+            })
             test.is_nil(err)
-            test.eq(index["legacy:one"].id, "m:one")
-            test.eq(index["legacy:two_a"].id, "m:two")
-            test.eq(index["legacy:two_b"].id, "m:two")
+            test.is_true(ok)
         end)
 
-        test.it("returns empty index when no entry has aliases", function()
-            local index, err = migration_registry.build_alias_index({
+        test.it("accepts entries without aliases", function()
+            local ok, err = migration_registry.validate_aliases({
                 { id = "m:one", meta = { type = "migration" } },
             })
             test.is_nil(err)
-            test.is_nil(next(index))
+            test.is_true(ok)
         end)
 
         test.it("fails when an alias is claimed by two entries", function()
-            local index, err = migration_registry.build_alias_index({
+            local ok, err = migration_registry.validate_aliases({
                 { id = "m:one", meta = { type = "migration", alias = "legacy:shared" } },
                 { id = "m:two", meta = { type = "migration", alias = { "legacy:shared" } } },
             })
-            test.is_nil(index)
+            test.is_nil(ok)
             test.contains(err, "legacy:shared")
             test.contains(err, "m:one")
             test.contains(err, "m:two")
         end)
 
         test.it("fails when an alias collides with a live migration id", function()
-            local index, err = migration_registry.build_alias_index({
+            local ok, err = migration_registry.validate_aliases({
                 { id = "m:one", meta = { type = "migration" } },
                 { id = "m:two", meta = { type = "migration", alias = "m:one" } },
             })
-            test.is_nil(index)
+            test.is_nil(ok)
             test.contains(err, "m:one")
             test.contains(err, "m:two")
+        end)
+
+        test.it("fails when an alias is not a full namespace:name id", function()
+            for _, bad in ipairs({ "01_create_orders_table", ":one", "legacy:" }) do
+                local ok, err = migration_registry.validate_aliases({
+                    { id = "m:one", meta = { type = "migration", alias = bad } },
+                })
+                test.is_nil(ok)
+                test.contains(tostring(err), bad)
+                test.contains(tostring(err), "m:one")
+            end
         end)
     end)
 

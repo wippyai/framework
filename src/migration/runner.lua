@@ -127,8 +127,8 @@ function Runner:find_migrations(options: RunnerOptions?): ({any}?, string?)
 
     db:release()
 
-    local _, alias_err = registry_finder.build_alias_index(migrations)
-    if alias_err then
+    local aliases_ok, alias_err = registry_finder.validate_aliases(migrations)
+    if not aliases_ok then
         return nil, "Invalid migration aliases: " .. tostring(alias_err)
     end
 
@@ -517,28 +517,59 @@ function Runner:rollback(options: RunnerOptions?): any
         return create_error("Failed to find migrations: " .. tostring(reg_err))
     end
 
-    local alias_index, alias_err = registry_finder.build_alias_index(registry_entries)
-    if alias_err then
+    local aliases_ok, alias_err = registry_finder.validate_aliases(registry_entries)
+    if not aliases_ok then
         return create_error("Invalid migration aliases: " .. tostring(alias_err))
     end
 
-    for i, migration in ipairs(applied_migrations) do
-        local registry_entry = registry_finder.get(tostring(migration.id)) or alias_index[tostring(migration.id)]
-        if registry_entry then
-            applied_migrations[i].registry_entry = registry_entry
+    local applied_map = {}
+    for _, row in ipairs(applied_migrations) do
+        applied_map[tostring(row.id)] = row
+    end
+
+    local candidates = {}
+    local claimed = {}
+
+    for _, entry in ipairs(registry_entries) do
+        local aliases = registry_finder.get_aliases(entry)
+
+        claimed[tostring(entry.id)] = true
+        for _, alias in ipairs(aliases) do
+            claimed[alias] = true
+        end
+
+        local row = applied_map[tostring(entry.id)]
+        if not row then
+            for _, alias in ipairs(aliases) do
+                row = applied_map[alias]
+                if row then
+                    break
+                end
+            end
+        end
+
+        if row then
+            row.registry_entry = entry
+            table.insert(candidates, row)
         end
     end
 
-    table.sort(applied_migrations, compare_rollback)
+    for _, row in ipairs(applied_migrations) do
+        if not claimed[tostring(row.id)] then
+            table.insert(candidates, row)
+        end
+    end
+
+    table.sort(candidates, compare_rollback)
 
     local allowed_ids = options.allowed_ids or {}
 
     if #allowed_ids > 0 then
         local filtered = {}
-        for _, migration in ipairs(applied_migrations) do
+        for _, migration in ipairs(candidates) do
             for _, allowed_id in ipairs(allowed_ids) do
                 if migration.id == allowed_id
-                    or (migration.registry_entry and migration.registry_entry.id == allowed_id) then
+                    or (migration.registry_entry and matches_migration_id(migration.registry_entry, allowed_id)) then
                     table.insert(filtered, migration)
                     break
                 end
@@ -556,17 +587,17 @@ function Runner:rollback(options: RunnerOptions?): any
             }
         end
 
-        applied_migrations = filtered
+        candidates = filtered
     end
 
     local count = options.count or 1
-    if count > #applied_migrations then
-        count = #applied_migrations
+    if count > #candidates then
+        count = #candidates
     end
 
     local to_rollback = {}
     for i = 1, count do
-        table.insert(to_rollback, applied_migrations[i])
+        table.insert(to_rollback, candidates[i])
     end
 
     local results = {
@@ -582,18 +613,18 @@ function Runner:rollback(options: RunnerOptions?): any
     local start_time = time.now()
 
     for _, migration in ipairs(to_rollback) do
-        -- Call the current entry (the ledger id may be a former one), but keep
-        -- the ledger row id in options so the down path removes that exact row.
         local call_target = tostring(migration.id)
-        if migration.registry_entry then
-            call_target = tostring(migration.registry_entry.id)
-        end
-
-        local migration_options = {
+        local migration_options: any = {
             database_id = self.database_id,
             direction = "down",
             id = migration.id
         }
+
+        if migration.registry_entry then
+            call_target = tostring(migration.registry_entry.id)
+            migration_options.id = migration.registry_entry.id
+            migration_options.aliases = registry_finder.get_aliases(migration.registry_entry)
+        end
 
         local result = execute_migration(call_target, migration_options)
 

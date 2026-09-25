@@ -396,7 +396,8 @@ Semantics:
 - A ledger row recorded under any alias counts as applied — the migration is never re-applied. The entry's own ID is
   checked first, then aliases in declaration order; the first match wins.
 - New applications are always recorded under the **current** ID; aliases are read-only matching keys.
-- Rolling back a row recorded under an old ID executes the **current** entry's `down` and deletes the old ledger row.
+- Rollback executes the **current** entry's `down` once per migration and deletes every ledger row of that entry —
+  the current ID and all aliases.
 - `allowed_ids` options of the runner accept old IDs as well as current ones.
 - The `status()` report exposes `applied_id` — the ledger row ID that matched (differs from `id` for alias matches).
 
@@ -405,8 +406,8 @@ Rules and edge cases:
 - Aliases must be full IDs in `namespace:name` form.
 - An alias must not equal the ID of a live migration, and one alias cannot be claimed by two entries — both are
   configuration errors that abort the run (and application boot) with an explicit message.
-- If the ledger somehow contains rows for both the old and the new ID, the entry's own ID wins; remove the stale old
-  row manually.
+- If the ledger somehow contains rows for both the old and the new ID, they count as one applied migration: the
+  entry's own ID wins for matching (and `applied_id`), and a rollback runs `down` once and removes both rows.
 - Keep the alias for as long as any deployment's ledger may still hold the old ID; it is safe to keep it indefinitely.
 
 ## Testing Migrations

@@ -132,15 +132,24 @@ local function execute_migration(migration_item: any, options: any): any
         success, err = pcall(impl.down, tx)
 
         if success then
-            local remove_ok, remove_err = repository.remove_migration(tx, migration_id)
-            if not remove_ok then
-                tx:rollback()
-                return {
-                    status = "error",
-                    description = migration_item.description,
-                    error = "Failed to remove migration record: " .. tostring(remove_err),
-                    name = migration_item.description
-                }
+            local ids_to_remove = { migration_id }
+            if type(options.aliases) == "table" then
+                for _, alias in ipairs(options.aliases) do
+                    table.insert(ids_to_remove, tostring(alias))
+                end
+            end
+
+            for _, remove_id in ipairs(ids_to_remove) do
+                local remove_ok, remove_err = repository.remove_migration(tx, remove_id)
+                if not remove_ok then
+                    tx:rollback()
+                    return {
+                        status = "error",
+                        description = migration_item.description,
+                        error = "Failed to remove migration record: " .. tostring(remove_err),
+                        name = migration_item.description
+                    }
+                end
             end
         end
     end
