@@ -1288,6 +1288,33 @@ local function define_tests()
                 agent._llm = nil
             end)
 
+            it("should forward the tool choice fallback the caller permits", function()
+                local captured_options = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 1, completion_tokens = 1, total_tokens = 2 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Finish")
+                test_agent:step(prompt_builder, { tool_call = "any", tool_call_fallback = "auto" })
+
+                test.eq((captured_options :: any).tool_choice, "any")
+                test.eq((captured_options :: any).tool_choice_fallback, "auto")
+
+                test_agent:step(prompt_builder, { tool_call = "any" })
+                test.is_nil((captured_options :: any).tool_choice_fallback)
+
+                agent._llm = nil
+            end)
+
             it("should set thinking effort when configured", function()
                 local thinking_spec = {
                     id = "thinking-agent",

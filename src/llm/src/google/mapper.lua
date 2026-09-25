@@ -317,7 +317,6 @@ function mapper.map_tokens(google_usage)
     if google_usage.cachedContentTokenCount then
         local cached = tonumber(google_usage.cachedContentTokenCount) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
         tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 

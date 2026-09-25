@@ -507,6 +507,12 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.tool_choice = runtime_options.tool_call
     end
 
+    -- A caller that enforces tool use itself may let a forced tool_call be sent
+    -- as "auto" to a model that cannot be forced (see the provider's model_profile).
+    if runtime_options.tool_call_fallback ~= nil then
+        options.tool_choice_fallback = runtime_options.tool_call_fallback
+    end
+
     -- Get ongoing conversation messages (no clone needed)
     local conversation_messages = prompt_builder:get_messages()
     local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)

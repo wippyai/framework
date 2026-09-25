@@ -535,7 +535,16 @@ function mapper.map_tools(contract_tools)
     return claude_tools, name_to_id_map
 end
 
-function mapper.map_tool_choice(contract_choice, available_tools)
+-- A model whose provider options carry model_profile.forced_tool_choice = false
+-- rejects "any" and named tool choices. Such a choice is sent as "auto" only when
+-- the caller permits that fallback (tool_choice_fallback = "auto"), because only
+-- a caller that enforces tool use itself keeps the guarantee the choice promised.
+local function forced_choice_unsupported(options)
+    local profile = options and options.model_profile
+    return type(profile) == "table" and profile.forced_tool_choice == false
+end
+
+function mapper.map_tool_choice(contract_choice, available_tools, options)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -544,21 +553,42 @@ function mapper.map_tool_choice(contract_choice, available_tools)
         return { type = "auto" }
     elseif contract_choice == "none" then
         return { type = "none" }
-    elseif contract_choice == "any" then
-        return { type = "any" }
+    end
+
+    local forced
+    if contract_choice == "any" then
+        forced = { type = "any" }
     elseif type(contract_choice) == "string" then
         for _, tool in ipairs(available_tools) do
             if tool.name == contract_choice then
-                return {
-                    type = "tool",
-                    name = contract_choice
-                }
+                forced = { type = "tool", name = contract_choice }
+                break
             end
         end
-        return nil, "Tool '" .. contract_choice .. "' not found in available tools"
+        if not forced then
+            return nil, "Tool '" .. contract_choice .. "' not found in available tools"
+        end
+    else
+        return nil, "Invalid tool_choice format"
     end
 
-    return nil, "Invalid tool_choice format"
+    if not forced_choice_unsupported(options) then
+        return forced
+    end
+    if options.tool_choice_fallback == "auto" then
+        return { type = "auto" }
+    end
+    return nil, "Model does not accept a forced tool choice (model_profile.forced_tool_choice = false): tool_choice '"
+        .. contract_choice .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
+end
+
+-- thinking_effort (0-100) on the effort levels of adaptive-thinking models.
+local function effort_level(thinking_effort)
+    if thinking_effort >= 100 then return "max" end
+    if thinking_effort >= 80 then return "xhigh" end
+    if thinking_effort > 50 then return "high" end
+    if thinking_effort >= 20 then return "medium" end
+    return "low"
 end
 
 function mapper.map_options(contract_options, model)
@@ -573,7 +603,15 @@ function mapper.map_options(contract_options, model)
     claude_options.top_p = contract_options.top_p
     claude_options.stop_sequences = contract_options.stop_sequences
 
-    if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+    local profile = contract_options.model_profile
+    local adaptive_only = type(profile) == "table" and profile.thinking_mode == "adaptive_only"
+
+    if adaptive_only then
+        -- Thinking is always on and takes no budget: effort is its only control.
+        if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+            claude_options.output_config = { effort = effort_level(contract_options.thinking_effort) }
+        end
+    elseif contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
 

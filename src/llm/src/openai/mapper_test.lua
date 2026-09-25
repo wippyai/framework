@@ -896,7 +896,8 @@ local function define_tests()
                 local tokens = openai_mapper.map_tokens(usage)
 
                 test.eq(tokens.cache_read_input_tokens, 30)
-                test.eq(tokens.cache_creation_input_tokens, 70)
+                test.eq(tokens.cache_creation_input_tokens, 0)
+                test.eq(tokens.cache_write_tokens, 0)
                 test.eq(tokens.prompt_tokens, 70) -- adjusted: input_tokens minus cached
                 test.eq(tokens.completion_tokens, 50)
             end)

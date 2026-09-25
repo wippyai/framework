@@ -845,7 +845,8 @@ local function define_tests()
                 local contract_tokens = openai_mapper.map_tokens(openai_usage)
 
                 test.eq(contract_tokens.cache_read_input_tokens, 30)
-                test.eq(contract_tokens.cache_creation_input_tokens, 70)
+                test.eq(contract_tokens.cache_creation_input_tokens, 0)
+                test.eq(contract_tokens.cache_write_tokens, 0)
                 test.eq(contract_tokens.prompt_tokens, 70) -- adjusted: total minus cached
                 test.eq(contract_tokens.completion_tokens, 50)
             end)
