@@ -64,6 +64,42 @@ local function define_tests()
             test.eq(stats.bootloaders[2].message, "cache warm failed: no such table")
             test.eq(stats.total, 3)
         end)
+
+        it("succeeds running discovered bootloaders", function()
+            local stats, err = bootloader.run()
+            test.is_nil(err)
+            test.is_table(stats)
+        end)
+
+        it("returns error when a bootloader fails during run()", function()
+            bootloader._set_bootloader_registry_for_test({
+                find = function()
+                    return {
+                        entry("chain_first", 10),
+                        entry("chain_fails", 20),
+                    }
+                end
+            })
+            local stats, err = bootloader.run()
+            bootloader._set_bootloader_registry_for_test(nil)
+            test.is_nil(stats)
+            test.not_nil(err)
+            test.contains(err, "app:chain_fails")
+            test.contains(err, "cache warm failed: no such table")
+        end)
+
+        it("returns error when discovery fails during run()", function()
+            bootloader._set_bootloader_registry_for_test({
+                find = function()
+                    return nil, "mock discovery error"
+                end
+            })
+            local stats, err = bootloader.run()
+            bootloader._set_bootloader_registry_for_test(nil)
+            test.is_nil(stats)
+            test.not_nil(err)
+            test.contains(err, "Failed to discover bootloaders: mock discovery error")
+        end)
     end)
 end
 

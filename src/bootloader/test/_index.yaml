@@ -3,9 +3,9 @@ namespace: app
 
 entries:
   - name: envs
-    kind: env.storage.os
+    kind: env.storage.memory
     meta:
-      comment: OS storage for test environment variables
+      comment: In-memory storage for test environment variables
 
   - name: processes
     kind: process.host

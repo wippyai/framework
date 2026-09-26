@@ -6,6 +6,7 @@ local registry = require("registry")
 
 local log = logger:named("boot")
 local registry_provider = registry
+local bootloader_registry_provider = bootloader_registry
 
 type BootloaderMeta = {
     type: string,
@@ -87,6 +88,10 @@ end
 
 local function set_registry_for_test(mock_registry: any?)
     registry_provider = mock_registry or registry
+end
+
+local function set_bootloader_registry_for_test(mock_bootloader_registry: any?)
+    bootloader_registry_provider = mock_bootloader_registry or bootloader_registry
 end
 
 -- Classifies a dependency id as "bootloader" or "service".
@@ -357,18 +362,25 @@ local function run_chain(bootloaders: {BootloaderEntry}, options: any?, satisfie
     return not had_failure, total_stats
 end
 
-local function run(options: any?): (boolean, BootloaderStats | string)
+local function run(options: any?): (BootloaderStats?, string?)
     log:info("Starting application bootloader")
 
-    local bootloaders, err = bootloader_registry.find()
+    local bootloaders, err = bootloader_registry_provider.find()
     if err then
+        local msg = "Failed to discover bootloaders: " .. tostring(err)
         log:error("Failed to discover bootloaders", { error = err })
-        return false, "Failed to discover bootloaders: " .. tostring(err)
+        return nil, msg
     end
 
     if not bootloaders or #bootloaders == 0 then
         log:warn("No bootloaders found")
-        return true, "No bootloaders to execute"
+        return {
+            success = 0,
+            failed = 0,
+            skipped = 0,
+            total = 0,
+            bootloaders = {},
+        }, nil
     end
 
     log:info("Discovered bootloaders", {
@@ -376,7 +388,19 @@ local function run(options: any?): (boolean, BootloaderStats | string)
     })
 
     local ok, stats = run_chain(bootloaders, options, nil)
-    return ok, stats
+    if not ok then
+        local fail_msg = "Bootloader execution failed"
+        if type(stats) == "table" and stats.bootloaders then
+            for _, b in ipairs(stats.bootloaders) do
+                if b.status == "error" then
+                    fail_msg = string.format("Bootloader %s failed: %s", b.id, b.message)
+                    break
+                end
+            end
+        end
+        return nil, fail_msg
+    end
+    return stats, nil
 end
 
 return {
@@ -386,4 +410,5 @@ return {
     _dependency_kind = dependency_kind,
     _check_dependencies = check_dependencies,
     _set_registry_for_test = set_registry_for_test,
+    _set_bootloader_registry_for_test = set_bootloader_registry_for_test,
 }
