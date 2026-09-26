@@ -289,6 +289,21 @@ local function normalize_raw_binding(kind_hint: any, raw_binding: any): Normaliz
     }
 end
 
+local function sorted_keys(value: table): {any}
+    local keys: {any} = {}
+    for key, _ in pairs(value) do
+        keys[#keys + 1] = key
+    end
+    table.sort(keys, function(a, b)
+        local at, bt = type(a), type(b)
+        if at ~= bt then
+            return at < bt
+        end
+        return tostring(a) < tostring(b)
+    end)
+    return keys
+end
+
 local function collect_raw_bindings(out: {NormalizedBinding}, kind_hint: any, raw_bindings: any)
     if type(raw_bindings) ~= "table" then
         return
@@ -310,8 +325,8 @@ local function collect_raw_bindings(out: {NormalizedBinding}, kind_hint: any, ra
         return
     end
 
-    for key, nested in pairs(raw_bindings) do
-        collect_raw_bindings(out, key, nested)
+    for _, key in ipairs(sorted_keys(raw_bindings)) do
+        collect_raw_bindings(out, key, raw_bindings[key])
     end
 end
 
@@ -346,7 +361,8 @@ local function list_from_map_or_array(value: any): {string}
         return out
     end
 
-    for key, enabled in pairs(value) do
+    for _, key in ipairs(sorted_keys(value)) do
+        local enabled = value[key]
         if type(key) == "string" and key ~= "" and enabled ~= false then
             out[#out + 1] = key
         end
@@ -377,7 +393,8 @@ local function behaviors_from_trait(trait_def: any): {any}
         return out
     end
 
-    for id, behavior in pairs(trait_def.behaviors) do
+    for _, id in ipairs(sorted_keys(trait_def.behaviors)) do
+        local behavior = trait_def.behaviors[id]
         if type(behavior) == "table" then
             local normalized = deep_copy(behavior)
             if normalized.id == nil and type(id) == "string" then
@@ -451,6 +468,120 @@ local LIFECYCLE_PHASES = {
 }
 
 local LIFECYCLE_PHASE_ORDER = { "activate", "before_step", "after_step", "deactivate" }
+
+local BEHAVIOR_HANDLES = {
+    activate = true,
+    before_step = true,
+    after_step = true,
+    deactivate = true,
+    checkpoint = true,
+    before_execute = true,
+    after_execute = true,
+}
+
+-- Explicit authoring diagnostics. Compilation remains permissive for existing
+-- registry entries; callers can validate new behavior definitions before use.
+function compiler.validate_behaviors(behaviors: any): {table}
+    local issues: {table} = {}
+    local function issue(path: string, code: string, message: string)
+        issues[#issues + 1] = { path = path, code = code, message = message }
+    end
+
+    if behaviors == nil then
+        return issues
+    end
+    if type(behaviors) ~= "table" then
+        issue("behaviors", "invalid_behaviors", "behaviors must be an array or map")
+        return issues
+    end
+
+    local is_array = behaviors[1] ~= nil
+    local keys = is_array and {} or sorted_keys(behaviors)
+    if is_array then
+        for index, _ in ipairs(behaviors) do
+            keys[#keys + 1] = index
+        end
+    end
+
+    for _, key in ipairs(keys) do
+        local behavior = behaviors[key]
+        local path = "behaviors." .. tostring(key)
+        if type(behavior) ~= "table" then
+            issue(path, "invalid_behavior", "behavior must be an object")
+        else
+            local id = behavior.id or (not is_array and key or nil)
+            if type(id) ~= "string" or id == "" then
+                issue(path .. ".id", "missing_id", "behavior id must be a non-empty string")
+            end
+
+            local handles = behavior.handles
+            local selected: {[string]: boolean} = {}
+            if type(handles) ~= "table" and type(handles) ~= "string" then
+                issue(path .. ".handles", "invalid_handles", "handles must be a phase string, array, or map")
+            else
+                local values = type(handles) == "string" and { handles } or handles
+                if values[1] ~= nil then
+                    for index, phase in ipairs(values) do
+                        if type(phase) ~= "string" or not BEHAVIOR_HANDLES[phase] then
+                            issue(path .. ".handles." .. tostring(index), "unknown_handle", "unsupported behavior handle: " .. tostring(phase))
+                        else
+                            selected[phase] = true
+                        end
+                    end
+                else
+                    for _, phase in ipairs(sorted_keys(values)) do
+                        if type(phase) ~= "string" or not BEHAVIOR_HANDLES[phase] then
+                            issue(path .. ".handles." .. tostring(phase), "unknown_handle", "unsupported behavior handle: " .. tostring(phase))
+                        elseif values[phase] ~= false then
+                            selected[phase] = true
+                        end
+                    end
+                end
+            end
+
+            if behavior.handlers ~= nil and type(behavior.handlers) ~= "table" then
+                issue(path .. ".handlers", "invalid_handlers", "handlers must be an object")
+            end
+            if type(behavior.handlers) == "table" then
+                for _, name in ipairs(sorted_keys(behavior.handlers)) do
+                    if name ~= "lifecycle" and name ~= "checkpoint" and name ~= "tool_wrapper" then
+                        issue(path .. ".handlers." .. tostring(name), "unknown_handler", "unsupported behavior handler: " .. tostring(name))
+                    end
+                end
+            end
+            for _, name in ipairs({ "lifecycle", "checkpoint", "tool_wrapper" }) do
+                local value = type(behavior.handlers) == "table" and behavior.handlers[name] or nil
+                if value ~= nil and (type(value) ~= "string" or value == "") then
+                    issue(path .. ".handlers." .. name, "invalid_handler", "handler must be a non-empty binding ID")
+                end
+            end
+            if behavior.handler ~= nil and (type(behavior.handler) ~= "string" or behavior.handler == "") then
+                issue(path .. ".handler", "invalid_handler", "handler must be a non-empty binding ID")
+            end
+            local lifecycle_selected = false
+            local wrapper_selected = false
+            if next(selected) == nil then
+                issue(path .. ".handles", "empty_handles", "behavior selects no supported handles")
+            end
+            for phase, _ in pairs(selected) do
+                if behavior[phase] ~= false then
+                    if LIFECYCLE_PHASES[phase] then
+                        lifecycle_selected = true
+                    elseif TOOL_WRAPPER_PHASES[phase] then
+                        wrapper_selected = true
+                    end
+                end
+            end
+            if lifecycle_selected and not behavior_handler(behavior, "lifecycle") then
+                issue(path .. ".handlers.lifecycle", "missing_handler", "lifecycle phases require a lifecycle handler")
+            end
+            if wrapper_selected and not behavior_handler(behavior, "tool_wrapper") then
+                issue(path .. ".handlers.tool_wrapper", "missing_handler", "tool phases require a tool_wrapper handler")
+            end
+        end
+    end
+    return issues
+end
 
 local CHECKPOINT_AGENT_OPTION_KEYS = {
     function_id = true,

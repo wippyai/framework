@@ -307,6 +307,60 @@ entries:
       timezone: UTC
 ```
 
+### Trait behaviors and compatibility
+
+Put related lifecycle, checkpoint, and tool behavior under `data.behaviors` in a
+trait registry entry. `handles` selects phases; a handler binding runs only for
+the selected phases. A checkpoint configuration without a checkpoint handler
+still contributes the supported agent checkpoint options.
+
+```yaml
+entries:
+  - name: durable_memory
+    kind: registry.entry
+    meta:
+      type: agent.trait
+      name: Durable Memory
+    data:
+      behaviors:
+        memory:
+          kind: memory
+          handles: [activate, before_step, checkpoint, deactivate]
+          handlers:
+            lifecycle: my_ns:memory_lifecycle
+            checkpoint: my_ns:memory_checkpoint
+          options:
+            namespace: project
+          before_step:
+            recall_limit: 5
+          checkpoint:
+            token_threshold: 12000
+```
+
+Behavior maps compile in key order; arrays compile in declaration order. Within
+one trait, behavior-generated bindings and wrappers precede legacy `bindings`
+and `tool_wrappers` at equal priority. Both forms may be used together and
+remain separate entries. Options for a behavior merge in this order: trait
+options, behavior options, attachment options, then phase options. Legacy
+binding option precedence remains unchanged.
+
+The compiler retains the public `bindings` and `tool_wrappers` plans. To catch
+misspelled phases or missing lifecycle/tool handlers while authoring, call
+`compiler.validate_behaviors(trait.data.behaviors)`; it returns an array of
+`{path, code, message}` diagnostics. Compilation remains permissive for
+existing registry entries.
+
+Hosts can use `wippy.agent:lifecycle_controller` to keep transition state in
+their own table. `activate(state, {id, model, agent, variant}, opts)` dispatches
+`deactivate` for the old agent before `activate` for the new one; `deactivate`
+handles host finish. The host supplies `opts.payload(phase, descriptor)` and
+`opts.dispatch(agent, phase, payload)`, so it retains reason, refs, checkpoint
+scheduling, and tool policy. A successful same-ID/model refresh emits no phases.
+An optional `variant` (for example, the effective trait overlay) is copied and
+compared by value: changing it causes a transition even at the same ID/model.
+Without a variant, existing same-ID/model behavior is preserved. A failed
+deactivation keeps the old state; a failed activation leaves it inactive.
+
 ### Trait Functions
 
 ```lua

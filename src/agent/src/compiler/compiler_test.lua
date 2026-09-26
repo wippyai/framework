@@ -1294,6 +1294,86 @@ local function define_tests()
                 test.eq(compiled_spec.tool_wrappers[2].phases[1], "after_execute")
                 test.is_true(compiled_spec.tool_wrappers[2].options.include_results)
             end)
+
+            it("should keep map-form behavior and legacy binding order deterministic without deduplication", function()
+                trait_definitions.map_trait = {
+                    id = "map_trait",
+                    name = "Map Trait",
+                    prompt = "",
+                    tools = {},
+                    behaviors = {
+                        zeta = {
+                            handles = { "activate" },
+                            handlers = { lifecycle = "test:zeta" },
+                            priority = 100,
+                        },
+                        alpha = {
+                            handles = { "activate" },
+                            handlers = { lifecycle = "test:shared" },
+                            priority = 100,
+                        },
+                    },
+                    bindings = {
+                        z_legacy = {
+                            id = "legacy_last",
+                            kind = "lifecycle",
+                            contract = "wippy.agent:lifecycle",
+                            binding = "test:last",
+                            phases = { "activate" },
+                            priority = 100,
+                        },
+                        a_legacy = {
+                            id = "legacy_first",
+                            kind = "lifecycle",
+                            contract = "wippy.agent:lifecycle",
+                            binding = "test:shared",
+                            phases = { "activate" },
+                            priority = 100,
+                        },
+                        checkpoint = {
+                            id = "legacy_checkpoint",
+                            contract = "wippy.agent:checkpoint",
+                            binding = "test:checkpoint",
+                        },
+                    },
+                }
+
+                local spec = { id = "test:map", prompt = "base", traits = { "map_trait" } }
+                for _ = 1, 3 do
+                    local compiled, err = compiler.compile(spec)
+                    test.is_nil(err)
+                    test.eq(#compiled.bindings.lifecycle, 4)
+                    test.eq(compiled.bindings.lifecycle[1].id, "alpha")
+                    test.eq(compiled.bindings.lifecycle[2].id, "zeta")
+                    test.eq(compiled.bindings.lifecycle[3].id, "legacy_first")
+                    test.eq(compiled.bindings.lifecycle[4].id, "legacy_last")
+                    test.eq(compiled.bindings.lifecycle[1].binding, compiled.bindings.lifecycle[3].binding)
+                    test.eq(compiled.bindings.checkpoint[1].id, "legacy_checkpoint")
+                end
+                trait_definitions.map_trait = nil
+            end)
+
+            it("should return actionable diagnostics for malformed behavior definitions", function()
+                local issues = compiler.validate_behaviors({
+                    broken = {
+                        handles = { "before_stpe", "activate", "before_execute" },
+                    },
+                })
+                test.eq(#issues, 3)
+                test.eq(issues[1].path, "behaviors.broken.handles.1")
+                test.eq(issues[1].code, "unknown_handle")
+                test.eq(issues[2].path, "behaviors.broken.handlers.lifecycle")
+                test.eq(issues[2].code, "missing_handler")
+                test.eq(issues[3].path, "behaviors.broken.handlers.tool_wrapper")
+                test.eq(issues[3].code, "missing_handler")
+
+                test.eq(#compiler.validate_behaviors({
+                    valid = {
+                        handles = { "checkpoint" },
+                        checkpoint = { token_threshold = 12000 },
+                    }
+                }), 0)
+            end)
         end)
 
         describe("Unified Tool Structure Support", function()

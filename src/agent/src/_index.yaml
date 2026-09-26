@@ -167,6 +167,28 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  # wippy.agent:lifecycle_controller
+  - name: lifecycle_controller
+    kind: library.lua
+    meta:
+      type: library
+      comment: Shared activation and deactivation state machine for agent hosts
+    source: file://lifecycle_controller.lua
+
+  - name: lifecycle_controller_test
+    kind: function.lua
+    meta:
+      name: Agent Lifecycle Controller Test
+      type: test
+      comment: Tests agent transition ordering, refresh, and error state
+      group: Agent Framework
+      tags: [agents, lifecycle, tests]
+    source: file://lifecycle_controller_test.lua
+    imports:
+      lifecycle_controller: wippy.agent:lifecycle_controller
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.agent:lifecycle_runtime
   - name: lifecycle_runtime
     kind: library.lua
