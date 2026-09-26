@@ -70,6 +70,92 @@ local function define_tests()
                 test.eq(tool_result_block.toolResult.toolUseId, "call_1")
             end)
 
+            it("should put the history checkpoint after a tool result", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = "Weather?" },
+                    { role = "function_call", function_call = {
+                        id = "call_1", name = "weather", arguments = { city = "NYC" }
+                    } },
+                    { role = "function_result", function_call_id = "call_1", content = "Sunny" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+
+                local tail = result.messages[#result.messages].content :: any
+                test.not_nil(tail[1].toolResult)
+                test.eq(tail[2].cachePoint.type, "default")
+            end)
+
+            it("should preserve the cached tool-result prefix across the next step", function()
+                local history = {
+                    { role = "system", content = "Use tools" },
+                    { role = "cache_marker", marker_id = "system_complete" },
+                    { role = "user", content = "Weather?" },
+                    { role = "function_call", function_call = {
+                        id = "call_1", name = "weather", arguments = { city = "NYC" }
+                    } },
+                    { role = "function_result", function_call_id = "call_1", content = "Sunny" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                }
+                local first: any = mapper.map_messages(history)
+                table.remove(history) -- rebuilt prompts move the sole tail marker
+                history[#history + 1] = { role = "assistant", content = "It is sunny." }
+                history[#history + 1] = { role = "cache_marker", marker_id = "history_tail" }
+                local second: any = mapper.map_messages(history)
+
+                test.eq(second.system[1].text, first.system[1].text)
+                test.eq(second.system[2].cachePoint.type, first.system[2].cachePoint.type)
+                test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
+                test.eq(second.messages[2].content[1].toolUse.toolUseId,
+                    first.messages[2].content[1].toolUse.toolUseId)
+                test.eq(second.messages[2].content[1].toolUse.name,
+                    first.messages[2].content[1].toolUse.name)
+                test.eq(second.messages[3].content[1].toolResult.toolUseId,
+                    first.messages[3].content[1].toolResult.toolUseId)
+                test.eq(second.messages[3].content[1].toolResult.content[1].text,
+                    first.messages[3].content[1].toolResult.content[1].text)
+                test.eq(first.messages[3].content[2].cachePoint.type, "default")
+                test.is_nil(second.messages[3].content[2])
+                test.eq(second.messages[4].content[2].cachePoint.type, "default")
+            end)
+
+            it("should deduplicate checkpoints, cap them at four, and keep the tail", function()
+                local messages = {}
+                for i = 1, 5 do
+                    messages[#messages + 1] = { role = "system", content = "System " .. i }
+                    messages[#messages + 1] = { role = "cache_marker" }
+                end
+                messages[#messages + 1] = { role = "user", content = "History" }
+                messages[#messages + 1] = { role = "cache_marker", marker_id = "history_tail" }
+                messages[#messages + 1] = { role = "cache_marker", marker_id = "history_tail" }
+
+                local result = mapper.map_messages(messages)
+                local count = 0
+                for _, block in ipairs(result.system or {}) do
+                    if block.cachePoint then count = count + 1 end
+                end
+                for _, message in ipairs(result.messages) do
+                    for _, block in ipairs(message.content) do
+                        if block.cachePoint then count = count + 1 end
+                    end
+                end
+                test.eq(count, 4)
+                test.not_nil(((result.messages[1].content :: any)[2] :: any).cachePoint)
+            end)
+
+            it("should place a thinking-only tail checkpoint before reasoning content", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = "Question" },
+                    { role = "assistant", content = {}, metadata = {
+                        thinking_blocks = {{ type = "thinking", thinking = "Reasoning", signature = "sig" }}
+                    } },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+
+                test.not_nil(((result.messages[1].content :: any)[2] :: any).cachePoint)
+                test.not_nil(((result.messages[2].content :: any)[1] :: any).reasoningContent)
+                test.is_nil(result.messages[2].content[2])
+            end)
+
             it("should consolidate consecutive same-role messages", function()
                 local result = mapper.map_messages({
                     { role = "user", content = { { type = "text", text = "First" } } },

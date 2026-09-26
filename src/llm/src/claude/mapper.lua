@@ -64,39 +64,54 @@ local function sanitize_tool_id(original_id)
     return sanitized
 end
 
--- Simple cache marker collapse: keep all system markers + most recent message markers
-local function collapse_cache_positions(system_positions, message_positions)
-    local total_positions = #system_positions + #message_positions
+local function last_cacheable_message_position(messages)
+    for message_index = #messages, 1, -1 do
+        local content = messages[message_index].content or {}
+        for block_index = #content, 1, -1 do
+            local block = content[block_index]
+            if block and (
+                (block.type == "text" and block.text and block.text ~= "")
+                or block.type == "tool_use" or block.type == "tool_result"
+                or block.type == "image" or block.type == "document"
+            ) then
+                return { message = message_index, block = block_index }
+            end
+        end
+    end
+    return nil
+end
 
-    -- No collapse needed
-    if total_positions <= MAX_CACHE_BREAKPOINTS then
-        return system_positions, message_positions
+-- Deduplicate mapped positions and leave room for the newest history boundary.
+local function collapse_cache_positions(system_positions, message_positions)
+    local unique_system = {}
+    local unique_messages = {}
+    local seen_system = {}
+    local seen_messages = {}
+    for _, pos in ipairs(system_positions) do
+        if not seen_system[pos] then
+            unique_system[#unique_system + 1] = pos
+            seen_system[pos] = true
+        end
+    end
+    for _, pos in ipairs(message_positions) do
+        local key = tostring(pos.message) .. ":" .. tostring(pos.block)
+        if not seen_messages[key] then
+            unique_messages[#unique_messages + 1] = pos
+            seen_messages[key] = true
+        end
     end
 
     local final_system = {}
     local final_message = {}
-
-    -- Keep all system markers (usually 1-2)
-    for _, pos in ipairs(system_positions) do
-        table.insert(final_system, pos)
+    local system_limit = MAX_CACHE_BREAKPOINTS - (#unique_messages > 0 and 1 or 0)
+    for i = 1, math.min(#unique_system, system_limit) do
+        final_system[#final_system + 1] = unique_system[i]
     end
 
-    -- Use remaining slots for most recent message markers
     local remaining_slots = MAX_CACHE_BREAKPOINTS - #final_system
-
-    if remaining_slots > 0 and #message_positions > 0 then
-        if #message_positions <= remaining_slots then
-            -- Keep all message markers
-            for _, pos in ipairs(message_positions) do
-                table.insert(final_message, pos)
-            end
-        else
-            -- Keep most recent N markers
-            local start_idx = math.max(1, #message_positions - remaining_slots + 1)
-            for i = start_idx, #message_positions do
-                table.insert(final_message, message_positions[i])
-            end
-        end
+    local start_idx = math.max(1, #unique_messages - remaining_slots + 1)
+    for i = start_idx, #unique_messages do
+        final_message[#final_message + 1] = unique_messages[i]
     end
 
     return final_system, final_message
@@ -300,10 +315,17 @@ function mapper.map_messages(contract_messages)
         elseif msg.role == "cache_marker" then
             if in_system_phase then
                 -- Cache marker applies to system blocks
-                table.insert(system_cache_positions, #system_blocks)
+                for pos = #system_blocks, 1, -1 do
+                    if system_blocks[pos].type == "text" and system_blocks[pos].text ~= "" then
+                        table.insert(system_cache_positions, pos)
+                        break
+                    end
+                end
             else
-                -- Cache marker applies to claude messages
-                table.insert(message_cache_positions, #claude_messages)
+                local position = last_cacheable_message_position(claude_messages)
+                if position then
+                    table.insert(message_cache_positions, position)
+                end
             end
         elseif msg.role == prompt.ROLE.DEVELOPER then
             in_system_phase = false
@@ -328,6 +350,15 @@ function mapper.map_messages(contract_messages)
                     elseif last_msg.content and last_msg.content[1] and
                        last_msg.content[1].type == "tool_result" then
                         should_create_new_message = true
+                    else
+                        -- A later developer note must not alter a prefix already
+                        -- selected for caching by a preceding marker.
+                        for _, position in ipairs(message_cache_positions) do
+                            if position.message == #claude_messages then
+                                should_create_new_message = true
+                                break
+                            end
+                        end
                     end
                 end
 
@@ -470,12 +501,9 @@ function mapper.map_messages(contract_messages)
     -- Apply cache control to claude messages
     if #final_message_positions > 0 and #claude_messages > 0 then
         for _, pos in ipairs(final_message_positions) do
-            if pos > 0 and pos <= #claude_messages then
-                -- Apply cache control to the last content block of the message
-                local msg = claude_messages[pos]
-                if msg.content and #msg.content > 0 then
-                    msg.content[#msg.content].cache_control = { type = "ephemeral" }
-                end
+            local msg: any = (claude_messages :: any)[pos.message]
+            if msg and msg.content and msg.content[pos.block] then
+                msg.content[pos.block].cache_control = { type = "ephemeral" }
             end
         end
     end

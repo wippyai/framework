@@ -417,6 +417,57 @@ local function define_tests()
                 test.eq(openai_messages[1].content, "Simple string result")
             end)
 
+            it("should leave a Claude tool result unchanged when a history marker follows", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "function_result", content = "Tool output", function_call_id = "call_1" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                }, { model = "anthropic/claude-sonnet" })
+
+                test.eq(#messages, 1)
+                test.eq(messages[1].role, "tool")
+                test.eq(messages[1].content, "Tool output")
+            end)
+
+            it("should mark only the final structured text part for Claude", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = {
+                        { type = "text", text = "First" },
+                        { type = "text", text = "Second" }
+                    } },
+                    { role = "cache_marker" }
+                }, { model = "anthropic/claude-sonnet" })
+
+                test.is_nil(messages[1].content[1].cache_control)
+                test.eq(messages[1].content[2].cache_control.type, "ephemeral")
+            end)
+
+            it("should cap Claude markers and send none to other models", function()
+                local contract_messages = {}
+                for i = 1, 6 do
+                    contract_messages[#contract_messages + 1] = { role = "user", content = "Message " .. i }
+                    contract_messages[#contract_messages + 1] = { role = "cache_marker" }
+                end
+
+                local claude_messages = openai_mapper.map_messages(contract_messages,
+                    { model = "anthropic/claude-sonnet" })
+                local count = 0
+                for _, message in ipairs(claude_messages) do
+                    for _, part in ipairs(message.content) do
+                        if part.cache_control then count = count + 1 end
+                    end
+                end
+                test.eq(count, 4)
+                test.not_nil(claude_messages[#claude_messages].content[1].cache_control)
+
+                local other_messages = openai_mapper.map_messages(contract_messages,
+                    { model = "llama-3" })
+                for _, message in ipairs(other_messages) do
+                    for _, part in ipairs(message.content) do
+                        test.is_nil(part.cache_control)
+                    end
+                end
+            end)
+
             it("should convert developer messages to system messages", function()
                 local contract_messages = {
                     {
