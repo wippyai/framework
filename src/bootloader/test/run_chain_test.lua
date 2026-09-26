@@ -66,12 +66,12 @@ local function define_tests()
         end)
 
         it("succeeds running discovered bootloaders", function()
-            local ok, stats = bootloader.run()
-            test.is_true(ok)
+            local stats, err = bootloader.run()
+            test.is_nil(err)
             test.is_table(stats)
         end)
 
-        it("raises an error when a bootloader fails during run()", function()
+        it("returns error when a bootloader fails during run()", function()
             bootloader._set_bootloader_registry_for_test({
                 find = function()
                     return {
@@ -80,22 +80,25 @@ local function define_tests()
                     }
                 end
             })
-            local ok, err = pcall(bootloader.run)
+            local stats, err = bootloader.run()
             bootloader._set_bootloader_registry_for_test(nil)
-            test.is_false(ok)
-            test.contains(tostring(err), "Bootloader app:chain_fails failed: cache warm failed: no such table")
+            test.is_nil(stats)
+            test.not_nil(err)
+            test.contains(err, "app:chain_fails")
+            test.contains(err, "cache warm failed: no such table")
         end)
 
-        it("raises an error when discovery fails during run()", function()
+        it("returns error when discovery fails during run()", function()
             bootloader._set_bootloader_registry_for_test({
                 find = function()
                     return nil, "mock discovery error"
                 end
             })
-            local ok, err = pcall(bootloader.run)
+            local stats, err = bootloader.run()
             bootloader._set_bootloader_registry_for_test(nil)
-            test.is_false(ok)
-            test.contains(tostring(err), "Failed to discover bootloaders: mock discovery error")
+            test.is_nil(stats)
+            test.not_nil(err)
+            test.contains(err, "Failed to discover bootloaders: mock discovery error")
         end)
     end)
 end

@@ -362,18 +362,25 @@ local function run_chain(bootloaders: {BootloaderEntry}, options: any?, satisfie
     return not had_failure, total_stats
 end
 
-local function run(options: any?): (boolean, BootloaderStats | string)
+local function run(options: any?): (BootloaderStats?, string?)
     log:info("Starting application bootloader")
 
     local bootloaders, err = bootloader_registry_provider.find()
     if err then
+        local msg = "Failed to discover bootloaders: " .. tostring(err)
         log:error("Failed to discover bootloaders", { error = err })
-        error("Failed to discover bootloaders: " .. tostring(err))
+        return nil, msg
     end
 
     if not bootloaders or #bootloaders == 0 then
         log:warn("No bootloaders found")
-        return true, "No bootloaders to execute"
+        return {
+            success = 0,
+            failed = 0,
+            skipped = 0,
+            total = 0,
+            bootloaders = {},
+        }, nil
     end
 
     log:info("Discovered bootloaders", {
@@ -391,9 +398,9 @@ local function run(options: any?): (boolean, BootloaderStats | string)
                 end
             end
         end
-        error(fail_msg)
+        return nil, fail_msg
     end
-    return ok, stats
+    return stats, nil
 end
 
 return {
