@@ -6,6 +6,7 @@ local registry = require("registry")
 
 local log = logger:named("boot")
 local registry_provider = registry
+local bootloader_registry_provider = bootloader_registry
 
 type BootloaderMeta = {
     type: string,
@@ -87,6 +88,10 @@ end
 
 local function set_registry_for_test(mock_registry: any?)
     registry_provider = mock_registry or registry
+end
+
+local function set_bootloader_registry_for_test(mock_bootloader_registry: any?)
+    bootloader_registry_provider = mock_bootloader_registry or bootloader_registry
 end
 
 -- Classifies a dependency id as "bootloader" or "service".
@@ -360,10 +365,10 @@ end
 local function run(options: any?): (boolean, BootloaderStats | string)
     log:info("Starting application bootloader")
 
-    local bootloaders, err = bootloader_registry.find()
+    local bootloaders, err = bootloader_registry_provider.find()
     if err then
         log:error("Failed to discover bootloaders", { error = err })
-        return false, "Failed to discover bootloaders: " .. tostring(err)
+        error("Failed to discover bootloaders: " .. tostring(err))
     end
 
     if not bootloaders or #bootloaders == 0 then
@@ -376,6 +381,18 @@ local function run(options: any?): (boolean, BootloaderStats | string)
     })
 
     local ok, stats = run_chain(bootloaders, options, nil)
+    if not ok then
+        local fail_msg = "Bootloader execution failed"
+        if type(stats) == "table" and stats.bootloaders then
+            for _, b in ipairs(stats.bootloaders) do
+                if b.status == "error" then
+                    fail_msg = string.format("Bootloader %s failed: %s", b.id, b.message)
+                    break
+                end
+            end
+        end
+        error(fail_msg)
+    end
     return ok, stats
 end
 
@@ -386,4 +403,5 @@ return {
     _dependency_kind = dependency_kind,
     _check_dependencies = check_dependencies,
     _set_registry_for_test = set_registry_for_test,
+    _set_bootloader_registry_for_test = set_bootloader_registry_for_test,
 }
