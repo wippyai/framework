@@ -97,6 +97,7 @@ local function define_tests()
                     { role = "cache_marker", marker_id = "history_tail" }
                 }
                 local first: any = mapper.map_messages(history)
+                table.remove(history) -- rebuilt prompts move the sole tail marker
                 history[#history + 1] = { role = "assistant", content = "It is sunny." }
                 history[#history + 1] = { role = "cache_marker", marker_id = "history_tail" }
                 local second: any = mapper.map_messages(history)
@@ -112,8 +113,8 @@ local function define_tests()
                     first.messages[3].content[1].toolResult.toolUseId)
                 test.eq(second.messages[3].content[1].toolResult.content[1].text,
                     first.messages[3].content[1].toolResult.content[1].text)
-                test.eq(second.messages[3].content[2].cachePoint.type,
-                    first.messages[3].content[2].cachePoint.type)
+                test.eq(first.messages[3].content[2].cachePoint.type, "default")
+                test.is_nil(second.messages[3].content[2])
                 test.eq(second.messages[4].content[2].cachePoint.type, "default")
             end)
 
