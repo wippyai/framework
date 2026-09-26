@@ -308,6 +308,105 @@ local function define_tests()
                 test.eq(first_system.cache_control.type, "ephemeral")
             end)
 
+            it("should cache a tool-result history tail", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Weather?" }} },
+                    { role = "function_call", function_call = {
+                        id = "call-1", name = "weather", arguments = { city = "NYC" }
+                    } },
+                    { role = "function_result", function_call_id = "call-1", content = "Sunny" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+
+                local tail = result.messages[#result.messages].content[1] :: any
+                test.eq(tail.type, "tool_result")
+                test.eq(tail.cache_control.type, "ephemeral")
+            end)
+
+            it("should preserve the cached tool-result prefix across the next step", function()
+                local history = {
+                    { role = "system", content = "Use tools" },
+                    { role = "cache_marker", marker_id = "system_complete" },
+                    { role = "user", content = "Weather?" },
+                    { role = "function_call", function_call = {
+                        id = "call-1", name = "weather", arguments = { city = "NYC" }
+                    } },
+                    { role = "function_result", function_call_id = "call-1", content = "Sunny" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                }
+                local first: any = mapper.map_messages(history)
+                history[#history + 1] = { role = "assistant", content = "It is sunny." }
+                history[#history + 1] = { role = "cache_marker", marker_id = "history_tail" }
+                local second: any = mapper.map_messages(history)
+
+                test.eq(second.system[1].text, first.system[1].text)
+                test.eq(second.system[1].cache_control.type, first.system[1].cache_control.type)
+                test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
+                test.eq(second.messages[2].content[1].id, first.messages[2].content[1].id)
+                test.eq(second.messages[2].content[1].name, first.messages[2].content[1].name)
+                test.eq(second.messages[3].content[1].tool_use_id,
+                    first.messages[3].content[1].tool_use_id)
+                test.eq(second.messages[3].content[1].content, first.messages[3].content[1].content)
+                test.eq(second.messages[3].content[1].cache_control.type,
+                    first.messages[3].content[1].cache_control.type)
+                test.eq(second.messages[4].content[1].cache_control.type, "ephemeral")
+            end)
+
+            it("should reserve a history slot and cap duplicate or excess markers", function()
+                local messages = {}
+                for i = 1, 5 do
+                    messages[#messages + 1] = { role = "system", content = "System " .. i }
+                    messages[#messages + 1] = { role = "cache_marker" }
+                end
+                messages[#messages + 1] = { role = "user", content = {{ type = "text", text = "History" }} }
+                messages[#messages + 1] = { role = "cache_marker", marker_id = "history_tail" }
+                messages[#messages + 1] = { role = "cache_marker", marker_id = "history_tail" }
+
+                local result = mapper.map_messages(messages)
+                local count = 0
+                for _, block in ipairs(result.system or {}) do
+                    if block.cache_control then count = count + 1 end
+                end
+                for _, message in ipairs(result.messages) do
+                    for _, block in ipairs(message.content) do
+                        if block.cache_control then count = count + 1 end
+                    end
+                end
+                test.eq(count, 4)
+                test.not_nil((result.messages[1].content[1] :: any).cache_control)
+            end)
+
+            it("should not place cache_control on a thinking-only tail", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Question" }} },
+                    { role = "assistant", content = {}, metadata = {
+                        thinking_blocks = {{ type = "thinking", thinking = "Reasoning", signature = "sig" }}
+                    } },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+
+                test.not_nil((result.messages[1].content[1] :: any).cache_control)
+                test.eq(result.messages[2].content[1].type, "thinking")
+                test.is_nil(result.messages[2].content[1].cache_control)
+            end)
+
+            it("should keep the marked prefix stable when a dynamic developer note follows", function()
+                local first = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Question" }} },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+                local second = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Question" }} },
+                    { role = "cache_marker", marker_id = "history_tail" },
+                    { role = "developer", content = "Changing memory recall" }
+                })
+
+                test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
+                test.not_nil((second.messages[1].content[1] :: any).cache_control)
+                test.eq(second.messages[2].role, "user")
+                test.eq(second.messages[2].content[1].text, "Changing memory recall")
+            end)
+
             it("should handle empty messages gracefully", function()
                 local result = mapper.map_messages({})
                 test.not_nil(result.messages)

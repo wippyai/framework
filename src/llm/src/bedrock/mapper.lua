@@ -3,6 +3,7 @@ local prompt = require("prompt")
 local json = require("json")
 
 local mapper = {}
+local MAX_CACHE_CHECKPOINTS = 4
 
 -- Converse stopReason -> contract finish_reason
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
@@ -131,6 +132,49 @@ local function normalize_tool_arguments(raw_arguments)
     return arguments
 end
 
+local function last_cacheable_message_position(messages)
+    for message_index = #messages, 1, -1 do
+        local content: any = messages[message_index].content or {}
+        for block_index = #content, 1, -1 do
+            local block = content[block_index]
+            if block and ((block.text and block.text ~= "") or block.toolUse or block.toolResult
+                or block.image or block.document) then
+                return { message = message_index, block = block_index }
+            end
+        end
+    end
+    return nil
+end
+
+local function select_cache_positions(system_positions, message_positions)
+    local unique_system, unique_messages = {}, {}
+    local seen_system, seen_messages = {}, {}
+    for _, pos in ipairs(system_positions) do
+        if not seen_system[pos] then
+            unique_system[#unique_system + 1] = pos
+            seen_system[pos] = true
+        end
+    end
+    for _, pos in ipairs(message_positions) do
+        local key = tostring(pos.message) .. ":" .. tostring(pos.block)
+        if not seen_messages[key] then
+            unique_messages[#unique_messages + 1] = pos
+            seen_messages[key] = true
+        end
+    end
+
+    local final_system, final_messages = {}, {}
+    local system_limit = MAX_CACHE_CHECKPOINTS - (#unique_messages > 0 and 1 or 0)
+    for i = 1, math.min(#unique_system, system_limit) do
+        final_system[#final_system + 1] = unique_system[i]
+    end
+    local remaining = MAX_CACHE_CHECKPOINTS - #final_system
+    for i = math.max(1, #unique_messages - remaining + 1), #unique_messages do
+        final_messages[#final_messages + 1] = unique_messages[i]
+    end
+    return final_system, final_messages
+end
+
 -- Map contract messages to Converse format
 function mapper.map_messages(contract_messages)
     if not contract_messages or #contract_messages == 0 then
@@ -139,6 +183,8 @@ function mapper.map_messages(contract_messages)
 
     local converse_messages = {}
     local system_blocks = {}
+    local system_cache_positions = {}
+    local message_cache_positions = {}
 
     for _, msg in ipairs(contract_messages) do
         if msg.role == prompt.ROLE.SYSTEM then
@@ -152,13 +198,17 @@ function mapper.map_messages(contract_messages)
                 end
             end
         elseif msg.role == "cache_marker" then
-            -- Apply cachePoint to the last system block or last message content
-            if #converse_messages == 0 and #system_blocks > 0 then
-                table.insert(system_blocks, { cachePoint = { type = "default" } })
+            if #converse_messages == 0 then
+                for pos = #system_blocks, 1, -1 do
+                    if system_blocks[pos].text and system_blocks[pos].text ~= "" then
+                        system_cache_positions[#system_cache_positions + 1] = pos
+                        break
+                    end
+                end
             elseif #converse_messages > 0 then
-                local last_msg = converse_messages[#converse_messages]
-                if last_msg.content and #last_msg.content > 0 then
-                    table.insert(last_msg.content, { cachePoint = { type = "default" } })
+                local position = last_cacheable_message_position(converse_messages)
+                if position then
+                    message_cache_positions[#message_cache_positions + 1] = position
                 end
             end
         elseif msg.role == prompt.ROLE.DEVELOPER then
@@ -300,6 +350,27 @@ function mapper.map_messages(contract_messages)
                     role = "user",
                     content = content_blocks
                 })
+            end
+        end
+    end
+
+    local final_system_positions, final_message_positions = select_cache_positions(
+        system_cache_positions, message_cache_positions
+    )
+    -- Insert from the end so earlier block indices remain valid.
+    for i = #final_system_positions, 1, -1 do
+        local position = tonumber(final_system_positions[i])
+        if position then
+            table.insert(system_blocks, position + 1, { cachePoint = { type = "default" } })
+        end
+    end
+    for i = #final_message_positions, 1, -1 do
+        local pos: any = final_message_positions[i]
+        if pos then
+            local message = (converse_messages :: any)[pos.message]
+            local block_index = tonumber(pos.block)
+            if message and block_index then
+                table.insert(message.content, block_index + 1, { cachePoint = { type = "default" } })
             end
         end
     end
