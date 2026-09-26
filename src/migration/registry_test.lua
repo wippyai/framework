@@ -254,6 +254,26 @@ local function define_tests()
         end)
     end)
 
+    test.describe("find by tags", function()
+        test.before_each(save_registry)
+        test.after_each(restore_registry)
+
+        test.it("returns migrations carrying any requested tag", function()
+            migration_registry._registry = mock_registry({
+                { id = "m:core", kind = "function.lua", meta = { type = "migration", tags = { "core" } } },
+                { id = "m:auth", kind = "function.lua", meta = { type = "migration", tags = { "auth", "core" } } },
+                { id = "m:data", kind = "function.lua", meta = { type = "migration", tags = { "data" } } },
+                { id = "m:untagged", kind = "function.lua", meta = { type = "migration" } },
+            })
+
+            local results, err = migration_registry.find({ tags = { "auth", "data" } })
+            test.is_nil(err)
+            test.eq(#results, 2)
+            test.eq(results[1].id, "m:auth")
+            test.eq(results[2].id, "m:data")
+        end)
+    end)
+
     test.describe("get_tags", function()
         test.before_each(save_registry)
         test.after_each(restore_registry)

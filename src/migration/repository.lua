@@ -4,6 +4,7 @@ type MigrationRecord = {
     id: string,
     applied_at: any,
     description: string?,
+    content_hash: string?,
 }
 
 local migrations = {}
@@ -23,7 +24,8 @@ migrations.schemas = {
         CREATE TABLE IF NOT EXISTS _migrations (
             id VARCHAR(512) PRIMARY KEY,
             applied_at TIMESTAMP NOT NULL DEFAULT NOW(),
-            description TEXT
+            description TEXT,
+            content_hash VARCHAR(64)
         )
     ]],
 
@@ -31,7 +33,8 @@ migrations.schemas = {
         CREATE TABLE IF NOT EXISTS _migrations (
             id VARCHAR(512) PRIMARY KEY,
             applied_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-            description TEXT
+            description TEXT,
+            content_hash VARCHAR(64)
         )
     ]],
 
@@ -39,7 +42,8 @@ migrations.schemas = {
         CREATE TABLE IF NOT EXISTS _migrations (
             id VARCHAR(512) PRIMARY KEY,
             applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            description TEXT
+            description TEXT,
+            content_hash VARCHAR(64)
         )
     ]]
 }
@@ -49,7 +53,7 @@ migrations.table_exists_queries = {
     [sql.type.POSTGRES] = [[
         SELECT EXISTS (
             SELECT FROM pg_tables
-            WHERE schemaname = 'public'
+            WHERE schemaname = current_schema()
             AND tablename = '_migrations'
         )
     ]],
@@ -103,11 +107,6 @@ function migrations.init_tracking_table(db: any): (any, string?)
         return nil, err
     end
 
-    -- Table already exists, no need to create it
-    if exists then
-        return true, nil
-    end
-
     local db_type, err = db:type()
     if err then
         return nil, "Failed to determine database type: " .. tostring(err)
@@ -117,11 +116,34 @@ function migrations.init_tracking_table(db: any): (any, string?)
         return nil, "Unsupported database type: " .. db_type
     end
 
-    return db:execute(schema)
+    if not exists then
+        local created, create_err = db:execute(schema)
+        if not created then return nil, create_err end
+    end
+
+    -- Existing installations have a ledger without this column. Add it in
+    -- place; historical rows remain NULL because their executed bytes cannot
+    -- be reconstructed from the current registry.
+    if db_type == sql.type.POSTGRES then
+        return db:execute("ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)")
+    end
+
+    local columns, columns_err
+    if db_type == sql.type.SQLITE then
+        columns, columns_err = db:query("PRAGMA table_info(_migrations)")
+    else
+        columns, columns_err = db:query([[SELECT column_name AS name FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = '_migrations']])
+    end
+    if columns_err then return nil, columns_err end
+    for _, column in ipairs(columns or {}) do
+        if column.name == "content_hash" then return true, nil end
+    end
+    return db:execute("ALTER TABLE _migrations ADD COLUMN content_hash VARCHAR(64)")
 end
 
 -- Record a migration execution
-function migrations.record_migration(db: any, id: string, description: string?): (any, string?)
+function migrations.record_migration(db: any, id: string, description: string?, content_hash: string?): (any, string?)
     if not id or id == "" then
         return nil, "Migration ID is required"
     end
@@ -131,11 +153,11 @@ function migrations.record_migration(db: any, id: string, description: string?):
     end
 
     local query = [[
-        INSERT INTO _migrations (id, description)
-        VALUES ($1, $2)
+        INSERT INTO _migrations (id, description, content_hash)
+        VALUES ($1, $2, $3)
     ]]
     -- Create an array-like table for parameters
-    local params = { id, description or "" }
+    local params = { id, description or "", content_hash or sql.NULL }
 
     return db:execute(query, params)
 end
@@ -159,7 +181,7 @@ end
 function migrations.get_migrations(db: any, filter: any?): (any, string?)
     filter = filter or {}
 
-    local query = "SELECT id, applied_at, description FROM _migrations"
+    local query = "SELECT id, applied_at, description, content_hash FROM _migrations"
     local params = {}
     local where_clauses = {}
 
@@ -180,6 +202,16 @@ function migrations.get_migrations(db: any, filter: any?): (any, string?)
     end
 
     return db:query(query, params)
+end
+
+function migrations.get_migration(db: any, id: string): (MigrationRecord?, string?)
+    if not id or id == "" then return nil, "Migration ID is required" end
+    local rows, err = db:query(
+        "SELECT id, applied_at, description, content_hash FROM _migrations WHERE id = $1",
+        { id })
+    if err then return nil, err end
+    if rows and rows[1] then return rows[1] :: MigrationRecord, nil end
+    return nil, nil
 end
 
 -- Check if a specific migration has been applied

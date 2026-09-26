@@ -62,6 +62,19 @@ entries:
     imports:
       base_registry: :registry
 
+  - name: candidate
+    kind: library.lua
+    meta:
+      comment: Staged candidate migration runner
+    source: file://candidate.lua
+    modules:
+      - sql
+      - hash
+      - eval_runner
+    imports:
+      repository: wippy.migration:repository
+      migration_registry: wippy.migration:registry
+
   # wippy.migration:repository
   - name: repository
     kind: library.lua
@@ -71,6 +84,28 @@ entries:
     modules:
       - sql
 
+  # wippy.migration:runner_util
+  - name: runner_util
+    kind: library.lua
+    meta:
+      comment: Shared migration runner result helpers
+    source: file://runner_util.lua
+
+  # wippy.migration:runner_apply
+  - name: runner_apply
+    kind: library.lua
+    meta:
+      comment: Migration execution (run, run_next, rollback)
+    source: file://runner_apply.lua
+    modules:
+      - sql
+      - time
+      - funcs
+    imports:
+      migration_registry: wippy.migration:registry
+      repository: wippy.migration:repository
+      runner_util: wippy.migration:runner_util
+
   # wippy.migration:runner
   - name: runner
     kind: library.lua
@@ -79,11 +114,12 @@ entries:
     source: file://runner.lua
     modules:
       - sql
-      - time
-      - funcs
     imports:
       migration_registry: wippy.migration:registry
       repository: wippy.migration:repository
+      candidate: wippy.migration:candidate
+      runner_util: wippy.migration:runner_util
+      runner_apply: wippy.migration:runner_apply
 
   # wippy.migration:migration_bootloader
   - name: migration_bootloader
@@ -128,4 +164,20 @@ entries:
     method: run
     imports:
       migration_registry: wippy.migration:registry
+      test: wippy.test:test
+
+  - name: runner_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-candidate
+    source: file://runner_test.lua
+    method: run
+    modules:
+      - sql
+    imports:
+      candidate: wippy.migration:candidate
+      migration_registry: wippy.migration:registry
+      repository: wippy.migration:repository
+      runner: wippy.migration:runner
       test: wippy.test:test
