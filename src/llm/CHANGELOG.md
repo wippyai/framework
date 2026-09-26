@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/wippyai/framework/compare/llm-v0.5.1...llm-v0.5.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **llm:** preserve rolling history cache boundaries across providers ([#143](https://github.com/wippyai/framework/issues/143)) ([945264c](https://github.com/wippyai/framework/commit/945264c22c19101651c357352f61ae1381a6bf5f))
+
 ## [0.5.1](https://github.com/wippyai/framework/compare/llm-v0.5.0...llm-v0.5.1) (2026-09-25)
 
 
