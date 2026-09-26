@@ -72,7 +72,7 @@ entries:
     host: app:processes
     lifecycle:
       auto_start: true
-      boot_gate: true
+      startup: complete
       restart:
         initial_delay: 1s
       security:
