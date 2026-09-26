@@ -165,6 +165,32 @@ local function define_tests()
         end)
     end)
 
+    test.describe("tracking table schema", function()
+        test.it("looks for the tracking table in the current schema on PostgreSQL", function()
+            local db, err = sql.get("app:db")
+            test.is_nil(err)
+            if db:type() ~= sql.type.POSTGRES then
+                db:release()
+                return
+            end
+            local tx, begin_err = db:begin()
+            test.is_nil(begin_err)
+            local _, schema_err = tx:execute("CREATE SCHEMA migration_schema_probe")
+            test.is_nil(schema_err)
+            local _, path_err = tx:execute("SET LOCAL search_path TO migration_schema_probe")
+            test.is_nil(path_err)
+            local handle = {
+                type = function() return tx:db_type() end,
+                query = function(_, query, params) return tx:query(query, params) end,
+            }
+            local exists, exists_err = repository.table_exists(handle)
+            tx:rollback()
+            db:release()
+            test.is_nil(exists_err)
+            test.is_false(exists)
+        end)
+    end)
+
     test.describe("registry tag filter", function()
         test.it("finds registry migrations by tag", function()
             local found, err = migration_registry.find({ target_db = "app:db", tags = { "ledger-hash" } })

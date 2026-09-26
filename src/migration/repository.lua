@@ -53,7 +53,7 @@ migrations.table_exists_queries = {
     [sql.type.POSTGRES] = [[
         SELECT EXISTS (
             SELECT FROM pg_tables
-            WHERE schemaname = 'public'
+            WHERE schemaname = current_schema()
             AND tablename = '_migrations'
         )
     ]],
