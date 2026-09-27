@@ -6,6 +6,7 @@ local time = require("time")
 local channel = require("channel")
 local discovery = require("discovery")
 local display = require("display")
+local verdict = require("verdict")
 
 type CaseStats = {
     passed: number,
@@ -107,6 +108,7 @@ local function run_tests(): number
     -- Shared state between message processor and main loop
     local case_stats: {[string]: CaseStats} = {}
     local all_failures: {Failure} = {}
+    local declared_cases: {[string]: number} = {}
 
     -- Background message processor: renders case events as they arrive
     coroutine.spawn(function()
@@ -129,7 +131,14 @@ local function run_tests(): number
                 case_stats[ref_id] = { passed = 0, failed = 0, skipped = 0 }
             end
 
-            if msg_type == "test:case:pass" then
+            if msg_type == "test:plan" then
+                local count = 0
+                for _, planned_suite in ipairs(data.suites or {}) do
+                    count = count + #(planned_suite.tests or {})
+                end
+                if ref_id ~= "" then declared_cases[ref_id] = count end
+
+            elseif msg_type == "test:case:pass" then
                 if ref_id ~= "" then
                     local cs = case_stats[ref_id]
                     if cs then cs.passed = cs.passed + 1 end
@@ -207,23 +216,28 @@ local function run_tests(): number
                     record_failure(all_failures, case_stats, entry_id, suite.name, test_name, error_msg)
                     display.case_fail(suite.name, test_name, error_msg, 0)
                 else
-                    -- Function completed, drain any pending test:complete event
-                    wait_for(test_done_ch, "1s")
+                    -- Function completed; a missing completion is itself a failure.
+                    local completion: any = wait_for(test_done_ch, "1s")
 
                     local cs = case_stats[entry_id]
                     local case_count = cs and ((cs.passed or 0) + (cs.failed or 0) + (cs.skipped or 0)) or 0
-                    local has_case_events = case_count > 0
+                    local payload: any, result_err: any = cmd:result()
+                    local value: any = payload and payload:data()
+                    local problem = verdict.check({
+                        declared = declared_cases[entry_id],
+                        observed = case_count,
+                        completed = completion and completion.data or nil,
+                        result_error = result_err,
+                        returned_false = value == false or (declared_cases[entry_id] == nil
+                            and type(value) == "table" and value.status == "error"),
+                    })
 
-                    if not has_case_events then
-                        -- Simple test without BDD case events, check function result
-                        local payload: any, result_err: any = cmd:result()
-                        if result_err then
-                            record_failure(all_failures, case_stats, entry_id, suite.name, test_name, tostring(result_err))
-                            display.case_fail(suite.name, test_name, tostring(result_err), 0)
-                        elseif payload and payload:data() == false then
-                            record_failure(all_failures, case_stats, entry_id, suite.name, test_name, "test returned false")
-                            display.case_fail(suite.name, test_name, "test returned false", 0)
-                        else
+                    if problem then
+                        record_failure(all_failures, case_stats, entry_id, suite.name, test_name, problem.message)
+                        display.case_fail(suite.name, test_name, problem.message, 0)
+                    elseif declared_cases[entry_id] == nil then
+                        -- A simple test has no BDD plan or per-case events.
+                        if case_count == 0 then
                             local pcs = case_stats[entry_id]
                             if not pcs then
                                 pcs = { passed = 0, failed = 0, skipped = 0 }

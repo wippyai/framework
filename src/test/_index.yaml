@@ -72,6 +72,13 @@ entries:
       effect: allow
 
   # wippy.test:runner
+  - name: runner_verdict
+    kind: library.lua
+    meta:
+      comment: Fail closed when a test process drops declared BDD cases or aborts a hook.
+    source: file://runner_verdict.lua
+
+  # wippy.test:runner
   - name: runner
     kind: process.lua
     meta:
@@ -97,6 +104,7 @@ entries:
       registry: wippy.test:registry
       discovery: wippy.test:discovery
       display: wippy.test:display
+      verdict: wippy.test:runner_verdict
 
   # wippy.test:self_test
   - name: self_test
