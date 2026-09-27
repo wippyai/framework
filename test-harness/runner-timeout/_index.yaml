@@ -1,0 +1,69 @@
+version: "1.0"
+namespace: app
+entries:
+  - name: terminal_dep
+    kind: ns.dependency
+    component: wippy/terminal
+    version: "*"
+  - name: processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
+  - name: timeout_late
+    kind: function.lua
+    meta:
+      type: test
+      suite: timeout_late
+      order: 1
+      timeout: 200ms
+    source: file://timeout_fixtures.lua
+    method: late
+    modules:
+      - time
+    imports:
+      test: wippy.test:test
+  - name: timeout_late_next
+    kind: function.lua
+    meta:
+      type: test
+      suite: timeout_late
+      order: 2
+      timeout: 3s
+    source: file://timeout_fixtures.lua
+    method: next_late
+    modules:
+      - time
+    imports:
+      test: wippy.test:test
+  - name: timeout_silent
+    kind: function.lua
+    meta:
+      type: test
+      suite: timeout_silent
+      order: 1
+      timeout: 200ms
+    source: file://timeout_fixtures.lua
+    method: silent
+    modules:
+      - time
+    imports:
+      test: wippy.test:test
+  - name: timeout_silent_next
+    kind: function.lua
+    meta:
+      type: test
+      suite: timeout_silent
+      order: 2
+      timeout: 3s
+    source: file://timeout_fixtures.lua
+    method: next_silent
+    modules:
+      - time
+    imports:
+      test: wippy.test:test
+  - name: late_sender
+    kind: process.lua
+    source: file://late_sender.lua
+    method: run
+    modules:
+      - time

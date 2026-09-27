@@ -7,6 +7,7 @@ type RunState = {
     result_error: any?,
     returned_false: boolean?,
     timed_out: boolean?,
+    lifecycle_error: string?,
 }
 type RunnerError = {kind: string, message: string}
 
@@ -25,14 +26,21 @@ local function is_event_applicable(event_ref_id: string?, active_entry_id: strin
 end
 
 local function check(state: RunState): RunnerError?
+    if state.lifecycle_error then
+        return fail(state.lifecycle_error)
+    end
+    if state.completed and state.entry_id and state.completed.ref_id ~= state.entry_id then
+        return fail("test completion attributed to " .. tostring(state.completed.ref_id or "<missing>")
+            .. ", expected " .. tostring(state.entry_id))
+    end
+    if state.timed_out then
+        return fail("test timed out")
+    end
     if state.result_error then
         return fail("test process failed: " .. tostring(state.result_error))
     end
     if state.returned_false then
         return fail("test returned false")
-    end
-    if state.timed_out then
-        return fail("test timed out")
     end
     if state.declared ~= nil then
         if state.observed ~= state.declared then
@@ -43,10 +51,6 @@ local function check(state: RunState): RunnerError?
             return fail("test process did not report completion")
         end
         local complete = state.completed
-        if state.entry_id and complete.ref_id and complete.ref_id ~= state.entry_id then
-            return fail("test completion attributed to " .. tostring(complete.ref_id)
-                .. ", expected " .. tostring(state.entry_id))
-        end
         local total = tonumber(complete.total) or 0
         local passed = tonumber(complete.passed) or 0
         local failed = tonumber(complete.failed) or 0

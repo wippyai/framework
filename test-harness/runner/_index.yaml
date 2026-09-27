@@ -5,10 +5,6 @@ entries:
     kind: ns.dependency
     component: wippy/terminal
     version: "*"
-  - name: processes
-    kind: process.host
-    lifecycle:
-      auto_start: true
   - name: runner_verdict_test
     kind: function.lua
     meta:
@@ -21,10 +17,3 @@ entries:
     imports:
       test: wippy.test:test
       verdict: wippy.test:runner_verdict
-  - name: slow_worker
-    kind: process.lua
-    source: file://slow_worker.lua
-    method: run
-    modules:
-      - time
-
