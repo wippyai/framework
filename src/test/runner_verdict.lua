@@ -1,15 +1,27 @@
 -- Validate the protocol independently of the case events already rendered by the runner.
 type RunState = {
+    entry_id: string?,
     declared: number?,
     observed: number,
     completed: any?,
     result_error: any?,
     returned_false: boolean?,
+    timed_out: boolean?,
 }
 type RunnerError = {kind: string, message: string}
 
 local function fail(message: string): RunnerError
     return {kind = "runner_failure", message = message}
+end
+
+local function is_event_applicable(event_ref_id: string?, active_entry_id: string?, active_status: string?): boolean
+    if not event_ref_id or event_ref_id == "" then
+        return false
+    end
+    if active_status ~= "running" then
+        return false
+    end
+    return event_ref_id == active_entry_id
 end
 
 local function check(state: RunState): RunnerError?
@@ -18,6 +30,9 @@ local function check(state: RunState): RunnerError?
     end
     if state.returned_false then
         return fail("test returned false")
+    end
+    if state.timed_out then
+        return fail("test timed out")
     end
     if state.declared ~= nil then
         if state.observed ~= state.declared then
@@ -28,12 +43,23 @@ local function check(state: RunState): RunnerError?
             return fail("test process did not report completion")
         end
         local complete = state.completed
-        if complete.total ~= state.declared
-            or complete.passed + complete.failed + complete.skipped ~= state.observed then
+        if state.entry_id and complete.ref_id and complete.ref_id ~= state.entry_id then
+            return fail("test completion attributed to " .. tostring(complete.ref_id)
+                .. ", expected " .. tostring(state.entry_id))
+        end
+        local total = tonumber(complete.total) or 0
+        local passed = tonumber(complete.passed) or 0
+        local failed = tonumber(complete.failed) or 0
+        local skipped = tonumber(complete.skipped) or 0
+        if total ~= state.declared
+            or passed + failed + skipped ~= state.observed then
             return fail("test completion counts disagree with declared cases")
         end
     end
     return nil
 end
 
-return {check = check}
+return {
+    check = check,
+    is_event_applicable = is_event_applicable,
+}

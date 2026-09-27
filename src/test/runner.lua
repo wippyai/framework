@@ -98,17 +98,21 @@ local function run_tests(): number
     display.info("")
 
     -- Subscribe to test case events before launching tests
-    local inbox = process.listen("test:update")
+    local inbox = process.listen("test:update", { message = true })
 
     -- Coordination channels
     local done_ch = channel.new()
-    local test_done_ch = channel.new(1)
     local processor_done = channel.new(1)
 
     -- Shared state between message processor and main loop
     local case_stats: {[string]: CaseStats} = {}
     local all_failures: {Failure} = {}
     local declared_cases: {[string]: number} = {}
+    local entry_pids: {[string]: string} = {}
+    local monitored_pids: {[string]: boolean} = {}
+    local entry_status: {[string]: string} = {}
+    local completion_channels: {[string]: any} = {}
+    local current_running_entry_id: string? = nil
 
     -- Background message processor: renders case events as they arrive
     coroutine.spawn(function()
@@ -122,44 +126,63 @@ local function run_tests(): number
                 break
             end
 
-            local msg: any = result.value
-            local msg_type = tostring(msg.type)
+            local raw = result.value
+            local sender_pid: string? = nil
+            local event_data: any = nil
+
+            if raw then
+                sender_pid = raw:from()
+                local pl = raw:payload()
+                if pl then
+                    event_data = pl:data()
+                end
+            end
+
+            local msg = (type(event_data) == "table" and event_data or {}) :: any
+            local msg_type = tostring(msg.type or "")
             local data: any = msg.data or {}
             local ref_id = tostring(data.ref_id or "")
 
-            if ref_id ~= "" and not case_stats[ref_id] then
-                case_stats[ref_id] = { passed = 0, failed = 0, skipped = 0 }
+            if ref_id ~= "" and sender_pid and sender_pid ~= "" then
+                if not entry_pids[ref_id] then
+                    entry_pids[ref_id] = sender_pid
+                    pcall(process.monitor, sender_pid)
+                    monitored_pids[sender_pid] = true
+                end
             end
 
-            if msg_type == "test:plan" then
-                local count = 0
-                for _, planned_suite in ipairs(data.suites or {}) do
-                    count = count + #(planned_suite.tests or {})
+            -- Attribute events by entry identity; ignore late events from completed/timed-out entries
+            local status = entry_status[ref_id]
+            if verdict.is_event_applicable(ref_id, current_running_entry_id, status) then
+                if not case_stats[ref_id] then
+                    case_stats[ref_id] = { passed = 0, failed = 0, skipped = 0 }
                 end
-                if ref_id ~= "" then declared_cases[ref_id] = count end
 
-            elseif msg_type == "test:case:pass" then
-                if ref_id ~= "" then
+                if msg_type == "test:plan" then
+                    local count = 0
+                    for _, planned_suite in ipairs(data.suites or {}) do
+                        count = count + #(planned_suite.tests or {})
+                    end
+                    declared_cases[ref_id] = count
+
+                elseif msg_type == "test:case:pass" then
                     local cs = case_stats[ref_id]
                     if cs then cs.passed = cs.passed + 1 end
-                end
-                display.case_pass(tostring(data.suite or ""), tostring(data.test or ""), tonumber(data.duration) or 0)
+                    display.case_pass(tostring(data.suite or ""), tostring(data.test or ""), tonumber(data.duration) or 0)
 
-            elseif msg_type == "test:case:fail" then
-                if ref_id ~= "" then
+                elseif msg_type == "test:case:fail" then
                     record_failure(all_failures, case_stats, ref_id, tostring(data.suite or ""), tostring(data.test or ""), tostring(data.error or "unknown error"))
-                end
-                display.case_fail(tostring(data.suite or ""), tostring(data.test or ""), tostring(data.error or ""), tonumber(data.duration) or 0)
+                    display.case_fail(tostring(data.suite or ""), tostring(data.test or ""), tostring(data.error or ""), tonumber(data.duration) or 0)
 
-            elseif msg_type == "test:case:skip" then
-                if ref_id ~= "" then
+                elseif msg_type == "test:case:skip" then
                     local cs = case_stats[ref_id]
                     if cs then cs.skipped = cs.skipped + 1 end
-                end
-                display.case_skip(tostring(data.suite or ""), tostring(data.test or ""))
+                    display.case_skip(tostring(data.suite or ""), tostring(data.test or ""))
 
-            elseif msg_type == "test:complete" then
-                test_done_ch:send(msg)
+                elseif msg_type == "test:complete" then
+                    local ch = completion_channels[ref_id]
+                    if ch then ch:send(msg) end
+                end
             end
         end
 
@@ -197,6 +220,10 @@ local function run_tests(): number
             local entry_meta: any = (entry :: any).meta or {}
             local test_timeout = entry_meta.timeout or "30s"
 
+            entry_status[entry_id] = "running"
+            current_running_entry_id = entry_id
+            completion_channels[entry_id] = channel.new(1)
+
             local cmd: any, cmd_err: any = executor:async(entry_id, {
                 pid = process.pid(),
                 topic = "test:update",
@@ -204,26 +231,63 @@ local function run_tests(): number
             })
 
             if cmd_err then
+                entry_status[entry_id] = "completed"
+                current_running_entry_id = nil
                 record_failure(all_failures, case_stats, entry_id, suite.name, test_name, tostring(cmd_err))
                 display.case_fail(suite.name, test_name, tostring(cmd_err), 0)
             else
                 local response = wait_for(cmd:response(), test_timeout)
 
                 if not response then
+                    -- Timed out! Mark status first so any arriving events are immediately dropped
+                    entry_status[entry_id] = "timed_out"
+                    current_running_entry_id = nil
+
+                    -- Cancel the async task execution
+                    pcall(function() cmd:cancel() end)
+
+                    -- Terminate the entry's process and clean up any links/monitors
+                    local proc_pid = entry_pids[entry_id]
+                    if proc_pid then
+                        if monitored_pids[proc_pid] then
+                            pcall(process.unmonitor, proc_pid)
+                            monitored_pids[proc_pid] = nil
+                        end
+                        pcall(process.unlink, proc_pid)
+                        pcall(process.terminate, proc_pid)
+                    end
+
                     local _, result_err = cmd:result()
-                    local error_msg = result_err and tostring(result_err) or "test timed out"
+                    local problem = verdict.check({
+                        entry_id = entry_id,
+                        declared = declared_cases[entry_id],
+                        observed = case_stats[entry_id] and ((case_stats[entry_id].passed or 0) + (case_stats[entry_id].failed or 0) + (case_stats[entry_id].skipped or 0)) or 0,
+                        completed = nil,
+                        result_error = result_err,
+                        timed_out = true,
+                    })
+                    local error_msg = problem and problem.message or "test timed out"
 
                     record_failure(all_failures, case_stats, entry_id, suite.name, test_name, error_msg)
                     display.case_fail(suite.name, test_name, error_msg, 0)
                 else
                     -- Function completed; a missing completion is itself a failure.
-                    local completion: any = wait_for(test_done_ch, "1s")
+                    local completion: any = wait_for(completion_channels[entry_id], "1s")
+                    entry_status[entry_id] = "completed"
+                    current_running_entry_id = nil
+
+                    local proc_pid = entry_pids[entry_id]
+                    if proc_pid and monitored_pids[proc_pid] then
+                        pcall(process.unmonitor, proc_pid)
+                        monitored_pids[proc_pid] = nil
+                    end
 
                     local cs = case_stats[entry_id]
                     local case_count = cs and ((cs.passed or 0) + (cs.failed or 0) + (cs.skipped or 0)) or 0
                     local payload: any, result_err: any = cmd:result()
                     local value: any = payload and payload:data()
                     local problem = verdict.check({
+                        entry_id = entry_id,
                         declared = declared_cases[entry_id],
                         observed = case_count,
                         completed = completion and completion.data or nil,
