@@ -56,7 +56,6 @@ local function define_tests()
         it("rejects resolved caller accepts and ignores caller profiles", function()
             local facts, err = route.accepts({ id = "route-id" }, { accepts = {} }, "resolved")
             test.is_nil(facts)
-            test.contains(err, "invalid_request")
             test.contains(err, "route-id")
             test.contains(err, "accepts")
             equal(route.accepts({}, { model_profile = { thinking_mode = "adaptive_only" } }, "resolved"), {})
@@ -72,7 +71,6 @@ local function define_tests()
                         else ref[key] = value end
                         local facts, err = route.accepts(ref, options, mode)
                         test.is_nil(facts)
-                        test.contains(err, "invalid_request")
                         test.contains(err, "bad-route")
                         test.contains(err, key)
                         test.contains(err, allowed)
@@ -84,13 +82,81 @@ local function define_tests()
             for _, value in ipairs({ false, "adaptive", { unexpected = true } }) do
                 local facts, err = route.accepts({ id = "direct" }, { accepts = value }, "direct")
                 test.is_nil(facts)
-                test.contains(err, "invalid_request")
+                test.contains(err, "accepts")
             end
         end)
         it("cleans fact options without mutating the caller", function()
             local options = { reasoning_model_request = true, model_profile = {}, accepts = {}, temperature = 0.4 }
             equal(route.clean_options(options), { temperature = 0.4 })
             equal(options.reasoning_model_request, true)
+        end)
+    end)
+
+    describe("Route capability helpers", function()
+        local capability = {
+            name = "Test",
+            defaults = { thinking = "budget", sampling = true, forced_tool_choice = true, structured_output = "tool" },
+            supported = { thinking = { adaptive = true, none = true }, structured_output = { native = true } }
+        }
+
+        it("falls back to the driver default when a fact is undeclared", function()
+            test.eq(route.fact(nil, "thinking", capability), "budget")
+            test.eq(route.fact({}, "sampling", capability), true)
+            test.eq(route.fact({ thinking = "none" }, "thinking", capability), "none")
+            test.eq(route.fact({ forced_tool_choice = false }, "forced_tool_choice", capability), false)
+        end)
+
+        it("rejects a declared value outside the driver's supported set", function()
+            local err = route.unsupported_fact_error({ thinking = "budget" }, capability)
+            test.contains(err, "Test")
+            test.contains(err, "thinking")
+            test.contains(err, "budget")
+            test.contains(err, "adaptive")
+            test.contains(err, "none")
+        end)
+
+        it("accepts a declared value within the driver's supported set", function()
+            test.is_nil(route.unsupported_fact_error({ thinking = "adaptive" }, capability))
+            test.is_nil(route.unsupported_fact_error(nil, capability))
+        end)
+
+        it("does not restrict a fact the capability leaves unsupported-listed", function()
+            test.is_nil(route.unsupported_fact_error({ sampling = false }, capability))
+        end)
+
+        it("builds a strict error naming every adjusted parameter, sorted", function()
+            local err = route.strict_error("my-route", true, { top_p = {}, temperature = {} })
+            test.contains(err, "my-route")
+            local top_p_at = err:find("top_p")
+            local temperature_at = err:find("temperature")
+            test.is_true(top_p_at ~= nil and temperature_at ~= nil and temperature_at < top_p_at)
+        end)
+
+        it("returns no strict error when not strict or nothing was adjusted", function()
+            test.is_nil(route.strict_error("r", false, { temperature = {} }))
+            test.is_nil(route.strict_error("r", true, {}))
+            test.is_nil(route.strict_error("r", true, nil))
+        end)
+
+        it("attaches nothing when no adjustment was recorded", function()
+            local empty: any = {}
+            route.attach_adjusted(empty, {})
+            test.is_nil(empty.metadata)
+        end)
+
+        it("attaches adjustments to metadata when at least one was recorded", function()
+            local result: any = {}
+            route.attach_adjusted(result, { temperature = { requested = 0.4 } })
+            test.eq(result.metadata.adjusted.temperature.requested, 0.4)
+        end)
+
+        it("rejects forced structured output on a route that forbids forcing", function()
+            local err = route.forced_tool_output_error({ forced_tool_choice = false }, capability)
+            test.contains(err, "forced_tool_choice")
+
+            test.is_nil(route.forced_tool_output_error({ forced_tool_choice = false, structured_output = "native" },
+                { name = "Test", defaults = {}, supported = {} }))
+            test.is_nil(route.forced_tool_output_error({ forced_tool_choice = true }, capability))
         end)
     end)
 end

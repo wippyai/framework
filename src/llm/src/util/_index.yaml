@@ -98,21 +98,3 @@ entries:
   - name: thinking
     kind: library.lua
     source: file://thinking.lua
-
-  - name: route_flow_test
-    kind: function.lua
-    meta:
-      name: Route Driver Flow Test
-      type: test
-      group: LLM / Utils
-    source: file://route_flow_test.lua
-    imports:
-      llm: wippy.llm:llm
-      claude_generate: wippy.llm.claude:generate
-      claude_structured: wippy.llm.claude:structured_output
-      bedrock_generate: wippy.llm.bedrock:generate
-      bedrock_structured: wippy.llm.bedrock:structured_output
-      google_generate: wippy.llm.google:generate
-      google_structured: wippy.llm.google:structured_output
-      test: wippy.test:test
-    method: run_tests

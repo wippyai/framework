@@ -69,15 +69,47 @@ local function define_tests()
                     return sent
                 end
 
-                it("merges " .. provider .. " " .. method .. " budget adjustments", function()
+                it("never reinjects a temperature for " .. provider .. " " .. method .. " budget thinking", function()
+                    for _, accepts in ipairs({ { thinking = "budget" }, {} }) do
+                        local sent = setup()
+                        local result, err = call(method, { provider_id = "route", model = "wire",
+                            accepts = accepts, thinking_effort = 50, temperature = 0.4 })
+                        test.is_nil(err)
+                        local payload = sent.payload :: table
+                        local config = provider == "claude" and payload or payload.inferenceConfig
+                        test.is_nil(config.temperature)
+                        test.eq(result.metadata.adjusted.temperature.requested, 0.4)
+                        test.is_nil(result.metadata.adjusted.temperature.sent)
+                        test.eq(result.metadata.request_id, "kept")
+                    end
+                end)
+
+                it("removes sampling and never reinjects budget temperature for " .. provider .. " " .. method, function()
+                    for _, accepts in ipairs({ { thinking = "budget", sampling = false }, { sampling = false } }) do
+                        local sent = setup()
+                        local result, err = call(method, { provider_id = "route", model = "wire",
+                            accepts = accepts, thinking_effort = 50, temperature = 0.4 })
+                        test.is_nil(err)
+                        local payload = sent.payload :: table
+                        local config = provider == "claude" and payload or payload.inferenceConfig
+                        test.is_nil(config.temperature)
+                        test.eq(result.metadata.adjusted.temperature.requested, 0.4)
+                        test.is_nil(result.metadata.adjusted.temperature.sent)
+                        local adjusted_count = 0
+                        for _ in pairs(result.metadata.adjusted) do adjusted_count = adjusted_count + 1 end
+                        test.eq(adjusted_count, 1)
+                    end
+                end)
+
+                it("sends the caller's temperature of 1 unchanged for " .. provider .. " " .. method .. " budget thinking", function()
                     local sent = setup()
                     local result, err = call(method, { provider_id = "route", model = "wire",
-                        accepts = { thinking = "budget" }, thinking_effort = 50, temperature = 0.4 })
+                        accepts = { thinking = "budget" }, thinking_effort = 50, temperature = 1 })
                     test.is_nil(err)
-                    test.not_nil(sent.payload)
-                    test.eq(result.metadata.adjusted.temperature.requested, 0.4)
-                    test.eq(result.metadata.adjusted.temperature.sent, 1)
-                    test.eq(result.metadata.request_id, "kept")
+                    local payload = sent.payload :: table
+                    local config = provider == "claude" and payload or payload.inferenceConfig
+                    test.eq(config.temperature, 1)
+                    test.is_nil(result.metadata.adjusted)
                 end)
 
                 it("rejects strict " .. provider .. " " .. method .. " budget changes before HTTP", function()
@@ -85,7 +117,6 @@ local function define_tests()
                     local result, err = call(method, { provider_id = "route", model = "wire",
                         accepts = { thinking = "budget" }, thinking_effort = 50, temperature = 0.4, strict = true })
                     test.is_nil(result)
-                    test.contains(err, "invalid_request")
                     test.contains(err, "temperature")
                     test.is_nil(sent.payload)
                 end)
@@ -108,6 +139,60 @@ local function define_tests()
             end
         end
 
+        for _, provider in ipairs({ "claude", "bedrock" }) do
+            local handler = provider == "claude" and claude_generate or bedrock_generate
+            local tools = { { name = "finish", description = "Finish", schema = { type = "object" } } }
+
+            local function setup_tool_choice()
+                local sent: any = {}
+                local function request(_, payload)
+                    sent.payload = payload
+                    if provider == "claude" then
+                        return {
+                            content = { { type = "tool_use", id = "one", name = "finish", input = { answer = "ok" } } },
+                            stop_reason = "tool_use", usage = { input_tokens = 1, output_tokens = 1 }, metadata = {}
+                        }
+                    end
+                    return {
+                        output = { message = { role = "assistant", content = {
+                            { toolUse = { toolUseId = "one", name = "finish", input = { answer = "ok" } } }
+                        } } },
+                        stopReason = "tool_use", usage = { inputTokens = 1, outputTokens = 1 }, metadata = {}
+                    }
+                end
+                handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = request, converse = request }
+                llm._providers = { open = function()
+                    return { generate = function(_, args) return handler.handler(args) end }
+                end }
+                return sent
+            end
+
+            it("sends " .. provider .. " tool_choice as auto under the fallback and reports the substitution", function()
+                local sent = setup_tool_choice()
+                local result, err = call("generate", { provider_id = "route", model = "wire",
+                    accepts = { forced_tool_choice = false }, tools = tools, tool_choice = "any",
+                    tool_choice_fallback = "auto" })
+                test.is_nil(err)
+                local payload = sent.payload :: table
+                if provider == "claude" then
+                    test.eq(payload.tool_choice.type, "auto")
+                else
+                    test.is_nil((payload.toolConfig :: table).toolChoice)
+                end
+                test.eq(result.metadata.tool_choice.requested, "any")
+                test.eq(result.metadata.tool_choice.sent, "auto")
+            end)
+
+            it("rejects a forced " .. provider .. " tool_choice with no fallback before HTTP", function()
+                local sent = setup_tool_choice()
+                local result, err = call("generate", { provider_id = "route", model = "wire",
+                    accepts = { forced_tool_choice = false }, tools = tools, tool_choice = "any" })
+                test.is_nil(result)
+                test.contains(err, "forced_tool_choice")
+                test.is_nil(sent.payload)
+            end)
+        end
+
         for _, method in ipairs({ "generate", "structured_output" }) do
             it("returns an invalid request from Google " .. method .. " for declared thinking", function()
                 local handler = method == "generate" and google_generate or google_structured
@@ -116,7 +201,7 @@ local function define_tests()
                 end }
                 local result, err = call(method, { provider_id = "route", model = "wire", accepts = { thinking = "adaptive" } })
                 test.is_nil(result)
-                test.contains(err, "invalid_request")
+                test.contains(err, "Google")
                 test.contains(err, "adaptive")
             end)
         end

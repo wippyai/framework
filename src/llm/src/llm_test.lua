@@ -221,6 +221,7 @@ local function define_tests()
                 last_open = nil,
                 last_evaluate_args = nil,
                 last_generate_args = nil,
+                calls = { generate = 0, structured_output = 0 },
                 open = function(provider_id, options)
                     options = options or {}
                     mock_providers.last_open = {
@@ -236,6 +237,7 @@ local function define_tests()
                     if provider_id == "wippy.llm.openai:provider" then
                         instance.generate = function(self, args)
                             mock_providers.last_generate_args = args
+                            mock_providers.calls.generate = mock_providers.calls.generate + 1
                             return {
                                 success = true,
                                 result = {
@@ -259,6 +261,7 @@ local function define_tests()
                         end
 
                         instance.structured_output = function(self, args)
+                            mock_providers.calls.structured_output = mock_providers.calls.structured_output + 1
                             return {
                                 success = true,
                                 result = {
@@ -468,20 +471,37 @@ local function define_tests()
                         accepts = { sampling = false, thinking = "none" }, temperature = 0.4,
                         top_p = 0.8, top_k = 5, thinking_effort = 10, strict = true })
                     test.is_nil(result)
-                    test.contains(err, "invalid_request")
                     for _, key in ipairs({ "temperature", "top_p", "top_k", "thinking_effort" }) do
                         test.contains(err, key)
                     end
-                    test.is_nil(mock_providers.last_generate_args)
+                    test.eq(mock_providers.calls.generate, 0)
+                    test.eq(mock_providers.calls.structured_output, 0)
                 end)
 
                 it("rejects caller accepts on resolved " .. method, function()
                     local result, err = call(method, { model = "gpt-4o", accepts = { sampling = true } })
                     test.is_nil(result)
-                    test.contains(err, "invalid_request")
                     test.contains(err, "accepts")
                 end)
             end
+
+            it("enforces forced_tool_choice against a plain mock provider, proving the rule is provider-agnostic", function()
+                local tools = { { name = "finish", description = "Finish", schema = { type = "object" } } }
+
+                local result, err = llm.generate("Answer", { model = "wire", provider_id = "wippy.llm.openai:provider",
+                    accepts = { forced_tool_choice = false }, tools = tools, tool_choice = "any" })
+                test.is_nil(result)
+                test.contains(err, "forced_tool_choice")
+                test.eq(mock_providers.calls.generate, 0)
+
+                local result2, err2 = llm.generate("Answer", { model = "wire", provider_id = "wippy.llm.openai:provider",
+                    accepts = { forced_tool_choice = false }, tools = tools, tool_choice = "any",
+                    tool_choice_fallback = "auto" })
+                test.is_nil(err2)
+                test.eq(mock_providers.last_generate_args.tool_choice, "auto")
+                test.eq(result2.metadata.tool_choice.requested, "any")
+                test.eq(result2.metadata.tool_choice.sent, "auto")
+            end)
 
             it("normalizes legacy registry and per-call reasoning flags", function()
                 for _, source in ipairs({ "route", "caller", "direct" }) do

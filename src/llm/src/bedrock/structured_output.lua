@@ -2,6 +2,7 @@ local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
+local route = require("route")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -84,12 +85,19 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
+    local forced_err = route.forced_tool_output_error(contract_args.accepts, structured_output_handler._mapper.CAPABILITY)
+    if forced_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(forced_err):build()
+    end
+
     local mapped = structured_output_handler._mapper.map_messages(contract_args.messages)
-    local inference_config, additional_fields, adjusted = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
-    if contract_args._strict and adjusted and next(adjusted) then
-        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST)
-            :message("invalid_request: route " .. tostring(contract_args._provider_id or contract_args.model)
-                .. " requires adjustments to: temperature"):build()
+    local inference_config, additional_fields, adjusted, options_err = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
+    local strict_err = route.strict_error(tostring(contract_args._provider_id or contract_args.model), contract_args._strict, adjusted)
+    if strict_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(strict_err):build()
     end
 
     if not inference_config.maxTokens then
@@ -162,9 +170,7 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    response.metadata = response.metadata or {}
-    response.metadata.adjusted = adjusted
-    return {
+    local result = {
         success = true,
         result = {
             data = tool_use_input
@@ -173,6 +179,8 @@ function structured_output_handler.handler(contract_args)
         finish_reason = "stop",
         metadata = response.metadata or {}
     }
+    route.attach_adjusted(result, adjusted)
+    return result
 end
 
 return structured_output_handler

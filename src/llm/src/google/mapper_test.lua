@@ -17,12 +17,20 @@ local function define_tests()
                 for _, thinking in ipairs({ "adaptive", "budget" }) do
                     local options, err = mapper.map_options({}, { thinking = thinking })
                     test.is_nil(options)
-                    test.contains(err, "invalid_request")
+                    test.contains(err, "Google")
                     test.contains(err, thinking)
                 end
                 local options, err = mapper.map_options({ temperature = 0.4 }, { thinking = "none" })
                 test.is_nil(err)
                 test.eq(options.temperature, 0.4)
+            end)
+
+            it("rejects a declared structured_output mode it cannot honor", function()
+                local options, err = mapper.map_options({}, { structured_output = "tool" })
+                test.is_nil(options)
+                test.contains(err, "Google")
+                test.contains(err, "structured_output")
+                test.contains(err, "native")
             end)
         end)
 

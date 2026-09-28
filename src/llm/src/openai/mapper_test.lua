@@ -6,6 +6,21 @@ local test = require("test")
 local function define_tests()
     describe("OpenAI Mapper", function()
 
+        describe("Capability validation", function()
+            it("rejects a declared thinking = budget, which OpenAI cannot honor", function()
+                local opts, err = openai_mapper.map_options({ temperature = 0.5 }, { thinking = "budget" })
+                test.contains(err, "OpenAI")
+                test.contains(err, "thinking")
+                test.contains(err, "budget")
+            end)
+
+            it("rejects a declared structured_output mode it cannot honor", function()
+                local opts, err = openai_mapper.map_options({}, { structured_output = "tool" })
+                test.contains(err, "structured_output")
+                test.contains(err, "native")
+            end)
+        end)
+
         describe("Message Mapping", function()
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {

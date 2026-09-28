@@ -1,7 +1,17 @@
 local json = require("json")
 local output = require("output")
+local route = require("route")
 
 local openai_mapper = {}
+
+openai_mapper.CAPABILITY = {
+    name = "OpenAI",
+    defaults = { thinking = "none" },
+    supported = {
+        thinking = { adaptive = true, none = true },
+        structured_output = { native = true }
+    }
+}
 
 -- Error type mapping from HTTP status codes and message content
 local function map_error_type(status_code, message)
@@ -293,13 +303,15 @@ local function map_thinking_effort(effort)
     return "xhigh"
 end
 
-local DEFAULT_ACCEPTS = { thinking = "none" }
-
-function openai_mapper.map_options(contract_options, accepts)
+function openai_mapper.map_options(contract_options, accepts): (table, string?)
+    local unsupported = route.unsupported_fact_error(accepts, openai_mapper.CAPABILITY)
+    if unsupported then
+        return {}, unsupported
+    end
     if not contract_options then return {} end
 
     local opts = {}
-    local is_reasoning_request = (accepts and accepts.thinking or DEFAULT_ACCEPTS.thinking) == "adaptive"
+    local is_reasoning_request = route.fact(accepts, "thinking", openai_mapper.CAPABILITY) == "adaptive"
 
     if contract_options.max_tokens then
         opts.max_output_tokens = contract_options.max_tokens

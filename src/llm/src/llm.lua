@@ -480,12 +480,10 @@ local function prepare_route(contract_args, provider_info: any, options)
     contract_args.options.strict = nil
     contract_args._strict = strict
     local adjusted = {}
-    local parameters = {}
     local function remove(key)
         local value = contract_args.options[key]
         if value ~= nil then
             adjusted[key] = { requested = value }
-            table.insert(parameters, key)
             contract_args.options[key] = nil
         end
     end
@@ -497,11 +495,30 @@ local function prepare_route(contract_args, provider_info: any, options)
     if accepts.thinking == "none" and (contract_args.options.thinking_effort or 0) > 0 then
         remove("thinking_effort")
     end
-    if strict and #parameters > 0 then
-        return nil, "invalid_request: route " .. tostring(provider_info.id)
-            .. " requires adjustments to: " .. table.concat(parameters, ", ")
-    end
+    local strict_err = route.strict_error(tostring(provider_info.id), strict, adjusted)
+    if strict_err then return nil, strict_err end
     return adjusted, nil
+end
+
+-- The forced tool choice rule is provider-agnostic: a route declaring
+-- forced_tool_choice = false rejects a caller tool_choice of "any" or a tool
+-- name, unless the caller permits sending it as "auto" instead. Only
+-- llm.generate takes a caller tool_choice; structured output always forces
+-- its own extraction tool internally.
+local function apply_forced_tool_choice(contract_args): (table?, string?)
+    local accepts = contract_args.accepts
+    if not accepts or accepts.forced_tool_choice ~= false then return nil, nil end
+    if not contract_args.tools or #contract_args.tools == 0 then return nil, nil end
+    local choice = contract_args.tool_choice
+    if choice == nil or choice == "auto" or choice == "none" then return nil, nil end
+
+    if contract_args.options.tool_choice_fallback == "auto" then
+        contract_args.tool_choice = "auto"
+        return { requested = choice, sent = "auto" }, nil
+    end
+
+    return nil, "Model does not accept a forced tool choice (forced_tool_choice = false): tool_choice '"
+        .. tostring(choice) .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
 end
 
 local function merge_adjustments(raw_result, adjusted)
@@ -516,6 +533,14 @@ local function merge_adjustments(raw_result, adjusted)
         end
     end
     raw_result.metadata.adjusted = merged
+end
+
+-- Reports the "any" / named tool_choice a route could not honor, sent as
+-- "auto" instead, the same shape merge_adjustments gives metadata.adjusted.
+local function merge_tool_choice(raw_result, tool_choice)
+    if not raw_result or not tool_choice then return end
+    raw_result.metadata = raw_result.metadata or {}
+    raw_result.metadata.tool_choice = tool_choice
 end
 
 function llm.generate(prompt_input, options)
@@ -565,9 +590,12 @@ function llm.generate(prompt_input, options)
         -- Call provider contract directly with standard format
         local adjusted, route_err = prepare_route(contract_args, provider_info, options)
         if not adjusted then return nil, route_err end
+        local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
+        if tool_choice_err then return nil, tool_choice_err end
 
         local raw_result, err = (provider_instance as any):generate(contract_args)
         merge_adjustments(raw_result, adjusted)
+        merge_tool_choice(raw_result, tool_choice)
         if err then
             return nil, err:message()
         end
@@ -632,9 +660,12 @@ function llm.generate(prompt_input, options)
         -- Call provider contract
         local adjusted, route_err = prepare_route(contract_args, provider_info, options)
         if not adjusted then return nil, route_err end
+        local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
+        if tool_choice_err then return nil, tool_choice_err end
 
         local raw_result, err = (provider_instance as any):generate(contract_args)
         merge_adjustments(raw_result, adjusted)
+        merge_tool_choice(raw_result, tool_choice)
         if err then
             return nil, err:message()
         end

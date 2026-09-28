@@ -22,12 +22,12 @@ end
 
 local function canonical(facts: table, source: any, id: string, closed: boolean): string?
     if type(source) ~= "table" then
-        return "invalid_request: route " .. id .. " accepts must be a table of thinking, sampling, forced_tool_choice, structured_output"
+        return "route " .. id .. " accepts must be a table of thinking, sampling, forced_tool_choice, structured_output"
     end
     if closed then
         for key in pairs(source) do
             if VALUES[key] == nil then
-                return "invalid_request: route " .. id .. " accepts." .. tostring(key)
+                return "route " .. id .. " accepts." .. tostring(key)
                     .. " is unknown; allowed keys: thinking, sampling, forced_tool_choice, structured_output"
             end
         end
@@ -42,7 +42,7 @@ local function canonical(facts: table, source: any, id: string, closed: boolean)
                 valid = (values :: {[string]: boolean})[value] == true
             end
             if not valid then
-                return "invalid_request: route " .. id .. " " .. key .. " must be one of: " .. ALLOWED[key]
+                return "route " .. id .. " " .. key .. " must be one of: " .. ALLOWED[key]
             end
             facts[key] = value
         end
@@ -69,7 +69,7 @@ function route.accepts(provider_ref: table?, caller_options: table?, mode: strin
     profile_facts(facts, options.model_profile)
     if mode == "resolved" then
         if caller.accepts ~= nil then
-            return nil, "invalid_request: route " .. id .. " accepts is only allowed on direct provider calls"
+            return nil, "route " .. id .. " accepts is only allowed on direct provider calls"
         end
         local err = canonical(facts, ref, id, false)
         if err then return nil, err end
@@ -91,6 +91,67 @@ function route.clean_options(options: table): table
         end
     end
     return clean
+end
+
+-- A driver capability table: { name, defaults = {fact = value}, supported = {fact = {value = true}} }.
+-- `supported` only needs entries for facts a driver restricts beyond the global
+-- enum; a fact absent from `supported` accepts any globally valid value.
+
+-- The effective value of a fact: the route's declared value, or the driver's
+-- default when the route leaves it unset.
+function route.fact(accepts: any, key: string, capability: table): any
+    if accepts and accepts[key] ~= nil then return accepts[key] end
+    return capability.defaults[key]
+end
+
+-- A declared fact value the driver cannot honor: names the fact, the value
+-- and the values the driver supports.
+function route.unsupported_fact_error(accepts: any, capability: table): string?
+    if not accepts then return nil end
+    local keys = {}
+    for key in pairs(accepts) do table.insert(keys, key) end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        local allowed = capability.supported and capability.supported[key]
+        if allowed and not allowed[accepts[key]] then
+            local names = {}
+            for name in pairs(allowed) do table.insert(names, name) end
+            table.sort(names)
+            return capability.name .. " does not support " .. key .. " = " .. tostring(accepts[key])
+                .. "; supported: " .. table.concat(names, ", ")
+        end
+    end
+    return nil
+end
+
+-- Strict enforcement for a set of adjustments: nil unless strict is set and at
+-- least one adjustment was recorded, in which case the error names every
+-- adjusted parameter, sorted.
+function route.strict_error(id: string, strict: any, adjusted: any): string?
+    if not strict or not adjusted or next(adjusted) == nil then return nil end
+    local names = {}
+    for key in pairs(adjusted) do table.insert(names, key) end
+    table.sort(names)
+    return "route " .. id .. " requires adjustments to: " .. table.concat(names, ", ")
+end
+
+-- Attaches adjustments to a result's metadata, only when there is at least one.
+function route.attach_adjusted(result: any, adjusted: any)
+    if not result or not adjusted or next(adjusted) == nil then return end
+    result.metadata = result.metadata or {}
+    result.metadata.adjusted = adjusted
+end
+
+-- A route with forced_tool_choice = false whose structured output can only be
+-- produced by forcing a tool cannot honor the request: the driver would have
+-- to force a tool choice the route declares it does not accept.
+function route.forced_tool_output_error(accepts: any, capability: table): string?
+    if route.fact(accepts, "structured_output", capability) == "tool"
+        and route.fact(accepts, "forced_tool_choice", capability) == false then
+        return "Model does not accept a forced tool choice (forced_tool_choice = false): "
+            .. "structured output needs structured_output = \"native\""
+    end
+    return nil
 end
 
 return route

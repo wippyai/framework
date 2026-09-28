@@ -1,6 +1,7 @@
 local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
+local route = require("route")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -95,11 +96,13 @@ function generate_handler.handler(contract_args)
     }
 
     local mapped = generate_handler._mapper.map_messages(contract_args.messages)
-    local inference_config, additional_fields, adjusted = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
-    if contract_args._strict and adjusted and next(adjusted) then
-        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST)
-            :message("invalid_request: route " .. tostring(contract_args._provider_id or contract_args.model)
-                .. " requires adjustments to: temperature"):build()
+    local inference_config, additional_fields, adjusted, options_err = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
+    local strict_err = route.strict_error(tostring(contract_args._provider_id or contract_args.model), contract_args._strict, adjusted)
+    if strict_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(strict_err):build()
     end
 
     if not inference_config.maxTokens then
@@ -159,10 +162,7 @@ function generate_handler.handler(contract_args)
         end
 
         local result, result_err = handle_streaming(stream_response, context, contract_args.stream, err)
-        if result and adjusted and next(adjusted) then
-            result.metadata = result.metadata or {}
-            result.metadata.adjusted = adjusted
-        end
+        route.attach_adjusted(result, adjusted)
         return result, result_err
     end
 
@@ -177,10 +177,7 @@ function generate_handler.handler(contract_args)
     end
 
     local result = generate_handler._mapper.format_success_response(response, context.name_to_id_map)
-    if result and adjusted and next(adjusted) then
-        result.metadata = result.metadata or {}
-        result.metadata.adjusted = adjusted
-    end
+    route.attach_adjusted(result, adjusted)
     return result
 end
 

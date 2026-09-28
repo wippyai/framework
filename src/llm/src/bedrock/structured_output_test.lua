@@ -221,6 +221,37 @@ local function define_tests()
                 test.contains(err:message(), "structured_output tool")
             end)
         end)
+
+        describe("Route facts", function()
+            it("rejects structured_output = native, which Bedrock cannot honor", function()
+                local response, err = structured_output_handler.handler({
+                    model = "test-model",
+                    messages = { { role = "user", content = { { type = "text", text = "Extract" } } } },
+                    schema = { type = "object", properties = {}, required = {}, additionalProperties = false },
+                    accepts = { structured_output = "native" }
+                })
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "structured_output")
+            end)
+
+            it("refuses the forced-tool path for a route that cannot be forced", function()
+                local called = false
+                structured_output_handler._client = {
+                    converse = function() called = true end
+                }
+                local response, err = structured_output_handler.handler({
+                    model = "test-model",
+                    messages = { { role = "user", content = { { type = "text", text = "Extract" } } } },
+                    schema = { type = "object", properties = {}, required = {}, additionalProperties = false },
+                    accepts = { forced_tool_choice = false }
+                })
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "forced_tool_choice")
+                test.is_false(called)
+            end)
+        end)
     end)
 end
 

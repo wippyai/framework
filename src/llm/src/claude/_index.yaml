@@ -126,6 +126,7 @@ entries:
       claude_client: wippy.llm.claude:client
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
+      route: wippy.llm.util:route
     method: handler
 
   # wippy.llm.claude:generate_test
@@ -195,6 +196,7 @@ entries:
       thinking: wippy.llm.util:thinking
       prompt: wippy.llm:prompt
       output: wippy.llm:output
+      route: wippy.llm.util:route
 
   # wippy.llm.claude:mapper_test
   - name: mapper_test
@@ -297,6 +299,7 @@ entries:
       claude_client: wippy.llm.claude:client
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
+      route: wippy.llm.util:route
     method: handler
 
   # wippy.llm.claude:structured_output_test

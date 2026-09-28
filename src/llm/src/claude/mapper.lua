@@ -2,20 +2,23 @@ local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local route = require("route")
 
 local mapper = {}
 
-local DEFAULT_ACCEPTS = {
-    thinking = "budget",
-    sampling = true,
-    forced_tool_choice = true,
-    structured_output = "tool"
+mapper.CAPABILITY = {
+    name = "Claude",
+    defaults = {
+        thinking = "budget",
+        sampling = true,
+        forced_tool_choice = true,
+        structured_output = "tool"
+    },
+    supported = {
+        thinking = { adaptive = true, budget = true, none = true },
+        structured_output = { native = true, tool = true }
+    }
 }
-
-function mapper.fact(accepts, key)
-    if accepts and accepts[key] ~= nil then return accepts[key] end
-    return DEFAULT_ACCEPTS[key]
-end
 
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
 mapper.FINISH_REASON_MAP["end_turn"] = output.FINISH_REASON.STOP
@@ -576,7 +579,7 @@ function mapper.map_tools(contract_tools)
     return claude_tools, name_to_id_map
 end
 
-function mapper.map_tool_choice(contract_choice, available_tools, options, accepts)
+function mapper.map_tool_choice(contract_choice, available_tools)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -585,38 +588,28 @@ function mapper.map_tool_choice(contract_choice, available_tools, options, accep
         return { type = "auto" }
     elseif contract_choice == "none" then
         return { type = "none" }
-    end
-
-    local forced
-    if contract_choice == "any" then
-        forced = { type = "any" }
+    elseif contract_choice == "any" then
+        return { type = "any" }
     elseif type(contract_choice) == "string" then
         for _, tool in ipairs(available_tools) do
             if tool.name == contract_choice then
-                forced = { type = "tool", name = contract_choice }
-                break
+                return { type = "tool", name = contract_choice }
             end
         end
-        if not forced then
-            return nil, "Tool '" .. contract_choice .. "' not found in available tools"
-        end
-    else
-        return nil, "Invalid tool_choice format"
+        return nil, "Tool '" .. contract_choice .. "' not found in available tools"
     end
 
-    if mapper.fact(accepts, "forced_tool_choice") ~= false then
-        return forced
-    end
-    if options and options.tool_choice_fallback == "auto" then
-        return { type = "auto" }
-    end
-    return nil, "Model does not accept a forced tool choice (forced_tool_choice = false): tool_choice '"
-        .. contract_choice .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
+    return nil, "Invalid tool_choice format"
 end
 
-function mapper.map_options(contract_options, model, accepts)
+function mapper.map_options(contract_options, accepts): (table, table, string?)
     local claude_options = {}
     local adjusted = {}
+
+    local unsupported = route.unsupported_fact_error(accepts, mapper.CAPABILITY)
+    if unsupported then
+        return claude_options, adjusted, unsupported
+    end
 
     if not contract_options then
         return claude_options, adjusted
@@ -627,7 +620,7 @@ function mapper.map_options(contract_options, model, accepts)
     claude_options.top_p = contract_options.top_p
     claude_options.stop_sequences = contract_options.stop_sequences
 
-    local mode = mapper.fact(accepts, "thinking")
+    local mode = route.fact(accepts, "thinking", mapper.CAPABILITY)
 
     if mode == "adaptive" then
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
@@ -643,10 +636,12 @@ function mapper.map_options(contract_options, model, accepts)
             budget_tokens = thinking_budget
         }
 
+        -- Extended thinking requires temperature 1; the provider default is
+        -- already 1, so a caller value other than 1 is dropped, never sent.
         if contract_options.temperature ~= nil and contract_options.temperature ~= 1 then
-            adjusted.temperature = { requested = contract_options.temperature, sent = 1 }
+            adjusted.temperature = { requested = contract_options.temperature }
+            claude_options.temperature = nil
         end
-        claude_options.temperature = 1
 
         if not claude_options.max_tokens or claude_options.max_tokens <= thinking_budget then
             claude_options.max_tokens = thinking_budget + 1024
