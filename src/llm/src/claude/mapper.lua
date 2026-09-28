@@ -1,8 +1,21 @@
+local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
 
 local mapper = {}
+
+local DEFAULT_ACCEPTS = {
+    thinking = "budget",
+    sampling = true,
+    forced_tool_choice = true,
+    structured_output = "tool"
+}
+
+function mapper.fact(accepts, key)
+    if accepts and accepts[key] ~= nil then return accepts[key] end
+    return DEFAULT_ACCEPTS[key]
+end
 
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
 mapper.FINISH_REASON_MAP["end_turn"] = output.FINISH_REASON.STOP
@@ -563,16 +576,7 @@ function mapper.map_tools(contract_tools)
     return claude_tools, name_to_id_map
 end
 
--- A model whose provider options carry model_profile.forced_tool_choice = false
--- rejects "any" and named tool choices. Such a choice is sent as "auto" only when
--- the caller permits that fallback (tool_choice_fallback = "auto"), because only
--- a caller that enforces tool use itself keeps the guarantee the choice promised.
-local function forced_choice_unsupported(options)
-    local profile = options and options.model_profile
-    return type(profile) == "table" and profile.forced_tool_choice == false
-end
-
-function mapper.map_tool_choice(contract_choice, available_tools, options)
+function mapper.map_tool_choice(contract_choice, available_tools, options, accepts)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -600,30 +604,22 @@ function mapper.map_tool_choice(contract_choice, available_tools, options)
         return nil, "Invalid tool_choice format"
     end
 
-    if not forced_choice_unsupported(options) then
+    if mapper.fact(accepts, "forced_tool_choice") ~= false then
         return forced
     end
-    if options.tool_choice_fallback == "auto" then
+    if options and options.tool_choice_fallback == "auto" then
         return { type = "auto" }
     end
-    return nil, "Model does not accept a forced tool choice (model_profile.forced_tool_choice = false): tool_choice '"
+    return nil, "Model does not accept a forced tool choice (forced_tool_choice = false): tool_choice '"
         .. contract_choice .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
 end
 
--- thinking_effort (0-100) on the effort levels of adaptive-thinking models.
-local function effort_level(thinking_effort)
-    if thinking_effort >= 100 then return "max" end
-    if thinking_effort >= 80 then return "xhigh" end
-    if thinking_effort > 50 then return "high" end
-    if thinking_effort >= 20 then return "medium" end
-    return "low"
-end
-
-function mapper.map_options(contract_options, model)
+function mapper.map_options(contract_options, model, accepts)
     local claude_options = {}
+    local adjusted = {}
 
     if not contract_options then
-        return claude_options
+        return claude_options, adjusted
     end
 
     claude_options.temperature = contract_options.temperature
@@ -631,15 +627,14 @@ function mapper.map_options(contract_options, model)
     claude_options.top_p = contract_options.top_p
     claude_options.stop_sequences = contract_options.stop_sequences
 
-    local profile = contract_options.model_profile
-    local adaptive_only = type(profile) == "table" and profile.thinking_mode == "adaptive_only"
+    local mode = mapper.fact(accepts, "thinking")
 
-    if adaptive_only then
-        -- Thinking is always on and takes no budget: effort is its only control.
+    if mode == "adaptive" then
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
-            claude_options.output_config = { effort = effort_level(contract_options.thinking_effort) }
+            claude_options.thinking = { type = "adaptive" }
+            claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
         end
-    elseif contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+    elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
 
@@ -648,6 +643,9 @@ function mapper.map_options(contract_options, model)
             budget_tokens = thinking_budget
         }
 
+        if contract_options.temperature ~= nil and contract_options.temperature ~= 1 then
+            adjusted.temperature = { requested = contract_options.temperature, sent = 1 }
+        end
         claude_options.temperature = 1
 
         if not claude_options.max_tokens or claude_options.max_tokens <= thinking_budget then
@@ -655,7 +653,7 @@ function mapper.map_options(contract_options, model)
         end
     end
 
-    return claude_options
+    return claude_options, adjusted
 end
 
 function mapper.extract_response_content(claude_response)

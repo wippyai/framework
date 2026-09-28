@@ -12,6 +12,20 @@ end
 local function define_tests()
     describe("Google Mapper", function()
 
+        describe("Declared thinking", function()
+            it("rejects thinking modes it cannot honor", function()
+                for _, thinking in ipairs({ "adaptive", "budget" }) do
+                    local options, err = mapper.map_options({}, { thinking = thinking })
+                    test.is_nil(options)
+                    test.contains(err, "invalid_request")
+                    test.contains(err, thinking)
+                end
+                local options, err = mapper.map_options({ temperature = 0.4 }, { thinking = "none" })
+                test.is_nil(err)
+                test.eq(options.temperature, 0.4)
+            end)
+        end)
+
         describe("Message Mapping", function()
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {

@@ -98,7 +98,12 @@ function generate_handler.handler(contract_args)
     }
 
     local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped_options, adjusted = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.model, contract_args.accepts)
+    if contract_args._strict and adjusted and next(adjusted) then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("invalid_request: route " .. tostring(contract_args._provider_id or contract_args.model)
+                .. " requires adjustments to: temperature"):build()
+    end
 
     local claude_payload = {
         model = contract_args.model,
@@ -121,7 +126,8 @@ function generate_handler.handler(contract_args)
         local tool_choice, tool_choice_error = generate_handler._mapper.map_tool_choice(
             contract_args.tool_choice,
             claude_tools,
-            contract_args.options
+            contract_args.options,
+            contract_args.accepts
         )
 
         if tool_choice_error then
@@ -178,6 +184,10 @@ function generate_handler.handler(contract_args)
         result.metadata.tool_choice = context.tool_choice
     end
 
+    if result and adjusted and next(adjusted) then
+        result.metadata = result.metadata or {}
+        result.metadata.adjusted = adjusted
+    end
     return result, result_err
 end
 

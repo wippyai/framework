@@ -842,7 +842,8 @@ local function define_tests()
                         { name = "finish", description = "Return the answer", schema = { type = "object" } }
                     },
                     tool_choice = "any",
-                    options = options
+                    options = options,
+                    accepts = options and options.accepts
                 }
             end
 
@@ -862,14 +863,14 @@ local function define_tests()
                 }
 
                 local response = generate_handler.handler(contract_for({
-                    model_profile = { forced_tool_choice = false },
+                    accepts = { forced_tool_choice = false },
                     tool_choice_fallback = "auto"
                 }))
 
                 test.is_true(response.success)
                 assert(response.success)
                 test.eq(sent.tool_choice.type, "auto")
-                test.is_nil(sent.model_profile)
+                test.is_nil(sent.accepts)
                 test.is_nil(sent.tool_choice_fallback)
                 test.eq(response.metadata.tool_choice.requested, "any")
                 test.eq(response.metadata.tool_choice.sent, "auto")
@@ -886,7 +887,7 @@ local function define_tests()
                     end
                 }
 
-                local response, err = generate_handler.handler(contract_for({ model_profile = { forced_tool_choice = false } }))
+                local response, err = generate_handler.handler(contract_for({ accepts = { forced_tool_choice = false } }))
 
                 test.is_nil(response)
                 test.not_nil(err)

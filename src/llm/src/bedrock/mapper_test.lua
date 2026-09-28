@@ -5,6 +5,34 @@ local json = require("json")
 local function define_tests()
     describe("Bedrock Converse Mapper", function()
 
+        describe("Declared thinking", function()
+            it("encodes adaptive thinking and shared effort levels without a budget", function()
+                for _, case in ipairs({ { 1, "low" }, { 20, "medium" }, { 51, "high" }, { 80, "xhigh" }, { 100, "max" } }) do
+                    local config, fields = mapper.map_options({ thinking_effort = case[1] }, { thinking = "adaptive" })
+                    test.eq(fields.thinking.type, "adaptive")
+                    test.is_nil(fields.thinking.budget_tokens)
+                    test.eq(fields.output_config.effort, case[2])
+                    test.is_nil(config.temperature)
+                    test.is_nil(config.maxTokens)
+                end
+            end)
+            it("reports budget temperature adjustments", function()
+                local config, fields, adjusted = mapper.map_options({ thinking_effort = 50, temperature = 0.4 }, { thinking = "budget" })
+                test.eq(config.temperature, 1)
+                test.eq(fields.thinking.type, "enabled")
+                test.eq(adjusted.temperature.requested, 0.4)
+                test.eq(adjusted.temperature.sent, 1)
+            end)
+            it("omits thinking for none and zero adaptive effort", function()
+                for _, thinking in ipairs({ "none", "adaptive" }) do
+                    local config, fields = mapper.map_options({ thinking_effort = thinking == "none" and 50 or 0 }, { thinking = thinking })
+                    test.is_nil(fields.thinking)
+                    test.is_nil(fields.output_config)
+                    test.is_nil(config.temperature)
+                end
+            end)
+        end)
+
         describe("map_messages", function()
             it("should map user messages to Converse format", function()
                 local result = mapper.map_messages({

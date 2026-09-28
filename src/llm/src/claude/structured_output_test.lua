@@ -747,7 +747,7 @@ local function define_tests()
             end)
         end)
 
-        describe("Native Structured Output (model_profile.structured_output_mode = native)", function()
+        describe("Native Structured Output (accepts.structured_output = native)", function()
             local sent: any = nil
             local posts = 0
 
@@ -788,11 +788,12 @@ local function define_tests()
                     model = "claude-opus-5-5",
                     messages = { { role = "user", content = { { type = "text", text = "Answer" } } } },
                     schema = custom_schema or schema,
-                    options = options
+                    options = options,
+                    accepts = options and options.accepts
                 }
             end
 
-            local native = { model_profile = { structured_output_mode = "native", forced_tool_choice = false } }
+            local native = { accepts = { structured_output = "native", forced_tool_choice = false } }
 
             it("should send output_config.format and no forced tool", function()
                 mock_reply({
@@ -827,14 +828,14 @@ local function define_tests()
 
                 local options = {
                     thinking_effort = 60,
-                    model_profile = { structured_output_mode = "native", thinking_mode = "adaptive_only" }
+                    accepts = { structured_output = "native", thinking = "adaptive" }
                 }
                 local _, err = structured_output_handler.handler(args(options))
 
                 test.is_nil(err)
                 test.eq(sent.output_config.effort, "high")
                 test.eq(sent.output_config.format.type, "json_schema")
-                test.is_nil(sent.thinking)
+                test.eq(sent.thinking.type, "adaptive")
             end)
 
             it("should reject a nested object that is not closed, naming its path, without sending", function()
@@ -879,10 +880,10 @@ local function define_tests()
 
             it("should refuse the forced-tool path for a model that cannot be forced", function()
                 mock_reply({ content = {}, stop_reason = "end_turn" })
-                local response, err = structured_output_handler.handler(args({ model_profile = { forced_tool_choice = false } }))
+                local response, err = structured_output_handler.handler(args({ accepts = { forced_tool_choice = false } }))
                 test.is_nil(response)
                 test.eq(err:kind(), "Invalid")
-                test.contains(err:message(), "structured_output_mode")
+                test.contains(err:message(), "structured_output")
                 test.eq(posts, 0)
             end)
         end)

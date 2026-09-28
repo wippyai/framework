@@ -293,11 +293,13 @@ local function map_thinking_effort(effort)
     return "xhigh"
 end
 
-function openai_mapper.map_options(contract_options)
+local DEFAULT_ACCEPTS = { thinking = "none" }
+
+function openai_mapper.map_options(contract_options, accepts)
     if not contract_options then return {} end
 
     local opts = {}
-    local is_reasoning_request = contract_options.reasoning_model_request == true
+    local is_reasoning_request = (accepts and accepts.thinking or DEFAULT_ACCEPTS.thinking) == "adaptive"
 
     if contract_options.max_tokens then
         opts.max_output_tokens = contract_options.max_tokens
@@ -311,13 +313,12 @@ function openai_mapper.map_options(contract_options)
         if next(reasoning) then
             opts.reasoning = reasoning
         end
-    else
-        if contract_options.temperature ~= nil then
-            opts.temperature = contract_options.temperature
-        end
-        if contract_options.top_p ~= nil then
-            opts.top_p = contract_options.top_p
-        end
+    end
+    if contract_options.temperature ~= nil then
+        opts.temperature = contract_options.temperature
+    end
+    if contract_options.top_p ~= nil then
+        opts.top_p = contract_options.top_p
     end
 
     if contract_options.user then

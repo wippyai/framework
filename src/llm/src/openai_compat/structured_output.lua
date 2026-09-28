@@ -115,7 +115,7 @@ function structured_output_handler.handler(contract_args)
         }
     }
 
-    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options)
+    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options, contract_args.accepts)
     for key, value in pairs(mapped_options) do
         openai_payload[key] = value
     end

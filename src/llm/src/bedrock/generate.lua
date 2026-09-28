@@ -95,7 +95,12 @@ function generate_handler.handler(contract_args)
     }
 
     local mapped = generate_handler._mapper.map_messages(contract_args.messages)
-    local inference_config, additional_fields = generate_handler._mapper.map_options(contract_args.options or {})
+    local inference_config, additional_fields, adjusted = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if contract_args._strict and adjusted and next(adjusted) then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("invalid_request: route " .. tostring(contract_args._provider_id or contract_args.model)
+                .. " requires adjustments to: temperature"):build()
+    end
 
     if not inference_config.maxTokens then
         inference_config.maxTokens = 2000
@@ -153,7 +158,12 @@ function generate_handler.handler(contract_args)
             return nil, err:from(stream_err):build()
         end
 
-        return handle_streaming(stream_response, context, contract_args.stream, err)
+        local result, result_err = handle_streaming(stream_response, context, contract_args.stream, err)
+        if result and adjusted and next(adjusted) then
+            result.metadata = result.metadata or {}
+            result.metadata.adjusted = adjusted
+        end
+        return result, result_err
     end
 
     local response, request_err = generate_handler._client.converse(
@@ -166,7 +176,12 @@ function generate_handler.handler(contract_args)
         return nil, err:from(request_err):build()
     end
 
-    return generate_handler._mapper.format_success_response(response, context.name_to_id_map)
+    local result = generate_handler._mapper.format_success_response(response, context.name_to_id_map)
+    if result and adjusted and next(adjusted) then
+        result.metadata = result.metadata or {}
+        result.metadata.adjusted = adjusted
+    end
+    return result
 end
 
 return generate_handler

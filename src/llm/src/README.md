@@ -49,24 +49,51 @@ local result = llm.generate(builder, {
 })
 ```
 
-### Model Profile
+### Route facts
 
-A model entry declares what its provider accepts on the wire in `providers[].options.model_profile`. Missing fields keep the default behaviour; callers of a resolved model cannot override the profile.
+Each provider route declares what the model accepts on the wire. These optional facts use a fixed vocabulary:
 
-```yaml
-providers:
-  - id: wippy.llm.claude:provider
-    provider_model: claude-opus-5-5
-    options:
-      model_profile:
-        forced_tool_choice: false        # rejects tool_choice "any" and named tools
-        thinking_mode: adaptive_only     # thinking always on; thinking_effort maps to low..max
-        structured_output_mode: native   # structured output via output_config.format
+| Fact | Values | Meaning |
+|---|---|---|
+| `thinking` | `adaptive`, `budget`, `none` | How thinking effort is encoded |
+| `sampling` | `true`, `false` | Whether temperature, top_p and top_k are accepted |
+| `forced_tool_choice` | `true`, `false` | Whether `tool_choice = "any"` or a named tool is accepted |
+| `structured_output` | `native`, `tool` | Native JSON schema output or a structured-output tool |
+
+Missing facts preserve each driver's defaults. Claude and Bedrock default to budget thinking, sampling and forced tool choice enabled, and tool-based structured output. OpenAI, OpenAI-compatible and Google default to no thinking. Google rejects a declared `adaptive` or `budget` mode with `invalid_request`. Invalid fact values produce an `invalid_request` error naming the route, key and allowed values.
+
+Facts are normalized when building generation and structured-output requests. Discovery cards, `llm.available_models`, `llm.resolve_model`, and resolver results retain their original shape. Canonical route facts win over legacy forms and caller options. Resolved calls ignore caller `model_profile` and reject caller `accepts`. Direct calls can declare facts:
+
+```lua
+local response, err = llm.generate("Explain the result", {
+    provider_id = "wippy.llm.claude:provider",
+    model = "claude-sonnet-5",
+    accepts = { thinking = "adaptive", sampling = false },
+    thinking_effort = 50,
+    temperature = 0.7
+})
+-- response.metadata.adjusted.temperature = { requested = 0.7 }
 ```
 
-A forced `tool_choice` to such a model fails with `invalid_request` unless the caller permits `tool_choice_fallback = "auto"`, which a caller gives only when it enforces tool use itself (a dataflow agent that ends through its finish tool). The response then reports `metadata.tool_choice = { requested = "any", sent = "auto" }`.
+When `sampling = false`, the request removes temperature, top_p and top_k. When `thinking = "none"`, it removes a positive thinking_effort. Each removal appears in `metadata.adjusted[param] = { requested = value, sent = nil }` (Lua omits the nil field). Claude and Bedrock budget thinking still force temperature to 1 and report a different requested temperature in the same metadata, with `sent = 1`. With caller `strict = true`, adjustments fail with `invalid_request` naming the parameters before the provider HTTP request. The strict flag and fact/legacy options are not sent as driver request options.
 
-Native structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path, never rewritten.
+Adaptive Claude and Bedrock requests with positive thinking_effort send `thinking.type = "adaptive"` and an effort level in `output_config`; they do not calculate a budget or force temperature. An absent or zero effort sends no thinking fields.
+
+A forced `tool_choice` on a Claude route with `forced_tool_choice = false` fails unless the caller permits `tool_choice_fallback = "auto"`. The caller must enforce tool use itself when accepting that fallback. The response reports `metadata.tool_choice = { requested = "any", sent = "auto" }` independently of `metadata.adjusted`. Native Claude structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path.
+
+Legacy forms remain supported through the normalizer:
+
+| Legacy form | Canonical form / behavior |
+|---|---|
+| Route `options.reasoning_model_request = true` | `thinking: adaptive`, `sampling: false`; false or absent derives nothing |
+| Route `options.model_profile.thinking_mode = adaptive_only` | `thinking: adaptive` only |
+| Route `options.model_profile.forced_tool_choice` | `forced_tool_choice`, preserving both true and false |
+| Route `options.model_profile.structured_output_mode = native` | `structured_output: native` |
+| Caller `reasoning_model_request = true` | Derives adaptive thinking and no sampling unless canonically declared on the route |
+| Direct caller `model_profile` | Same legacy mappings; direct caller `accepts` wins |
+| Connection keys in route `options` | Still supported; use route `context` for new configuration |
+
+Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
 
 ### Retry
 
@@ -409,6 +436,8 @@ llm.ERROR_TYPE = {
 
 ## Registering Models
 
+The entry keeps metadata, limits, pricing and a `providers` list. **Only the first route is used**; route fallback is not implemented. Put connection and transport settings (API keys, base URL, timeout, retry, headers) in `context`, and request defaults in `options`.
+
 ```yaml
 entries:
   - name: claude-sonnet
@@ -416,43 +445,76 @@ entries:
     meta:
       type: llm.model
       name: claude-sonnet
-      title: Claude Sonnet
+      title: Claude Sonnet 5
       class: [fast, chat]
       capabilities: [generate, tool_use, vision, thinking, caching]
       priority: 100
     providers:
       - id: wippy.llm.claude:provider
-        provider_model: claude-sonnet-4-20250514
+        provider_model: claude-sonnet-5
+        thinking: adaptive
+        sampling: false
+        forced_tool_choice: true
+        structured_output: native
+        context:
+          timeout: 120
         options:
-          temperature: 0.7
-    max_tokens: 200000
-    output_tokens: 8192
-    pricing:
-      input: 3
-      output: 15
+          thinking_effort: 40
+    max_tokens: 1000000
+    output_tokens: 128000
+    pricing: { input: 2, output: 10 }
 ```
 
-#### Bedrock Model Registration
-
-Use `wippy.llm.bedrock:provider` and the Bedrock model ID (inference profile format for newer models):
+Additional model entries can use these routes with the same top-level structure. Limits and pricing should reflect your provider's current offering.
 
 ```yaml
-entries:
-  - name: claude-haiku-bedrock
-    kind: registry.entry
-    meta:
-      type: llm.model
-      name: claude-haiku-bedrock
-      title: Claude Haiku 4.5 (Bedrock)
-      class: [fast]
-      capabilities: [generate, tool_use, structured_output]
-      priority: 100
-    providers:
-      - id: wippy.llm.bedrock:provider
-        provider_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
-    max_tokens: 200000
-    output_tokens: 8192
+# Claude Opus 5.5
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-opus-5-5
+    thinking: adaptive
+    sampling: false
+    forced_tool_choice: false
+    structured_output: native
+    options:
+      thinking_effort: 60
 ```
+
+```yaml
+# Claude Haiku 4.5: absent facts retain the driver's budget-thinking defaults
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-haiku-4-5-20251001
+    options:
+      temperature: 0.7
+```
+
+```yaml
+# OpenAI reasoning model
+providers:
+  - id: wippy.llm.openai:provider
+    provider_model: gpt-5-mini
+    thinking: adaptive
+    sampling: false
+    options:
+      thinking_effort: 50
+```
+
+```yaml
+# Claude via Bedrock, using an inference profile
+providers:
+  - id: wippy.llm.bedrock:provider
+    provider_model: us.anthropic.claude-sonnet-4-6
+    thinking: adaptive
+    sampling: true
+    context:
+      timeout: 120
+      retry: { attempts: 3 }
+    options:
+      thinking_effort: 50
+```
+
+The reserved route keys are `id`, `provider_model`, `context`, `options`, `priority`, and the four facts above. Custom model resolvers return the same card and route structure.
 
 ### Model Classes
 

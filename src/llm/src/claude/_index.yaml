@@ -176,6 +176,7 @@ entries:
       - env
       - ctx
     imports:
+      llm: wippy.llm:llm
       generate_handler: wippy.llm.claude:generate
       status_handler: wippy.llm.claude:status
       structured_output_handler: wippy.llm.claude:structured_output
@@ -191,6 +192,7 @@ entries:
     modules:
       - json
     imports:
+      thinking: wippy.llm.util:thinking
       prompt: wippy.llm:prompt
       output: wippy.llm:output
 

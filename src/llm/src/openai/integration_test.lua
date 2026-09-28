@@ -274,8 +274,8 @@ local function define_tests()
                             }}
                         }
                     },
+                    accepts = { thinking = "adaptive", sampling = false },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 25,
                         max_tokens = 2000
                     }
@@ -310,8 +310,8 @@ local function define_tests()
                             }}
                         }
                     },
+                    accepts = { thinking = "adaptive", sampling = false },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 30,
                         max_tokens = 2000
                     }
@@ -703,8 +703,8 @@ local function define_tests()
                             content = {{type = "text", text = "Think step by step: If I have 3 apples and buy 5 more, then give away 2, how many do I have left?"}}
                         }
                     },
+                    accepts = { thinking = "adaptive", sampling = false },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 30,
                         max_tokens = 2000
                     },
@@ -756,8 +756,8 @@ local function define_tests()
                             content = {{type = "text", text = "Calculate step by step: What is 25% of 240?"}}
                         }
                     },
+                    accepts = { thinking = "adaptive", sampling = false },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 25,
                         max_tokens = 2000
                     },
@@ -1018,8 +1018,8 @@ local function define_tests()
                         additionalProperties = false
                     },
                     schema_name = "math_solution",
+                    accepts = { thinking = "adaptive", sampling = false },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 30,
                         max_tokens = 2000
                     }

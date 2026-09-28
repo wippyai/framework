@@ -102,11 +102,6 @@ local function open_objects(node, path, found)
     return found
 end
 
-local function model_profile(contract_args)
-    local profile = contract_args.options and contract_args.options.model_profile
-    return type(profile) == "table" and profile or {}
-end
-
 -- The answer of a native structured output call: the JSON text of the response,
 -- decoded. Refusals, truncation and non-JSON text are errors, never results.
 local function native_result(response, err)
@@ -157,8 +152,7 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    local profile = model_profile(contract_args)
-    local native = profile.structured_output_mode == "native"
+    local native = mapper.fact(contract_args.accepts, "structured_output") == "native"
 
     if native then
         local open = open_objects(contract_args.schema, "", {})
@@ -170,16 +164,21 @@ function structured_output_handler.handler(contract_args)
                 :details({ schema_errors = open })
                 :build()
         end
-    elseif profile.forced_tool_choice == false then
+    elseif mapper.fact(contract_args.accepts, "forced_tool_choice") == false then
         return nil, err
             :kind(output.ERROR_TYPE.INVALID_REQUEST)
-            :message("Model does not accept a forced tool choice (model_profile.forced_tool_choice = false): "
-                .. "structured output needs model_profile.structured_output_mode = \"native\"")
+            :message("Model does not accept a forced tool choice (forced_tool_choice = false): "
+                .. "structured output needs structured_output = \"native\"")
             :build()
     end
 
     local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped_options, adjusted = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.model, contract_args.accepts)
+    if contract_args._strict and adjusted and next(adjusted) then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("invalid_request: route " .. tostring(contract_args._provider_id or contract_args.model)
+                .. " requires adjustments to: temperature"):build()
+    end
 
     if native then
         local output_config = mapped_options.output_config or {}
@@ -221,6 +220,8 @@ function structured_output_handler.handler(contract_args)
             return nil, data_err
         end
 
+        response.metadata = response.metadata or {}
+        response.metadata.adjusted = adjusted
         return {
             success = true,
             result = { data = data },
@@ -306,6 +307,8 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
+    response.metadata = response.metadata or {}
+    response.metadata.adjusted = adjusted
     return {
         success = true,
         result = {

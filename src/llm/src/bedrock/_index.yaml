@@ -131,6 +131,7 @@ entries:
     modules:
       - json
     imports:
+      thinking: wippy.llm.util:thinking
       prompt: wippy.llm:prompt
       output: wippy.llm:output
 

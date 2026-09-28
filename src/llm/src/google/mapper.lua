@@ -245,7 +245,13 @@ function mapper.map_tool_config(contract_choice, available_tools)
     return "AUTO", nil
 end
 
-function mapper.map_options(contract_options)
+local DEFAULT_ACCEPTS = { thinking = "none" }
+
+function mapper.map_options(contract_options, accepts)
+    local mode = accepts and accepts.thinking or DEFAULT_ACCEPTS.thinking
+    if mode ~= "none" then
+        return nil, "invalid_request: Google does not support thinking = " .. tostring(mode)
+    end
     if not contract_options then return {} end
 
     return {

@@ -3,6 +3,7 @@ local providers = require("providers")
 local contract = require("contract")
 local security = require("security")
 local evaluation = require("evaluation")
+local route = require("route")
 
 type Message = {
     role: string,
@@ -99,6 +100,11 @@ type StatusResponse = {
 type ProviderRef = {
     id: string,
     provider_model: string?,
+    context: table?,
+    thinking: "adaptive" | "budget" | "none" | nil,
+    sampling: boolean?,
+    forced_tool_choice: boolean?,
+    structured_output: "native" | "tool" | nil,
     options: table?,
     priority: number?
 }
@@ -465,6 +471,53 @@ llm.FINISH_REASON = {
 -- Public API Methods
 ---------------------------
 
+local function prepare_route(contract_args, provider_info: any, options)
+    local accepts, err = route.accepts(provider_info :: table, options, options.provider_id and "direct" or "resolved")
+    if not accepts then return nil, err end
+    contract_args.accepts = accepts
+    contract_args.options = route.clean_options(contract_args.options)
+    local strict = contract_args.options.strict == true
+    contract_args.options.strict = nil
+    contract_args._strict = strict
+    local adjusted = {}
+    local parameters = {}
+    local function remove(key)
+        local value = contract_args.options[key]
+        if value ~= nil then
+            adjusted[key] = { requested = value }
+            table.insert(parameters, key)
+            contract_args.options[key] = nil
+        end
+    end
+    if accepts.sampling == false then
+        remove("temperature")
+        remove("top_p")
+        remove("top_k")
+    end
+    if accepts.thinking == "none" and (contract_args.options.thinking_effort or 0) > 0 then
+        remove("thinking_effort")
+    end
+    if strict and #parameters > 0 then
+        return nil, "invalid_request: route " .. tostring(provider_info.id)
+            .. " requires adjustments to: " .. table.concat(parameters, ", ")
+    end
+    return adjusted, nil
+end
+
+local function merge_adjustments(raw_result, adjusted)
+    if not raw_result or next(adjusted) == nil then return end
+    raw_result.metadata = raw_result.metadata or {}
+    local merged = raw_result.metadata.adjusted or {}
+    for key, value in pairs(adjusted) do
+        if merged[key] then
+            merged[key].requested = value.requested
+        else
+            merged[key] = value
+        end
+    end
+    raw_result.metadata.adjusted = merged
+end
+
 function llm.generate(prompt_input, options)
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, "Model is required in options"
@@ -510,7 +563,11 @@ function llm.generate(prompt_input, options)
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        if not adjusted then return nil, route_err end
+
         local raw_result, err = (provider_instance as any):generate(contract_args)
+        merge_adjustments(raw_result, adjusted)
         if err then
             return nil, err:message()
         end
@@ -573,7 +630,11 @@ function llm.generate(prompt_input, options)
         hoist_transport_options(contract_args)
 
         -- Call provider contract
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        if not adjusted then return nil, route_err end
+
         local raw_result, err = (provider_instance as any):generate(contract_args)
+        merge_adjustments(raw_result, adjusted)
         if err then
             return nil, err:message()
         end
@@ -647,7 +708,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        if not adjusted then return nil, route_err end
+
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
+        merge_adjustments(raw_result, adjusted)
         if err then
             return nil, err:message()
         end
@@ -711,7 +776,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         merge_user_options(contract_args, options, {"model", "schema", "model_profile"})
         hoist_transport_options(contract_args)
 
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        if not adjusted then return nil, route_err end
+
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
+        merge_adjustments(raw_result, adjusted)
         if err then
             return nil, err:message()
         end

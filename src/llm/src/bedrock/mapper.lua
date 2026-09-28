@@ -1,8 +1,22 @@
+local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
 
 local mapper = {}
+
+local DEFAULT_ACCEPTS = {
+    thinking = "budget",
+    sampling = true,
+    forced_tool_choice = true,
+    structured_output = "tool"
+}
+
+function mapper.fact(accepts, key)
+    if accepts and accepts[key] ~= nil then return accepts[key] end
+    return DEFAULT_ACCEPTS[key]
+end
+
 local MAX_CACHE_CHECKPOINTS = 4
 
 -- Converse stopReason -> contract finish_reason
@@ -445,12 +459,13 @@ function mapper.map_tool_choice(contract_choice, tools)
 end
 
 -- Map contract options to Converse inferenceConfig + additionalModelRequestFields
-function mapper.map_options(contract_options)
+function mapper.map_options(contract_options, accepts)
     local inference_config = {}
     local additional_fields = {}
+    local adjusted = {}
 
     if not contract_options then
-        return inference_config, additional_fields
+        return inference_config, additional_fields, adjusted
     end
 
     if contract_options.max_tokens then
@@ -466,8 +481,11 @@ function mapper.map_options(contract_options)
         inference_config.stopSequences = contract_options.stop_sequences
     end
 
-    -- Thinking/reasoning support
-    if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+    local mode = mapper.fact(accepts, "thinking")
+    if mode == "adaptive" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+        additional_fields.thinking = { type = "adaptive" }
+        additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+    elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
 
@@ -477,6 +495,9 @@ function mapper.map_options(contract_options)
         }
 
         -- Force temperature to 1 for thinking models
+        if contract_options.temperature ~= nil and contract_options.temperature ~= 1 then
+            adjusted.temperature = { requested = contract_options.temperature, sent = 1 }
+        end
         inference_config.temperature = 1
 
         -- Ensure max_tokens accommodates thinking budget
@@ -490,7 +511,7 @@ function mapper.map_options(contract_options)
         additional_fields.top_k = contract_options.top_k
     end
 
-    return inference_config, additional_fields
+    return inference_config, additional_fields, adjusted
 end
 
 -- Try to parse a text block as an embedded tool call.
