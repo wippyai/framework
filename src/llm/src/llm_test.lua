@@ -1,5 +1,6 @@
 local llm = require("llm")
 local json = require("json")
+local security = require("security")
 
 local function define_tests()
     describe("LLM Library Unit Tests", function()
@@ -221,6 +222,9 @@ local function define_tests()
                 last_open = nil,
                 last_evaluate_args = nil,
                 last_generate_args = nil,
+                last_structured_output_args = nil,
+                last_embed_args = nil,
+                last_status_args = nil,
                 open = function(provider_id, options)
                     options = options or {}
                     mock_providers.last_open = {
@@ -259,6 +263,7 @@ local function define_tests()
                         end
 
                         instance.structured_output = function(self, args)
+                            mock_providers.last_structured_output_args = args
                             return {
                                 success = true,
                                 result = {
@@ -273,7 +278,17 @@ local function define_tests()
                             }
                         end
 
+                        instance.status = function(self, args)
+                            mock_providers.last_status_args = args
+                            return {
+                                available = true,
+                                latency = 12,
+                                model = args.model
+                            }
+                        end
+
                         instance.embed = function(self, args)
+                            mock_providers.last_embed_args = args
                             local input = args.input
                             local embeddings
                             if type(input) == "table" then
@@ -1606,6 +1621,118 @@ local function define_tests()
                 test.eq(args.retry.attempts, 2)
                 test.is_nil(args.options.timeout)
                 test.is_nil(args.options.retry)
+            end)
+        end)
+
+        describe("Caller Options Ownership", function()
+            local function shallow_copy(t)
+                local copy = {}
+                for k, v in pairs(t) do
+                    copy[k] = v
+                end
+                return copy
+            end
+
+            local function assert_unchanged(before, after)
+                local before_count = 0
+                for k, v in pairs(before) do
+                    before_count = before_count + 1
+                    test.eq(after[k], v, "caller option changed: " .. tostring(k))
+                end
+
+                local after_count = 0
+                for _ in pairs(after) do
+                    after_count = after_count + 1
+                end
+                test.eq(after_count, before_count, "caller options table gained or lost keys")
+            end
+
+            local questions = {
+                resolved = { type = "predicate", instructions = "The customer considers the issue closed" }
+            }
+
+            it("should not write into the caller's options table in generate", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "gpt-4o", temperature = 0.4 }
+                local before = shallow_copy(options)
+
+                local result, err = llm.generate("Hello", options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_generate_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in structured_output", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local schema = { type = "object", properties = { name = { type = "string" } } }
+                local options = { model = "gpt-4o" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.structured_output(schema, "Create person", options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_structured_output_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in embed", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "text-embedding-3-small" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.embed("Test text", options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_embed_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in evaluate", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "jev" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.evaluate("I was charged twice", questions, options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_evaluate_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in status", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "gpt-4o" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.status(options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_status_args.options.user, actor_id)
+            end)
+
+            it("should reuse one caller options table across calls under different actors", function()
+                local options = { model = "gpt-4o" }
+                local before = shallow_copy(options)
+
+                local first_result, first_err = llm.generate("Hello", options)
+                test.is_nil(first_err)
+                assert_unchanged(before, options)
+
+                local second_result, second_err = llm.generate("Hello again", options)
+                test.is_nil(second_err)
+                assert_unchanged(before, options)
             end)
         end)
     end)
