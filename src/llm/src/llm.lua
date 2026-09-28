@@ -471,8 +471,11 @@ llm.FINISH_REASON = {
 -- Public API Methods
 ---------------------------
 
-local function prepare_route(contract_args, provider_info: any, options)
-    local accepts, err = route.accepts(provider_info :: table, options, options.provider_id and "direct" or "resolved")
+local function prepare_route(contract_args, provider_info: any, options, providers_module)
+    local legacy_reasoning_flag, flag_err = providers_module.driver_declares_legacy_reasoning_flag(provider_info.id)
+    if flag_err then return nil, flag_err end
+    local accepts, err = route.accepts(provider_info :: table, options,
+        options.provider_id and "direct" or "resolved", legacy_reasoning_flag)
     if not accepts then return nil, err end
     contract_args.accepts = accepts
     contract_args.options = route.clean_options(contract_args.options)
@@ -588,7 +591,7 @@ function llm.generate(prompt_input, options)
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
         if not adjusted then return nil, route_err end
         local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
         if tool_choice_err then return nil, tool_choice_err end
@@ -658,7 +661,7 @@ function llm.generate(prompt_input, options)
         hoist_transport_options(contract_args)
 
         -- Call provider contract
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
         if not adjusted then return nil, route_err end
         local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
         if tool_choice_err then return nil, tool_choice_err end
@@ -739,7 +742,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
         if not adjusted then return nil, route_err end
 
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
@@ -807,7 +810,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         merge_user_options(contract_args, options, {"model", "schema", "model_profile"})
         hoist_transport_options(contract_args)
 
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options)
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
         if not adjusted then return nil, route_err end
 
         local raw_result, err = (provider_instance as any):structured_output(contract_args)

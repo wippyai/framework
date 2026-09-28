@@ -87,13 +87,15 @@ Legacy forms remain supported through the normalizer:
 
 | Legacy form | Canonical form / behavior |
 |---|---|
-| Route `options.reasoning_model_request = true` | `thinking: adaptive`, `sampling: false`; false or absent derives nothing |
+| Route `options.reasoning_model_request = true` | Only on a route whose driver declares it owns this flag (OpenAI, OpenAI-compatible): `thinking: adaptive`, `sampling: false`; false, absent, or a driver that does not declare it derives nothing |
 | Route `options.model_profile.thinking_mode = adaptive_only` | `thinking: adaptive` only |
 | Route `options.model_profile.forced_tool_choice` | `forced_tool_choice`, preserving both true and false |
 | Route `options.model_profile.structured_output_mode = native` | `structured_output: native` |
-| Caller `reasoning_model_request = true` | Derives adaptive thinking and no sampling unless canonically declared on the route |
+| Caller `reasoning_model_request = true` | Same driver-declares-it rule as the route form; when it applies, derives adaptive thinking and no sampling unless canonically declared on the route |
 | Direct caller `model_profile` | Same legacy mappings; direct caller `accepts` wins |
 | Connection keys in route `options` | Still supported; use route `context` for new configuration |
+
+`reasoning_model_request` is a legacy flag owned by the driver that historically read it: a driver's `contract.binding` entry declares `meta.legacy_reasoning_flag: true` (OpenAI, OpenAI-compatible) to opt in. A route or provider entry bound to any other driver (Claude, Bedrock, Google, or a custom driver that never declared it) ignores the flag entirely; the request behaves exactly as if it were absent.
 
 Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
 

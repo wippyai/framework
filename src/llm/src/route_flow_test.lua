@@ -63,7 +63,7 @@ local function define_tests()
                         }
                     end
                     handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = request, converse = request }
-                    llm._providers = { open = function()
+                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
                         return { [method] = function(_, args) return handler.handler(args) end }
                     end }
                     return sent
@@ -161,7 +161,7 @@ local function define_tests()
                     }
                 end
                 handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = request, converse = request }
-                llm._providers = { open = function()
+                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
                     return { generate = function(_, args) return handler.handler(args) end }
                 end }
                 return sent
@@ -196,7 +196,7 @@ local function define_tests()
         for _, method in ipairs({ "generate", "structured_output" }) do
             it("returns an invalid request from Google " .. method .. " for declared thinking", function()
                 local handler = method == "generate" and google_generate or google_structured
-                llm._providers = { open = function()
+                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
                     return { [method] = function(_, args) return handler.handler(args) end }
                 end }
                 local result, err = call(method, { provider_id = "route", model = "wire", accepts = { thinking = "adaptive" } })

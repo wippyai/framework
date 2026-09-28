@@ -797,12 +797,13 @@ local function define_tests()
                     return
                 end
 
-                local response, err = generate_handler.handler({
+                -- The forced tool choice fallback rule lives in llm.lua
+                -- (apply_forced_tool_choice), not in the Claude handler, so this
+                -- goes through llm.generate rather than calling the handler directly.
+                local response, err = llm.generate("Report the number 42 by calling the finish tool.", {
+                    provider_id = "wippy.llm.claude:provider",
                     model = "claude-opus-5-5",
                     accepts = profile,
-                    messages = {
-                        { role = "user", content = {{ type = "text", text = "Report the number 42 by calling the finish tool." }} }
-                    },
                     tools = {
                         {
                             name = "finish",
@@ -816,11 +817,13 @@ local function define_tests()
                         }
                     },
                     tool_choice = "any",
-                    options = { max_tokens = 2000, thinking_effort = 20, tool_choice_fallback = "auto" }
+                    tool_choice_fallback = "auto",
+                    max_tokens = 2000,
+                    thinking_effort = 20
                 })
 
                 test.is_nil(err, "API request failed: " .. tostring(err))
-                assert(response and response.success)
+                assert(response)
                 test.eq(response.metadata.tool_choice.sent, "auto")
                 test.eq(response.result.tool_calls[1].name, "finish")
                 test.eq(response.result.tool_calls[1].arguments.answer, 42)

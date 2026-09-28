@@ -108,4 +108,33 @@ function providers.open(provider_id, context_overrides)
     return instance
 end
 
+-- Whether the provider's driver binding declares that it owns the legacy
+-- reasoning_model_request meaning (contract.binding meta.legacy_reasoning_flag).
+-- Resolves the provider entry's data.driver.id the same way providers.open does,
+-- so a custom provider entry bound to a framework driver is covered too.
+function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?, string?)
+    local provider_entry, err = providers._registry.get(provider_id)
+    if err then
+        return nil, "Registry error: " .. tostring(err)
+    end
+    if not provider_entry then
+        return nil, "Provider not found: " .. tostring(provider_id)
+    end
+
+    local driver = provider_entry.data and provider_entry.data.driver
+    if not driver or not driver.id then
+        return false, nil
+    end
+
+    local binding_entry, binding_err = providers._registry.get(tostring(driver.id))
+    if binding_err then
+        return nil, "Registry error: " .. tostring(binding_err)
+    end
+    if not binding_entry then
+        return nil, "Driver binding not found: " .. tostring(driver.id)
+    end
+
+    return binding_entry.meta ~= nil and binding_entry.meta.legacy_reasoning_flag == true, nil
+end
+
 return providers

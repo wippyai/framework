@@ -50,21 +50,29 @@ local function canonical(facts: table, source: any, id: string, closed: boolean)
     return nil
 end
 
-function route.accepts(provider_ref: table?, caller_options: table?, mode: string): (table?, string?)
+-- `legacy_reasoning_flag` is true only when the route's driver binding
+-- declares it owns the legacy reasoning_model_request meaning (see
+-- discovery/providers.lua driver_declares_legacy_reasoning_flag). On every
+-- other driver the flag derives nothing, so the request behaves as it does
+-- without this normalizer.
+function route.accepts(provider_ref: table?, caller_options: table?, mode: string,
+    legacy_reasoning_flag: boolean?): (table?, string?)
     local ref = provider_ref or {}
     local caller = caller_options or {}
     local options = ref.options or {}
     local id = tostring(ref.id or "(direct)")
     local facts = {}
-    -- A per-call legacy flag replaces the route's legacy flag, as caller options
-    -- replace provider options.
-    local reasoning = options.reasoning_model_request
-    if type(caller.reasoning_model_request) == "boolean" then
-        reasoning = caller.reasoning_model_request
-    end
-    if reasoning == true then
-        facts.thinking = "adaptive"
-        facts.sampling = false
+    if legacy_reasoning_flag then
+        -- A per-call legacy flag replaces the route's legacy flag, as caller
+        -- options replace provider options.
+        local reasoning = options.reasoning_model_request
+        if type(caller.reasoning_model_request) == "boolean" then
+            reasoning = caller.reasoning_model_request
+        end
+        if reasoning == true then
+            facts.thinking = "adaptive"
+            facts.sampling = false
+        end
     end
     profile_facts(facts, options.model_profile)
     if mode == "resolved" then

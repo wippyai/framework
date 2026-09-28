@@ -16,10 +16,18 @@ local function define_tests()
         it("keeps missing facts unknown", function()
             equal(route.accepts(nil, nil, "resolved"), {})
         end)
-        it("maps every legacy route field", function()
-            equal(route.accepts({ options = { reasoning_model_request = true } }, {}, "resolved"),
+        it("does not map the legacy reasoning flag unless the driver declares it", function()
+            equal(route.accepts({ options = { reasoning_model_request = true } }, {}, "resolved"), {})
+            equal(route.accepts({ options = { reasoning_model_request = true } }, {}, "resolved", false), {})
+            equal(route.accepts({}, { reasoning_model_request = true }, "resolved"), {})
+            equal(route.accepts({}, { reasoning_model_request = true }, "direct", false), {})
+            equal(route.accepts({ options = { reasoning_model_request = true } }, {}, "resolved", true),
                 { thinking = "adaptive", sampling = false })
-            equal(route.accepts({ options = { reasoning_model_request = false } }, {}, "resolved"), {})
+        end)
+        it("maps every legacy route field", function()
+            equal(route.accepts({ options = { reasoning_model_request = true } }, {}, "resolved", true),
+                { thinking = "adaptive", sampling = false })
+            equal(route.accepts({ options = { reasoning_model_request = false } }, {}, "resolved", true), {})
             equal(route.accepts({ options = { model_profile = {
                 thinking_mode = "adaptive_only", forced_tool_choice = false, structured_output_mode = "native"
             } } }, {}, "resolved"), { thinking = "adaptive", forced_tool_choice = false, structured_output = "native" })
@@ -30,27 +38,28 @@ local function define_tests()
             equal(route.accepts({ thinking = "none", sampling = true, forced_tool_choice = true,
                 structured_output = "tool", options = { reasoning_model_request = true, model_profile = {
                     forced_tool_choice = false, structured_output_mode = "native"
-                } } }, { reasoning_model_request = true, model_profile = { forced_tool_choice = false } }, "resolved"),
+                } } }, { reasoning_model_request = true, model_profile = { forced_tool_choice = false } }, "resolved",
+                true),
                 { thinking = "none", sampling = true, forced_tool_choice = true, structured_output = "tool" })
         end)
         it("applies per-call legacy reasoning without overriding canonical declarations", function()
-            equal(route.accepts({ sampling = true }, { reasoning_model_request = true }, "resolved"),
+            equal(route.accepts({ sampling = true }, { reasoning_model_request = true }, "resolved", true),
                 { thinking = "adaptive", sampling = true })
-            equal(route.accepts({}, { reasoning_model_request = true }, "direct"),
+            equal(route.accepts({}, { reasoning_model_request = true }, "direct", true),
                 { thinking = "adaptive", sampling = false })
-            equal(route.accepts({}, { reasoning_model_request = false }, "resolved"), {})
+            equal(route.accepts({}, { reasoning_model_request = false }, "resolved", true), {})
         end)
         it("lets a per-call legacy reasoning false turn off facts derived from the legacy route flag", function()
             equal(route.accepts({ options = { reasoning_model_request = true } },
-                { reasoning_model_request = false }, "resolved"), {})
+                { reasoning_model_request = false }, "resolved", true), {})
             equal(route.accepts({ thinking = "adaptive", options = { reasoning_model_request = true } },
-                { reasoning_model_request = false }, "resolved"), { thinking = "adaptive" })
+                { reasoning_model_request = false }, "resolved", true), { thinking = "adaptive" })
         end)
         it("maps direct caller profiles and gives accepts precedence", function()
             equal(route.accepts({ id = "direct" }, { reasoning_model_request = true,
                 model_profile = { thinking_mode = "adaptive_only", forced_tool_choice = false,
                     structured_output_mode = "native" },
-                accepts = { thinking = "budget", sampling = true } }, "direct"),
+                accepts = { thinking = "budget", sampling = true } }, "direct", true),
                 { thinking = "budget", sampling = true, forced_tool_choice = false, structured_output = "native" })
         end)
         it("rejects resolved caller accepts and ignores caller profiles", function()

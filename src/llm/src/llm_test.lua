@@ -222,6 +222,11 @@ local function define_tests()
                 last_evaluate_args = nil,
                 last_generate_args = nil,
                 calls = { generate = 0, structured_output = 0 },
+                -- Mirrors discovery/providers.lua: only the OpenAI driver
+                -- declares the legacy reasoning_model_request flag.
+                driver_declares_legacy_reasoning_flag = function(provider_id)
+                    return provider_id == "wippy.llm.openai:provider"
+                end,
                 open = function(provider_id, options)
                     options = options or {}
                     mock_providers.last_open = {
@@ -517,6 +522,31 @@ local function define_tests()
                     test.is_false(mock_providers.last_generate_args.accepts.sampling)
                     test.is_nil(mock_providers.last_generate_args.options.reasoning_model_request)
                     test.eq(result.metadata.adjusted.temperature.requested, 0.3)
+                end
+            end)
+
+            it("ignores the legacy reasoning flag on a driver that does not declare it", function()
+                for _, source in ipairs({ "route", "caller", "direct" }) do
+                    local ref = { id = "wippy.llm.provider:anthropic", provider_model = "wire", options = {} }
+                    mock_models.get_by_name = function() return { name = "legacy-claude", providers = { ref } } end
+                    local options = { model = "legacy-claude", temperature = 0.4 }
+                    if source == "route" then ref.options.reasoning_model_request = true
+                    else options.reasoning_model_request = true end
+                    if source == "direct" then options.provider_id = ref.id end
+                    local sent
+                    mock_providers.open = function()
+                        return { generate = function(_, args)
+                            sent = args
+                            return { success = true, result = { content = "ok" } }
+                        end }
+                    end
+                    local result, err = llm.generate("Hello", options)
+                    test.is_nil(err)
+                    test.is_nil(sent.accepts.thinking)
+                    test.is_nil(sent.accepts.sampling)
+                    test.is_nil(sent.options.reasoning_model_request)
+                    test.eq(sent.options.temperature, 0.4)
+                    test.is_nil(result.metadata.adjusted)
                 end
             end)
         end)
