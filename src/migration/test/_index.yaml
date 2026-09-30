@@ -2,6 +2,12 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: db
+    kind: db.sql.sqlite
+    meta:
+      comment: In-memory database for migration tests
+    file: ":memory:"
+
   - name: env_storage
     kind: env.storage.file
     meta:

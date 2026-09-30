@@ -221,7 +221,10 @@ For detailed specification and advanced usage, see:
 
 ## Integration
 
-The bootloader runs automatically during application startup as a service with `auto_start: true`. It must complete successfully before other services start.
+The bootloader runs automatically during application startup with `auto_start: true`
+and `startup: complete` (runtime v0.3.44a or newer). It must complete successfully
+before the application is ready and command or test entrypoints run. Other
+services can start concurrently; this does not serialize service startup.
 
 A component that brings modules online after boot runs their bootloaders through
 the same path with `run_chain(entries, options, satisfied)`: it executes the given

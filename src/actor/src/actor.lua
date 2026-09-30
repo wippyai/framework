@@ -339,8 +339,8 @@ function actor.new(initial_state: any, handlers: any): any
 
             -- Handle registered channels
             local channel_id = channel_to_id[result.channel]
-            if channel_id then
-                local channel_info = registered_channels[channel_id]
+            local channel_info = channel_id and registered_channels[channel_id]
+            if channel_id and channel_info then
                 local value = result.value
                 local is_ok = result.ok
 
