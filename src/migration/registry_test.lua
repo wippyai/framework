@@ -235,6 +235,109 @@ local function define_tests()
         end)
     end)
 
+    test.describe("get_aliases", function()
+        test.it("returns empty for entry without meta", function()
+            test.eq(#migration_registry.get_aliases({ id = "m:one" }), 0)
+            test.eq(#migration_registry.get_aliases(nil), 0)
+        end)
+
+        test.it("returns empty when alias is missing", function()
+            local entry = { id = "m:one", meta = { type = "migration" } }
+            test.eq(#migration_registry.get_aliases(entry), 0)
+        end)
+
+        test.it("wraps a string alias into an array", function()
+            local entry = { id = "m:one", meta = { type = "migration", alias = "legacy:one" } }
+            local aliases = migration_registry.get_aliases(entry)
+            test.eq(#aliases, 1)
+            test.eq(aliases[1], "legacy:one")
+        end)
+
+        test.it("preserves array alias order", function()
+            local entry = {
+                id = "m:one",
+                meta = { type = "migration", alias = { "legacy:one", "older:one" } },
+            }
+            local aliases = migration_registry.get_aliases(entry)
+            test.eq(#aliases, 2)
+            test.eq(aliases[1], "legacy:one")
+            test.eq(aliases[2], "older:one")
+        end)
+
+        test.it("drops non-string, empty, self and duplicate values", function()
+            local entry = {
+                id = "m:one",
+                meta = {
+                    type = "migration",
+                    alias = { "legacy:one", 42, "", "m:one", "legacy:one", "older:one" },
+                },
+            }
+            local aliases = migration_registry.get_aliases(entry)
+            test.eq(#aliases, 2)
+            test.eq(aliases[1], "legacy:one")
+            test.eq(aliases[2], "older:one")
+        end)
+
+        test.it("returns empty for a non-string non-table alias", function()
+            local entry = { id = "m:one", meta = { type = "migration", alias = 42 } }
+            test.eq(#migration_registry.get_aliases(entry), 0)
+        end)
+    end)
+
+    test.describe("validate_aliases", function()
+        test.it("accepts full-id aliases across entries", function()
+            local ok, err = migration_registry.validate_aliases({
+                { id = "m:one", meta = { type = "migration", alias = "legacy:one" } },
+                {
+                    id = "m:two",
+                    meta = { type = "migration", alias = { "legacy:two_a", "legacy:two_b" } },
+                },
+            })
+            test.is_nil(err)
+            test.is_true(ok)
+        end)
+
+        test.it("accepts entries without aliases", function()
+            local ok, err = migration_registry.validate_aliases({
+                { id = "m:one", meta = { type = "migration" } },
+            })
+            test.is_nil(err)
+            test.is_true(ok)
+        end)
+
+        test.it("fails when an alias is claimed by two entries", function()
+            local ok, err = migration_registry.validate_aliases({
+                { id = "m:one", meta = { type = "migration", alias = "legacy:shared" } },
+                { id = "m:two", meta = { type = "migration", alias = { "legacy:shared" } } },
+            })
+            test.is_nil(ok)
+            test.contains(err, "legacy:shared")
+            test.contains(err, "m:one")
+            test.contains(err, "m:two")
+        end)
+
+        test.it("fails when an alias collides with a live migration id", function()
+            local ok, err = migration_registry.validate_aliases({
+                { id = "m:one", meta = { type = "migration" } },
+                { id = "m:two", meta = { type = "migration", alias = "m:one" } },
+            })
+            test.is_nil(ok)
+            test.contains(err, "m:one")
+            test.contains(err, "m:two")
+        end)
+
+        test.it("fails when an alias is not a full namespace:name id", function()
+            for _, bad in ipairs({ "01_create_orders_table", ":one", "legacy:" }) do
+                local ok, err = migration_registry.validate_aliases({
+                    { id = "m:one", meta = { type = "migration", alias = bad } },
+                })
+                test.is_nil(ok)
+                test.contains(tostring(err), bad)
+                test.contains(tostring(err), "m:one")
+            end
+        end)
+    end)
+
     test.describe("get_target_dbs", function()
         test.before_each(save_registry)
         test.after_each(restore_registry)
