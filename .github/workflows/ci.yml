@@ -7,6 +7,11 @@ on:
     branches: [master]
   workflow_call:
   workflow_dispatch:
+    inputs:
+      verify_publication:
+        description: Verify publication of all current module versions without publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,6 +52,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/check_module_manifests.py
+      - run: python3 -m unittest discover -s scripts -p '*_test.py'
+
+  publication:
+    name: Publication check
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_publication }}
+    needs: [manifests, lint, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check publication token
+        env:
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: bash scripts/check_publish_token.sh
+      - id: wippy
+        uses: ./.github/actions/setup-wippy
+      - name: Check current module publications
+        env:
+          WIPPY: ${{ steps.wippy.outputs.path }}
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: |
+          set -euo pipefail
+          while IFS=$'\t' read -r module_path version; do
+            if [ -f "$module_path/src/wippy.yaml" ]; then
+              module_dir="$module_path/src"
+            else
+              module_dir="$module_path"
+            fi
+            "$WIPPY" publish --config "$module_dir" --version "$version" --dry-run
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' .release-please-manifest.json)
 
   lint:
     name: Lint (${{ matrix.module }})

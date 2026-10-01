@@ -31,6 +31,15 @@ jobs:
       # whole output map is forwarded and indexed by the publish matrix.
       release_outputs: ${{ toJSON(steps.release.outputs) }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check publication token
+        env:
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: bash scripts/check_publish_token.sh
+
       # Release PRs opened with the app token trigger CI; GITHUB_TOKEN-authored PRs do not.
       - name: Mint release app token
         id: app-token
