@@ -1,12 +1,5 @@
 # Changelog
 
-## [0.5.3](https://github.com/wippyai/framework/compare/llm-v0.5.2...llm-v0.5.3) (2026-10-01)
-
-
-### Bug Fixes
-
-* prepare framework checks for runtime v0.3.44a ([c81aaa6](https://github.com/wippyai/framework/commit/c81aaa61985e699909f9793de598a1e409f425f3))
-
 ## [0.5.2](https://github.com/wippyai/framework/compare/llm-v0.5.1...llm-v0.5.2) (2026-09-26)
 
 
