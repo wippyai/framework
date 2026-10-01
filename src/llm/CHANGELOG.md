@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.3](https://github.com/wippyai/framework/compare/llm-v0.5.2...llm-v0.5.3) (2026-10-01)
+
+
+### Features
+
+* **llm:** declare route facts on model providers ([#148](https://github.com/wippyai/framework/issues/148)) ([391e892](https://github.com/wippyai/framework/commit/391e892eb660570427eaed053f0b22960f0ff23f))
+
+
+### Bug Fixes
+
+* **llm:** keep caller options unchanged in public API calls ([#149](https://github.com/wippyai/framework/issues/149)) ([6bde772](https://github.com/wippyai/framework/commit/6bde772c62b0ae9ae61ceba9d06ed6752d07a7dd))
+* prepare framework checks for runtime v0.3.44a ([c81aaa6](https://github.com/wippyai/framework/commit/c81aaa61985e699909f9793de598a1e409f425f3))
+
 ## [0.5.2](https://github.com/wippyai/framework/compare/llm-v0.5.1...llm-v0.5.2) (2026-09-26)
 
 
