@@ -1,5 +1,6 @@
 local llm = require("llm")
 local json = require("json")
+local security = require("security")
 
 local function define_tests()
     describe("LLM Library Unit Tests", function()
@@ -221,6 +222,15 @@ local function define_tests()
                 last_open = nil,
                 last_evaluate_args = nil,
                 last_generate_args = nil,
+                calls = { generate = 0, structured_output = 0 },
+                -- Mirrors discovery/providers.lua: only the OpenAI driver
+                -- declares the legacy reasoning_model_request flag.
+                driver_declares_legacy_reasoning_flag = function(provider_id)
+                    return provider_id == "wippy.llm.openai:provider"
+                end,
+                last_structured_output_args = nil,
+                last_embed_args = nil,
+                last_status_args = nil,
                 open = function(provider_id, options)
                     options = options or {}
                     mock_providers.last_open = {
@@ -236,6 +246,7 @@ local function define_tests()
                     if provider_id == "wippy.llm.openai:provider" then
                         instance.generate = function(self, args)
                             mock_providers.last_generate_args = args
+                            mock_providers.calls.generate = mock_providers.calls.generate + 1
                             return {
                                 success = true,
                                 result = {
@@ -259,6 +270,8 @@ local function define_tests()
                         end
 
                         instance.structured_output = function(self, args)
+                            mock_providers.calls.structured_output = mock_providers.calls.structured_output + 1
+                            mock_providers.last_structured_output_args = args
                             return {
                                 success = true,
                                 result = {
@@ -273,7 +286,17 @@ local function define_tests()
                             }
                         end
 
+                        instance.status = function(self, args)
+                            mock_providers.last_status_args = args
+                            return {
+                                available = true,
+                                latency = 12,
+                                model = args.model
+                            }
+                        end
+
                         instance.embed = function(self, args)
+                            mock_providers.last_embed_args = args
                             local input = args.input
                             local embeddings
                             if type(input) == "table" then
@@ -407,6 +430,142 @@ local function define_tests()
             llm._model_resolver = nil
         end)
 
+        describe("Route request facts", function()
+            local schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
+
+            local function call(method, options)
+                if method == "generate" then return llm.generate("Hello", options) end
+                return llm.structured_output(schema, "Hello", options)
+            end
+
+            for _, method in ipairs({ "generate", "structured_output" }) do
+                for _, source in ipairs({ "registry", "resolver", "direct" }) do
+                    it("delivers and adjusts " .. method .. " facts from " .. source, function()
+                        local ref = { id = "wippy.llm.openai:provider", provider_model = "wire-model",
+                            thinking = "none", sampling = false, forced_tool_choice = false,
+                            options = { temperature = 0.2, model_profile = { forced_tool_choice = true } } }
+                        local card = { name = "route-model", providers = { ref } }
+                        if source == "registry" then
+                            mock_models.get_by_name = function() return card end
+                        elseif source == "resolver" then
+                            llm._model_resolver = { resolve = function() return card end }
+                        end
+                        local sent
+                        mock_providers.open = function()
+                            return { [method] = function(_, args)
+                                sent = args
+                                return { success = true, result = { content = "ok", data = {} },
+                                    metadata = { adjusted = { other = { requested = 2, sent = 1 } },
+                                        tool_choice = { requested = "any", sent = "auto" } } }
+                            end }
+                        end
+                        local options = { model = "route-model", temperature = 0.7, top_p = 0.8,
+                            top_k = 5, thinking_effort = 50, reasoning_model_request = true,
+                            model_profile = { forced_tool_choice = true }, strict = false }
+                        if source == "direct" then
+                            options.provider_id = ref.id
+                            options.accepts = { thinking = "none", sampling = false, forced_tool_choice = false }
+                        end
+                        local result, err = call(method, options)
+                        test.is_nil(err)
+                        test.eq(sent.accepts.thinking, "none")
+                        test.is_false(sent.accepts.sampling)
+                        test.is_false(sent.accepts.forced_tool_choice)
+                        for _, key in ipairs({ "temperature", "top_p", "top_k", "thinking_effort" }) do
+                            test.is_nil(sent.options[key])
+                            test.eq(result.metadata.adjusted[key].requested, options[key])
+                            test.is_nil(result.metadata.adjusted[key].sent)
+                        end
+                        for _, key in ipairs({ "accepts", "model_profile", "reasoning_model_request", "strict" }) do
+                            test.is_nil(sent.options[key])
+                        end
+                        test.eq(result.metadata.adjusted.other.sent, 1)
+                        test.eq(result.metadata.tool_choice.sent, "auto")
+                        test.eq(options.temperature, 0.7)
+                        test.eq(ref.options.temperature, 0.2)
+                    end)
+                end
+
+                it("rejects strict adjustments before sending " .. method, function()
+                    local result, err = call(method, { model = "wire", provider_id = "wippy.llm.openai:provider",
+                        accepts = { sampling = false, thinking = "none" }, temperature = 0.4,
+                        top_p = 0.8, top_k = 5, thinking_effort = 10, strict = true })
+                    test.is_nil(result)
+                    for _, key in ipairs({ "temperature", "top_p", "top_k", "thinking_effort" }) do
+                        test.contains(err, key)
+                    end
+                    test.eq(mock_providers.calls.generate, 0)
+                    test.eq(mock_providers.calls.structured_output, 0)
+                end)
+
+                it("rejects caller accepts on resolved " .. method, function()
+                    local result, err = call(method, { model = "gpt-4o", accepts = { sampling = true } })
+                    test.is_nil(result)
+                    test.contains(err, "accepts")
+                end)
+            end
+
+            it("enforces forced_tool_choice against a plain mock provider, proving the rule is provider-agnostic", function()
+                local tools = { { name = "finish", description = "Finish", schema = { type = "object" } } }
+
+                local result, err = llm.generate("Answer", { model = "wire", provider_id = "wippy.llm.openai:provider",
+                    accepts = { forced_tool_choice = false }, tools = tools, tool_choice = "any" })
+                test.is_nil(result)
+                test.contains(err, "forced_tool_choice")
+                test.eq(mock_providers.calls.generate, 0)
+
+                local result2, err2 = llm.generate("Answer", { model = "wire", provider_id = "wippy.llm.openai:provider",
+                    accepts = { forced_tool_choice = false }, tools = tools, tool_choice = "any",
+                    tool_choice_fallback = "auto" })
+                test.is_nil(err2)
+                test.eq(mock_providers.last_generate_args.tool_choice, "auto")
+                test.eq(result2.metadata.tool_choice.requested, "any")
+                test.eq(result2.metadata.tool_choice.sent, "auto")
+            end)
+
+            it("normalizes legacy registry and per-call reasoning flags", function()
+                for _, source in ipairs({ "route", "caller", "direct" }) do
+                    local ref = { id = "wippy.llm.openai:provider", provider_model = "wire", options = {} }
+                    mock_models.get_by_name = function() return { name = "legacy", providers = { ref } } end
+                    local options = { model = "legacy", temperature = 0.3 }
+                    if source == "route" then ref.options.reasoning_model_request = true
+                    else options.reasoning_model_request = true end
+                    if source == "direct" then options.provider_id = ref.id end
+                    local result, err = llm.generate("Hello", options)
+                    test.is_nil(err)
+                    test.eq(mock_providers.last_generate_args.accepts.thinking, "adaptive")
+                    test.is_false(mock_providers.last_generate_args.accepts.sampling)
+                    test.is_nil(mock_providers.last_generate_args.options.reasoning_model_request)
+                    test.eq(result.metadata.adjusted.temperature.requested, 0.3)
+                end
+            end)
+
+            it("ignores the legacy reasoning flag on a driver that does not declare it", function()
+                for _, source in ipairs({ "route", "caller", "direct" }) do
+                    local ref = { id = "wippy.llm.provider:anthropic", provider_model = "wire", options = {} }
+                    mock_models.get_by_name = function() return { name = "legacy-claude", providers = { ref } } end
+                    local options = { model = "legacy-claude", temperature = 0.4 }
+                    if source == "route" then ref.options.reasoning_model_request = true
+                    else options.reasoning_model_request = true end
+                    if source == "direct" then options.provider_id = ref.id end
+                    local sent
+                    mock_providers.open = function()
+                        return { generate = function(_, args)
+                            sent = args
+                            return { success = true, result = { content = "ok" } }
+                        end }
+                    end
+                    local result, err = llm.generate("Hello", options)
+                    test.is_nil(err)
+                    test.is_nil(sent.accepts.thinking)
+                    test.is_nil(sent.accepts.sampling)
+                    test.is_nil(sent.options.reasoning_model_request)
+                    test.eq(sent.options.temperature, 0.4)
+                    test.is_nil(result.metadata.adjusted)
+                end
+            end)
+        end)
+
         describe("Smart Model Resolution", function()
             it("should resolve model by exact name", function()
                 local result, err = llm.generate("Hello", { model = "gpt-4o" })
@@ -446,6 +605,46 @@ local function define_tests()
 
                 test.is_nil(result)
                 test.contains(err, "No models found for class")
+            end)
+        end)
+
+        describe("Public Model Resolution", function()
+            it("should resolve a model card by name", function()
+                local card, err = llm.resolve_model("gpt-4o")
+
+                test.is_nil(err)
+                test.eq(card.name, "gpt-4o")
+            end)
+
+            it("should resolve a model card by class name and class: syntax", function()
+                local by_class, err = llm.resolve_model("coder")
+                test.is_nil(err)
+                test.eq(by_class.name, "claude-4-sonnet")
+
+                local by_prefix, prefix_err = llm.resolve_model("class:frontier")
+                test.is_nil(prefix_err)
+                test.eq(by_prefix.name, "gpt-4o")
+            end)
+
+            it("should return an error for an unknown model", function()
+                local card, err = llm.resolve_model("nonexistent")
+
+                test.is_nil(card)
+                test.contains(err, "Model or class not found")
+            end)
+
+            it("should prefer the model resolver contract when bound", function()
+                llm._model_resolver = {
+                    resolve = function(self, args)
+                        return { id = "custom:m", name = "custom-m", max_tokens = 64000 }
+                    end
+                }
+
+                local card, err = llm.resolve_model("anything")
+
+                test.is_nil(err)
+                test.eq(card.name, "custom-m")
+                test.eq(card.max_tokens, 64000)
             end)
         end)
 
@@ -556,6 +755,35 @@ local function define_tests()
                 test.eq(mock_providers.last_open.options.retry.attempts, 3)
                 test.eq(mock_providers.last_open.options.retry.backoff_ms, 50)
                 test.is_nil(mock_providers.last_generate_args.retry)
+            end)
+
+            it("should keep the configured model_profile when a caller passes its own", function()
+                llm._model_resolver = {
+                    resolve = function(self, args: { model: string }): ResolvedCard
+                        return {
+                            id = "custom:profiled",
+                            name = "custom-profiled",
+                            providers = {
+                                {
+                                    id = "wippy.llm.openai:provider",
+                                    provider_model = "gpt-4o-2024-11-20",
+                                    options = { model_profile = { forced_tool_choice = false } },
+                                },
+                            },
+                        }
+                    end,
+                }
+
+                local result, err = llm.generate("Hello", {
+                    model = "custom-profiled",
+                    model_profile = { forced_tool_choice = true },
+                    tool_choice_fallback = "auto",
+                })
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock response from OpenAI")
+                test.is_false(mock_providers.last_generate_args.accepts.forced_tool_choice)
+                test.eq(mock_providers.last_generate_args.options.tool_choice_fallback, "auto")
             end)
 
             it("should forward per-call retry to the provider call", function()
@@ -772,6 +1000,67 @@ local function define_tests()
                 test.not_nil(result.tool_calls)
                 test.eq(#result.tool_calls, 1)
                 test.eq(result.tool_calls[1].name, "test_tool")
+            end)
+
+            it("should report context_tokens as uncached plus cached input", function()
+                local open = mock_providers.open
+                mock_providers.open = function(provider_id, options)
+                    local instance = open(provider_id, options)
+                    instance.generate = function(self, args)
+                        return {
+                            success = true,
+                            result = { content = "ok", tool_calls = {} },
+                            tokens = {
+                                prompt_tokens = 10,
+                                completion_tokens = 4,
+                                total_tokens = 14,
+                                cache_read_tokens = 30,
+                                cache_write_tokens = 5
+                            },
+                            finish_reason = "stop"
+                        }
+                    end
+                    return instance
+                end
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.prompt_tokens, 10)
+                test.eq(result.tokens.context_tokens, 45)
+            end)
+
+            it("should report context_tokens from provider-specific cache field names", function()
+                local open = mock_providers.open
+                mock_providers.open = function(provider_id, options)
+                    local instance = open(provider_id, options)
+                    instance.generate = function(self, args)
+                        return {
+                            success = true,
+                            result = { content = "ok", tool_calls = {} },
+                            tokens = {
+                                prompt_tokens = 7,
+                                completion_tokens = 1,
+                                cache_read_input_tokens = 100,
+                                cache_creation_input_tokens = 20
+                            },
+                            finish_reason = "stop"
+                        }
+                    end
+                    return instance
+                end
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.context_tokens, 127)
+            end)
+
+            it("should report context_tokens equal to prompt_tokens without caching", function()
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+
+                test.is_nil(err)
+                test.eq(result.tokens.context_tokens, 20)
             end)
 
             it("should require model parameter", function()
@@ -1476,6 +1765,118 @@ local function define_tests()
                 test.eq(args.retry.attempts, 2)
                 test.is_nil(args.options.timeout)
                 test.is_nil(args.options.retry)
+            end)
+        end)
+
+        describe("Caller Options Ownership", function()
+            local function shallow_copy(t)
+                local copy = {}
+                for k, v in pairs(t) do
+                    copy[k] = v
+                end
+                return copy
+            end
+
+            local function assert_unchanged(before, after)
+                local before_count = 0
+                for k, v in pairs(before) do
+                    before_count = before_count + 1
+                    test.eq(after[k], v, "caller option changed: " .. tostring(k))
+                end
+
+                local after_count = 0
+                for _ in pairs(after) do
+                    after_count = after_count + 1
+                end
+                test.eq(after_count, before_count, "caller options table gained or lost keys")
+            end
+
+            local questions = {
+                resolved = { type = "predicate", instructions = "The customer considers the issue closed" }
+            }
+
+            it("should not write into the caller's options table in generate", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "gpt-4o", temperature = 0.4 }
+                local before = shallow_copy(options)
+
+                local result, err = llm.generate("Hello", options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_generate_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in structured_output", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local schema = { type = "object", properties = { name = { type = "string" } } }
+                local options = { model = "gpt-4o" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.structured_output(schema, "Create person", options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_structured_output_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in embed", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "text-embedding-3-small" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.embed("Test text", options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_embed_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in evaluate", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "jev" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.evaluate("I was charged twice", questions, options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_evaluate_args.options.user, actor_id)
+            end)
+
+            it("should not write into the caller's options table in status", function()
+                local actor = assert(security.actor(), "test runner must install an ambient actor")
+                local actor_id = actor:id()
+
+                local options = { model = "gpt-4o" }
+                local before = shallow_copy(options)
+
+                local result, err = llm.status(options)
+
+                test.is_nil(err)
+                assert_unchanged(before, options)
+                test.eq(mock_providers.last_status_args.options.user, actor_id)
+            end)
+
+            it("should reuse one caller options table across repeated calls", function()
+                local options = { model = "gpt-4o" }
+                local before = shallow_copy(options)
+
+                local first_result, first_err = llm.generate("Hello", options)
+                test.is_nil(first_err)
+                assert_unchanged(before, options)
+
+                local second_result, second_err = llm.generate("Hello again", options)
+                test.is_nil(second_err)
+                assert_unchanged(before, options)
             end)
         end)
     end)

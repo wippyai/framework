@@ -308,6 +308,106 @@ local function define_tests()
                 test.eq(first_system.cache_control.type, "ephemeral")
             end)
 
+            it("should cache a tool-result history tail", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Weather?" }} },
+                    { role = "function_call", function_call = {
+                        id = "call-1", name = "weather", arguments = { city = "NYC" }
+                    } },
+                    { role = "function_result", function_call_id = "call-1", content = "Sunny" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+
+                local tail = result.messages[#result.messages].content[1] :: any
+                test.eq(tail.type, "tool_result")
+                test.eq(tail.cache_control.type, "ephemeral")
+            end)
+
+            it("should preserve the cached tool-result prefix across the next step", function()
+                local history = {
+                    { role = "system", content = "Use tools" },
+                    { role = "cache_marker", marker_id = "system_complete" },
+                    { role = "user", content = "Weather?" },
+                    { role = "function_call", function_call = {
+                        id = "call-1", name = "weather", arguments = { city = "NYC" }
+                    } },
+                    { role = "function_result", function_call_id = "call-1", content = "Sunny" },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                }
+                local first: any = mapper.map_messages(history)
+                table.remove(history) -- rebuilt prompts move the sole tail marker
+                history[#history + 1] = { role = "assistant", content = "It is sunny." }
+                history[#history + 1] = { role = "cache_marker", marker_id = "history_tail" }
+                local second: any = mapper.map_messages(history)
+
+                test.eq(second.system[1].text, first.system[1].text)
+                test.eq(second.system[1].cache_control.type, first.system[1].cache_control.type)
+                test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
+                test.eq(second.messages[2].content[1].id, first.messages[2].content[1].id)
+                test.eq(second.messages[2].content[1].name, first.messages[2].content[1].name)
+                test.eq(second.messages[3].content[1].tool_use_id,
+                    first.messages[3].content[1].tool_use_id)
+                test.eq(second.messages[3].content[1].content, first.messages[3].content[1].content)
+                test.eq(first.messages[3].content[1].cache_control.type, "ephemeral")
+                test.is_nil(second.messages[3].content[1].cache_control)
+                test.eq(second.messages[4].content[1].cache_control.type, "ephemeral")
+            end)
+
+            it("should reserve a history slot and cap duplicate or excess markers", function()
+                local messages = {}
+                for i = 1, 5 do
+                    messages[#messages + 1] = { role = "system", content = "System " .. i }
+                    messages[#messages + 1] = { role = "cache_marker" }
+                end
+                messages[#messages + 1] = { role = "user", content = {{ type = "text", text = "History" }} }
+                messages[#messages + 1] = { role = "cache_marker", marker_id = "history_tail" }
+                messages[#messages + 1] = { role = "cache_marker", marker_id = "history_tail" }
+
+                local result = mapper.map_messages(messages)
+                local count = 0
+                for _, block in ipairs(result.system or {}) do
+                    if block.cache_control then count = count + 1 end
+                end
+                for _, message in ipairs(result.messages) do
+                    for _, block in ipairs(message.content) do
+                        if block.cache_control then count = count + 1 end
+                    end
+                end
+                test.eq(count, 4)
+                test.not_nil((result.messages[1].content[1] :: any).cache_control)
+            end)
+
+            it("should not place cache_control on a thinking-only tail", function()
+                local result = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Question" }} },
+                    { role = "assistant", content = {}, metadata = {
+                        thinking_blocks = {{ type = "thinking", thinking = "Reasoning", signature = "sig" }}
+                    } },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+
+                test.not_nil((result.messages[1].content[1] :: any).cache_control)
+                test.eq(result.messages[2].content[1].type, "thinking")
+                test.is_nil(result.messages[2].content[1].cache_control)
+            end)
+
+            it("should keep the marked prefix stable when a dynamic developer note follows", function()
+                local first = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Question" }} },
+                    { role = "cache_marker", marker_id = "history_tail" }
+                })
+                local second = mapper.map_messages({
+                    { role = "user", content = {{ type = "text", text = "Question" }} },
+                    { role = "cache_marker", marker_id = "history_tail" },
+                    { role = "developer", content = "Changing memory recall" }
+                })
+
+                test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
+                test.not_nil((second.messages[1].content[1] :: any).cache_control)
+                test.eq(second.messages[2].role, "user")
+                test.eq(second.messages[2].content[1].text, "Changing memory recall")
+            end)
+
             it("should handle empty messages gracefully", function()
                 local result = mapper.map_messages({})
                 test.not_nil(result.messages)
@@ -415,7 +515,7 @@ local function define_tests()
                     stop_sequences = { "STOP" }
                 }
 
-                local result = mapper.map_options(contract_options, "claude-3-sonnet")
+                local result = mapper.map_options(contract_options)
                 test.eq(result.temperature, 0.7)
                 test.eq(result.max_tokens, 1000)
                 test.eq(result.top_p, 0.9)
@@ -428,18 +528,102 @@ local function define_tests()
                     max_tokens = 1000
                 }
 
-                local result = mapper.map_options(contract_options, "claude-3-7-sonnet")
+                local result = mapper.map_options(contract_options)
                 test.not_nil(result.thinking)
                 test.eq(result.thinking.type, "enabled")
-                test.gt(result.thinking.budget_tokens, 1000)
-                test.eq(result.temperature, 1) -- Required for thinking
+                test.gt((result.thinking :: table).budget_tokens, 1000)
+                test.is_nil(result.temperature) -- Caller sent none; budget never injects one
                 test.gt(result.max_tokens, contract_options.max_tokens) -- Increased for thinking
             end)
 
             it("should handle nil options", function()
-                local result = mapper.map_options(nil, "claude-3-sonnet")
+                local result = mapper.map_options(nil)
                 test.eq(type(result), "table")
                 test.is_nil(next(result)) -- Empty table
+            end)
+
+            it("should map thinking_effort to output_config.effort for adaptive-only models", function()
+                local profile = { thinking = "adaptive" }
+                local result = mapper.map_options({ thinking_effort = 50, max_tokens = 1000 }, profile)
+                test.eq(result.thinking.type, "adaptive")
+                test.is_nil((result.thinking :: table).budget_tokens)
+                test.is_nil(result.temperature)
+                test.eq(result.max_tokens, 1000)
+                test.eq(result.output_config.effort, "medium")
+            end)
+
+            it("should map the thinking_effort scale onto the effort levels", function()
+                local profile = { thinking = "adaptive" }
+                local cases = { { 1, "low" }, { 19, "low" }, { 20, "medium" }, { 49, "medium" }, { 50, "medium" },
+                    { 51, "high" }, { 79, "high" }, { 80, "xhigh" }, { 99, "xhigh" }, { 100, "max" } }
+                for _, c in ipairs(cases) do
+                    local result = mapper.map_options({ thinking_effort = c[1] }, profile)
+                    test.eq(result.output_config.effort, c[2])
+                end
+            end)
+
+            it("should send no effort for an adaptive-only model when thinking_effort is unset", function()
+                local result = mapper.map_options({ max_tokens = 1000 }, { thinking = "adaptive" })
+                test.is_nil(result.output_config)
+                test.is_nil(result.thinking)
+            end)
+
+            it("should keep the explicit temperature an adaptive-only caller sets", function()
+                local result = mapper.map_options({ temperature = 0.2, thinking_effort = 50 }, { thinking = "adaptive" })
+                test.eq(result.temperature, 0.2)
+            end)
+
+            it("should never pass the model profile or fallback permission through as request fields", function()
+                local result = mapper.map_options({
+                    max_tokens = 10, tool_choice_fallback = "auto",
+                }, { forced_tool_choice = false, thinking = "adaptive" })
+                test.is_nil(result.accepts)
+                test.is_nil(result.tool_choice_fallback)
+            end)
+        end)
+
+        describe("Declared thinking", function()
+            it("keeps the wire temperature at 1 and reports nothing when the caller asked for 1", function()
+                local mapped, adjusted = mapper.map_options({ thinking_effort = 50, temperature = 1 }, { thinking = "budget" })
+                test.eq(mapped.temperature, 1)
+                test.is_nil(adjusted.temperature)
+            end)
+            it("sends no temperature and reports nothing when the caller sent none", function()
+                local mapped, adjusted = mapper.map_options({ thinking_effort = 50 }, { thinking = "budget" })
+                test.is_nil(mapped.temperature)
+                test.is_nil(adjusted.temperature)
+            end)
+            it("drops a non-1 caller temperature and reports it requested, never sent", function()
+                local mapped, adjusted = mapper.map_options({ thinking_effort = 50, temperature = 0.2 }, { thinking = "budget" })
+                test.is_nil(mapped.temperature)
+                test.eq(adjusted.temperature.requested, 0.2)
+                test.is_nil(adjusted.temperature.sent)
+            end)
+            it("sends no thinking when declared none or adaptive effort is zero", function()
+                for _, facts in ipairs({ { thinking = "none" }, { thinking = "adaptive" } }) do
+                    local mapped = mapper.map_options({ thinking_effort = facts.thinking == "none" and 50 or 0 }, facts)
+                    test.is_nil(mapped.thinking)
+                    test.is_nil(mapped.output_config)
+                    test.is_nil(mapped.temperature)
+                    test.is_nil(mapped.max_tokens)
+                end
+            end)
+            it("does not inject tokens or temperature for adaptive thinking", function()
+                local mapped = mapper.map_options({ thinking_effort = 50 }, { thinking = "adaptive" })
+                test.eq(mapped.thinking.type, "adaptive")
+                test.eq(mapped.output_config.effort, "medium")
+                test.is_nil((mapped.thinking :: table).budget_tokens)
+                test.is_nil(mapped.max_tokens)
+                test.is_nil(mapped.temperature)
+            end)
+        end)
+
+        describe("Capability validation", function()
+            it("rejects a fact value outside Claude's supported set", function()
+                local mapped, adjusted, err = mapper.map_options({}, { thinking = "nonsense" })
+                test.contains(err, "Claude")
+                test.contains(err, "thinking")
+                test.contains(err, "nonsense")
             end)
         end)
 

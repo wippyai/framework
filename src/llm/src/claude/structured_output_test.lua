@@ -693,7 +693,7 @@ local function define_tests()
                         test.not_nil(payload.thinking)
                         test.eq(payload.thinking.type, "enabled")
                         test.gt(payload.thinking.budget_tokens, 1024)
-                        test.eq(payload.temperature, 1) -- Required for thinking
+                        test.is_nil(payload.temperature) -- Dropped, never forced to 1
                         test.gt(payload.max_tokens, payload.thinking.budget_tokens)
 
                         return {
@@ -736,7 +736,7 @@ local function define_tests()
                     options = {
                         thinking_effort = 80,
                         max_tokens = 150,
-                        temperature = 0.5 -- Should be overridden to 1
+                        temperature = 0.5 -- Dropped, budget thinking never injects a temperature
                     }
                 }
 
@@ -744,6 +744,149 @@ local function define_tests()
 
                 test.is_true(response.success)
                 test.eq(response.result.data.result, "structured thinking")
+                test.eq(response.metadata.adjusted.temperature.requested, 0.5)
+                test.is_nil(response.metadata.adjusted.temperature.sent)
+            end)
+        end)
+
+        describe("Native Structured Output (accepts.structured_output = native)", function()
+            local sent: any = nil
+            local posts = 0
+
+            local function mock_reply(body)
+                sent = nil
+                posts = 0
+                structured_output_handler._client._ctx = { all = function() return { api_key = "test-api-key" } end }
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function(url, options)
+                        posts = posts + 1
+                        sent = json.decode(tostring(options.body))
+                        return { status_code = 200, body = json.encode(body), headers = {} }
+                    end
+                }
+            end
+
+            local schema = {
+                type = "object",
+                properties = {
+                    answer = { type = "string" },
+                    items = {
+                        type = "array",
+                        items = {
+                            type = "object",
+                            properties = { n = { type = "number" } },
+                            required = { "n" },
+                            additionalProperties = false
+                        }
+                    }
+                },
+                required = { "answer", "items" },
+                additionalProperties = false
+            }
+
+            local function args(options, custom_schema)
+                return {
+                    model = "claude-opus-5-5",
+                    messages = { { role = "user", content = { { type = "text", text = "Answer" } } } },
+                    schema = custom_schema or schema,
+                    options = options,
+                    accepts = options and options.accepts
+                }
+            end
+
+            local native = { accepts = { structured_output = "native", forced_tool_choice = false } }
+
+            it("should send output_config.format and no forced tool", function()
+                mock_reply({
+                    content = {
+                        { type = "thinking", thinking = "", signature = "sig" },
+                        { type = "text", text = '{"answer":"hi","items":[{"n":1},{"n":2}]}' }
+                    },
+                    stop_reason = "end_turn",
+                    usage = { input_tokens = 12, output_tokens = 9 }
+                })
+
+                local response, err = structured_output_handler.handler(args(native))
+
+                test.is_nil(err)
+                test.is_true(response.success)
+                test.is_nil(sent.tools)
+                test.is_nil(sent.tool_choice)
+                test.eq(sent.output_config.format.type, "json_schema")
+                test.eq(sent.output_config.format.schema.properties.answer.type, "string")
+                test.eq(response.result.data.answer, "hi")
+                test.eq(#response.result.data.items, 2)
+                test.eq(response.tokens.prompt_tokens, 12)
+                test.eq(response.finish_reason, "stop")
+            end)
+
+            it("should merge the format and the effort into one output_config", function()
+                mock_reply({
+                    content = { { type = "text", text = '{"answer":"hi","items":[]}' } },
+                    stop_reason = "end_turn",
+                    usage = { input_tokens = 1, output_tokens = 1 }
+                })
+
+                local options = {
+                    thinking_effort = 60,
+                    accepts = { structured_output = "native", thinking = "adaptive" }
+                }
+                local _, err = structured_output_handler.handler(args(options))
+
+                test.is_nil(err)
+                test.eq(sent.output_config.effort, "high")
+                test.eq(sent.output_config.format.type, "json_schema")
+                test.eq(sent.thinking.type, "adaptive")
+            end)
+
+            it("should reject a nested object that is not closed, naming its path, without sending", function()
+                mock_reply({ content = {}, stop_reason = "end_turn" })
+                local open_rows = {
+                    type = "object",
+                    properties = {
+                        rows = { type = "array", items = { type = "object", properties = { a = { type = "string" } } } }
+                    },
+                    required = { "rows" },
+                    additionalProperties = false
+                }
+
+                local response, err = structured_output_handler.handler(args(native, open_rows))
+
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "properties.rows.items")
+                test.eq(posts, 0)
+            end)
+
+            it("should fail on a refusal", function()
+                mock_reply({ content = { { type = "text", text = "I can't help with that." } }, stop_reason = "refusal" })
+                local response, err = structured_output_handler.handler(args(native))
+                test.is_nil(response)
+                test.contains(err:message(), "refusal")
+            end)
+
+            it("should fail on a truncated answer", function()
+                mock_reply({ content = { { type = "text", text = '{"answer":"h' } }, stop_reason = "max_tokens" })
+                local response, err = structured_output_handler.handler(args(native))
+                test.is_nil(response)
+                test.contains(err:message(), "max_tokens")
+            end)
+
+            it("should fail when the text is not JSON", function()
+                mock_reply({ content = { { type = "text", text = "not json" } }, stop_reason = "end_turn" })
+                local response, err = structured_output_handler.handler(args(native))
+                test.is_nil(response)
+                test.contains(err:message(), "JSON")
+            end)
+
+            it("should refuse the forced-tool path for a model that cannot be forced", function()
+                mock_reply({ content = {}, stop_reason = "end_turn" })
+                local response, err = structured_output_handler.handler(args({ accepts = { forced_tool_choice = false } }))
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "structured_output")
+                test.eq(posts, 0)
             end)
         end)
 

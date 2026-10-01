@@ -242,6 +242,7 @@ entries:
       - time
     imports:
       output: wippy.llm:output
+      route: wippy.llm.util:route
 
   # wippy.llm.google:mapper_test
   - name: mapper_test

@@ -78,3 +78,23 @@ entries:
       transport: wippy.llm.util:transport
       test: wippy.test:test
     method: run_tests
+
+  - name: route
+    kind: library.lua
+    source: file://route.lua
+
+  - name: route_test
+    kind: function.lua
+    meta:
+      name: Route Facts Test
+      type: test
+      group: LLM / Utils
+    source: file://route_test.lua
+    imports:
+      route: wippy.llm.util:route
+      test: wippy.test:test
+    method: run_tests
+
+  - name: thinking
+    kind: library.lua
+    source: file://thinking.lua

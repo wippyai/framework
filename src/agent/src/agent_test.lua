@@ -1054,6 +1054,52 @@ local function define_tests()
             end)
         end)
 
+        describe("Prompt Caching", function()
+            local function capture(builder)
+                local captured = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured = messages
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+                local test_agent = agent.new(basic_compiled_spec)
+                test_agent:step(builder, { disable_memory_recall = true })
+                agent._llm = nil
+                return captured :: any
+            end
+
+            it("should mark the conversation tail after the newest user message", function()
+                local builder = mock_prompt.new()
+                builder:add_user("First message")
+                builder:add_assistant("First response")
+                builder:add_user("Second message")
+
+                local messages = capture(builder)
+                test.not_nil(messages)
+                local last = messages[#messages]
+                test.eq(last.role, prompt.ROLE.CACHE_MARKER)
+                test.eq(last.marker_id, "conversation_tail")
+                test.eq(messages[#messages - 1].role, "user")
+            end)
+
+            it("should not add a tail marker when the conversation ends with an assistant message", function()
+                local builder = mock_prompt.new()
+                builder:add_user("First message")
+                builder:add_assistant("First response")
+
+                local messages = capture(builder)
+                test.not_nil(messages)
+                for _, msg in ipairs(messages) do
+                    test.is_true(msg.marker_id ~= "conversation_tail")
+                end
+            end)
+        end)
+
         describe("Tool Schema Usage", function()
             it("should always use tools array for LLM", function()
                 -- Mock LLM that captures the options passed to it
@@ -1238,6 +1284,33 @@ local function define_tests()
 
                 -- Updated expectation: tool_call should be mapped to tool_choice
                 test.eq((captured_options :: any).tool_choice, "required")
+
+                agent._llm = nil
+            end)
+
+            it("should forward the tool choice fallback the caller permits", function()
+                local captured_options = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 1, completion_tokens = 1, total_tokens = 2 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Finish")
+                test_agent:step(prompt_builder, { tool_call = "any", tool_call_fallback = "auto" })
+
+                test.eq((captured_options :: any).tool_choice, "any")
+                test.eq((captured_options :: any).tool_choice_fallback, "auto")
+
+                test_agent:step(prompt_builder, { tool_call = "any" })
+                test.is_nil((captured_options :: any).tool_choice_fallback)
 
                 agent._llm = nil
             end)

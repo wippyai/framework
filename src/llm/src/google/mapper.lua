@@ -1,8 +1,18 @@
 local json = require("json")
 local output = require("output")
 local time = require("time")
+local route = require("route")
 
 local mapper = {}
+
+mapper.CAPABILITY = {
+    name = "Google",
+    defaults = { thinking = "none" },
+    supported = {
+        thinking = { none = true },
+        structured_output = { native = true }
+    }
+}
 
 -- Remove elements that are not supported by Google
 local function filter_tool_schema(schema)
@@ -245,7 +255,11 @@ function mapper.map_tool_config(contract_choice, available_tools)
     return "AUTO", nil
 end
 
-function mapper.map_options(contract_options)
+function mapper.map_options(contract_options, accepts)
+    local unsupported = route.unsupported_fact_error(accepts, mapper.CAPABILITY)
+    if unsupported then
+        return nil, unsupported
+    end
     if not contract_options then return {} end
 
     return {
@@ -317,7 +331,6 @@ function mapper.map_tokens(google_usage)
     if google_usage.cachedContentTokenCount then
         local cached = tonumber(google_usage.cachedContentTokenCount) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
         tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 

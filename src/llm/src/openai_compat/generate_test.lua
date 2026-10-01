@@ -196,7 +196,7 @@ local function define_tests()
                         test.eq(payload.reasoning_effort, "medium")
                         test.eq(payload.max_completion_tokens, 100)
                         test.is_nil(payload.max_tokens)
-                        test.is_nil(payload.temperature)
+                        test.eq(payload.temperature, 0.7)
 
                         return {
                             status_code = 200,
@@ -224,11 +224,11 @@ local function define_tests()
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Solve this problem" }} }
                     },
+                    accepts = { thinking = "adaptive" },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 50,
                         max_tokens = 100,
-                        temperature = 0.7 -- Should be ignored
+                        temperature = 0.7
                     }
                 }
 

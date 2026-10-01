@@ -224,7 +224,7 @@ local function define_tests()
                         test.not_nil(payload.thinking)
                         test.eq(payload.thinking.type, "enabled")
                         test.gt(payload.thinking.budget_tokens, 1000)
-                        test.eq(payload.temperature, 1) -- Required for thinking
+                        test.is_nil(payload.temperature) -- Dropped, never forced to 1
 
                         return {
                             content = {
@@ -245,7 +245,7 @@ local function define_tests()
                     },
                     options = {
                         thinking_effort = 50,
-                        temperature = 0.5 -- Should be overridden to 1
+                        temperature = 0.5 -- Dropped, budget thinking never injects a temperature
                     }
                 }
 
@@ -254,6 +254,8 @@ local function define_tests()
                 assert(response.success)
                 test.eq(response.result.content, "After thinking, here's my answer.")
                 test.eq(response.metadata.thinking, "Let me think about this...")
+                test.eq(response.metadata.adjusted.temperature.requested, 0.5)
+                test.is_nil(response.metadata.adjusted.temperature.sent)
             end)
 
             it("should use default timeout when not specified", function()

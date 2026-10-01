@@ -507,6 +507,12 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.tool_choice = runtime_options.tool_call
     end
 
+    -- A caller that enforces tool use itself may let a forced tool_call be sent
+    -- as "auto" to a model that cannot be forced (see the provider's model_profile).
+    if runtime_options.tool_call_fallback ~= nil then
+        options.tool_choice_fallback = runtime_options.tool_call_fallback
+    end
+
     -- Get ongoing conversation messages (no clone needed)
     local conversation_messages = prompt_builder:get_messages()
     local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
@@ -523,6 +529,17 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     -- Add ongoing conversation
     for _, msg in ipairs(conversation_messages) do
         table.insert(final_messages, msg)
+    end
+
+    -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
+    -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
+    -- marker after the newest user/tool-result message lets the next turn read everything up to
+    -- here from cache. Placed before the memory recall, which changes turn to turn. Providers
+    -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
+    local tail = conversation_messages[#conversation_messages]
+    if tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
+        and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM then
+        table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
     end
 
     -- Append memory recall after conversation

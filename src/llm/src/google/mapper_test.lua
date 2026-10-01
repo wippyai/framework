@@ -12,6 +12,28 @@ end
 local function define_tests()
     describe("Google Mapper", function()
 
+        describe("Declared thinking", function()
+            it("rejects thinking modes it cannot honor", function()
+                for _, thinking in ipairs({ "adaptive", "budget" }) do
+                    local options, err = mapper.map_options({}, { thinking = thinking })
+                    test.is_nil(options)
+                    test.contains(err, "Google")
+                    test.contains(err, thinking)
+                end
+                local options, err = mapper.map_options({ temperature = 0.4 }, { thinking = "none" })
+                test.is_nil(err)
+                test.eq(options.temperature, 0.4)
+            end)
+
+            it("rejects a declared structured_output mode it cannot honor", function()
+                local options, err = mapper.map_options({}, { structured_output = "tool" })
+                test.is_nil(options)
+                test.contains(err, "Google")
+                test.contains(err, "structured_output")
+                test.contains(err, "native")
+            end)
+        end)
+
         describe("Message Mapping", function()
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {
@@ -1272,7 +1294,7 @@ local function define_tests()
                 local contract_tokens = mapper.map_tokens(google_usage)
 
                 tests.eq(contract_tokens.cache_read_tokens, 30)
-                tests.eq(contract_tokens.cache_write_tokens, 70)
+                tests.eq(contract_tokens.cache_write_tokens, 0)
                 tests.eq(contract_tokens.prompt_tokens, 70)
                 tests.eq(contract_tokens.completion_tokens, 50)
             end)
@@ -1311,7 +1333,7 @@ local function define_tests()
                 tests.eq(contract_tokens.total_tokens, 0)
             end)
 
-            it("should calculate cache write tokens correctly", function()
+            it("should report cached content as cache reads without cache writes", function()
                 local google_usage = {
                     promptTokenCount = 200,
                     candidatesTokenCount = 50,
@@ -1322,7 +1344,7 @@ local function define_tests()
                 local contract_tokens = mapper.map_tokens(google_usage)
 
                 tests.eq(contract_tokens.cache_read_tokens, 150)
-                tests.eq(contract_tokens.cache_write_tokens, 50)
+                tests.eq(contract_tokens.cache_write_tokens, 0)
                 tests.eq(contract_tokens.prompt_tokens, 50)
             end)
 
@@ -1356,7 +1378,7 @@ local function define_tests()
                 tests.eq(contract_tokens.completion_tokens, 100)
                 tests.eq(contract_tokens.total_tokens, 350)
                 tests.eq(contract_tokens.cache_read_tokens, 50)
-                tests.eq(contract_tokens.cache_write_tokens, 150)
+                tests.eq(contract_tokens.cache_write_tokens, 0)
                 tests.eq(contract_tokens.thinking_tokens, 25)
             end)
 

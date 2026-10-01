@@ -131,8 +131,10 @@ entries:
     modules:
       - json
     imports:
+      thinking: wippy.llm.util:thinking
       prompt: wippy.llm:prompt
       output: wippy.llm:output
+      route: wippy.llm.util:route
 
   - name: embed_titan
     kind: library.lua
@@ -186,6 +188,7 @@ entries:
       bedrock_client: wippy.llm.bedrock:client
       mapper: wippy.llm.bedrock:mapper
       output: wippy.llm:output
+      route: wippy.llm.util:route
     method: handler
 
   - name: structured_output
@@ -200,6 +203,7 @@ entries:
       bedrock_client: wippy.llm.bedrock:client
       mapper: wippy.llm.bedrock:mapper
       output: wippy.llm:output
+      route: wippy.llm.util:route
     method: handler
 
   - name: embed

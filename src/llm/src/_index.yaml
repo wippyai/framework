@@ -257,7 +257,17 @@ entries:
                       {"type": "string", "enum": ["auto", "none", "any"]},
                       {"type": "string", "description": "Specific tool name to force"}
                     ],
-                    "description": "How the model should use tools"
+                    "description": "How the model should use tools. 'any' and a tool name force a tool call; a route declaring forced_tool_choice = false rejects them unless options.tool_choice_fallback = 'auto'"
+                  },
+                  "accepts": {
+                    "type": "object",
+                    "properties": {
+                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                      "sampling": {"type": "boolean"},
+                      "forced_tool_choice": {"type": "boolean"},
+                      "structured_output": {"type": "string", "enum": ["native", "tool"]}
+                    },
+                    "additionalProperties": false
                   },
                   "options": {
                     "type": "object",
@@ -266,6 +276,18 @@ entries:
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
                       "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "tool_choice_fallback": {"type": "string", "enum": ["auto"], "description": "Permits sending a forced tool_choice as 'auto' to a model that cannot be forced; for callers that enforce tool use themselves. The response metadata.tool_choice reports the substitution"},
+                      "model_profile": {
+                        "type": "object",
+                        "deprecated": true,
+                        "description": "Deprecated legacy route facts; normalized into top-level accepts by llm",
+                        "properties": {
+                          "forced_tool_choice": {"type": "boolean", "description": "false: the model rejects forced tool choice ('any' or a tool name)"},
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: thinking is always on and thinking_effort maps to an effort level, not a budget"},
+                          "structured_output_mode": {"type": "string", "enum": ["native"], "description": "native: structured output uses the provider's JSON schema output instead of a forced tool; every object in the schema must set additionalProperties: false"}
+                        },
+                        "additionalProperties": false
+                      },
                       "top_p": {"type": "number", "minimum": 0, "maximum": 1},
                       "frequency_penalty": {"type": "number", "minimum": -2, "maximum": 2},
                       "presence_penalty": {"type": "number", "minimum": -2, "maximum": 2},
@@ -313,6 +335,7 @@ entries:
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
       evaluation: wippy.llm:evaluation
+      route: wippy.llm.util:route
 
   - name: evaluation
     kind: library.lua
@@ -344,6 +367,25 @@ entries:
       - security
     imports:
       llm: wippy.llm:llm
+      test: wippy.test:test
+    method: run_tests
+
+  # wippy.llm:route_flow_test
+  - name: route_flow_test
+    kind: function.lua
+    meta:
+      name: Route Driver Flow Test
+      type: test
+      group: LLM / General
+    source: file://route_flow_test.lua
+    imports:
+      llm: wippy.llm:llm
+      claude_generate: wippy.llm.claude:generate
+      claude_structured: wippy.llm.claude:structured_output
+      bedrock_generate: wippy.llm.bedrock:generate
+      bedrock_structured: wippy.llm.bedrock:structured_output
+      google_generate: wippy.llm.google:generate
+      google_structured: wippy.llm.google:structured_output
       test: wippy.test:test
     method: run_tests
 
@@ -526,13 +568,34 @@ entries:
                     "description": "Driver-specific model identifier"
                   },
                   "schema": {"type": "object"},
+                  "accepts": {
+                    "type": "object",
+                    "properties": {
+                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                      "sampling": {"type": "boolean"},
+                      "forced_tool_choice": {"type": "boolean"},
+                      "structured_output": {"type": "string", "enum": ["native", "tool"]}
+                    },
+                    "additionalProperties": false
+                  },
                   "options": {
                     "type": "object",
                     "description": "Generation parameters - core options plus driver-specific extensions",
                     "properties": {
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
-                      "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100}
+                      "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "model_profile": {
+                        "type": "object",
+                        "deprecated": true,
+                        "description": "Deprecated legacy route facts; normalized into top-level accepts by llm",
+                        "properties": {
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"]},
+                          "forced_tool_choice": {"type": "boolean"},
+                          "structured_output_mode": {"type": "string", "enum": ["native"]}
+                        },
+                        "additionalProperties": false
+                      }
                     },
                     "additionalProperties": true
                   }
@@ -755,6 +818,40 @@ entries:
           - definition: |
               {
                 "type": "object",
-                "description": "Model card including name, providers[] (with provider id and options), and limits"
+                "description": "Resolved model card; route facts are normalized only when building a request",
+                "properties": {
+                  "id": {"type": "string"},
+                  "name": {"type": "string"},
+                  "title": {"type": "string"},
+                  "description": {"type": "string"},
+                  "capabilities": {"type": "array", "items": {"type": "string"}},
+                  "class": {"type": "array", "items": {"type": "string"}},
+                  "priority": {"type": "number"},
+                  "max_tokens": {"type": "number"},
+                  "output_tokens": {"type": "number"},
+                  "dimensions": {"type": "number"},
+                  "pricing": {"type": "object", "additionalProperties": true},
+                  "providers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {"type": "string"},
+                        "provider_model": {"type": "string"},
+                        "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                        "sampling": {"type": "boolean"},
+                        "forced_tool_choice": {"type": "boolean"},
+                        "structured_output": {"type": "string", "enum": ["native", "tool"]},
+                        "context": {"type": "object", "additionalProperties": true},
+                        "options": {"type": "object", "additionalProperties": true},
+                        "priority": {"type": "number"}
+                      },
+                      "required": ["id", "provider_model"],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": ["name", "providers"],
+                "additionalProperties": true
               }
             format: application/schema+json
