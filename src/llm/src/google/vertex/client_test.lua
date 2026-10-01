@@ -233,7 +233,9 @@ local function define_tests()
 
                 client._client = {
                     request = function(method, url, options)
-                        tests.eq(options.body, json.encode({}))
+                        local expected, err = json.encode({})
+                        tests.is_nil(err)
+                        tests.eq(options.body, expected)
                         return nil
                     end
                 }
