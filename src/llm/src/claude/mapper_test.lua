@@ -506,46 +506,6 @@ local function define_tests()
             end)
         end)
 
-        describe("Model Profile: forced tool choice", function()
-            local tools = { { name = "lookup" }, { name = "finish" } }
-            local unforceable = { model_profile = { forced_tool_choice = false } }
-
-            it("should reject a forced choice the model does not accept when the caller gave no fallback", function()
-                local any_choice, any_err = mapper.map_tool_choice("any", tools, unforceable)
-                test.is_nil(any_choice)
-                test.contains(tostring(any_err), "forced_tool_choice")
-
-                local named, named_err = mapper.map_tool_choice("finish", tools, unforceable)
-                test.is_nil(named)
-                test.contains(tostring(named_err), "forced_tool_choice")
-            end)
-
-            it("should send auto for a forced choice when the caller permits the auto fallback", function()
-                local options = { model_profile = { forced_tool_choice = false }, tool_choice_fallback = "auto" }
-                test.eq(mapper.map_tool_choice("any", tools, options).type, "auto")
-                test.eq(mapper.map_tool_choice("finish", tools, options).type, "auto")
-            end)
-
-            it("should still reject an unknown tool name under the fallback", function()
-                local options = { model_profile = { forced_tool_choice = false }, tool_choice_fallback = "auto" }
-                local choice, err = mapper.map_tool_choice("missing", tools, options)
-                test.is_nil(choice)
-                test.contains(tostring(err), "not found")
-            end)
-
-            it("should keep auto and none unchanged for a model without forced choice", function()
-                test.eq(mapper.map_tool_choice("auto", tools, unforceable).type, "auto")
-                test.eq(mapper.map_tool_choice(nil, tools, unforceable).type, "auto")
-                test.eq(mapper.map_tool_choice("none", tools, unforceable).type, "none")
-            end)
-
-            it("should force as requested when the profile allows it or is absent", function()
-                local fallback_only = { tool_choice_fallback = "auto" }
-                test.eq(mapper.map_tool_choice("any", tools, fallback_only).type, "any")
-                test.eq(mapper.map_tool_choice("finish", tools, { model_profile = { forced_tool_choice = true } }).type, "tool")
-            end)
-        end)
-
         describe("Options Mapping", function()
             it("should map basic options correctly", function()
                 local contract_options = {
@@ -555,7 +515,7 @@ local function define_tests()
                     stop_sequences = { "STOP" }
                 }
 
-                local result = mapper.map_options(contract_options, "claude-3-sonnet")
+                local result = mapper.map_options(contract_options)
                 test.eq(result.temperature, 0.7)
                 test.eq(result.max_tokens, 1000)
                 test.eq(result.top_p, 0.9)
@@ -568,57 +528,102 @@ local function define_tests()
                     max_tokens = 1000
                 }
 
-                local result = mapper.map_options(contract_options, "claude-3-7-sonnet")
+                local result = mapper.map_options(contract_options)
                 test.not_nil(result.thinking)
                 test.eq(result.thinking.type, "enabled")
-                test.gt(result.thinking.budget_tokens, 1000)
-                test.eq(result.temperature, 1) -- Required for thinking
+                test.gt((result.thinking :: table).budget_tokens, 1000)
+                test.is_nil(result.temperature) -- Caller sent none; budget never injects one
                 test.gt(result.max_tokens, contract_options.max_tokens) -- Increased for thinking
             end)
 
             it("should handle nil options", function()
-                local result = mapper.map_options(nil, "claude-3-sonnet")
+                local result = mapper.map_options(nil)
                 test.eq(type(result), "table")
                 test.is_nil(next(result)) -- Empty table
             end)
 
             it("should map thinking_effort to output_config.effort for adaptive-only models", function()
-                local profile = { thinking_mode = "adaptive_only" }
-                local result = mapper.map_options({ thinking_effort = 50, max_tokens = 1000, model_profile = profile }, "claude-opus-5-5")
-                test.is_nil(result.thinking)
+                local profile = { thinking = "adaptive" }
+                local result = mapper.map_options({ thinking_effort = 50, max_tokens = 1000 }, profile)
+                test.eq(result.thinking.type, "adaptive")
+                test.is_nil((result.thinking :: table).budget_tokens)
                 test.is_nil(result.temperature)
                 test.eq(result.max_tokens, 1000)
                 test.eq(result.output_config.effort, "medium")
             end)
 
             it("should map the thinking_effort scale onto the effort levels", function()
-                local profile = { thinking_mode = "adaptive_only" }
+                local profile = { thinking = "adaptive" }
                 local cases = { { 1, "low" }, { 19, "low" }, { 20, "medium" }, { 49, "medium" }, { 50, "medium" },
                     { 51, "high" }, { 79, "high" }, { 80, "xhigh" }, { 99, "xhigh" }, { 100, "max" } }
                 for _, c in ipairs(cases) do
-                    local result = mapper.map_options({ thinking_effort = c[1], model_profile = profile }, "claude-opus-5-5")
+                    local result = mapper.map_options({ thinking_effort = c[1] }, profile)
                     test.eq(result.output_config.effort, c[2])
                 end
             end)
 
             it("should send no effort for an adaptive-only model when thinking_effort is unset", function()
-                local result = mapper.map_options({ max_tokens = 1000, model_profile = { thinking_mode = "adaptive_only" } }, "claude-opus-5-5")
+                local result = mapper.map_options({ max_tokens = 1000 }, { thinking = "adaptive" })
                 test.is_nil(result.output_config)
                 test.is_nil(result.thinking)
             end)
 
             it("should keep the explicit temperature an adaptive-only caller sets", function()
-                local result = mapper.map_options({ temperature = 0.2, thinking_effort = 50, model_profile = { thinking_mode = "adaptive_only" } }, "claude-opus-5-5")
+                local result = mapper.map_options({ temperature = 0.2, thinking_effort = 50 }, { thinking = "adaptive" })
                 test.eq(result.temperature, 0.2)
             end)
 
             it("should never pass the model profile or fallback permission through as request fields", function()
                 local result = mapper.map_options({
                     max_tokens = 10, tool_choice_fallback = "auto",
-                    model_profile = { forced_tool_choice = false, thinking_mode = "adaptive_only" },
-                }, "claude-opus-5-5")
-                test.is_nil(result.model_profile)
+                }, { forced_tool_choice = false, thinking = "adaptive" })
+                test.is_nil(result.accepts)
                 test.is_nil(result.tool_choice_fallback)
+            end)
+        end)
+
+        describe("Declared thinking", function()
+            it("keeps the wire temperature at 1 and reports nothing when the caller asked for 1", function()
+                local mapped, adjusted = mapper.map_options({ thinking_effort = 50, temperature = 1 }, { thinking = "budget" })
+                test.eq(mapped.temperature, 1)
+                test.is_nil(adjusted.temperature)
+            end)
+            it("sends no temperature and reports nothing when the caller sent none", function()
+                local mapped, adjusted = mapper.map_options({ thinking_effort = 50 }, { thinking = "budget" })
+                test.is_nil(mapped.temperature)
+                test.is_nil(adjusted.temperature)
+            end)
+            it("drops a non-1 caller temperature and reports it requested, never sent", function()
+                local mapped, adjusted = mapper.map_options({ thinking_effort = 50, temperature = 0.2 }, { thinking = "budget" })
+                test.is_nil(mapped.temperature)
+                test.eq(adjusted.temperature.requested, 0.2)
+                test.is_nil(adjusted.temperature.sent)
+            end)
+            it("sends no thinking when declared none or adaptive effort is zero", function()
+                for _, facts in ipairs({ { thinking = "none" }, { thinking = "adaptive" } }) do
+                    local mapped = mapper.map_options({ thinking_effort = facts.thinking == "none" and 50 or 0 }, facts)
+                    test.is_nil(mapped.thinking)
+                    test.is_nil(mapped.output_config)
+                    test.is_nil(mapped.temperature)
+                    test.is_nil(mapped.max_tokens)
+                end
+            end)
+            it("does not inject tokens or temperature for adaptive thinking", function()
+                local mapped = mapper.map_options({ thinking_effort = 50 }, { thinking = "adaptive" })
+                test.eq(mapped.thinking.type, "adaptive")
+                test.eq(mapped.output_config.effort, "medium")
+                test.is_nil((mapped.thinking :: table).budget_tokens)
+                test.is_nil(mapped.max_tokens)
+                test.is_nil(mapped.temperature)
+            end)
+        end)
+
+        describe("Capability validation", function()
+            it("rejects a fact value outside Claude's supported set", function()
+                local mapped, adjusted, err = mapper.map_options({}, { thinking = "nonsense" })
+                test.contains(err, "Claude")
+                test.contains(err, "thinking")
+                test.contains(err, "nonsense")
             end)
         end)
 

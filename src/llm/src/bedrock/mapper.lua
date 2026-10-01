@@ -1,8 +1,25 @@
+local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local route = require("route")
 
 local mapper = {}
+
+mapper.CAPABILITY = {
+    name = "Bedrock",
+    defaults = {
+        thinking = "budget",
+        sampling = true,
+        forced_tool_choice = true,
+        structured_output = "tool"
+    },
+    supported = {
+        thinking = { adaptive = true, budget = true, none = true },
+        structured_output = { tool = true }
+    }
+}
+
 local MAX_CACHE_CHECKPOINTS = 4
 
 -- Converse stopReason -> contract finish_reason
@@ -445,12 +462,18 @@ function mapper.map_tool_choice(contract_choice, tools)
 end
 
 -- Map contract options to Converse inferenceConfig + additionalModelRequestFields
-function mapper.map_options(contract_options)
+function mapper.map_options(contract_options, accepts): (table, table, table, string?)
     local inference_config = {}
     local additional_fields = {}
+    local adjusted = {}
+
+    local unsupported = route.unsupported_fact_error(accepts, mapper.CAPABILITY)
+    if unsupported then
+        return inference_config, additional_fields, adjusted, unsupported
+    end
 
     if not contract_options then
-        return inference_config, additional_fields
+        return inference_config, additional_fields, adjusted
     end
 
     if contract_options.max_tokens then
@@ -466,8 +489,11 @@ function mapper.map_options(contract_options)
         inference_config.stopSequences = contract_options.stop_sequences
     end
 
-    -- Thinking/reasoning support
-    if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+    local mode = route.fact(accepts, "thinking", mapper.CAPABILITY)
+    if mode == "adaptive" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+        additional_fields.thinking = { type = "adaptive" }
+        additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+    elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
 
@@ -476,8 +502,12 @@ function mapper.map_options(contract_options)
             budget_tokens = thinking_budget
         }
 
-        -- Force temperature to 1 for thinking models
-        inference_config.temperature = 1
+        -- Extended thinking requires temperature 1; the provider default is
+        -- already 1, so a caller value other than 1 is dropped, never sent.
+        if contract_options.temperature ~= nil and contract_options.temperature ~= 1 then
+            adjusted.temperature = { requested = contract_options.temperature }
+            inference_config.temperature = nil
+        end
 
         -- Ensure max_tokens accommodates thinking budget
         if not inference_config.maxTokens or inference_config.maxTokens <= thinking_budget then
@@ -490,7 +520,7 @@ function mapper.map_options(contract_options)
         additional_fields.top_k = contract_options.top_k
     end
 
-    return inference_config, additional_fields
+    return inference_config, additional_fields, adjusted
 end
 
 -- Try to parse a text block as an embedded tool call.

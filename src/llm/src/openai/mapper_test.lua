@@ -6,6 +6,21 @@ local test = require("test")
 local function define_tests()
     describe("OpenAI Mapper", function()
 
+        describe("Capability validation", function()
+            it("rejects a declared thinking = budget, which OpenAI cannot honor", function()
+                local opts, err = openai_mapper.map_options({ temperature = 0.5 }, { thinking = "budget" })
+                test.contains(err, "OpenAI")
+                test.contains(err, "thinking")
+                test.contains(err, "budget")
+            end)
+
+            it("rejects a declared structured_output mode it cannot honor", function()
+                local opts, err = openai_mapper.map_options({}, { structured_output = "tool" })
+                test.contains(err, "structured_output")
+                test.contains(err, "native")
+            end)
+        end)
+
         describe("Message Mapping", function()
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {
@@ -661,16 +676,15 @@ local function define_tests()
                 test.is_nil(opts.seed)
             end)
 
-            it("should handle reasoning model options (reasoning.effort, no temperature/top_p)", function()
+            it("should handle reasoning model options (reasoning.effort and centrally filtered sampling)", function()
                 local contract_options = {
-                    reasoning_model_request = true,
                     thinking_effort = 50,
                     max_tokens = 100,
-                    temperature = 0.5,  -- Should be ignored for reasoning models
-                    top_p = 0.9         -- Should be ignored for reasoning models
+                    temperature = 0.5,
+                    top_p = 0.9
                 }
 
-                local opts = openai_mapper.map_options(contract_options)
+                local opts = openai_mapper.map_options(contract_options, { thinking = "adaptive" })
 
                 test.eq(opts.max_output_tokens, 100)
                 test.is_nil(opts.max_tokens)
@@ -678,8 +692,8 @@ local function define_tests()
                 local reasoning = opts.reasoning :: any
                 test.eq(reasoning.effort, "medium")
                 test.is_nil(opts.reasoning_effort)
-                test.is_nil(opts.temperature)
-                test.is_nil(opts.top_p)
+                test.eq(opts.temperature, contract_options.temperature)
+                test.eq(opts.top_p, contract_options.top_p)
             end)
 
             it("should map thinking effort levels including minimal and xhigh", function()
@@ -698,9 +712,8 @@ local function define_tests()
 
                 for _, case in ipairs(test_cases) do
                     local opts = openai_mapper.map_options({
-                        reasoning_model_request = true,
                         thinking_effort = case.effort
-                    })
+                    }, { thinking = "adaptive" })
                     local reasoning = opts.reasoning :: any
                     test.eq(reasoning.effort, case.expected)
                 end

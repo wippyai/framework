@@ -86,7 +86,10 @@ function structured_output.handler(contract_args)
         payload.systemInstruction = { parts = system_instructions }
     end
 
-    local mapped_options = structured_output._mapper.map_options(contract_args.options)
+    local mapped_options, options_err = structured_output._mapper.map_options(contract_args.options, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
     for key, value in pairs(mapped_options) do
         if value ~= nil then
             payload.generationConfig[key] = value

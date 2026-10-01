@@ -6,6 +6,21 @@ local test = require("test")
 local function define_tests()
     describe("OpenAI Mapper", function()
 
+        describe("Capability validation", function()
+            it("rejects a declared thinking = budget, which OpenAI-compatible cannot honor", function()
+                local opts, err = openai_mapper.map_options({ temperature = 0.5 }, { thinking = "budget" })
+                test.contains(err, "OpenAI-compatible")
+                test.contains(err, "thinking")
+                test.contains(err, "budget")
+            end)
+
+            it("rejects a declared structured_output mode it cannot honor", function()
+                local opts, err = openai_mapper.map_options({}, { structured_output = "tool" })
+                test.contains(err, "structured_output")
+                test.contains(err, "native")
+            end)
+        end)
+
         describe("Message Mapping", function()
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {
@@ -680,18 +695,17 @@ local function define_tests()
 
             it("should handle reasoning model options", function()
                 local contract_options = {
-                    reasoning_model_request = true,
                     thinking_effort = 50,
                     max_tokens = 100,
-                    temperature = 0.5 -- Should be ignored for reasoning models
+                    temperature = 0.5
                 }
 
-                local openai_options = openai_mapper.map_options(contract_options)
+                local openai_options = openai_mapper.map_options(contract_options, { thinking = "adaptive" })
 
                 test.eq(openai_options.max_completion_tokens, 100)
                 test.is_nil(openai_options.max_tokens)
                 test.eq(openai_options.reasoning_effort, "medium")
-                test.is_nil(openai_options.temperature)
+                test.eq(openai_options.temperature, 0.5)
             end)
 
             it("should map thinking effort levels correctly", function()
@@ -707,11 +721,10 @@ local function define_tests()
 
                 for _, case in ipairs(test_cases) do
                     local contract_options = {
-                        reasoning_model_request = true,
                         thinking_effort = case.effort
                     }
 
-                    local openai_options = openai_mapper.map_options(contract_options)
+                    local openai_options = openai_mapper.map_options(contract_options, { thinking = "adaptive" })
 
                     test.eq(openai_options.reasoning_effort, case.expected)
                 end

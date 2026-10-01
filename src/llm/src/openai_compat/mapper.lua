@@ -1,8 +1,18 @@
 local json = require("json")
 local output = require("output")
+local route = require("route")
 
 local openai_mapper = {}
 local MAX_CACHE_BREAKPOINTS = 4
+
+openai_mapper.CAPABILITY = {
+    name = "OpenAI-compatible",
+    defaults = { thinking = "none" },
+    supported = {
+        thinking = { adaptive = true, none = true },
+        structured_output = { native = true }
+    }
+}
 
 -- Error type mapping from HTTP status codes and message content
 local function map_error_type(status_code, message)
@@ -436,11 +446,15 @@ function openai_mapper.map_tool_choice(contract_choice, available_tools)
     return "auto", nil
 end
 
-function openai_mapper.map_options(contract_options)
+function openai_mapper.map_options(contract_options, accepts): (table, string?)
+    local unsupported = route.unsupported_fact_error(accepts, openai_mapper.CAPABILITY)
+    if unsupported then
+        return {}, unsupported
+    end
     if not contract_options then return {} end
 
     local openai_options = {}
-    local is_reasoning_request = contract_options.reasoning_model_request == true
+    local is_reasoning_request = route.fact(accepts, "thinking", openai_mapper.CAPABILITY) == "adaptive"
 
     if contract_options.max_tokens then
         if is_reasoning_request then
@@ -459,10 +473,9 @@ function openai_mapper.map_options(contract_options)
         else
             openai_options.reasoning_effort = "high"
         end
-    else
-        if contract_options.temperature ~= nil and not is_reasoning_request then
-            openai_options.temperature = contract_options.temperature
-        end
+    end
+    if contract_options.temperature ~= nil then
+        openai_options.temperature = contract_options.temperature
     end
 
     openai_options.top_p = contract_options.top_p

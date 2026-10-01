@@ -642,7 +642,7 @@ local function define_tests()
                         test.eq(payload.reasoning_effort, "high")
                         test.eq(payload.max_completion_tokens, 150)
                         test.is_nil(payload.max_tokens)
-                        test.is_nil(payload.temperature)
+                        test.eq(payload.temperature, 0.5)
 
                         return {
                             status_code = 200,
@@ -676,11 +676,11 @@ local function define_tests()
                         required = { "result" },
                         additionalProperties = false
                     },
+                    accepts = { thinking = "adaptive" },
                     options = {
-                        reasoning_model_request = true,
                         thinking_effort = 80,
                         max_tokens = 150,
-                        temperature = 0.5 -- Should be ignored
+                        temperature = 0.5
                     }
                 }
 
