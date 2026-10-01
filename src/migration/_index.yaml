@@ -129,3 +129,18 @@ entries:
     imports:
       migration_registry: wippy.migration:registry
       test: wippy.test:test
+
+  - name: runner_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-runner
+      comment: SQL rollback ordering and filtering regressions
+    source: file://runner_test.lua
+    method: run
+    modules: [sql]
+    imports:
+      runner: wippy.migration:runner
+      repository: wippy.migration:repository
+      migration_registry: wippy.migration:registry
+      test: wippy.test:test

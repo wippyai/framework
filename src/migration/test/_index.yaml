@@ -19,3 +19,23 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
+
+  - name: rollback_alpha
+    kind: function.lua
+    source: file://rollback_stub.lua
+    method: revert
+
+  - name: rollback_beta
+    kind: function.lua
+    source: file://rollback_stub.lua
+    method: revert
+
+  - name: rollback_legacy
+    kind: function.lua
+    source: file://rollback_stub.lua
+    method: revert
+
+  - name: rollback_newest
+    kind: function.lua
+    source: file://rollback_stub.lua
+    method: revert
