@@ -352,6 +352,22 @@ local function get_usage_tracker()
     return nil -- No usage tracking available
 end
 
+-- Returns a shallow copy of the caller's options with the actor id set as
+-- `user`. The caller's table is never written to.
+local function options_for_actor(options)
+    local copy = {}
+    for k, v in pairs(options) do
+        copy[k] = v
+    end
+
+    local actor = security.actor()
+    if actor then
+        copy.user = actor:id()
+    end
+
+    return copy
+end
+
 -- Merge provider options into contract arguments
 local function merge_provider_options(contract_args, provider_info)
     if provider_info and provider_info.options then
@@ -553,10 +569,7 @@ function llm.generate(prompt_input, options)
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -703,10 +716,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -845,10 +855,7 @@ function llm.embed(text, options)
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -980,10 +987,7 @@ function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -1110,10 +1114,7 @@ function llm.status(options)
         return nil, "Model is required in options"
     end
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     local contract_args = { model = options.model, options = {} }
     local provider_info = nil

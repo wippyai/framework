@@ -376,7 +376,7 @@ function mapper.map_messages(contract_messages)
     )
     -- Insert from the end so earlier block indices remain valid.
     for i = #final_system_positions, 1, -1 do
-        local position = tonumber(final_system_positions[i])
+        local position = math.tointeger(final_system_positions[i])
         if position then
             table.insert(system_blocks, position + 1, { cachePoint = { type = "default" } })
         end
@@ -385,7 +385,7 @@ function mapper.map_messages(contract_messages)
         local pos: any = final_message_positions[i]
         if pos then
             local message = (converse_messages :: any)[pos.message]
-            local block_index = tonumber(pos.block)
+            local block_index = math.tointeger(pos.block)
             if message and block_index then
                 table.insert(message.content, block_index + 1, { cachePoint = { type = "default" } })
             end
