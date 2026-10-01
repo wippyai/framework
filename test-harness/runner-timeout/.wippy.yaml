@@ -1,0 +1,4 @@
+version: "1.0"
+workspace:
+  replacements:
+    wippy/test: ../../src/test
