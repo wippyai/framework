@@ -7,6 +7,11 @@ on:
     branches: [master]
   workflow_call:
   workflow_dispatch:
+    inputs:
+      verify_publication:
+        description: Verify publication of all current module versions without publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,7 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-wippy
         id: wippy
       - name: Add verified Wippy to PATH
@@ -45,8 +52,42 @@ jobs:
     name: Module manifests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - run: python3 scripts/check_module_manifests.py
+      - run: python3 -B -m unittest discover -s scripts -p '*_test.py'
+
+  publication:
+    name: Publication check
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_publication }}
+    needs: [manifests, lint, test, test-runner]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check publication token
+        env:
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: bash scripts/check_publish_token.sh
+      - id: wippy
+        uses: ./.github/actions/setup-wippy
+      - name: Check current module publications
+        env:
+          WIPPY: ${{ steps.wippy.outputs.path }}
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+        run: |
+          set -euo pipefail
+          while IFS=$'\t' read -r module_path version; do
+            if [ -f "$module_path/src/wippy.yaml" ]; then
+              module_dir="$module_path/src"
+            else
+              module_dir="$module_path"
+            fi
+            "$WIPPY" publish --config "$module_dir" --version "$version" --dry-run
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' .release-please-manifest.json)
 
   lint:
     name: Lint (${{ matrix.module }})
@@ -66,7 +107,9 @@ jobs:
           - usage
           - views
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Install Wippy
         run: |
@@ -100,7 +143,9 @@ jobs:
           - usage
           - views
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Install Wippy
         run: |
