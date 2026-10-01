@@ -1,11 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
+wippy_bin="${WIPPY_BIN:-wippy}"
 set +e
-output=$(wippy test --config .wippy.yaml 2>&1)
+output=$("$wippy_bin" test --config .wippy.yaml 2>&1)
 status=$?
 set -e
-if [ "$status" -eq 0 ]; then
+if [ "$status" -ne 1 ]; then
   printf 'runner accepted a failing hook:\n%s\n' "$output"
   exit 1
 fi

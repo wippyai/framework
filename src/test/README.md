@@ -86,7 +86,17 @@ Mocks are automatically restored after each test.
 
 ```
 wippy test
-wippy test <filter>
+wippy test test -- <filter>
 ```
 
 Discovers tests via `meta.type = "test"` in the registry, groups by `meta.suite`, sorts by `meta.order`.
+
+Each test entry executes in a runner-owned process. A timeout cancels its function
+command, waits for cancellation to settle, and terminates the wrapper; late events
+from that entry cannot count toward a subsequent test. Processes spawned independently
+by test code are not automatically terminated and remain the test's responsibility.
+
+Simple tests may return `true` or `nil` for success; `false`, an execution error, or
+an error-status result fails the run. BDD entries must report their plan, every
+declared case, and completion with matching pass/fail/skip counts. An aborted hook,
+missing case, or inconsistent completion fails the run even if earlier cases passed.

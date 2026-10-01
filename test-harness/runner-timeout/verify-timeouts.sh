@@ -1,12 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
+wippy_bin="${WIPPY_BIN:-wippy}"
 for scenario in timeout_late timeout_silent; do
   set +e
-  output=$(wippy run -x wippy.test:runner --config .wippy.yaml -- "$scenario" 2>&1)
+  output=$("$wippy_bin" test --config .wippy.yaml test -- "$scenario" 2>&1)
   status=$?
   set -e
-  if ! grep -q 'FAILED' <<< "$output" || ! grep -q 'test timed out' <<< "$output" ||
+  if [ "$status" -ne 1 ] || ! grep -q 'FAILED' <<< "$output" || ! grep -q 'test timed out' <<< "$output" ||
      ! grep -q "${scenario}_next" <<< "$output" ||
      ! grep -q '1 passed' <<< "$output" || ! grep -q '1 failed' <<< "$output" ||
      grep -q 'late_pass' <<< "$output" ||

@@ -3,6 +3,7 @@ type RunState = {
     entry_id: string?,
     declared: number?,
     observed: number,
+    cases: {passed: number, failed: number, skipped: number}?,
     completed: any?,
     result_error: any?,
     returned_false: boolean?,
@@ -13,6 +14,10 @@ type RunnerError = {kind: string, message: string}
 
 local function fail(message: string): RunnerError
     return {kind = "runner_failure", message = message}
+end
+
+local function valid_count(value: any): boolean
+    return type(value) == "number" and value >= 0 and value % 1 == 0
 end
 
 local function is_event_applicable(event_ref_id: string?, active_entry_id: string?, active_status: string?): boolean
@@ -42,6 +47,9 @@ local function check(state: RunState): RunnerError?
     if state.returned_false then
         return fail("test returned false")
     end
+    if state.completed and state.declared == nil then
+        return fail("test process did not report a plan")
+    end
     if state.declared ~= nil then
         if state.observed ~= state.declared then
             return fail(tostring(state.declared) .. " declared cases, "
@@ -51,12 +59,18 @@ local function check(state: RunState): RunnerError?
             return fail("test process did not report completion")
         end
         local complete = state.completed
-        local total = tonumber(complete.total) or 0
-        local passed = tonumber(complete.passed) or 0
-        local failed = tonumber(complete.failed) or 0
-        local skipped = tonumber(complete.skipped) or 0
-        if total ~= state.declared
+        local total = complete.total
+        local passed = complete.passed
+        local failed = complete.failed
+        local skipped = complete.skipped
+        if not valid_count(total) or not valid_count(passed)
+            or not valid_count(failed) or not valid_count(skipped)
+            or total ~= state.declared
             or passed + failed + skipped ~= state.observed then
+            return fail("test completion counts disagree with declared cases")
+        end
+        local cases = state.cases
+        if cases and (passed ~= cases.passed or failed ~= cases.failed or skipped ~= cases.skipped) then
             return fail("test completion counts disagree with declared cases")
         end
     end

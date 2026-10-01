@@ -3,6 +3,41 @@ local verdict = require("verdict")
 
 local function define_tests()
     test.describe("runner result validation", function()
+        test.it("rejects completion without a plan", function()
+            local err = verdict.check({observed = 0,
+                completed = {total = 1, passed = 0, failed = 1, skipped = 0}})
+            test.not_nil(err)
+            test.eq(err.message, "test process did not report a plan")
+        end)
+
+        test.it("rejects missing completion counts for an empty plan", function()
+            local err = verdict.check({declared = 0, observed = 0, completed = {}})
+            test.not_nil(err)
+            test.eq(err.message, "test completion counts disagree with declared cases")
+        end)
+
+        test.it("accepts an explicitly completed empty plan", function()
+            test.is_nil(verdict.check({declared = 0, observed = 0,
+                cases = {passed = 0, failed = 0, skipped = 0},
+                completed = {total = 0, passed = 0, failed = 0, skipped = 0}}))
+        end)
+
+        test.it("rejects completion categories contradicting observed events", function()
+            local err = verdict.check({declared = 1, observed = 1,
+                cases = {passed = 1, failed = 0, skipped = 0},
+                completed = {total = 1, passed = 0, failed = 1, skipped = 0}})
+            test.not_nil(err)
+            test.eq(err.message, "test completion counts disagree with declared cases")
+        end)
+
+        test.it("rejects impossible completion counts", function()
+            for _, passed in ipairs({-1, 0.5, "1"}) do
+                local err = verdict.check({declared = 1, observed = 1,
+                    completed = {total = 1, passed = passed, failed = 1 - (tonumber(passed) or 0), skipped = 0}})
+                test.not_nil(err)
+            end
+        end)
+
         test.it("fails a hook error after a case passed", function()
             local err = verdict.check({ declared = 2, observed = 1,
                 completed = nil, result_error = "after_all failed" })
@@ -33,14 +68,14 @@ local function define_tests()
         end)
 
         test.it("fails when test execution timed out", function()
-            local err = verdict.check({ entry_id = "app:test1", timed_out = true })
+            local err = verdict.check({ entry_id = "app:test1", observed = 0, timed_out = true })
             test.not_nil(err)
             test.eq(err.kind, "runner_failure")
             test.eq(err.message, "test timed out")
         end)
 
         test.it("keeps timeout attribution when cancellation has a result error", function()
-            local err = verdict.check({ entry_id = "app:test1", timed_out = true,
+            local err = verdict.check({ entry_id = "app:test1", observed = 0, timed_out = true,
                 result_error = "context canceled" })
             test.not_nil(err)
             test.eq(err.kind, "runner_failure")
@@ -48,7 +83,7 @@ local function define_tests()
         end)
 
         test.it("reports failed termination as a typed runner failure", function()
-            local err = verdict.check({ entry_id = "app:test1", timed_out = true,
+            local err = verdict.check({ entry_id = "app:test1", observed = 0, timed_out = true,
                 lifecycle_error = "test process termination failed: denied" })
             test.not_nil(err)
             test.eq(err.kind, "runner_failure")

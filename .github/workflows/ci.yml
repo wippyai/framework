@@ -12,6 +12,35 @@ permissions:
   contents: read
 
 jobs:
+  test-runner:
+    name: Test runner regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-wippy
+        id: wippy
+      - name: Add verified Wippy to PATH
+        env:
+          WIPPY_BIN: ${{ steps.wippy.outputs.path }}
+        run: echo "$(dirname "$WIPPY_BIN")" >> "$GITHUB_PATH"
+      - name: Install harness dependencies and lint
+        run: |
+          for harness in runner runner-results runner-hook-failure runner-timeout; do
+            (
+              cd "test-harness/$harness"
+              wippy install
+              wippy lint --level error
+            )
+          done
+      - name: Test verdicts and the real CLI
+        run: |
+          (cd src/test && wippy install && wippy lint --level error && wippy test)
+          (cd test-harness/runner && wippy test)
+          bash test-harness/runner-results/verify.sh
+          bash test-harness/runner-hook-failure/verify.sh
+          bash test-harness/runner-timeout/verify-timeouts.sh
+
   manifests:
     name: Module manifests
     runs-on: ubuntu-latest

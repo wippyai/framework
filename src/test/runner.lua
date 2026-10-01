@@ -290,6 +290,7 @@ local function run_tests(): number
                         entry_id = entry_id,
                         declared = declared_cases[entry_id],
                         observed = case_count,
+                        cases = cs,
                         completed = completion and completion.data or nil,
                         result_error = result_err,
                         returned_false = value == false or (declared_cases[entry_id] == nil

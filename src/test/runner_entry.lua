@@ -44,9 +44,13 @@ local function run(args)
     end
 
     local payload, result_err = cmd:result()
+    local value = nil
+    if payload ~= nil then
+        value = payload:data()
+    end
     process.send(parent_pid, "runner:control", {
         kind = "result", ref_id = entry_id,
-        value = payload and payload:data() or nil,
+        value = value,
         result_error = result_err and tostring(result_err) or nil,
     })
 end
