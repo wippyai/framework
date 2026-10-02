@@ -69,13 +69,7 @@ migrations.table_exists_queries = {
     ]]
 }
 
--- Check if migration tracking table exists
-function migrations.table_exists(db: any): (any, string?)
-    local db_type, err = db:type()
-    if err then
-        return nil, "Failed to determine database type: " .. tostring(err)
-    end
-
+local function table_exists_for_type(db, db_type)
     local check_query = (migrations.table_exists_queries :: any)[db_type]
     if not check_query then
         return nil, "Unsupported database type: " .. db_type
@@ -95,6 +89,15 @@ function migrations.table_exists(db: any): (any, string?)
     end
 end
 
+-- Check if migration tracking table exists
+function migrations.table_exists(db: any): (any, string?)
+    local db_type, err = db:type()
+    if err then
+        return nil, "Failed to determine database type: " .. tostring(err)
+    end
+    return table_exists_for_type(db, db_type)
+end
+
 -- Initialize migration tracking table
 function migrations.init_tracking_table(db: any): (any, string?)
     local db_type, err = db:type()
@@ -105,6 +108,11 @@ function migrations.init_tracking_table(db: any): (any, string?)
     if not schema then
         return nil, "Unsupported database type: " .. db_type
     end
+
+    -- Existing ledgers must remain usable without schema CREATE permission.
+    local exists, exists_err = table_exists_for_type(db, db_type)
+    if exists_err then return nil, exists_err end
+    if exists then return true, nil end
 
     if db_type ~= sql.type.POSTGRES then
         return db:execute(schema)
@@ -119,6 +127,14 @@ function migrations.init_tracking_table(db: any): (any, string?)
         tx:rollback()
         return nil, lock_err
     end
+    -- A competing creator may have committed while we waited for the lock.
+    -- Check on the locked connection; querying the pool can deadlock at size 1.
+    local locked_exists, check_err = table_exists_for_type(tx, db_type)
+    if check_err then
+        tx:rollback()
+        return nil, check_err
+    end
+    if locked_exists then return tx:commit() end
     local ok, create_err = tx:execute(schema)
     if not ok then
         tx:rollback()

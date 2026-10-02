@@ -21,3 +21,9 @@ entries using `wippy test -o app:concurrent_pg_a:host=...` and the equivalent
 options for `concurrent_pg_b`, with `MIGRATION_TEST_POSTGRES=true`.
 The tests drop `_migrations` and their probe tables, so never use an application
 database. CI provisions an isolated PostgreSQL service for these cases.
+
+The PostgreSQL suite also checks that an existing ledger can be opened under
+the built-in `pg_read_all_data` role without schema `CREATE` permission. The
+test service user must be able to assume that role (CI's disposable database
+uses the provisioned superuser). Discovery regressions distinguish real
+`run_next` errors from successful empty or already-applied migration plans.

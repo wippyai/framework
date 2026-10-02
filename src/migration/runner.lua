@@ -311,14 +311,7 @@ function Runner:run_next(options: RunnerOptions?): any
 
     local migrations, err = self:find_migrations(options)
     if err then
-        return {
-            status = "complete",
-            message = err,
-            migrations_found = 0,
-            migrations_applied = 0,
-            migrations_skipped = 0,
-            migrations_failed = 0
-        }
+        return create_error(err)
     end
 
     if not migrations or #migrations == 0 then

@@ -78,6 +78,7 @@ entries:
     modules: [sql, channel, env]
     imports:
       runner_lib: wippy.migration:runner
+      repository: wippy.migration:repository
       test: wippy.test:test
 
   - name: test_os_env

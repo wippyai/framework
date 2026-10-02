@@ -1,5 +1,6 @@
 local test = require("test")
 local runner_lib = require("runner_lib")
+local repository = require("repository")
 local sql = require("sql")
 local channel = require("channel")
 local env = require("env")
@@ -110,6 +111,35 @@ local function define_tests()
                     concurrent_set("app:concurrent_pg_a", "app:concurrent_pg_b", cold)
                 end)
             end
+        end
+        if env.get("app:enable_postgres") == "true" then
+            it("opens an existing PostgreSQL ledger without schema CREATE permission", function()
+                local db, db_err = sql.get("app:concurrent_pg_a")
+                test.is_nil(db_err)
+                if not db then error("PostgreSQL test database is required") end
+                execute(db, "DROP TABLE IF EXISTS _migrations")
+                local schema = repository.schemas[sql.type.POSTGRES]
+                if type(schema) ~= "string" then db:release(); error("PostgreSQL ledger schema is required") end
+                execute(db, schema)
+                local tx, tx_err = db:begin()
+                test.is_nil(tx_err)
+                if not tx then db:release(); error("PostgreSQL test transaction is required") end
+                local _, role_err = tx:execute("SET LOCAL ROLE pg_read_all_data")
+                test.is_nil(role_err)
+                -- Keep all operations on the same real, restricted connection.
+                -- The adapter supplies the database API rather than nesting a
+                -- transaction, so this exercises PostgreSQL's actual ACLs.
+                local opened, open_err = repository.init_tracking_table({
+                    type = function() return sql.type.POSTGRES end,
+                    query = function(_, query) return tx:query(query) end,
+                    begin = function() return tx end,
+                })
+                tx:rollback()
+                execute(db, "DROP TABLE _migrations")
+                db:release()
+                test.is_nil(open_err)
+                test.ok(opened)
+            end)
         end
     end)
 end

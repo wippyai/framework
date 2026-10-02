@@ -30,7 +30,7 @@ jobs:
       - name: Add verified Wippy to PATH
         env:
           WIPPY_BIN: ${{ steps.wippy.outputs.path }}
-        run: echo "$(dirname "$WIPPY_BIN")" >> "$GITHUB_PATH"
+        run: dirname "$WIPPY_BIN" >> "$GITHUB_PATH"
       - name: Install harness dependencies and lint
         run: |
           for harness in runner runner-results runner-hook-failure runner-timeout; do
@@ -164,8 +164,7 @@ jobs:
   migration-postgres:
     name: Migration concurrency (PostgreSQL)
     runs-on: ubuntu-latest
-    env:
-      TMPDIR: ${{ runner.temp }}
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:17
@@ -181,10 +180,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-wippy
-      - name: Add Wippy to PATH
-        run: echo "$HOME/.wippy/bin" >> "$GITHUB_PATH"
+        id: wippy
+      - name: Add verified Wippy to PATH
+        env:
+          WIPPY_BIN: ${{ steps.wippy.outputs.path }}
+        run: dirname "$WIPPY_BIN" >> "$GITHUB_PATH"
       - name: Install dependencies
         working-directory: src/migration/test
         run: wippy install
