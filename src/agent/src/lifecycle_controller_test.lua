@@ -93,6 +93,24 @@ local function define_tests()
             test.eq(state.active_agent_id, nil)
         end)
 
+        it("retries a failed new activation without deactivating the previous agent twice", function()
+            controller.activate(state, agent("a", "m", "old"), options())
+            failures.activate = "temporary failure"
+            local _, err = controller.activate(state, agent("b", "m", "new"), options())
+            test.eq(err, "temporary failure")
+            test.is_nil(state.active_agent_id)
+            failures.activate = nil
+            local result, retry_err = controller.activate(state, agent("b", "m", "new"), options())
+            test.is_nil(retry_err)
+            test.is_false(result.deactivated)
+            test.is_true(result.activated)
+            test.eq(#calls, 4)
+            test.eq(calls[2].phase, "deactivate")
+            test.eq(calls[3].phase, "activate")
+            test.eq(calls[4].phase, "activate")
+            test.eq(state.active_agent_id, "b")
+        end)
+
         it("keeps state on failed explicit deactivation and accepts a fallback", function()
             controller.activate(state, agent("a", "m", "old"), options())
             failures.deactivate = "retry later"
