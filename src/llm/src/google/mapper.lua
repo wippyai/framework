@@ -1,6 +1,6 @@
 local json = require("json")
 local output = require("output")
-local time = require("time")
+local uuid = require("uuid")
 local route = require("route")
 
 local mapper = {}
@@ -130,11 +130,30 @@ function mapper.map_messages(contract_messages, options)
     options = options or {}
     local processed_messages = {}
     local system_instructions = {}
+    local provider_call_ids = {}
+    local call_parts, result_parts = {}, {}
+    local function flush_tool_round()
+        if #call_parts > 0 then
+            local previous = processed_messages[#processed_messages]
+            if previous and previous.role == "model" then
+                for _, part in ipairs(call_parts) do table.insert(previous.parts, part) end
+            else
+                table.insert(processed_messages, { role = "model", parts = call_parts })
+            end
+        end
+        if #result_parts > 0 then
+            table.insert(processed_messages, { role = "user", parts = result_parts })
+        end
+        call_parts, result_parts = {}, {}
+    end
     local i = 1
 
     while i <= #contract_messages do
         local msg = contract_messages[i]
         msg.metadata = nil
+        if msg.role ~= "function_call" and msg.role ~= "function_result" and msg.role ~= "cache_marker" then
+            flush_tool_round()
+        end
 
         if msg.role == "system" then
             table.insert(system_instructions, { text = mapper.standardize_content(msg.content) })
@@ -145,7 +164,7 @@ function mapper.map_messages(contract_messages, options)
         elseif msg.role == "assistant" then
             local assistant_msg = mapper.standardize_content(msg.content)
             if assistant_msg ~= "" then
-                table.insert(processed_messages, { role = "model", parts = { text = assistant_msg } })
+                table.insert(processed_messages, { role = "model", parts = {{ text = assistant_msg }} })
             end
 
             i = i + 1
@@ -176,17 +195,12 @@ function mapper.map_messages(contract_messages, options)
                 tool_content = ""
             end
 
-            table.insert(processed_messages, {
-                role = "user",
-                parts = {
-                    {
-                        functionResponse = {
-                            name = msg.name,
-                            response = {
-                                content = tool_content
-                            }
-                        }
-                    }
+            local response = msg.is_error == true and { error = tool_content } or { content = tool_content }
+            table.insert(result_parts, {
+                functionResponse = {
+                    id = provider_call_ids[msg.function_call_id],
+                    name = msg.name,
+                    response = response
                 }
             })
             i = i + 1
@@ -204,13 +218,20 @@ function mapper.map_messages(contract_messages, options)
             if msg.function_call.provider_metadata and msg.function_call.provider_metadata.thought_signature then
                 part.thoughtSignature = msg.function_call.provider_metadata.thought_signature
             end
-            table.insert(processed_messages, { role = "model", parts = part })
+            local provider_id = msg.function_call.provider_metadata
+                and msg.function_call.provider_metadata.function_call_id
+            if type(provider_id) == "string" and provider_id ~= "" then
+                part.functionCall.id = provider_id
+                if msg.function_call.id then provider_call_ids[msg.function_call.id] = provider_id end
+            end
+            table.insert(call_parts, part)
             i = i + 1
         else
             -- Skip unknown message types
             i = i + 1
         end
     end
+    flush_tool_round()
     return processed_messages, system_instructions
 end
 
@@ -279,18 +300,32 @@ function mapper.map_tool_calls(content_parts)
     end
 
     local contract_tool_calls = {}
-    for i, content_part in ipairs(content_parts) do
+    for _, content_part in ipairs(content_parts) do
         if content_part.functionCall then
-            contract_tool_calls[i] = {
-                id = (content_part.functionCall.name or "func") .. "_" .. time.now():unix(),
+            -- Allocate once: streamed updates and the final response must use the same ID.
+            local provider_id = content_part.functionCall.id
+            if type(provider_id) ~= "string" or provider_id == "" then provider_id = nil end
+            if not content_part._call_id then
+                if provider_id then
+                    content_part._call_id = provider_id
+                else
+                    local id, err = uuid.v7()
+                    if err then error(err) end
+                    content_part._call_id = (content_part.functionCall.name or "func") .. "_" .. id
+                end
+            end
+            local call = {
+                id = content_part._call_id,
                 name = content_part.functionCall.name,
                 arguments = content_part.functionCall.args or {},
             }
-            if content_part.thoughtSignature then
-                contract_tool_calls[i].provider_metadata = {
-                    thought_signature = content_part.thoughtSignature
+            if content_part.thoughtSignature or provider_id then
+                call.provider_metadata = {
+                    thought_signature = content_part.thoughtSignature,
+                    function_call_id = provider_id,
                 }
             end
+            table.insert(contract_tool_calls, call)
         end
     end
 

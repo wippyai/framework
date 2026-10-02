@@ -381,6 +381,16 @@ function tool_caller:apply_tool_wrappers(phase: ToolWrapperPhase, payload: ToolW
     return current_payload :: ToolWrapperApplyRequest, nil
 end
 
+local function validate_call_ids(tool_calls: {ToolCall}): string?
+    local seen = {}
+    for _, call in ipairs(tool_calls) do
+        if type(call.id) ~= "string" or not call.id:match("%S") then return "Tool call ID is required" end
+        if seen[call.id] then return "Duplicate tool call ID: " .. call.id end
+        seen[call.id] = true
+    end
+    return nil
+end
+
 function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     -- Check if there are any tool calls
     if not tool_calls or #tool_calls == 0 then
@@ -388,6 +398,8 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     end
 
     reset_wrapper_diagnostics(self)
+    local identity_err = validate_call_ids(tool_calls)
+    if identity_err then return nil, identity_err end
 
     -- Providers pair results by the original call IDs, even if a wrapper redirects a tool.
     local original_ids: {[string]: boolean} = {}
@@ -422,6 +434,11 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
         return nil, "Tool wrapper must preserve every tool call ID exactly once"
     end
     self.last_tool_calls = tool_calls
+
+    -- Validate the wrapper-expanded batch before building an ID-keyed map. Otherwise
+    -- duplicate IDs silently overwrite an intent, including before exclusive filtering.
+    identity_err = validate_call_ids(tool_calls)
+    if identity_err then return nil, identity_err end
 
     local validated_tools: {[string]: any} = {}
     local has_exclusive = false

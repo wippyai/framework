@@ -269,6 +269,34 @@ local function define_tests()
         end)
 
         describe("Validation", function()
+            it("rejects empty IDs and duplicates introduced by a before-execute wrapper", function()
+                local caller = tool_caller.new()
+                for _, id in ipairs({ "", " \t\n" }) do
+                    local _, missing_err = caller:validate({{ id = id, name = "calculator",
+                        arguments = {}, registry_id = "test:calculator" }})
+                    test.not_nil(missing_err)
+                end
+                caller.apply_tool_wrappers = function(_self, _phase, payload)
+                    payload.tool_calls = {
+                        { id = "collision", name = "calculator", arguments = {}, registry_id = "test:calculator" },
+                        { id = "collision", name = "get_weather", arguments = {}, registry_id = "test:weather" },
+                    }
+                    return payload
+                end
+                local validated, err = caller:validate({{ id = "original", name = "calculator",
+                    arguments = {}, registry_id = "test:calculator" }})
+                test.is_nil(validated)
+                test.contains(err, "Duplicate tool call ID")
+            end)
+            it("foundation regression: rejects duplicate IDs before replacing an earlier call", function()
+                local caller = tool_caller.new()
+                local _, err = caller:validate({
+                    { id = "same-call", name = "calculator", arguments = { expression = "2+2" }, registry_id = "test:calculator" },
+                    { id = "same-call", name = "get_weather", arguments = { location = "NYC" }, registry_id = "test:weather" },
+                })
+                test.not_nil(err, "a map keyed by call ID must not silently replace a call")
+            end)
+
             it("should validate basic tool calls", function()
                 local caller = tool_caller.new()
 
