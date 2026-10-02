@@ -246,7 +246,7 @@ function mapper.map_messages(contract_messages)
                         toolResult = {
                             toolUseId = msg.function_call_id or "",
                             content = { { text = result_text } },
-                            status = "success"
+                            status = msg.is_error == true and "error" or "success"
                         }
                     }
                 }

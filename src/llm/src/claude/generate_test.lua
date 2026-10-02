@@ -334,7 +334,7 @@ local function define_tests()
                             elseif msg.role == "user" and msg.content and #msg.content > 0 and msg.content[1].type == "tool_result" then
                                 found_tool_result = true
                                 local first = (msg :: any).content[1]
-                                test.eq(first.tool_use_id, "call-456")
+                                test.eq(first.tool_use_id, "call_456")
                                 test.eq(first.content, "Sunny, 75°F")
                             end
                         end
@@ -602,7 +602,7 @@ local function define_tests()
                 assert(response.success)
                 test.eq(response.result.content, "I'll check the weather for you.")
                 test.eq(#response.result.tool_calls, 1)
-                test.eq(response.result.tool_calls[1].id, "call-123")
+                test.eq(response.result.tool_calls[1].id, "call_123")
                 test.eq(response.result.tool_calls[1].name, "get_weather")
                 test.eq(response.result.tool_calls[1].arguments.location, "NYC")
                 test.eq(response.result.tool_calls[1].registry_id, "weather_tool_123")

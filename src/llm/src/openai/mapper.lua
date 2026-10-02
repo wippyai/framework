@@ -234,7 +234,7 @@ function openai_mapper.map_messages(contract_messages, options)
                     table.insert(items, {
                         type = "function_call_output",
                         call_id = call_id,
-                        output = out_text
+                        output = msg.is_error == true and json.encode({ error = out_text }) or out_text
                     })
                 end
             end

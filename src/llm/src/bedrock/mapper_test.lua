@@ -4,6 +4,16 @@ local json = require("json")
 
 local function define_tests()
     describe("Bedrock Converse Mapper", function()
+        it("preserves explicit failure status in tool results", function()
+            for _, failed in ipairs({ false, true }) do
+                local mapped = mapper.map_messages({{ role = "function_result", name = "lookup",
+                    function_call_id = "call-1", content = "denied", is_error = failed }})
+                local result = mapped.messages[1].content[1].toolResult
+                test.eq(result.toolUseId, "call-1")
+                test.eq(result.content[1].text, "denied")
+                test.eq(result.status, failed and "error" or "success")
+            end
+        end)
 
         describe("Declared thinking", function()
             it("encodes adaptive thinking and shared effort levels without a budget", function()

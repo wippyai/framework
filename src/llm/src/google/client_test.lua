@@ -4,6 +4,142 @@ local tests = require("test")
 
 local function define_tests()
     describe("Google HTTP Client", function()
+        describe("Foundation stream framing", function()
+            it("preserves structured stream errors and never reports completion after one", function()
+                local consumed, completed, observed = false, false, nil
+                local stream = { read = function()
+                    if consumed then return nil end
+                    consumed = true
+                    return 'data: {"error":{"message":"quota exceeded","code":429,"status":"RESOURCE_EXHAUSTED"}}\n\n'
+                end }
+                local content, err = client.process_stream({ stream = stream }, {
+                    on_error = function(info: any): nil observed = info; return nil end,
+                    on_done = function(_result: any): nil completed = true; return nil end,
+                })
+                tests.is_nil(content)
+                tests.eq(err, "quota exceeded")
+                assert(observed)
+                tests.eq(observed.message, "quota exceeded")
+                tests.eq(observed.code, 429)
+                tests.eq(observed.status, "RESOURCE_EXHAUSTED")
+                tests.is_false(completed)
+            end)
+            local function fake_stream(chunks)
+                local index = 0
+                return { read = function()
+                    index = index + 1
+                    return chunks[index]
+                end }
+            end
+
+            local function event(candidate)
+                return "data: " .. json.encode({ candidates = { candidate } }) .. "\n\n"
+            end
+
+            it("preserves text deltas exactly once when events share a read", function()
+                local seen = {}
+                local data = event({ content = { parts = {{ text = "First. " }} } })
+                    .. event({ content = { parts = {{ text = "Second." }} }, finishReason = "STOP" })
+                local content, err, result = client.process_stream({ stream = fake_stream({ data }) }, {
+                    on_content = function(text: string): nil seen[#seen + 1] = text; return nil end,
+                })
+                tests.is_nil(err)
+                tests.eq(content, "First. Second.")
+                tests.eq(table.concat(seen), content)
+                tests.eq(result.finish_reason, "STOP")
+            end)
+
+            it("foundation regression: retains a text event split across transport reads", function()
+                local data = event({ content = { parts = {{ text = "Platform failed: permission denied" }} } })
+                local split = math.floor(#data / 2)
+                local content, err = client.process_stream({ stream = fake_stream({
+                    data:sub(1, split), data:sub(split + 1), event({ finishReason = "STOP" }),
+                }) })
+                tests.is_nil(err)
+                tests.eq(content, "Platform failed: permission denied")
+            end)
+
+            it("foundation regression: retains a tool event split across transport reads", function()
+                local data = event({ content = { parts = {{
+                    functionCall = { name = "Platform", args = { action = "connections" } },
+                }} } })
+                local split = math.floor(#data / 2)
+                local _, err, result = client.process_stream({ stream = fake_stream({
+                    data:sub(1, split), data:sub(split + 1), event({ finishReason = "STOP" }),
+                }) })
+                tests.is_nil(err)
+                tests.eq(#result.tool_calls, 1)
+                tests.eq(result.tool_calls[1].functionCall.name, "Platform")
+            end)
+
+            it("preserves IDs and feedback at every possible transport split", function()
+                local data = event({ content = { parts = {
+                    { text = "A failed call is not success. " },
+                    { functionCall = { id = "native-call", name = "Platform", args = { action = "retry" } } },
+                } }, finishReason = "STOP" })
+                for split = 1, #data - 1 do
+                    local ids = {}
+                    local content, err, result = client.process_stream({ stream = fake_stream({
+                        data:sub(1, split), data:sub(split + 1),
+                    }) }, { on_tool_call = function(part: any): nil ids[#ids + 1] = part._call_id; return nil end })
+                    tests.is_nil(err)
+                    tests.eq(content, "A failed call is not success. ")
+                    tests.eq(#result.tool_calls, 1)
+                    tests.eq(#ids, 1)
+                    tests.eq(ids[1], "native-call")
+                    tests.eq(result.tool_calls[1]._call_id, ids[1])
+                end
+            end)
+
+            it("handles comments, CRLF and multiline data fields", function()
+                local content, err = client.process_stream({ stream = fake_stream({
+                    ': keepalive\r', '\nevent: message\r\ndata: {"candidates":\r\n',
+                    'data: [{"content":{"parts":[{"text":"received"}]}}]}\r\n\r\n',
+                }) })
+                tests.is_nil(err)
+                tests.eq(content, "received")
+            end)
+
+            it("handles every transport split of CRLF and lone CR event delimiters", function()
+                for _, newline in ipairs({ "\r\n", "\r" }) do
+                    local data = 'data: {"candidates":[{"content":{"parts":[{"text":"once"}]}}]}'
+                        .. newline .. newline
+                    for split = 1, #data - 1 do
+                        local content, err = client.process_stream({ stream = fake_stream({
+                            data:sub(1, split), data:sub(split + 1),
+                        }) })
+                        tests.is_nil(err)
+                        tests.eq(content, "once")
+                    end
+                end
+            end)
+
+            it("does not silently discard malformed or torn final events", function()
+                for _, data in ipairs({ 'data: {broken}\n\n', 'data: {"candidates":' }) do
+                    local errors, completions = 0, 0
+                    local content, err = client.process_stream({ stream = fake_stream({data}) }, {
+                        on_error = function(_info: any): nil errors = errors + 1; return nil end,
+                        on_done = function(_result: any): nil completions = completions + 1; return nil end,
+                    })
+                    tests.is_nil(content)
+                    tests.not_nil(err)
+                    tests.eq(errors, 1)
+                    tests.eq(completions, 0)
+                end
+            end)
+
+            it("flushes valid final data without a newline and honors the done marker", function()
+                local data = event({ content = { parts = {{ text = "final" }} } })
+                local content, err = client.process_stream({ stream = fake_stream({data:sub(1, -3)}) })
+                tests.is_nil(err)
+                tests.eq(content, "final")
+                content, err = client.process_stream({ stream = fake_stream({
+                    data .. 'data: [DONE]\n\ndata: {invalid ignored after completion}\n\n',
+                }) })
+                tests.is_nil(err)
+                tests.eq(content, "final")
+            end)
+        end)
 
         after_each(function()
             client._http_client = nil
