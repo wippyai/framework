@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.21](https://github.com/wippyai/framework/compare/migration-v0.3.20...migration-v0.3.21) (2026-10-02)
+
+
+### Bug Fixes
+
+* **migration:** serialize concurrent runners before checking the ledger ([#160](https://github.com/wippyai/framework/issues/160)) ([1009f93](https://github.com/wippyai/framework/commit/1009f93e9e57927d205093bfb04643d90e38d4f1))
+
 ## [0.3.20](https://github.com/wippyai/framework/compare/migration-v0.3.19...migration-v0.3.20) (2026-10-01)
 
 
