@@ -1374,6 +1374,33 @@ local function define_tests()
                     }
                 }), 0)
             end)
+
+            it("should preserve a trait's checkpoint disabling and allow explicit agent overrides", function()
+                trait_definitions.disabled_checkpoint = {
+                    id = "disabled_checkpoint",
+                    name = "Disabled checkpoint",
+                    behaviors = {
+                        checkpoint = {
+                            handles = { "checkpoint" },
+                            checkpoint = { enabled = false, token_threshold = 100 },
+                        },
+                    },
+                }
+                local compiled, err = compiler.compile({ id = "test:disabled", traits = { "disabled_checkpoint" } })
+                test.is_nil(err)
+                test.is_false(compiled.agent_options.checkpoint.enabled)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 100)
+
+                compiled, err = compiler.compile({
+                    id = "test:enabled",
+                    traits = { "disabled_checkpoint" },
+                    agent_options = { checkpoint = { enabled = true, token_threshold = 200 } },
+                })
+                test.is_nil(err)
+                test.is_true(compiled.agent_options.checkpoint.enabled)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 200)
+                trait_definitions.disabled_checkpoint = nil
+            end)
         end)
 
         describe("Unified Tool Structure Support", function()

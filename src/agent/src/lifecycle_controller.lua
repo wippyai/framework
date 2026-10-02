@@ -67,26 +67,32 @@ local function active_descriptor(state: table): table?
     }
 end
 
-local function prior_descriptor(state: table, opts: table): table?
+local function prior_descriptor(state: table, opts: table): (table?, string?)
     local active = active_descriptor(state)
     if active then
-        return active
+        return active, nil
     end
     -- A fallback recovers a missing agent object for an already active state.
     -- It must not cause a never-activated agent to receive deactivate.
     if state.active_agent_id ~= nil then
-        if type(opts.fallback) ~= "table" then
-            return nil
+        local fallback = opts.fallback
+        if type(fallback) ~= "table" or fallback.agent == nil then
+            return nil, "lifecycle fallback agent is required"
+        end
+        if fallback.id ~= state.active_agent_id or fallback.model ~= state.active_model
+            or fallback.revision ~= state.active_revision
+            or not equal_value(fallback.variant, state.active_variant) then
+            return nil, "lifecycle fallback must match the active agent identity and variant"
         end
         return {
             id = state.active_agent_id,
             model = state.active_model,
-            agent = opts.fallback.agent,
+            agent = fallback.agent,
             revision = state.active_revision,
             variant = state.active_variant,
         }
     end
-    return nil
+    return nil, nil
 end
 
 local function clear_active(state: table)
@@ -135,12 +141,9 @@ function lifecycle_controller.activate(state: any, target: any, opts: any): (tab
         return result, "lifecycle target agent is required"
     end
 
-    local previous = prior_descriptor(state, opts)
-    if state.active_agent_id ~= nil and previous == nil then
-        return result, "lifecycle fallback agent is required"
-    end
-    if previous and (type(previous) ~= "table" or previous.agent == nil) then
-        return result, "lifecycle fallback agent is required"
+    local previous, previous_err = prior_descriptor(state, opts)
+    if previous_err then
+        return result, previous_err
     end
     if previous and previous.id == target.id and previous.model == target.model
         and previous.revision == target.revision
@@ -179,17 +182,13 @@ function lifecycle_controller.deactivate(state: any, opts: any): (table, string?
         return result, err
     end
 
-    local previous = prior_descriptor(state, opts)
-    if state.active_agent_id ~= nil and previous == nil then
-        return result, "lifecycle fallback agent is required"
+    local previous, previous_err = prior_descriptor(state, opts)
+    if previous_err then
+        return result, previous_err
     end
     if previous == nil then
         return result, nil
     end
-    if type(previous) ~= "table" or previous.agent == nil then
-        return result, "lifecycle fallback agent is required"
-    end
-
     local deactivation, deactivation_err = dispatch(opts, previous, "deactivate")
     result.deactivation = deactivation
     if deactivation_err then

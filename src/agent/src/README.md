@@ -383,6 +383,9 @@ An optional `variant` (for example, the effective trait overlay) is copied and
 compared by value: changing it causes a transition even at the same ID/model.
 Without a variant, existing same-ID/model behavior is preserved. A failed
 deactivation keeps the old state; a failed activation leaves it inactive.
+A missing stored agent object requires a fallback with matching ID, model,
+revision, and trait variant. An unavailable or mismatched fallback fails without
+dispatching against a different agent or silently discarding the active state.
 
 ### Trait Functions
 

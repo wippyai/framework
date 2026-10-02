@@ -150,6 +150,41 @@ local function define_tests()
             test.eq(state.active_variant[1].options.limit, 3)
         end)
 
+        it("rejects a fallback for a different identity without dispatch or state loss", function()
+            state = { active_agent_id = "old", active_model = "m" }
+            local opts = options()
+            opts.fallback = agent("new", "m", "wrong object")
+
+            local result, err = controller.activate(state, agent("new", "m", "new object"), opts)
+            test.not_nil(err)
+            test.is_false(result.activated)
+            test.is_false(result.deactivated)
+            test.eq(#calls, 0)
+            test.eq(state.active_agent_id, "old")
+
+            result, err = controller.deactivate(state, opts)
+            test.not_nil(err)
+            test.is_false(result.deactivated)
+            test.eq(#calls, 0)
+            test.eq(state.active_agent_id, "old")
+        end)
+
+        it("rejects a fallback for a changed model or trait variant", function()
+            state = { active_agent_id = "a", active_model = "old", active_variant = { "old-trait" } }
+            local opts = options()
+            opts.fallback = agent("a", "new", "wrong model", { "old-trait" })
+            local _, err = controller.deactivate(state, opts)
+            test.not_nil(err)
+            test.eq(#calls, 0)
+            test.eq(state.active_model, "old")
+
+            opts.fallback = agent("a", "old", "wrong variant", { "new-trait" })
+            local _, variant_err = controller.deactivate(state, opts)
+            test.not_nil(variant_err)
+            test.eq(#calls, 0)
+            test.eq(state.active_variant[1], "old-trait")
+        end)
+
         it("reports missing state, target, and callbacks", function()
             local result, err = controller.activate(nil, agent("a", "m", "x"), options())
             test.eq(err, "lifecycle state must be a table")

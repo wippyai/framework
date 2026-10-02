@@ -412,7 +412,7 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     local seen_ids: {[string]: boolean} = {}
     local seen_count = 0
     for _, tool_call in ipairs(tool_calls) do
-        if not original_ids[tool_call.id] or seen_ids[tool_call.id] then
+        if type(tool_call) ~= "table" or not original_ids[tool_call.id] or seen_ids[tool_call.id] then
             return nil, "Tool wrapper must preserve every tool call ID exactly once"
         end
         seen_ids[tool_call.id] = true

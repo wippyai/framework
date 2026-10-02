@@ -1023,6 +1023,20 @@ local function define_tests()
                 test.contains(err, "preserve every tool call ID exactly once")
             end)
 
+            it("rejects malformed wrapper calls with a validation error instead of throwing", function()
+                wrapper_behaviors["test.wrapper:guard"] = function()
+                    return { tool_calls = { true } }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call() })
+                test.is_nil(validated)
+                test.contains(err, "preserve every tool call ID exactly once")
+            end)
+
             it("should require host context when wrappers are configured", function()
                 local caller = tool_caller.new()
                 caller:set_tool_wrappers({

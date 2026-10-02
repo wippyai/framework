@@ -584,6 +584,7 @@ function compiler.validate_behaviors(behaviors: any): {table}
 end
 
 local CHECKPOINT_AGENT_OPTION_KEYS = {
+    enabled = true,
     function_id = true,
     max_memory_chars = true,
     max_tokens = true,
