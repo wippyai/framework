@@ -13,6 +13,17 @@ LLM agent framework with compilation, tool execution, traits, delegation, and me
 
 Requires `wippy/llm >= 0.4.0`.
 
+Tool execution preserves canonical executor errors. A normal result of
+`{ success = false, error = "non-empty error text" }` also sets the existing
+`ToolExecResult.error` field, while keeping the original result intact. Both
+sequential and parallel callers apply this before after-execute wrappers run.
+An `error` field alone, or a false `success` without a non-empty string error,
+remains ordinary result data.
+
+Errors keep the wrapper outcome `continues` / `tool_execution_failed`: the
+model may correct a call. The host owns retry limits and stopping the turn;
+the caller adds no retry API or configuration.
+
 ## Agent Context
 
 The primary SDK entry point. Chains configuration calls and produces a compiled agent runner.
