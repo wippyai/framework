@@ -1,10 +1,12 @@
 local ctx = require("ctx")
+local json = require("json")
 local time = require("time")
 
 local ui_action_tool = {}
 
 local RESULT_TOPIC_PREFIX = "session_ui_action_result:"
 local VALID_STATUSES = {
+    inspected = true,
     cancelled = true,
     confirmed = true,
     denied = true,
@@ -20,6 +22,7 @@ local VALID_STATUSES = {
 }
 
 local TOOL_IDS = {
+    inspect = "wippy.agent.tools:attention_inspect",
     highlight = "wippy.agent.tools:ui_action_highlight",
     confirm = "wippy.agent.tools:ui_action_confirm",
     capture_visual = "wippy.agent.tools:ui_action_capture_visual",
@@ -64,19 +67,22 @@ local function result_payload(payload)
         host_instance_id = data.host_instance_id,
         completed_at = data.completed_at,
         status = data.status,
+        inspection = data.inspection,
+        targets = data.targets,
         selected_target = data.selected_target,
         prepared_file = data.prepared_file,
         reason = data.reason,
     }
 end
 
-local function execute(mode, args)
+local function execute(mode, args, inspection_name)
     local all_context, context_err = ctx.all()
     if context_err or type(all_context) ~= "table" then
         return unavailable("runtime context is not available")
     end
 
     local runtime = all_context.ui_action_runtime
+    if mode == "inspect" then runtime = all_context.attention_inspection_runtime end
     if type(runtime) ~= "table"
         or type(runtime.broker_pid) ~= "string"
         or type(runtime.delivery_handle) ~= "string"
@@ -100,7 +106,7 @@ local function execute(mode, args)
     end
     local sent, send_err = process.send(runtime.broker_pid, "session_ui_action_request", {
         delivery_handle = runtime.delivery_handle,
-        registry_id = TOOL_IDS[mode],
+        registry_id = inspection_name and "wippy.agent.tools:" .. inspection_name or TOOL_IDS[mode],
         call_id = all_context.call_id,
         reply_topic = reply_topic,
         session_id = runtime.session_id,
@@ -111,7 +117,7 @@ local function execute(mode, args)
         stop_listening(result_channel)
         return unavailable("broker request failed: " .. tostring(send_err))
     end
-    local timeout = time.after("121s")
+    local timeout = time.after(mode == "inspect" and "3s" or "121s")
     while true do
         local selected = channel.select({
             result_channel:case_receive(),
@@ -149,6 +155,29 @@ local function execute(mode, args)
             and result.in_reply_to_action_id ~= ""
             and VALID_STATUSES[result.status] == true then
             stop_listening(result_channel)
+            if inspection_name then
+                return require("attention_read").project(result, inspection_name)
+            end
+            if mode == "inspect" then
+                local encoded, encode_err = json.encode(result)
+                if not encoded then
+                    return unavailable("inspection result encoding failed: " .. tostring(encode_err))
+                end
+                if #encoded > 32768 then
+                    result.inspection = {
+                        outcome = "partial",
+                        omissions = { { reason = "byte-limit" } },
+                    }
+                    result.targets = {}
+                    result.selected_target = nil
+                    result.prepared_file = nil
+                    result.reason = "Inspection result exceeded the model output limit"
+                    local bounded = json.encode(result)
+                    if not bounded or #bounded > 32768 then
+                        return unavailable("inspection result identity exceeded the model output limit")
+                    end
+                end
+            end
             return result
         end
     end
@@ -156,6 +185,42 @@ end
 
 function ui_action_tool.highlight(args)
     return execute("highlight", args)
+end
+
+function ui_action_tool.inspect(args)
+    return execute("inspect", args)
+end
+
+local function inspect_named(name, args)
+    local read = require("attention_read")
+    local call, err = read.normalize(name, args)
+    if not call then
+        local receipt = read.receipt(err, "wippy.agent.tools:" .. name)
+        receipt.invalid = true
+        return receipt
+    end
+    return execute("inspect", call, name)
+end
+
+function ui_action_tool.attention_find_semantic(args) return inspect_named("attention_find_semantic", args) end
+function ui_action_tool.attention_find_css(args) return inspect_named("attention_find_css", args) end
+function ui_action_tool.attention_get_node(args) return inspect_named("attention_get_node", args) end
+function ui_action_tool.attention_get_tree(args) return inspect_named("attention_get_tree", args) end
+function ui_action_tool.attention_get_geometry(args) return inspect_named("attention_get_geometry", args) end
+function ui_action_tool.attention_get_cursor(args) return inspect_named("attention_get_cursor", args) end
+function ui_action_tool.attention_get_focus(args) return inspect_named("attention_get_focus", args) end
+function ui_action_tool.attention_get_selection(args) return inspect_named("attention_get_selection", args) end
+function ui_action_tool.attention_hit_test(args) return inspect_named("attention_hit_test", args) end
+
+function ui_action_tool.attention_read_receipt(args)
+    local read = require("attention_read")
+    local allowed = { ["history-unavailable"]=true, ["read-budget-exhausted"]=true,
+        ["repair-budget-exhausted"]=true, ["one-read-per-batch"]=true, ["duplicate-read"]=true }
+    local reason = (allowed[args.reason] or read.validation_errors[args.reason]) and args.reason or "invalid-request"
+    local id = read.is_read(args.original_registry_id) and args.original_registry_id or nil
+    local receipt = read.receipt(reason, id)
+    receipt.invalid = args.invalid == true
+    return receipt
 end
 
 function ui_action_tool.confirm(args)

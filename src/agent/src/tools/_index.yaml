@@ -37,9 +37,11 @@ entries:
     modules:
       - env
       - time
+      - funcs
     imports:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
+      attention_guard: wippy.agent.traits:attention_guard
     method: run_tests
     
   # wippy.agent.tools:delay_tool_test
@@ -101,6 +103,227 @@ entries:
       - ctx
     method: delayed_echo
 
+  - name: attention_read_test
+    kind: function.lua
+    meta:
+      type: test
+      group: Agent Framework
+      name: Explicit Attention Read Test
+    source: file://attention_read_test.lua
+    modules:
+      - json
+    imports:
+      test: wippy.test:test
+      attention_read: wippy.agent.tools:attention_read
+      attention_guard: wippy.agent.traits:attention_guard
+    method: run_tests
+
+  - name: attention_read
+    kind: library.lua
+    source: file://attention_read.lua
+    modules:
+      - json
+
+  - name: attention_find_semantic
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: Find interface content by semantic fields across the Host tree. Stop on a sufficient match; CSS is a separate tool.
+      input_schema: |
+          {"type":"object","properties":{"role":{"type":"string","minLength":1,"maxLength":256},"name":{"type":"string","minLength":1,"maxLength":256},"text":{"type":"string","minLength":1,"maxLength":256},"resource_id":{"type":"string","minLength":1,"maxLength":256},"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false},"limit":{"type":"integer","minimum":1,"maximum":8},"continuation":{"type":"string","minLength":1,"maxLength":256}},"required":[],"additionalProperties":false,"anyOf":[{"required":["role"]},{"required":["name"]},{"required":["text"]},{"required":["resource_id"]}]}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_find_semantic
+
+  - name: attention_find_css
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: Find CSS matches in exactly one known document or shadow root. The selector never crosses that root.
+      input_schema: |
+          {"type":"object","properties":{"selector":{"type":"string","minLength":1,"maxLength":512},"root":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false},"limit":{"type":"integer","minimum":1,"maximum":8},"continuation":{"type":"string","minLength":1,"maxLength":256}},"required":["selector","root"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_find_css
+
+  - name: attention_get_node
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: Read an exact canonical node and its available immutable action reference.
+      input_schema: |
+          {"type":"object","properties":{"node_id":{"type":"string","minLength":1,"maxLength":256},"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"required":["node_id"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_get_node
+
+  - name: attention_get_tree
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: "Read a small semantic tree page only when observations or semantic search cannot answer. Defaults: 32 nodes, depth 2."
+      input_schema: |
+          {"type":"object","properties":{"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false},"limit":{"type":"integer","minimum":1,"maximum":32},"depth":{"type":"integer","minimum":0,"maximum":32},"continuation":{"type":"string","minLength":1,"maxLength":256}},"required":[],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_get_tree
+
+  - name: attention_get_geometry
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: Read current geometry and coordinate quality for one canonical node.
+      input_schema: |
+          {"type":"object","properties":{"node":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"required":["node"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_get_geometry
+
+  - name: attention_get_cursor
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: 'Read the latest meaningful pointer observation, candidate IDs and canonical nodes. Pass {} for the whole Host. The only optional field is scope (a full NodeRef).'
+      input_schema: |
+          {"type":"object","properties":{"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"required":[],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_get_cursor
+
+  - name: attention_get_focus
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: 'Read current focus and its original event time. Pass {} for the whole Host. The only optional field is scope (a full NodeRef).'
+      input_schema: |
+          {"type":"object","properties":{"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"required":[],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_get_focus
+
+  - name: attention_get_selection
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: 'Read current selected text and canonical endpoints, distinguishing cleared from unknown. Pass {} for the whole Host. The only optional field is scope (a full NodeRef).'
+      input_schema: |
+          {"type":"object","properties":{"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"required":[],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_get_selection
+
+  - name: attention_hit_test
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: "Read nodes at an explicit point. Defaults: Host viewport, radius 20 CSS pixels, grid step 5."
+      input_schema: |
+          {"type":"object","properties":{"scope":{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false},"x":{"type":"number"},"y":{"type":"number"},"coordinate_space":{"anyOf":[{"const":"host-viewport"},{"type":"object","properties":{"host_instance_id":{"type":"string","minLength":1,"maxLength":160},"node_id":{"type":"string","minLength":1,"maxLength":256},"mount_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}]},"radius_css_px":{"type":"number","minimum":0,"maximum":100},"step_css_px":{"type":"number","maximum":100,"exclusiveMinimum":0}},"required":["x","y"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_hit_test
+
+  - name: attention_read_receipt
+    kind: function.lua
+    meta:
+      type: tool
+      private: true
+      comment: Internal Attention guard receipt. Do not advertise to the model.
+      input_schema: |
+        {"type":"object","properties":{"reason":{"type":"string","minLength":1,"maxLength":64},"original_registry_id":{"type":"string","minLength":1,"maxLength":128},"invalid":{"type":"boolean"}},"required":["reason","original_registry_id"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: attention_read_receipt
+
+  - name: attention_inspect
+    kind: function.lua
+    meta:
+      name: Inspect current interface
+      type: tool
+      comment: Read current canonical Attention state from the authenticated Host for this turn
+      group: User Interface
+      private: true
+      input_schema: |
+        {"type":"object","properties":{"operation":{"type":"string","enum":["cursor","focus","selection","point","tree","find","geometry"]},"scope":{"type":"object","properties":{"fromRoot":{"const":true},"node":{"type":"object","properties":{"host_instance_id":{"type":"string","maxLength":160},"node_id":{"type":"string","maxLength":256},"mount_id":{"type":"string","maxLength":256},"generation":{"type":"integer","minimum":1}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"additionalProperties":false},"args":{"type":"object","description":"Arguments for the selected public Attention inspection operation. Use semantic queries or canonical node IDs; CSS needs an explicit document or shadow root."}},"required":["operation"],"additionalProperties":false}
+    source: file://ui_action_tool.lua
+    modules:
+      - ctx
+      - hash
+      - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
+    method: inspect
+
   # wippy.agent.tools:attention_context_set
   - name: attention_context_set
     kind: function.lua
@@ -137,6 +360,9 @@ entries:
       - ctx
       - hash
       - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
     method: highlight
 
   # wippy.agent.tools:ui_action_confirm
@@ -156,6 +382,9 @@ entries:
       - ctx
       - hash
       - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
     method: confirm
 
   # wippy.agent.tools:ui_action_select
@@ -175,6 +404,9 @@ entries:
       - ctx
       - hash
       - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
     method: select
 
   # wippy.agent.tools:ui_action_capture_visual
@@ -194,6 +426,9 @@ entries:
       - ctx
       - hash
       - time
+      - json
+    imports:
+      attention_read: wippy.agent.tools:attention_read
     method: capture_visual
 
   # wippy.agent.tools:ui_action_test_broker
@@ -224,6 +459,7 @@ entries:
     modules:
       - funcs
       - hash
+      - json
       - time
     imports:
       test: wippy.test:test

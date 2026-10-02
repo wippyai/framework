@@ -148,12 +148,41 @@ local OUTCOME_REASON = {
 }
 
 local RUNTIME_CONTEXT_TOOL_IDS = {
+    ["wippy.agent.tools:attention_inspect"] = true,
+    ["wippy.agent.tools:attention_find_semantic"] = true,
+    ["wippy.agent.tools:attention_find_css"] = true,
+    ["wippy.agent.tools:attention_get_node"] = true,
+    ["wippy.agent.tools:attention_get_tree"] = true,
+    ["wippy.agent.tools:attention_get_geometry"] = true,
+    ["wippy.agent.tools:attention_get_cursor"] = true,
+    ["wippy.agent.tools:attention_get_focus"] = true,
+    ["wippy.agent.tools:attention_get_selection"] = true,
+    ["wippy.agent.tools:attention_hit_test"] = true,
     ["wippy.agent.tools:attention_context_set"] = true,
     ["wippy.agent.tools:ui_action_highlight"] = true,
     ["wippy.agent.tools:ui_action_confirm"] = true,
     ["wippy.agent.tools:ui_action_capture_visual"] = true,
     ["wippy.agent.tools:ui_action_select"] = true,
 }
+
+local RUNTIME_CONTEXT_FIELDS = {
+    attention_inspection_runtime = true,
+    attention_context_runtime = true,
+    ui_action_runtime = true,
+}
+
+local function merge_execution_context(tool_context: table?, session_context: table?, call_id: string): table
+    local merged = {}
+    for k, v in pairs(tool_context or {}) do
+        if not RUNTIME_CONTEXT_FIELDS[k] then merged[k] = v end
+    end
+    for k, v in pairs(session_context or {}) do
+        if not RUNTIME_CONTEXT_FIELDS[k] then merged[k] = v end
+    end
+    -- Private authority is supplied only by the current call's resolver.
+    merged.call_id = call_id
+    return merged
+end
 
 local tool_caller = {}
 tool_caller.__index = tool_caller
@@ -526,17 +555,7 @@ local function execute_single_tool(self: any, call_id: string, tool_call: any, c
         args = parsed_args
     end
 
-    -- Merge tool context with session context (session context has priority)
-    local merged_context = {}
-    for k, v in pairs(tool_context) do
-        merged_context[k] = v
-    end
-    for k, v in pairs(context or {}) do
-        merged_context[k] = v
-    end
-
-    -- Set call_id in context for tool execution
-    merged_context.call_id = call_id
+    local merged_context = merge_execution_context(tool_context as table?, context, call_id)
 
     local runtime_context, runtime_err = resolve_runtime_context(self, call_id, tool_call)
     if runtime_err then
@@ -617,15 +636,7 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
             args = parsed_args
         end
 
-        -- Merge contexts (session has priority)
-        local merged_context = {}
-        for k, v in pairs(tool_context) do
-            merged_context[k] = v
-        end
-        for k, v in pairs(context or {}) do
-            merged_context[k] = v
-        end
-        merged_context.call_id = call_id
+        local merged_context = merge_execution_context(tool_context as table?, context, tostring(call_id))
 
         local runtime_context, runtime_err = resolve_runtime_context(self, tostring(call_id), tool_call)
         if runtime_err then

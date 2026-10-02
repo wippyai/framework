@@ -13,6 +13,7 @@
 
 </div>
 
+See [Attention tools](ATTENTION.md) for interface inspection, compact result history and trait read limits.
 
 [wippy-documentation]: https://docs.wippy.ai
 [wippy-framework]: https://github.com/wippyai/framework

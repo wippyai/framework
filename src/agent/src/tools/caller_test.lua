@@ -1,4 +1,6 @@
 local env = require("env")
+local funcs = require("funcs")
+local attention_guard = require("attention_guard")
 
 local function define_tests()
     -- Helper function to count table elements
@@ -54,6 +56,12 @@ local function define_tests()
                 description = "Highlight a UI target",
                 meta = { type = "tool", exclusive = true }
             },
+            ["wippy.agent.tools:attention_inspect"] = {
+                id = "wippy.agent.tools:attention_inspect",
+                name = "attention_inspect",
+                description = "Inspect current Attention",
+                meta = { type = "tool" }
+            },
             ["wippy.agent.tools:ui_action_highlight_evil"] = {
                 id = "wippy.agent.tools:ui_action_highlight_evil",
                 name = "highlight_evil",
@@ -82,6 +90,7 @@ local function define_tests()
                 ["test:non_exclusive"] = { result = "regular_result" },
                 ["test:failing_tool"] = { error = "Tool execution failed" },
                 ["wippy.agent.tools:ui_action_highlight"] = { result = { status = "confirmed" } },
+                ["wippy.agent.tools:attention_inspect"] = { result = { status = "inspected" } },
                 ["wippy.agent.tools:ui_action_highlight_evil"] = { result = { status = "ok" } }
             }
             wrapper_calls = {}
@@ -133,6 +142,9 @@ local function define_tests()
                                         if result_data.error then
                                             return nil, result_data.error
                                         else
+                                            if type(result_data.execute) == "function" then
+                                                return result_data.execute(args)
+                                            end
                                             return result_data.result, nil
                                         end
                                     else
@@ -148,7 +160,11 @@ local function define_tests()
                                         if result_data.error then
                                             final_error = result_data.error
                                         else
-                                            final_result = result_data.result
+                                            if type(result_data.execute) == "function" then
+                                                final_result, final_error = result_data.execute(args)
+                                            else
+                                                final_result = result_data.result
+                                            end
                                         end
                                     else
                                         final_error = "Tool execution failed"
@@ -285,6 +301,73 @@ local function define_tests()
         end)
 
         describe("Ephemeral runtime context", function()
+            it("rejects inherited authority in both execution strategies without a fresh grant", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    for _, resolver_present in ipairs({ false, true }) do
+                        for _, tool_id in ipairs({ "wippy.agent.tools:attention_inspect", "test:calculator" }) do
+                            execution_contexts = {} :: {any}
+                            local caller = tool_caller.new():set_strategy(strategy)
+                            if resolver_present then
+                                caller:set_runtime_context_resolver(function() return nil, nil end)
+                            end
+                            local inherited = {
+                                attention_inspection_runtime = { delivery_handle = "old-read" },
+                                attention_context_runtime = { capability = "old-setting" },
+                                ui_action_runtime = { delivery_handle = "old-action" },
+                                ordinary = "tool",
+                            }
+                            local validated = caller:validate({ {
+                                id = "read", name = "read", arguments = {},
+                                registry_id = tool_id, context = inherited,
+                            } })
+                            local results = caller:execute({
+                                attention_inspection_runtime = { delivery_handle = "session-read" },
+                                attention_context_runtime = { capability = "session-setting" },
+                                ui_action_runtime = { delivery_handle = "session-action" },
+                                ordinary = "session",
+                            }, validated)
+                            test.is_nil(results.read.error)
+                            test.eq(#execution_contexts, 1)
+                            test.eq(execution_contexts[1].ordinary, "session")
+                            test.eq(execution_contexts[1].call_id, "read")
+                            test.is_nil(execution_contexts[1].attention_inspection_runtime)
+                            test.is_nil(execution_contexts[1].attention_context_runtime)
+                            test.is_nil(execution_contexts[1].ui_action_runtime)
+                            test.eq(inherited.attention_inspection_runtime.delivery_handle, "old-read")
+                        end
+                    end
+                end
+            end)
+
+            it("uses only fresh inspection authority and stops on revocation in both strategies", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    execution_contexts = {} :: {any}
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    local allowed = true
+                    caller:set_runtime_context_resolver(function(call_id, tool_call)
+                        test.eq(call_id, "read")
+                        test.eq(tool_call.registry_id, "wippy.agent.tools:attention_inspect")
+                        if not allowed then return nil, "current tool authority revoked" end
+                        return { attention_inspection_runtime = { delivery_handle = "fresh-read" } }, nil
+                    end)
+                    local validated = caller:validate({ {
+                        id = "read", name = "read", arguments = {},
+                        registry_id = "wippy.agent.tools:attention_inspect",
+                        context = { ui_action_runtime = { delivery_handle = "old-action" } },
+                    } })
+                    local results = caller:execute({ attention_context_runtime = { capability = "old-setting" } }, validated)
+                    test.is_nil(results.read.error)
+                    test.eq(execution_contexts[1].attention_inspection_runtime.delivery_handle, "fresh-read")
+                    test.is_nil(execution_contexts[1].ui_action_runtime)
+                    test.is_nil(execution_contexts[1].attention_context_runtime)
+                    test.is_nil(validated.read.context.attention_inspection_runtime)
+                    allowed = false
+                    local denied = caller:execute({}, validated)
+                    test.eq(denied.read.error, "current tool authority revoked")
+                    test.eq(#execution_contexts, 1)
+                end
+            end)
+
             it("merges runtime context last only for exact first-party UI action IDs", function()
                 local caller = tool_caller.new()
                 local resolver_calls = 0
@@ -374,6 +457,65 @@ local function define_tests()
                 test.is_nil(wrapper_calls[1].payload.tool_calls[1].ui_action_runtime)
                 test.is_nil(wrapper_calls[2].payload.tool_calls[1].ui_action_runtime)
                 test.is_nil(wrapper_calls[2].payload.tool_results.call_ui.tool_call.ui_action_runtime)
+            end)
+        end)
+
+        describe("Attention receipt execution", function()
+            it("preserves mixed batches and blocks fifth-read execution in both strategies", function()
+                local prefix = "wippy.agent.tools:"
+                local receipt_id = prefix .. "attention_read_receipt"
+                for _, name in ipairs({"attention_get_focus", "attention_get_cursor", "attention_read_receipt"}) do
+                    (tool_schemas :: any)[prefix .. name] = {id=prefix .. name,name=name,meta={type="tool",private=true}}
+                end
+                for _, strategy in ipairs({tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL}) do
+                    local dispatched = 0
+                    local history = {truncated=false,events={{id="user-1",role="user",content="Observe"}}}
+                    local run_read = function()
+                        dispatched = dispatched + 1
+                        return {status="inspected",outcome="empty"}, nil
+                    end
+                    (tool_results :: any)[prefix .. "attention_get_focus"] = {execute=run_read}
+                    (tool_results :: any)[prefix .. "attention_get_cursor"] = {execute=run_read}
+                    (tool_results :: any)[receipt_id] = {execute=function(args)
+                        return funcs.new():call(receipt_id,args)
+                    end}
+                    wrapper_behaviors["test:attention"] = function(payload)
+                        return attention_guard.apply_history(payload,history)
+                    end
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    caller:set_tool_wrappers({{id="attention",phases={tool_caller.PHASE.BEFORE_EXECUTE},binding="test:attention",strict=true}})
+                    caller:set_wrapper_context({host={kind="session",session_id="s1"}})
+                    local input = {
+                        {id="read-1",name="attention_get_focus",registry_id=prefix .. "attention_get_focus",arguments={}},
+                        {id="ordinary",name="calculator",registry_id="test:calculator",arguments={}},
+                        {id="read-2",name="attention_get_cursor",registry_id=prefix .. "attention_get_cursor",arguments={}},
+                    }
+                    local validated, validation_error = caller:validate(input)
+                    test.is_nil(validation_error)
+                    local results = caller:execute({},validated)
+                    test.eq(count_table_elements(results),3)
+                    test.eq(results.ordinary.result,42)
+                    test.eq(dispatched,1)
+                    local receipts = 0
+                    for _, call in ipairs(input) do
+                        local result = results[call.id]
+                        test.is_nil(result.error)
+                        test.eq(result.tool_call.call_id,call.id)
+                        test.eq(result.tool_call.name,call.name)
+                        if result.tool_call.registry_id == receipt_id then
+                            receipts = receipts + 1
+                            test.eq(result.result.reason,"one-read-per-batch")
+                        end
+                    end
+                    test.eq(receipts,1)
+                    for index=1,4 do
+                        history.events[#history.events+1]={id="prior-"..index,role="private_function",content={},metadata={registry_id=prefix.."attention_get_focus"}}
+                    end
+                    local limited = caller:execute({},caller:validate({input[1],input[2]}))
+                    test.eq(dispatched,1)
+                    test.eq(limited["read-1"].result.reason,"read-budget-exhausted")
+                    test.eq(limited.ordinary.result,42)
+                end
             end)
         end)
 

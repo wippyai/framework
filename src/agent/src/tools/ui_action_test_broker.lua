@@ -8,6 +8,9 @@ type BrokerArgs = {
     reply_pid: string,
     report_payload: boolean?,
     send_noise: boolean?,
+    inspect: boolean?,
+    inspection_text: string?,
+    inspection_registry_id: string?,
 }
 
 local function wait_for_request(timeout_duration)
@@ -96,6 +99,19 @@ function broker.run(args)
             target_id = "target-process-level",
         },
     }
+    if options.inspect then
+        if request_data.registry_id ~= (options.inspection_registry_id or "wippy.agent.tools:attention_inspect") or request_data.args.operation ~= "focus" then
+            return nil, "unexpected inspection request"
+        end
+        result.status = "inspected"
+        result.selected_target = nil
+        result.inspection = { outcome = "empty", request_id = "query-process-level" }
+        if options.inspection_text then
+            result.inspection.outcome = "ok"
+            result.inspection.data = { text = options.inspection_text }
+        end
+        result.targets = {}
+    end
     local sent, send_err = process.send(sender_pid, request_data.reply_topic, result)
     if not sent then
         return nil, tostring(send_err)

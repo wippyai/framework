@@ -1,4 +1,5 @@
 local funcs = require("funcs")
+local json = require("json")
 local time = require("time")
 local test = require("test")
 
@@ -31,6 +32,79 @@ local function start_broker(options)
 end
 
 local function define_tests()
+    test.describe("Attention inspection tool process delivery", function()
+        test.it("dispatches the exact specialized ID and returns only the compact result", function()
+            local broker_command, broker_pid = start_broker({inspect=true, inspection_registry_id="wippy.agent.tools:attention_get_focus"})
+            local result, err = funcs.new():with_context({call_id="explicit-focus",attention_inspection_runtime={
+                broker_pid=broker_pid,delivery_handle="read",session_id="session",host_instance_id="host",
+            }}):call("wippy.agent.tools:attention_get_focus", {})
+            test.is_nil(err)
+            test.eq(result.schema,"wippy.attention.model.v1")
+            test.eq(result.status,"inspected")
+            test.eq(result.outcome,"empty")
+            test.is_nil(result.inspection)
+            test.is_nil(result.session_id)
+            test.is_true(#json.encode(result)<=8192)
+            local response, response_err = receive_with_timeout(broker_command:response(), "5s")
+            test.is_nil(response_err)
+            test.not_nil(response)
+        end)
+        test.it("uses read-only runtime authority without interactive action authority", function()
+            local broker_command, broker_pid = start_broker({ inspect = true })
+            local result, err = funcs.new():with_context({
+                call_id = "call-inspection",
+                attention_inspection_runtime = {
+                    broker_pid = broker_pid, delivery_handle = "read-delivery",
+                    session_id = "session-read", host_instance_id = "host-read",
+                },
+            }):call("wippy.agent.tools:attention_inspect", { operation = "focus" })
+            test.is_nil(err)
+            test.not_nil(result)
+            test.eq(result.status, "inspected")
+            test.eq(result.inspection.request_id, "query-process-level")
+            test.eq(#result.targets, 0)
+            local response, response_err = receive_with_timeout(broker_command:response(), "5s")
+            test.is_nil(response_err)
+            test.not_nil(response)
+        end)
+
+        test.it("does not use interactive runtime as a substitute for inspection authority", function()
+            local result, err = funcs.new():with_context({
+                call_id = "call-no-read-authority",
+                ui_action_runtime = {
+                    broker_pid = "unused", delivery_handle = "unused",
+                    session_id = "session-read", host_instance_id = "host-read",
+                },
+            }):call("wippy.agent.tools:attention_inspect", { operation = "focus" })
+            test.is_nil(result)
+            test.not_nil(err)
+        end)
+
+        test.it("bounds the complete UTF-8 inspection result before returning it to the model", function()
+            local broker_command, broker_pid = start_broker({
+                inspect = true, inspection_text = string.rep("😀", 10000),
+            })
+            local result, err = funcs.new():with_context({
+                call_id = "call-inspection-byte-limit",
+                attention_inspection_runtime = {
+                    broker_pid = broker_pid, delivery_handle = "read-delivery",
+                    session_id = "session-read", host_instance_id = "host-read",
+                },
+            }):call("wippy.agent.tools:attention_inspect", { operation = "focus" })
+            test.is_nil(err)
+            test.not_nil(result)
+            test.eq(result.status, "inspected")
+            test.eq(result.inspection.outcome, "partial")
+            test.eq(result.inspection.omissions[1].reason, "byte-limit")
+            test.is_nil(result.inspection.data)
+            test.eq(#result.targets, 0)
+            local encoded = json.encode(result)
+            test.is_true(#encoded <= 32768)
+            local response, response_err = receive_with_timeout(broker_command:response(), "5s")
+            test.is_nil(response_err)
+            test.not_nil(response)
+        end)
+    end)
     test.describe("UI action tool process delivery", function()
         test.it("unwraps a message-listener payload and authenticates the broker sender", function()
             local broker_command, broker_pid = start_broker({ report_payload = true })
