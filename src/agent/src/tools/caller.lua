@@ -148,7 +148,6 @@ local OUTCOME_REASON = {
 }
 
 local RUNTIME_CONTEXT_TOOL_IDS = {
-    ["wippy.agent.tools:attention_inspect"] = true,
     ["wippy.agent.tools:attention_find_semantic"] = true,
     ["wippy.agent.tools:attention_find_css"] = true,
     ["wippy.agent.tools:attention_get_node"] = true,

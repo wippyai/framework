@@ -50,19 +50,25 @@ local function define_tests()
             test.not_nil(response)
         end)
         test.it("uses read-only runtime authority without interactive action authority", function()
-            local broker_command, broker_pid = start_broker({ inspect = true })
+            local broker_command, broker_pid = start_broker({
+                inspect = true,
+                inspection_registry_id = "wippy.agent.tools:attention_get_tree",
+                inspection_operation = "tree",
+            })
             local result, err = funcs.new():with_context({
                 call_id = "call-inspection",
                 attention_inspection_runtime = {
                     broker_pid = broker_pid, delivery_handle = "read-delivery",
                     session_id = "session-read", host_instance_id = "host-read",
                 },
-            }):call("wippy.agent.tools:attention_inspect", { operation = "focus" })
+            }):call("wippy.agent.tools:attention_get_tree", {})
             test.is_nil(err)
             test.not_nil(result)
+            test.eq(result.schema, "wippy.attention.model.v1")
             test.eq(result.status, "inspected")
-            test.eq(result.inspection.request_id, "query-process-level")
-            test.eq(#result.targets, 0)
+            test.eq(result.outcome, "empty")
+            test.is_nil(result.inspection)
+            test.is_nil(result.targets)
             local response, response_err = receive_with_timeout(broker_command:response(), "5s")
             test.is_nil(response_err)
             test.not_nil(response)
@@ -75,14 +81,28 @@ local function define_tests()
                     broker_pid = "unused", delivery_handle = "unused",
                     session_id = "session-read", host_instance_id = "host-read",
                 },
+            }):call("wippy.agent.tools:attention_find_semantic", { name = "Save" })
+            test.is_nil(result)
+            test.not_nil(err)
+        end)
+
+        test.it("does not register the removed unrestricted attention_inspect tool", function()
+            local result, err = funcs.new():with_context({
+                call_id = "call-removed-inspect",
+                attention_inspection_runtime = {
+                    broker_pid = "unused", delivery_handle = "unused",
+                    session_id = "session-read", host_instance_id = "host-read",
+                },
             }):call("wippy.agent.tools:attention_inspect", { operation = "focus" })
             test.is_nil(result)
             test.not_nil(err)
         end)
 
-        test.it("bounds the complete UTF-8 inspection result before returning it to the model", function()
+        test.it("bounds a large UTF-8 inspection result to the compact model limit", function()
             local broker_command, broker_pid = start_broker({
                 inspect = true, inspection_text = string.rep("😀", 10000),
+                inspection_registry_id = "wippy.agent.tools:attention_get_tree",
+                inspection_operation = "tree",
             })
             local result, err = funcs.new():with_context({
                 call_id = "call-inspection-byte-limit",
@@ -90,16 +110,15 @@ local function define_tests()
                     broker_pid = broker_pid, delivery_handle = "read-delivery",
                     session_id = "session-read", host_instance_id = "host-read",
                 },
-            }):call("wippy.agent.tools:attention_inspect", { operation = "focus" })
+            }):call("wippy.agent.tools:attention_get_tree", {})
             test.is_nil(err)
             test.not_nil(result)
             test.eq(result.status, "inspected")
-            test.eq(result.inspection.outcome, "partial")
-            test.eq(result.inspection.omissions[1].reason, "byte-limit")
-            test.is_nil(result.inspection.data)
-            test.eq(#result.targets, 0)
-            local encoded = json.encode(result)
-            test.is_true(#encoded <= 32768)
+            test.eq(result.outcome, "partial")
+            test.eq(result.omissions[1].reason, "byte-limit")
+            test.is_nil(result.nodes)
+            test.is_nil(result.continuation)
+            test.is_true(#json.encode(result) <= 8192)
             local response, response_err = receive_with_timeout(broker_command:response(), "5s")
             test.is_nil(response_err)
             test.not_nil(response)

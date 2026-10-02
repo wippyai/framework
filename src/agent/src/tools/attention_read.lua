@@ -9,6 +9,9 @@ M.tools = {
     attention_get_focus = "focus", attention_get_selection = "selection", attention_hit_test = "point",
 }
 
+-- The removed attention_inspect tool has no registry entry or runtime authority.
+-- Its ID is still recognized so stored history can be read and budgeted; a new
+-- call to it can only become a refusal receipt.
 function M.is_read(id)
     if id == PREFIX .. "attention_inspect" then return true end
     for name in pairs(M.tools) do if id == PREFIX .. name then return true end end

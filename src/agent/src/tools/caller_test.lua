@@ -56,10 +56,10 @@ local function define_tests()
                 description = "Highlight a UI target",
                 meta = { type = "tool", exclusive = true }
             },
-            ["wippy.agent.tools:attention_inspect"] = {
-                id = "wippy.agent.tools:attention_inspect",
-                name = "attention_inspect",
-                description = "Inspect current Attention",
+            ["wippy.agent.tools:attention_get_tree"] = {
+                id = "wippy.agent.tools:attention_get_tree",
+                name = "attention_get_tree",
+                description = "Read an Attention tree page",
                 meta = { type = "tool" }
             },
             ["wippy.agent.tools:ui_action_highlight_evil"] = {
@@ -90,7 +90,7 @@ local function define_tests()
                 ["test:non_exclusive"] = { result = "regular_result" },
                 ["test:failing_tool"] = { error = "Tool execution failed" },
                 ["wippy.agent.tools:ui_action_highlight"] = { result = { status = "confirmed" } },
-                ["wippy.agent.tools:attention_inspect"] = { result = { status = "inspected" } },
+                ["wippy.agent.tools:attention_get_tree"] = { result = { status = "inspected" } },
                 ["wippy.agent.tools:ui_action_highlight_evil"] = { result = { status = "ok" } }
             }
             wrapper_calls = {}
@@ -304,7 +304,7 @@ local function define_tests()
             it("rejects inherited authority in both execution strategies without a fresh grant", function()
                 for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
                     for _, resolver_present in ipairs({ false, true }) do
-                        for _, tool_id in ipairs({ "wippy.agent.tools:attention_inspect", "test:calculator" }) do
+                        for _, tool_id in ipairs({ "wippy.agent.tools:attention_get_tree", "test:calculator" }) do
                             execution_contexts = {} :: {any}
                             local caller = tool_caller.new():set_strategy(strategy)
                             if resolver_present then
@@ -346,13 +346,13 @@ local function define_tests()
                     local allowed = true
                     caller:set_runtime_context_resolver(function(call_id, tool_call)
                         test.eq(call_id, "read")
-                        test.eq(tool_call.registry_id, "wippy.agent.tools:attention_inspect")
+                        test.eq(tool_call.registry_id, "wippy.agent.tools:attention_get_tree")
                         if not allowed then return nil, "current tool authority revoked" end
                         return { attention_inspection_runtime = { delivery_handle = "fresh-read" } }, nil
                     end)
                     local validated = caller:validate({ {
                         id = "read", name = "read", arguments = {},
-                        registry_id = "wippy.agent.tools:attention_inspect",
+                        registry_id = "wippy.agent.tools:attention_get_tree",
                         context = { ui_action_runtime = { delivery_handle = "old-action" } },
                     } })
                     local results = caller:execute({ attention_context_runtime = { capability = "old-setting" } }, validated)
@@ -427,6 +427,29 @@ local function define_tests()
                 test.eq(resolver_calls, 0)
                 test.is_nil(execution_contexts[1].ui_action_runtime)
                 test.is_nil(execution_contexts[2].ui_action_runtime)
+            end)
+
+            it("grants no runtime authority to the removed attention_inspect ID", function()
+                local removed_id = "wippy.agent.tools:attention_inspect"
+                local schemas: any = tool_schemas
+                local results: any = tool_results
+                test.is_nil(tool_caller.RUNTIME_CONTEXT_TOOL_IDS[removed_id])
+                -- Even if an entry with that ID were registered, the resolver must not run.
+                schemas[removed_id] = { id = removed_id, name = "attention_inspect", meta = { type = "tool" } }
+                results[removed_id] = { result = { status = "inspected" } }
+                local caller = tool_caller.new()
+                local resolver_calls = 0
+                caller:set_runtime_context_resolver(function()
+                    resolver_calls = resolver_calls + 1
+                    return { attention_inspection_runtime = { delivery_handle = "must-not-leak" } }
+                end)
+                local executed = caller:execute({}, caller:validate({ {
+                    id = "removed", name = "attention_inspect", arguments = {}, registry_id = removed_id,
+                } }))
+                schemas[removed_id] = nil
+                test.is_nil(executed.removed.error)
+                test.eq(resolver_calls, 0)
+                test.is_nil(execution_contexts[1].attention_inspection_runtime)
             end)
 
             it("keeps runtime context out of before and after wrapper payloads", function()

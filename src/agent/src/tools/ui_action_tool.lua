@@ -1,5 +1,4 @@
 local ctx = require("ctx")
-local json = require("json")
 local time = require("time")
 
 local ui_action_tool = {}
@@ -22,7 +21,6 @@ local VALID_STATUSES = {
 }
 
 local TOOL_IDS = {
-    inspect = "wippy.agent.tools:attention_inspect",
     highlight = "wippy.agent.tools:ui_action_highlight",
     confirm = "wippy.agent.tools:ui_action_confirm",
     capture_visual = "wippy.agent.tools:ui_action_capture_visual",
@@ -158,26 +156,6 @@ local function execute(mode, args, inspection_name)
             if inspection_name then
                 return require("attention_read").project(result, inspection_name)
             end
-            if mode == "inspect" then
-                local encoded, encode_err = json.encode(result)
-                if not encoded then
-                    return unavailable("inspection result encoding failed: " .. tostring(encode_err))
-                end
-                if #encoded > 32768 then
-                    result.inspection = {
-                        outcome = "partial",
-                        omissions = { { reason = "byte-limit" } },
-                    }
-                    result.targets = {}
-                    result.selected_target = nil
-                    result.prepared_file = nil
-                    result.reason = "Inspection result exceeded the model output limit"
-                    local bounded = json.encode(result)
-                    if not bounded or #bounded > 32768 then
-                        return unavailable("inspection result identity exceeded the model output limit")
-                    end
-                end
-            end
             return result
         end
     end
@@ -185,10 +163,6 @@ end
 
 function ui_action_tool.highlight(args)
     return execute("highlight", args)
-end
-
-function ui_action_tool.inspect(args)
-    return execute("inspect", args)
 end
 
 local function inspect_named(name, args)

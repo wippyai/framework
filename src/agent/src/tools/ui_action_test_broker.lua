@@ -11,6 +11,7 @@ type BrokerArgs = {
     inspect: boolean?,
     inspection_text: string?,
     inspection_registry_id: string?,
+    inspection_operation: string?,
 }
 
 local function wait_for_request(timeout_duration)
@@ -100,7 +101,8 @@ function broker.run(args)
         },
     }
     if options.inspect then
-        if request_data.registry_id ~= (options.inspection_registry_id or "wippy.agent.tools:attention_inspect") or request_data.args.operation ~= "focus" then
+        if request_data.registry_id ~= (options.inspection_registry_id or "wippy.agent.tools:attention_get_focus")
+            or request_data.args.operation ~= (options.inspection_operation or "focus") then
             return nil, "unexpected inspection request"
         end
         result.status = "inspected"
@@ -108,7 +110,17 @@ function broker.run(args)
         result.inspection = { outcome = "empty", request_id = "query-process-level" }
         if options.inspection_text then
             result.inspection.outcome = "ok"
-            result.inspection.data = { text = options.inspection_text }
+            result.inspection.continuation = "continuation-process-level"
+            result.inspection.data = { nodes = { {
+                ref = {
+                    host_instance_id = request_data.host_instance_id, node_id = "node-process-level",
+                    mount_id = "mount-process-level", generation = 1,
+                },
+                kind = "element",
+                state = "mounted",
+                summary = { text = options.inspection_text },
+                path = {},
+            } } }
         end
         result.targets = {}
     end

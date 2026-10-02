@@ -32,7 +32,7 @@ The Attention trait installs a `before_execute` wrapper. It admits one Attention
 
 The wrapper reads trusted Session history, including private function records. If it cannot establish the latest user-turn boundary, it refuses the read. It preserves each original tool-call ID, name and arguments and substitutes a private terminal receipt for refused Attention calls. The refusal reason travels in tool context, so history keeps the model's own call unchanged. Unrelated tools in the same batch pass through unchanged. Receipts have no Host authority and are not advertised to the model.
 
-These limits bound Attention Host work. They do not enforce a global model-generation or cost limit. A validation receipt preserves its exact reason and permits one corrected call within the remaining budget. Policy and budget refusals instruct the model to answer from available evidence. Agents without this trait keep their existing tool and history behavior. The legacy `attention_inspect` registry entry remains available for explicit compatibility use but is absent from the Attention trait.
+These limits bound Attention Host work. They do not enforce a global model-generation or cost limit. A validation receipt preserves its exact reason and permits one corrected call within the remaining budget. Policy and budget refusals instruct the model to answer from available evidence. Agents without this trait keep their existing tool and history behavior. The unrestricted `attention_inspect` tool was removed, and the explicit read tools above replace it. Its ID has no registry entry and no runtime authority. It is still recognized in stored history, and the guard turns any new call to it into a refusal receipt.
 
 ## Verification
 

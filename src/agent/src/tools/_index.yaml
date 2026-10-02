@@ -304,26 +304,6 @@ entries:
       attention_read: wippy.agent.tools:attention_read
     method: attention_read_receipt
 
-  - name: attention_inspect
-    kind: function.lua
-    meta:
-      name: Inspect current interface
-      type: tool
-      comment: Read current canonical Attention state from the authenticated Host for this turn
-      group: User Interface
-      private: true
-      input_schema: |
-        {"type":"object","properties":{"operation":{"type":"string","enum":["cursor","focus","selection","point","tree","find","geometry"]},"scope":{"type":"object","properties":{"fromRoot":{"const":true},"node":{"type":"object","properties":{"host_instance_id":{"type":"string","maxLength":160},"node_id":{"type":"string","maxLength":256},"mount_id":{"type":"string","maxLength":256},"generation":{"type":"integer","minimum":1}},"required":["host_instance_id","node_id","mount_id","generation"],"additionalProperties":false}},"additionalProperties":false},"args":{"type":"object","description":"Arguments for the selected public Attention inspection operation. Use semantic queries or canonical node IDs; CSS needs an explicit document or shadow root."}},"required":["operation"],"additionalProperties":false}
-    source: file://ui_action_tool.lua
-    modules:
-      - ctx
-      - hash
-      - time
-      - json
-    imports:
-      attention_read: wippy.agent.tools:attention_read
-    method: inspect
-
   # wippy.agent.tools:attention_context_set
   - name: attention_context_set
     kind: function.lua
