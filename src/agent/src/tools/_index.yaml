@@ -416,7 +416,8 @@ entries:
     kind: function.lua
     meta:
       type: test-helper
-      comment: Process-level broker fixture for UI action inbox delivery tests
+      scope: dev
+      comment: Process-level broker fixture for UI action inbox delivery tests. Dev scope keeps it out of the published module.
     source: file://ui_action_test_broker.lua
     modules:
       - time
