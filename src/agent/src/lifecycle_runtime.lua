@@ -1,4 +1,5 @@
 local contract = require("contract")
+local behavior_controls = require("behavior_controls")
 
 type LifecycleBindingSpec = {
     id: string?,
@@ -12,6 +13,7 @@ type LifecycleBindingSpec = {
     priority: number?,
     strict: boolean?,
     order: number?,
+    source: string?,
 }
 
 type LifecyclePayload = {
@@ -125,6 +127,13 @@ local function call_binding(binding_spec: LifecycleBindingSpec, payload: Lifecyc
         return nil, tostring(apply_err)
     end
 
+    if binding_spec.source == "behavior" and type(result) == "table" and result._control ~= nil and
+        (payload.phase == PHASE.BEFORE_STEP or payload.phase == PHASE.AFTER_STEP) then
+        local controls, err = behavior_controls.prepare({ result._control })
+        if not controls then return nil, err end
+        result._control = controls[1]
+    end
+
     return (type(result) == "table" and result or {}) :: table, nil
 end
 
@@ -141,6 +150,7 @@ function lifecycle_runtime.apply(bindings: any, payload: any): (table, string?)
         observations = {},
         metadata = {},
         errors = {},
+        controls = {},
     }
 
     if #normalized == 0 then
@@ -180,6 +190,14 @@ function lifecycle_runtime.apply(bindings: any, payload: any): (table, string?)
                     summary.observations[#summary.observations + 1] = observation
                 end
                 merge_context(summary.context, result.context)
+                -- Legacy bindings retain their interpretation. Controls from
+                -- step behaviors are proposals, applied by the host only after
+                -- this round's action and every result are recorded.
+                if binding.source == "behavior" and
+                    (phase == PHASE.BEFORE_STEP or phase == PHASE.AFTER_STEP) and
+                    type(result._control) == "table" then
+                    summary.controls[#summary.controls + 1] = result._control
+                end
                 if result.metadata ~= nil then
                     summary.metadata[#summary.metadata + 1] = {
                         binding_id = binding.id,

@@ -325,14 +325,15 @@ entries:
       behaviors:
         memory:
           kind: memory
-          handles: [activate, before_step, checkpoint, deactivate]
+          handles: [recall, activate, before_step, checkpoint, deactivate]
           handlers:
+            recall: my_ns:memory_impl
             lifecycle: my_ns:memory_lifecycle
             checkpoint: my_ns:memory_checkpoint
           options:
             namespace: project
-          before_step:
-            recall_limit: 5
+          recall:
+            max_items: 5
           checkpoint:
             token_threshold: 12000
 ```
@@ -357,13 +358,33 @@ preserve every original tool-call ID exactly once. Dropping, duplicating, adding
 or replacing an ID fails validation before tools execute, regardless of wrapper
 strictness: providers require matching results for every original call.
 
-`wippy.agent:memory.recall` remains the existing automatic recall contract; a
-behavior named `memory` does not configure it implicitly. Checkpointing reduces
-the active conversation, whereas a durable memory provider owns storage, aging,
-retrieval, and authorization. Host identity refs are not authorization grants.
-Lifecycle hooks do not automatically apply returned `context` as host config or
-bridge it to `_control`; agent/model/trait/tool changes still use the host's
-existing control path. There is no compact-now control in this interface.
+`wippy.agent:memory.recall` remains the automatic recall contract. Explicit
+`handles: [recall]` and `handlers.recall` select its provider; naming a behavior
+`memory` alone does not. The provider receives detached attachment context and
+effective recall options. An explicit agent `memory_contract` takes precedence
+(an empty map disables provider selection); ambiguous trait providers fail
+compilation. `recall.enabled = false` disables automatic recall.
+
+Checkpointing reduces the active conversation. The memory provider still owns
+durable storage, aging, retrieval, and authorization; there is no built-in
+long-term memory store. Host identity refs are not authorization grants.
+
+Behavior lifecycle handlers in `before_step`/`after_step` and tool wrappers in
+`after_execute` can return `_control`. The supported declarative subset is
+`config` (agent/model/traits/tools), `context` (session/public_meta set/delete,
+public_meta clear), and `memory.compact` (boolean). Hosts reuse their canonical
+control handlers and apply proposals only after the round's outcomes settle.
+`after_step` itself is before tools execute; `after_execute` is before host
+persistence. Returned `context` without `_control` is not a host configuration
+change. Legacy bindings do not acquire behavior controls implicitly.
+
+Session and Dataflow persist proposals with the round and replay them after
+recovery. Replay is at-least-once, not exactly-once external writes; providers
+must make writes and lifecycle hooks idempotent using stable host refs.
+`memory.compact = true` requests checkpointing without a token threshold, but
+does not bypass an explicit disable or supply a missing provider. False does
+not cancel an earlier request. There are no automatic evaluator calls, new
+loop thresholds, or built-in steering policies for existing apps.
 Critical durable writes must not depend on `deactivate`, which cannot run after
 a hard kill; providers need stable persisted IDs and idempotent writes.
 

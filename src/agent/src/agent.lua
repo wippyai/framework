@@ -237,7 +237,7 @@ local function should_recall_memory(messages: any, options: any, runtime_options
         return false
     end
 
-    if not (options.enabled or AGENT_CONFIG.memory.defaults.enabled) then
+    if options.enabled == false then
         return false
     end
 

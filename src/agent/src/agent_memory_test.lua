@@ -197,6 +197,23 @@ local function define_tests()
             _G.prompt = nil
         end)
 
+        it("honors explicitly disabled recall without opening its provider", function()
+            local memory_contract = create_mock_memory_contract()
+            mock_contract._current_instance = memory_contract
+            local instance = agent.new({
+                id = "test:disabled-memory", name = "Disabled memory", prompt = "test", tools = {},
+                memory_contract = { implementation_id = "test:memory", options = { enabled = false } },
+            })
+            local builder = mock_prompt.new()
+            builder:add_user("first")
+            builder:add_assistant("second")
+            local result, err = instance:step(builder)
+            test.is_nil(err)
+            test.not_nil(result)
+            test.eq(#mock_contract._open_calls, 0)
+            test.eq(#memory_contract:get_call_log(), 0)
+        end)
+
         describe("Recent Actions Extraction", function()
             it("should extract recent actions from messages in chronological order", function()
                 local memory_contract = create_mock_memory_contract()

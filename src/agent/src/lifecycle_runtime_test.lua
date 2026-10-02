@@ -189,6 +189,25 @@ local function define_tests()
             test.eq(result.messages[1].content, "memory activated")
         end)
 
+        it("collects detached controls only from opt-in behavior step handlers", function()
+            local control = { config = { model = "next-model" } }
+            behaviors.policy = function() return { _control = control } end
+            local spec = { binding = "policy", source = "behavior", phases = { "after_step" } }
+            local result, err = lifecycle_runtime.apply({ spec }, payload("after_step"))
+            test.is_nil(err)
+            test.eq(#result.controls, 1)
+            test.eq(result.controls[1].config.model, "next-model")
+            result.controls[1].config.model = "mutated"
+            test.eq(control.config.model, "next-model")
+            spec.source = nil
+            result = lifecycle_runtime.apply({ spec }, payload("after_step"))
+            test.eq(#result.controls, 0, "legacy bindings keep their original interpretation")
+            spec.source = "behavior"
+            spec.phases = { "deactivate" }
+            result = lifecycle_runtime.apply({ spec }, payload("deactivate"))
+            test.eq(#result.controls, 0, "teardown cannot switch or continue a finished host")
+        end)
+
         it("records non-strict handler errors and continues", function()
             behaviors.bad = function()
                 return nil, "temporary failure"

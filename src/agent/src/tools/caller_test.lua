@@ -216,6 +216,33 @@ local function define_tests()
             tool_caller._contract = mock_contract
         end)
 
+        it("collects behavior controls without changing outcomes and resets them each execution", function()
+            local control = { config = { model = "stronger" } }
+            wrapper_behaviors["test.wrapper:policy"] = function(payload)
+                test.not_nil(payload.tool_results.call_calculator)
+                return { _control = control }
+            end
+            local caller = tool_caller.new()
+            local wrapper = { binding = "test.wrapper:policy", source = "behavior", phases = { "after_execute" } }
+            caller:set_tool_wrappers({ wrapper })
+            caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+            local validated, err = caller:validate({{
+                id = "call_calculator", name = "calculator", registry_id = "test:calculator", arguments = { a = 2, b = 3 },
+            }})
+            test.is_nil(err)
+            local results = caller:execute({}, validated)
+            test.not_nil(results.call_calculator)
+            test.eq(results.call_calculator.result, 42)
+            local controls = caller:get_wrapper_controls()
+            test.eq(#controls, 1)
+            controls[1].config.model = "changed"
+            test.eq(control.config.model, "stronger")
+            test.eq(caller:get_wrapper_controls()[1].config.model, "stronger")
+            wrapper.source = nil
+            caller:execute({}, validated)
+            test.eq(#caller:get_wrapper_controls(), 0, "legacy wrappers never acquire new control semantics")
+        end)
+
         after_each(function()
             tool_caller._json = nil
             tool_caller._tools = nil

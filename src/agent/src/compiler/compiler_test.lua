@@ -1375,6 +1375,66 @@ local function define_tests()
                 }), 0)
             end)
 
+            it("configures canonical recall and checkpointing from one trait attachment", function()
+                trait_definitions.complete_memory = {
+                    id = "complete_memory",
+                    behaviors = {
+                        memory = {
+                            handles = { "recall", "checkpoint" },
+                            handlers = { recall = "test:recall", checkpoint = "test:checkpoint" },
+                            options = { max_items = 3 },
+                            recall = { recall_cooldown = 2 },
+                            checkpoint = { token_threshold = 12000 },
+                        },
+                    },
+                }
+                local spec = {
+                    id = "test:memory",
+                    traits = {{ id = "complete_memory", context = { project_id = "project-a" } }},
+                }
+                local compiled, err = compiler.compile(spec)
+                test.is_nil(err)
+                test.not_nil(compiled.memory_contract)
+                test.eq(compiled.memory_contract.implementation_id, "test:recall")
+                test.eq(compiled.memory_contract.context.project_id, "project-a")
+                test.eq(compiled.memory_contract.context.agent_id, spec.id)
+                test.eq(compiled.memory_contract.options.max_items, 3)
+                test.eq(compiled.memory_contract.options.recall_cooldown, 2)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 12000)
+                test.eq(compiled.bindings.checkpoint[1].context.project_id, "project-a")
+                compiled.memory_contract.context.project_id = "changed"
+                compiled.memory_contract.options.max_items = 99
+                local again = compiler.compile(spec)
+                test.eq(again.memory_contract.context.project_id, "project-a")
+                test.eq(again.memory_contract.options.max_items, 3)
+                spec.memory_contract = { implementation_id = "test:explicit", options = { enabled = false } }
+                local explicit = compiler.compile(spec)
+                test.eq(explicit.memory_contract.implementation_id, "test:explicit")
+                test.is_false(explicit.memory_contract.options.enabled)
+                spec.memory_contract = {}
+                test.is_nil(compiler.compile(spec).memory_contract.implementation_id)
+                trait_definitions.complete_memory = nil
+            end)
+
+            it("diagnoses recall handlers and refuses ambiguous automatic recall providers", function()
+                local issues = compiler.validate_behaviors({ memory = { handles = { "recall" } } })
+                test.eq(#issues, 1)
+                test.eq(issues[1].code, "missing_handler")
+                test.eq(issues[1].path, "behaviors.memory.handlers.recall")
+                trait_definitions.ambiguous_memory = {
+                    id = "ambiguous_memory",
+                    behaviors = {
+                        first = { handles = { "recall" }, handlers = { recall = "test:first" } },
+                        second = { handles = { "recall" }, handlers = { recall = "test:second" } },
+                    },
+                }
+                local compiled, err = compiler.compile({ id = "test:ambiguous", traits = { "ambiguous_memory" } })
+                test.is_nil(compiled)
+                test.not_nil(err)
+                test.is_true(tostring(err):find("multiple recall providers", 1, true) ~= nil)
+                trait_definitions.ambiguous_memory = nil
+            end)
+
             it("should preserve a trait's checkpoint disabling and allow explicit agent overrides", function()
                 trait_definitions.disabled_checkpoint = {
                     id = "disabled_checkpoint",

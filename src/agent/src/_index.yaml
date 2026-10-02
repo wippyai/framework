@@ -189,6 +189,25 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  - name: behavior_controls
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validation and detached preparation of declarative behavior proposals
+    source: file://behavior_controls.lua
+    modules: [json]
+
+  - name: behavior_controls_test
+    kind: function.lua
+    meta:
+      type: test
+      group: Agent Framework
+    source: file://behavior_controls_test.lua
+    imports:
+      behavior_controls: wippy.agent:behavior_controls
+      test: wippy.test:test
+    method: run_tests
+
   # wippy.agent:lifecycle_runtime
   - name: lifecycle_runtime
     kind: library.lua
@@ -198,6 +217,8 @@ entries:
     source: file://lifecycle_runtime.lua
     modules:
       - contract
+    imports:
+      behavior_controls: wippy.agent:behavior_controls
 
   # wippy.agent:lifecycle_runtime_test
   - name: lifecycle_runtime_test
@@ -595,6 +616,15 @@ entries:
               {
                 "type": "object",
                 "properties": {
+                  "_control": {
+                    "type": "object",
+                    "description": "Opt-in behavior proposals; step controls take effect only after the round is recorded.",
+                    "properties": {
+                      "config": { "type": "object" },
+                      "context": { "type": "object" },
+                      "memory": { "type": "object", "properties": { "compact": { "type": "boolean" } } }
+                    }
+                  },
                   "messages": { "type": "array", "items": { "type": "object" } },
                   "context": { "type": "object" },
                   "observations": { "type": "array", "items": { "type": "object" } },
@@ -752,6 +782,15 @@ entries:
               {
                 "type": "object",
                 "properties": {
+                  "_control": {
+                    "type": "object",
+                    "description": "Opt-in after_execute behavior proposals; the host applies them after every outcome is recorded.",
+                    "properties": {
+                      "config": { "type": "object" },
+                      "context": { "type": "object" },
+                      "memory": { "type": "object", "properties": { "compact": { "type": "boolean" } } }
+                    }
+                  },
                   "skipped": {
                     "type": "boolean"
                   },

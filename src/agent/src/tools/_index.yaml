@@ -18,6 +18,7 @@ entries:
       - contract
     imports:
       tools: wippy.agent.discovery:tools
+      behavior_controls: wippy.agent:behavior_controls
     
   # wippy.agent.tools:caller_test
   - name: caller_test

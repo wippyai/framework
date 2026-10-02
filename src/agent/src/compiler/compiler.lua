@@ -53,6 +53,7 @@ type ToolWrapperSpec = {
     priority: number,
     strict: boolean?,
     order: number,
+    source: string?,
 }
 type BindingSpec = {
     id: string?,
@@ -470,6 +471,7 @@ local LIFECYCLE_PHASES = {
 local LIFECYCLE_PHASE_ORDER = { "activate", "before_step", "after_step", "deactivate" }
 
 local BEHAVIOR_HANDLES = {
+    recall = true,
     activate = true,
     before_step = true,
     after_step = true,
@@ -544,12 +546,12 @@ function compiler.validate_behaviors(behaviors: any): {table}
             end
             if type(behavior.handlers) == "table" then
                 for _, name in ipairs(sorted_keys(behavior.handlers)) do
-                    if name ~= "lifecycle" and name ~= "checkpoint" and name ~= "tool_wrapper" then
+                    if name ~= "lifecycle" and name ~= "checkpoint" and name ~= "tool_wrapper" and name ~= "recall" then
                         issue(path .. ".handlers." .. tostring(name), "unknown_handler", "unsupported behavior handler: " .. tostring(name))
                     end
                 end
             end
-            for _, name in ipairs({ "lifecycle", "checkpoint", "tool_wrapper" }) do
+            for _, name in ipairs({ "lifecycle", "checkpoint", "tool_wrapper", "recall" }) do
                 local value = type(behavior.handlers) == "table" and behavior.handlers[name] or nil
                 if value ~= nil and (type(value) ~= "string" or value == "") then
                     issue(path .. ".handlers." .. name, "invalid_handler", "handler must be a non-empty binding ID")
@@ -577,6 +579,9 @@ function compiler.validate_behaviors(behaviors: any): {table}
             end
             if wrapper_selected and not behavior_handler(behavior, "tool_wrapper") then
                 issue(path .. ".handlers.tool_wrapper", "missing_handler", "tool phases require a tool_wrapper handler")
+            end
+            if selected.recall and behavior.recall ~= false and not behavior_handler(behavior, "recall") then
+                issue(path .. ".handlers.recall", "missing_handler", "recall requires a memory contract handler")
             end
         end
     end
@@ -788,6 +793,7 @@ local function append_behavior_tool_wrapper(
             priority = tonumber(behavior.priority) or 100,
             strict = behavior.strict == true,
             order = #tool_wrappers + 1,
+            source = "behavior",
         }
     end
 end
@@ -833,6 +839,7 @@ local function append_behavior_lifecycle(
             priority = tonumber(behavior.priority) or 100,
             strict = behavior.strict == true,
             order = 0,
+            source = "behavior",
         })
     end
 end
@@ -898,6 +905,7 @@ end
 local function append_behaviors(
     bindings: {[string]: {BindingSpec}},
     tool_wrappers: {ToolWrapperSpec},
+    recall_defaults: {table},
     trait_id: string,
     trait_def: any,
     trait_context: table,
@@ -945,6 +953,20 @@ local function append_behaviors(
 
         local base_options = merge_agent_options(trait_options, behavior.options)
         base_options = merge_agent_options(base_options, attachment_options)
+
+        -- Explicitly selects the existing recall contract; the behavior's name
+        -- never implicitly enables memory or introduces another retrieval API.
+        local recall_binding = behavior_handler(behavior, "recall")
+        if handles.recall and behavior.recall ~= false and recall_binding then
+            local recall_context = deep_copy(behavior_context)
+            local recall_options = merge_agent_options(base_options, behavior.recall)
+            attach_options_to_context(recall_context, recall_options)
+            recall_defaults[#recall_defaults + 1] = {
+                implementation_id = recall_binding,
+                context = recall_context,
+                options = recall_options,
+            }
+        end
 
         append_behavior_lifecycle(
             bindings,
@@ -1000,7 +1022,7 @@ local function get_canonical_tool_name(tool_id: any, tool_def: any): any
     return name
 end
 
-local function process_traits(raw_spec: any, config: CompilerConfig): (any, any, any, any, any, any, any, any, any, any)
+local function process_traits(raw_spec: any, config: CompilerConfig): (any, any, any, any, any, any, any, any, any, any, any)
     local additional_prompts = {}
     local additional_tools = {}
     local trait_contexts = {}
@@ -1011,9 +1033,10 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
     local tool_wrappers = {}
     local bindings = {}
     local agent_options = {}
+    local recall_defaults = {}
 
     if not raw_spec.traits or #raw_spec.traits == 0 then
-        return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, agent_options
+        return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, agent_options, recall_defaults
     end
 
     for i, trait_config in ipairs(raw_spec.traits) do
@@ -1072,6 +1095,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
         local behavior_agent_options = append_behaviors(
             bindings,
             tool_wrappers,
+            recall_defaults,
             trait_id,
             trait_def,
             trait_contexts[trait_id],
@@ -1164,7 +1188,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
         end)
     end
 
-    return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, agent_options
+    return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, agent_options, recall_defaults
 end
 
 local function process_tools(raw_spec: any, additional_tools: any, trait_contexts: any, trait_tool_schemas: any, config: CompilerConfig): any
@@ -1380,10 +1404,21 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
 
     local config = merge_config(user_config)
 
-    local additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, trait_agent_options = process_traits(
+    local additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, trait_agent_options, recall_defaults = process_traits(
         raw_spec, config)
 
-    append_memory_contract_binding(bindings :: {[string]: {BindingSpec}}, raw_spec, config)
+    local memory_contract = raw_spec.memory_contract
+    if memory_contract == nil then
+        if #recall_defaults > 1 then
+            return nil, "multiple recall providers: select one memory trait or configure memory_contract explicitly"
+        end
+        memory_contract = recall_defaults[1]
+    end
+    append_memory_contract_binding(bindings :: {[string]: {BindingSpec}}, {
+        id = raw_spec.id,
+        context = raw_spec.context,
+        memory_contract = memory_contract,
+    }, config)
 
     local tools = process_tools(raw_spec, additional_tools, trait_contexts, trait_tool_schemas, config)
 
@@ -1414,7 +1449,7 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
         prompt = final_prompt,
         tools = tools,
         memory = raw_spec.memory or {},
-        memory_contract = raw_spec.memory_contract,
+        memory_contract = memory_contract,
         agent_options = merge_agent_options(trait_agent_options, raw_spec.agent_options),
         prompt_funcs = prompt_funcs,
         step_funcs = step_funcs,
