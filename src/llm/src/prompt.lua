@@ -20,6 +20,10 @@ type FunctionCallOptions = {
     provider_metadata: table?,
 }
 
+type FunctionResultOptions = {
+    is_error: boolean?,
+}
+
 type FunctionCall = {
     name: string,
     arguments: string,
@@ -34,6 +38,7 @@ type Message = {
     metadata: table?,
     function_call: FunctionCall?,
     function_call_id: string?,
+    is_error: boolean?,
     marker_id: string?,
 }
 
@@ -45,7 +50,7 @@ type PromptBuilder = {
     add_developer: (self: any, content: string, meta: table?) -> PromptBuilder,
     add_message: (self: any, role: string, content_parts: {ContentPart}, name: string?, metadata: table?) -> PromptBuilder,
     add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?) -> PromptBuilder,
-    add_function_result: (self: any, name: string, content: any, function_call_id: string?) -> PromptBuilder,
+    add_function_result: (self: any, name: string, content: any, function_call_id: string?, options: FunctionResultOptions?) -> PromptBuilder,
     add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
     get_messages: (self: any) -> {Message},
     build: (self: any) -> {messages: {Message}},
@@ -328,7 +333,7 @@ function prompt.new(messages: {Message}?)
     end
 
     -- Add a function result message
-    builder.add_function_result = function(self: any, name: string, content: any, function_call_id: string?)
+    builder.add_function_result = function(self: any, name: string, content: any, function_call_id: string?, options: FunctionResultOptions?)
         if name and content then
             local message: Message = {
                 role = prompt.ROLE.FUNCTION_RESULT,
@@ -339,6 +344,7 @@ function prompt.new(messages: {Message}?)
             if function_call_id then
                 message.function_call_id = function_call_id
             end
+            if options and options.is_error == true then message.is_error = true end
 
             table.insert(self.messages, message)
         end
@@ -378,6 +384,7 @@ function prompt.new(messages: {Message}?)
                 local processed_msg: Message = {
                     role = msg.role,
                     name = msg.name,
+                    is_error = msg.is_error,
                     content = { prompt.text(type(cleaned_content) == "table" and json.encode(cleaned_content) or cleaned_content) }
                 }
 
@@ -449,6 +456,7 @@ function prompt.new(messages: {Message}?)
             if msg.name then new_msg.name = msg.name end
             if msg.marker_id then new_msg.marker_id = msg.marker_id end
             if msg.function_call_id then new_msg.function_call_id = msg.function_call_id end
+            if msg.is_error ~= nil then new_msg.is_error = msg.is_error end
 
             -- Copy meta if present
             if msg.metadata then

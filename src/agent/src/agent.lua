@@ -591,6 +591,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
     if output.detect_truncation(result) then
         response.truncated = true
+        -- Incomplete calls remain non-executable. Hosts need the cause, however,
+        -- to distinguish a tool retry from an empty no-tool response.
+        response.truncation_reason = result.tool_calls and #result.tool_calls > 0
+            and "tool_calls" or "empty_output"
         return response
     end
 

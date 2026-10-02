@@ -1376,6 +1376,20 @@ local function define_tests()
         end)
 
         describe("Truncation Handling", function()
+            it("distinguishes empty no-tool exhaustion without exposing executable calls", function()
+                local test_agent = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                builder:add_user("Answer")
+                agent._llm = { generate = function()
+                    return { content = "", tool_calls = {}, finish_reason = "length" }
+                end }
+                local result, err = test_agent:step(builder)
+                agent._llm = nil
+                test.is_nil(err)
+                test.is_true(result.truncated)
+                test.eq(result.truncation_reason, "empty_output")
+                test.is_nil(result.tool_calls)
+            end)
             it("should set truncated flag and strip tool_calls when finish_reason is length with tool_calls", function()
                 local test_agent = agent.new(basic_compiled_spec)
                 local prompt_builder = mock_prompt.new()
@@ -1405,6 +1419,7 @@ local function define_tests()
                 test.is_true(result.truncated)
                 test.is_nil(result.tool_calls)
                 test.is_nil(result.delegate_calls)
+                test.eq(result.truncation_reason, "tool_calls")
 
                 agent._llm = nil
             end)

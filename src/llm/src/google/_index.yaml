@@ -116,6 +116,7 @@ entries:
     imports:
       output: wippy.llm:output
       transport: wippy.llm.util:transport
+      google_mapper: wippy.llm.google:mapper
 
   # wippy.llm.google:client_test
   - name: client_test
@@ -239,7 +240,7 @@ entries:
     source: file://mapper.lua
     modules:
       - json
-      - time
+      - uuid
     imports:
       output: wippy.llm:output
       route: wippy.llm.util:route

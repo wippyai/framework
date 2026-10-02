@@ -2,6 +2,7 @@ local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local hash = require("hash")
 local route = require("route")
 
 local mapper = {}
@@ -57,27 +58,46 @@ local function approximate_token_count(text)
     return math.ceil(string.len(text) / 4)
 end
 
--- Sanitize tool ID to match Claude's pattern ^[a-zA-Z0-9*-]+$
-local function sanitize_tool_id(original_id)
-    if not original_id then
-        return "tool_" .. tostring(math.random(100000, 999999))
+-- Preserve valid native IDs. Foreign-provider IDs with other characters need a
+-- stable translation, shared by calls/results and collision-checked against all
+-- IDs in the prompt. Character replacement alone merges distinct identities.
+local function tool_id_mapper(messages)
+    local used, translated = {}, {}
+    local reserved = false
+    local function reserve_ids()
+        -- Normal native IDs need no extra history scan or hashing. Reserve all
+        -- IDs only if a foreign-provider ID actually needs translation.
+        if reserved then return end
+        reserved = true
+        local function reserve(id)
+            if type(id) == "string" then used[id] = id end
+        end
+        for _, msg in ipairs(messages) do
+            reserve(msg.function_call_id)
+            if msg.function_call then reserve(msg.function_call.id) end
+            if type(msg.content) == "table" then
+                for _, part in ipairs(msg.content) do
+                    if part.type == "function_call" or part.type == "tool_use" then reserve(part.id) end
+                end
+            end
+        end
     end
-
-    -- Replace invalid characters with underscores, then replace underscores with hyphens
-    local sanitized = string.gsub(original_id, "[^a-zA-Z0-9*%-]", "_")
-    sanitized = string.gsub(sanitized, "_", "-")
-
-    -- Ensure it starts with alphanumeric
-    if not string.match(sanitized, "^[a-zA-Z0-9]") then
-        sanitized = "tool-" .. sanitized
+    return function(id)
+        if type(id) ~= "string" or id == "" then error("Tool call ID is required") end
+        if id:match("^[a-zA-Z0-9_-]+$") then return id end
+        if translated[id] then return translated[id] end
+        reserve_ids()
+        local digest, err = hash.sha256(id)
+        if err then error(err) end
+        local base = "tool-" .. digest
+        local candidate, suffix = base, 0
+        while used[candidate] and used[candidate] ~= id do
+            suffix = suffix + 1
+            candidate = base .. "-" .. suffix
+        end
+        used[candidate], translated[id] = id, candidate
+        return candidate
     end
-
-    -- Ensure it's not empty
-    if sanitized == "" or sanitized == "-" then
-        sanitized = "tool-" .. tostring(math.random(100000, 999999))
-    end
-
-    return sanitized
 end
 
 local function last_cacheable_message_position(messages)
@@ -310,6 +330,7 @@ function mapper.map_messages(contract_messages)
         }
     end
 
+    local tool_id = tool_id_mapper(contract_messages)
     local claude_messages = {}
     local system_blocks = {}
     local system_cache_positions = {}
@@ -420,7 +441,8 @@ function mapper.map_messages(contract_messages)
                 content = {
                     {
                         type = "tool_result",
-                        tool_use_id = sanitize_tool_id(msg.function_call_id),
+                        tool_use_id = tool_id(msg.function_call_id),
+                        is_error = msg.is_error == true and true or nil,
                         content = result_text
                     }
                 }
@@ -438,7 +460,7 @@ function mapper.map_messages(contract_messages)
 
             table.insert(content_blocks, {
                 type = "tool_use",
-                id = sanitize_tool_id(msg.function_call.id),
+                id = tool_id(msg.function_call.id),
                 name = msg.function_call.name,
                 input = arguments
             })
@@ -470,7 +492,7 @@ function mapper.map_messages(contract_messages)
                         local arguments = normalize_tool_arguments(part.arguments)
                         table.insert(content_blocks, {
                             type = "tool_use",
-                            id = sanitize_tool_id(part.id),
+                            id = tool_id(part.id),
                             name = part.name,
                             input = arguments
                         })
@@ -669,7 +691,7 @@ function mapper.extract_response_content(claude_response)
             content_text = content_text .. (block.text or "")
         elseif block.type == "tool_use" then
             table.insert(tool_calls, {
-                id = sanitize_tool_id(block.id),
+                id = block.id,
                 name = block.name or "",
                 arguments = block.input or {}
             })

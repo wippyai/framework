@@ -3,6 +3,19 @@ local json = require("json")
 
 local function define_tests()
     describe("Prompt Library", function()
+        it("preserves explicit result failures through build and clone without inspecting success payloads", function()
+            local builder = prompt.new()
+            builder:add_function_result("lookup", "denied", "failed", { is_error = true })
+            builder:add_function_result("lookup", '{"error":"application data"}', "success")
+            local cloned = builder:clone()
+            for _, messages in ipairs({ builder:get_messages(), cloned:get_messages() }) do
+                test.is_true(messages[1].is_error)
+                test.eq(messages[1].function_call_id, "failed")
+                test.eq(messages[1].content[1].text, "denied")
+                test.is_nil(messages[2].is_error)
+                test.eq(messages[2].content[1].text, '{"error":"application data"}')
+            end
+        end)
         it("should create a basic prompt with system, user, and assistant messages", function()
             local builder = prompt.new()
 

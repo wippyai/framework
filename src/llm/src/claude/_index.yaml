@@ -192,6 +192,7 @@ entries:
     source: file://mapper.lua
     modules:
       - json
+      - hash
     imports:
       thinking: wippy.llm.util:thinking
       prompt: wippy.llm:prompt
@@ -214,6 +215,7 @@ entries:
     source: file://mapper_test.lua
     modules:
       - json
+      - hash
     imports:
       prompt: wippy.llm:prompt
       mapper: wippy.llm.claude:mapper

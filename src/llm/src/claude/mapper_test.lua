@@ -2,10 +2,59 @@ local mapper = require("mapper")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local hash = require("hash")
 local test = require("test")
 
 local function define_tests()
     describe("Claude Mapper", function()
+        it("preserves distinct valid call IDs and their result pairings", function()
+            local mapped = mapper.map_messages({
+                { role = "assistant", content = {
+                    { type = "function_call", id = "call_one", name = "lookup", arguments = "{}" },
+                    { type = "function_call", id = "call-one", name = "lookup", arguments = "{}" },
+                } },
+                { role = "function_result", function_call_id = "call_one", content = "one" },
+                { role = "function_result", function_call_id = "call-one", content = "two" },
+            })
+            test.eq(mapped.messages[1].content[1].id, "call_one")
+            test.eq(mapped.messages[1].content[2].id, "call-one")
+            test.eq(mapped.messages[2].content[1].tool_use_id, "call_one")
+            test.eq(mapped.messages[3].content[1].tool_use_id, "call-one")
+        end)
+
+        it("translates foreign IDs stably without colliding with valid native IDs", function()
+            local foreign = "provider:call/one"
+            local digest, err = hash.sha256(foreign)
+            test.is_nil(err)
+            local native = "tool-" .. digest
+            local history = {
+                { role = "function_call", function_call = { id = foreign, name = "lookup", arguments = "{}" } },
+                { role = "function_call", function_call = { id = native, name = "lookup", arguments = "{}" } },
+                { role = "function_result", function_call_id = foreign, content = "foreign" },
+                { role = "function_result", function_call_id = native, content = "native" },
+            }
+            local first = mapper.map_messages(history)
+            local second = mapper.map_messages(history)
+            local translated = first.messages[1].content[1].id
+            test.is_true(translated:match("^[a-zA-Z0-9_-]+$") ~= nil)
+            test.is_false(translated == native)
+            test.eq(second.messages[1].content[1].id, translated)
+            test.eq(first.messages[1].content[2].id, native)
+            test.eq(first.messages[2].content[1].tool_use_id, translated)
+            test.eq(first.messages[3].content[1].tool_use_id, native)
+            test.eq(history[1].function_call.id, foreign, "canonical history must not be rewritten")
+        end)
+
+        it("marks only explicit tool failures, preserving unflagged outputs", function()
+            for _, failed in ipairs({ false, true }) do
+                local mapped = mapper.map_messages({{ role = "function_result", name = "lookup",
+                    function_call_id = "call-1", content = "denied", is_error = failed }})
+                local result = mapped.messages[1].content[1]
+                test.eq(result.tool_use_id, "call-1")
+                test.eq(result.content, "denied")
+                if failed then test.is_true(result.is_error) else test.is_nil(result.is_error) end
+            end
+        end)
 
         describe("Error Classification", function()
             it("should classify structured Claude error types correctly", function()
@@ -265,7 +314,7 @@ local function define_tests()
                 test.eq(msg.role, "assistant")
                 local first_content = msg.content[1] :: any
                 test.eq(first_content.type, "tool_use")
-                test.eq(first_content.id, "call-123")
+                test.eq(first_content.id, "call_123")
                 test.eq(first_content.name, "get_weather")
                 test.eq(first_content.input.location, "NYC")
             end)
@@ -286,7 +335,7 @@ local function define_tests()
                 test.eq(msg.role, "user")
                 local first_content = msg.content[1] :: any
                 test.eq(first_content.type, "tool_result")
-                test.eq(first_content.tool_use_id, "call-123")
+                test.eq(first_content.tool_use_id, "call_123")
                 test.eq(first_content.content, "Sunny, 75°F")
             end)
 
@@ -658,7 +707,7 @@ local function define_tests()
                 test.eq(result.content, "")
                 test.eq(#result.tool_calls, 1)
                 local tc = assert(result.tool_calls[1])
-                test.eq(tc.id, "call-123")
+                test.eq(tc.id, "call_123")
                 test.eq(tc.name, "get_weather")
                 test.eq(tc.arguments.location, "NYC")
             end)

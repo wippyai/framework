@@ -5,6 +5,15 @@ local test = require("test")
 
 local function define_tests()
     describe("OpenAI Mapper", function()
+        it("makes explicit tool failures unambiguous without changing successful output", function()
+            for _, failed in ipairs({ false, true }) do
+                local mapped = openai_mapper.map_messages({{ role = "function_result", name = "lookup",
+                    function_call_id = "call-1", content = "denied", is_error = failed }})
+                test.eq(mapped[1].call_id, "call-1")
+                if failed then test.eq(json.decode(mapped[1].output).error, "denied")
+                else test.eq(mapped[1].output, "denied") end
+            end
+        end)
 
         describe("Capability validation", function()
             it("rejects a declared thinking = budget, which OpenAI cannot honor", function()

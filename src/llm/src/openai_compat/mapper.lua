@@ -253,7 +253,7 @@ function openai_mapper.map_messages(contract_messages, options)
 
                 local tool_msg = {
                     role = "tool",
-                    content = tool_content
+                    content = result_msg.is_error == true and json.encode({ error = tool_content }) or tool_content
                 }
                 if result_msg.function_call_id then
                     tool_msg.tool_call_id = result_msg.function_call_id
@@ -287,7 +287,7 @@ function openai_mapper.map_messages(contract_messages, options)
 
             local tool_msg = {
                 role = "tool",
-                content = tool_content -- Simple string for OpenRouter compatibility
+                content = msg.is_error == true and json.encode({ error = tool_content }) or tool_content
             }
 
             if msg.function_call_id then

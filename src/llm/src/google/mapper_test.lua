@@ -35,6 +35,34 @@ local function define_tests()
         end)
 
         describe("Message Mapping", function()
+            it("pairs parallel calls in one model turn and their results in the following user turn", function()
+                local mapped = mapper.map_messages({
+                    { role = "assistant", content = "checking" },
+                    { role = "function_call", function_call = {id = "one", name = "lookup", arguments = {id = 1},
+                        provider_metadata = {function_call_id = "one", thought_signature = "sig"}} },
+                    { role = "function_result", name = "lookup", function_call_id = "one", content = "denied", is_error = true },
+                    { role = "function_call", function_call = {id = "two", name = "lookup", arguments = {id = 2},
+                        provider_metadata = {function_call_id = "two"}} },
+                    { role = "function_result", name = "lookup", function_call_id = "two", content = "found" },
+                    { role = "assistant", content = "done" },
+                })
+                tests.eq(#mapped, 3)
+                tests.eq(mapped[1].role, "model")
+                tests.eq(#mapped[1].parts, 3)
+                tests.eq(mapped[1].parts[1].text, "checking")
+                local model_parts = mapped[1].parts
+                tests.not_nil(model_parts[2])
+                tests.eq(model_parts[2].thoughtSignature, "sig")
+                tests.eq(mapped[2].role, "user")
+                tests.eq(#mapped[2].parts, 2)
+                for index, id in ipairs({"one", "two"}) do
+                    tests.eq(mapped[1].parts[index + 1].functionCall.id, id)
+                    tests.eq(mapped[2].parts[index].functionResponse.id, id)
+                end
+                tests.eq(mapped[2].parts[1].functionResponse.response.error, "denied")
+                tests.eq(mapped[2].parts[2].functionResponse.response.content, "found")
+                tests.eq(mapped[3].parts[1].text, "done")
+            end)
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {
                     {
@@ -61,7 +89,7 @@ local function define_tests()
                 tests.eq(user_parts[1].text, "Hello")
                 tests.eq(google_messages[2].role, "model")
                 local model_parts = google_messages[2].parts :: any
-                tests.eq(model_parts.text, "Hi there!")
+                tests.eq(model_parts[1].text, "Hi there!")
             end)
 
             it("should convert string content to parts format", function()
@@ -173,9 +201,9 @@ local function define_tests()
                 tests.eq(#google_messages, 1)
                 tests.eq(google_messages[1].role, "model")
                 local fc_parts = google_messages[1].parts :: any
-                tests.not_nil(fc_parts.functionCall)
-                tests.eq(fc_parts.functionCall.name, "get_weather")
-                tests.eq(fc_parts.functionCall.args.location, "New York")
+                tests.not_nil(fc_parts[1].functionCall)
+                tests.eq(fc_parts[1].functionCall.name, "get_weather")
+                tests.eq(fc_parts[1].functionCall.args.location, "New York")
             end)
 
             it("should exclude empty arguments in function_call", function()
@@ -192,9 +220,9 @@ local function define_tests()
                 tests.eq(#messages_empty_args, 1)
                 tests.eq(messages_empty_args[1].role, "model")
                 local empty_parts = messages_empty_args[1].parts :: any
-                tests.not_nil(empty_parts.functionCall)
-                tests.eq(empty_parts.functionCall.name, "get_weather")
-                tests.is_nil(empty_parts.functionCall.args)
+                tests.not_nil(empty_parts[1].functionCall)
+                tests.eq(empty_parts[1].functionCall.name, "get_weather")
+                tests.is_nil(empty_parts[1].functionCall.args)
 
                 local messages_nil_args, _ = mapper.map_messages({
                     {
@@ -208,9 +236,9 @@ local function define_tests()
                 tests.eq(#messages_nil_args, 1)
                 tests.eq(messages_nil_args[1].role, "model")
                 local nil_parts = messages_nil_args[1].parts :: any
-                tests.not_nil(nil_parts.functionCall)
-                tests.eq(nil_parts.functionCall.name, "get_weather")
-                tests.is_nil(nil_parts.functionCall.args)
+                tests.not_nil(nil_parts[1].functionCall)
+                tests.eq(nil_parts[1].functionCall.name, "get_weather")
+                tests.is_nil(nil_parts[1].functionCall.args)
             end)
 
             it("should handle string arguments in function_call", function()
@@ -228,7 +256,7 @@ local function define_tests()
 
                 tests.eq(#google_messages, 1)
                 local str_arg_parts = google_messages[1].parts :: any
-                tests.eq(str_arg_parts.functionCall.args.key, "value")
+                tests.eq(str_arg_parts[1].functionCall.args.key, "value")
             end)
 
             it("should convert function_result to user with functionResponse", function()
@@ -932,6 +960,56 @@ local function define_tests()
         end)
 
         describe("Tool Calls Response Mapping", function()
+            it("keeps provider IDs, replays them on responses, and densely collects calls after text", function()
+                local calls = mapper.map_tool_calls({
+                    { text = "checking" },
+                    { functionCall = { id = "native-1", name = "lookup", args = {} }, thoughtSignature = "signature" },
+                })
+                tests.eq(#calls, 1)
+                tests.eq(calls[1].id, "native-1")
+                tests.eq(calls[1].provider_metadata.thought_signature, "signature")
+                local messages = mapper.map_messages({
+                    { role = "function_call", function_call = { id = calls[1].id, name = calls[1].name,
+                        arguments = calls[1].arguments, provider_metadata = calls[1].provider_metadata } },
+                    { role = "function_result", name = "lookup", function_call_id = "native-1", content = "denied", is_error = true },
+                })
+                tests.eq(messages[1].parts[1].functionCall.id, "native-1")
+                tests.eq(messages[1].parts[1].thoughtSignature, "signature")
+                tests.eq(messages[2].parts[1].functionResponse.id, "native-1")
+                tests.eq(messages[2].parts[1].functionResponse.response.error, "denied")
+            end)
+
+            it("allocates synthetic IDs once without adding native IDs to legacy wire history", function()
+                local parts = {{ functionCall = { name = "lookup", args = {} } }}
+                local first = mapper.map_tool_calls(parts)
+                local second = mapper.map_tool_calls(parts)
+                tests.eq(first[1].id, second[1].id)
+                local generated = first[1].id:sub(#"lookup_" + 1)
+                tests.eq(#generated, 36)
+                tests.eq(generated:sub(15, 15), "7", "fallback identity must use UUID v7")
+                tests.is_true(generated:sub(20, 20):match("[89ab]") ~= nil)
+                local messages = mapper.map_messages({
+                    { role = "function_call", function_call = { id = first[1].id, name = "lookup", arguments = "{}" } },
+                    { role = "function_result", function_call_id = first[1].id, name = "lookup", content = "ok" },
+                })
+                tests.is_nil(messages[1].parts[1].functionCall.id)
+                tests.is_nil(messages[2].parts[1].functionResponse.id)
+                tests.eq(messages[2].parts[1].functionResponse.response.content, "ok")
+            end)
+            it("foundation regression: gives repeated calls of the same function distinct IDs", function()
+                local parts = {}
+                for index = 1, 4 do
+                    parts[index] = { functionCall = { name = "AutomationsRead", args = { id = "automation-" .. index } } }
+                end
+                local calls = mapper.map_tool_calls(parts)
+                tests.eq(#calls, #parts)
+                local seen = {}
+                for _, call in ipairs(calls) do
+                    tests.is_nil(seen[call.id], "every call must have a distinct identity, including same-named calls")
+                    seen[call.id] = true
+                end
+            end)
+
             it("should map Google function calls to contract format", function()
                 local google_function_calls = {
                     {
@@ -2383,4 +2461,3 @@ local function define_tests()
 end
 
 return tests.run_cases(define_tests)
-
