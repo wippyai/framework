@@ -72,9 +72,42 @@ local function execute_migration(migration_item: any, options: any): any
         }
     end
 
+    -- READ COMMITTED ensures a waiter sees the winner's committed ledger entry.
+    local tx_options = db_type == sql.type.POSTGRES and {isolation = sql.isolation.READ_COMMITTED} or nil
+    local tx, tx_err = db:begin(tx_options)
+    if tx_err then
+        return {
+            status = "error",
+            description = migration_item.description,
+            error = "Failed to start transaction: " .. tostring(tx_err),
+            name = migration_item.description
+        }
+    end
+
+    local _, lock_err
+    if db_type == sql.type.POSTGRES then
+        -- Database-scoped ledger lock, also used when creating the tracking table.
+        -- It covers DDL, hooks and recording, and releases on commit/rollback.
+        _, lock_err = tx:query("SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('wippy.migration:_migrations'))")
+    elseif db_type == sql.type.SQLITE then
+        -- Acquire SQLite's writer lock BEFORE reading: a deferred read snapshot
+        -- cannot safely upgrade to a writer after another runner commits.
+        _, lock_err = tx:execute("UPDATE _migrations SET id = id WHERE 0")
+    end
+    if lock_err then
+        tx:rollback()
+        return {
+            status = "error",
+            description = migration_item.description,
+            error = "Failed to lock migration target: " .. tostring(lock_err),
+            name = migration_item.description
+        }
+    end
+
     if direction == "up" then
-        local is_applied, check_err = repository.is_applied(db, migration_id)
+        local is_applied, check_err = repository.is_applied(tx, migration_id)
         if check_err then
+            tx:rollback()
             return {
                 status = "error",
                 description = migration_item.description,
@@ -84,6 +117,7 @@ local function execute_migration(migration_item: any, options: any): any
         end
 
         if is_applied and not options.force then
+            tx:rollback()
             return {
                 status = "skipped",
                 description = migration_item.description,
@@ -91,16 +125,6 @@ local function execute_migration(migration_item: any, options: any): any
                 name = migration_item.description
             }
         end
-    end
-
-    local tx, tx_err = db:begin()
-    if tx_err then
-        return {
-            status = "error",
-            description = migration_item.description,
-            error = "Failed to start transaction: " .. tostring(tx_err),
-            name = migration_item.description
-        }
     end
 
     local start_time = time.now()

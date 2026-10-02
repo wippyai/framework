@@ -706,6 +706,17 @@ function tool_caller:execute(context: any, validated_tools: any): any
         results = execute_sequential(self :: any, context, validated_tools)
     end
 
+    -- Some tools return an explicit failure as data rather than the executor's
+    -- second return value. Preserve that data, but expose its error through the
+    -- same canonical channel used by hosts and after-execute wrappers.
+    for _, entry in pairs(results) do
+        local result = entry.result
+        if not entry.error and type(result) == "table" and result.success == false
+            and type(result.error) == "string" and result.error ~= "" then
+            entry.error = result.error
+        end
+    end
+
     local after_payload: ToolWrapperApplyRequest = {
         phase = AFTER_EXECUTE :: ToolWrapperPhase,
         host = self.wrapper_context.host,

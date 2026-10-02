@@ -253,6 +253,62 @@ local function define_tests()
             wrapper_behaviors = nil
         end)
 
+        describe("explicit failure results", function()
+            it("normalizes explicit failure payloads in both strategies while allowing model correction", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    local payload = { success = false, error = "automation not found" }
+                    tool_results["test:failing_tool"] = { result = payload }
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                    caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit" } })
+                    local validated = caller:validate({ { id = "bad", name = "failing_tool",
+                        registry_id = "test:failing_tool", arguments = {} },
+                        { id = "good", name = "calculator", registry_id = "test:calculator", arguments = {} } })
+                    local results = caller:execute({}, validated)
+                    test.eq(results.bad.error, "automation not found")
+                    test.eq(results.bad.result, payload)
+                    test.eq(results.good.result, 42)
+                    test.is_nil(results.good.error)
+                    local after = wrapper_calls[#wrapper_calls].payload
+                    test.eq(after.tool_results.bad.error, "automation not found")
+                    test.eq(after.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
+                    test.eq(after.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_EXECUTION_FAILED)
+                end
+            end)
+
+            it("preserves ordinary data containing error fields or a false success value", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    for _, payload in ipairs({ { error = "ordinary data" },
+                        { success = true, error = "ordinary data" }, { success = false },
+                        { success = false, error = "" }, { success = false, error = { detail = "data" } } }) do
+                        tool_results["test:calculator"] = { result = payload }
+                        local caller = tool_caller.new():set_strategy(strategy)
+                        local results = caller:execute({}, { good = { valid = true, name = "calculator",
+                            registry_id = "test:calculator", args = {} } })
+                        test.eq(results.good.result, payload)
+                        test.is_nil(results.good.error)
+                    end
+                end
+            end)
+
+            it("retains canonical execution errors and their continues outcome", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                    caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit" } })
+                    local results = caller:execute({}, { bad = { valid = true, name = "failing_tool",
+                        registry_id = "test:failing_tool", args = {} } })
+                    test.eq(results.bad.error, "Tool execution failed")
+                    test.is_nil(results.bad.result)
+                    local after = wrapper_calls[#wrapper_calls].payload
+                    test.eq(after.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
+                    test.eq(after.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_EXECUTION_FAILED)
+                end
+            end)
+        end)
+
         describe("Constructor and Strategy", function()
             it("should create a new tool caller instance", function()
                 local caller = tool_caller.new()
