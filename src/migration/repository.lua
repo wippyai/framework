@@ -97,17 +97,6 @@ end
 
 -- Initialize migration tracking table
 function migrations.init_tracking_table(db: any): (any, string?)
-    -- First check if table already exists
-    local exists, err = migrations.table_exists(db)
-    if err then
-        return nil, err
-    end
-
-    -- Table already exists, no need to create it
-    if exists then
-        return true, nil
-    end
-
     local db_type, err = db:type()
     if err then
         return nil, "Failed to determine database type: " .. tostring(err)
@@ -117,7 +106,25 @@ function migrations.init_tracking_table(db: any): (any, string?)
         return nil, "Unsupported database type: " .. db_type
     end
 
-    return db:execute(schema)
+    if db_type ~= sql.type.POSTGRES then
+        return db:execute(schema)
+    end
+
+    -- CREATE TABLE IF NOT EXISTS can still race in PostgreSQL's catalogs.
+    -- Use the same transaction lock as migration execution, even on a cold DB.
+    local tx, tx_err = db:begin({isolation = sql.isolation.READ_COMMITTED})
+    if tx_err then return nil, tx_err end
+    local _, lock_err = tx:query("SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('wippy.migration:_migrations'))")
+    if lock_err then
+        tx:rollback()
+        return nil, lock_err
+    end
+    local ok, create_err = tx:execute(schema)
+    if not ok then
+        tx:rollback()
+        return nil, create_err
+    end
+    return tx:commit()
 end
 
 -- Record a migration execution
