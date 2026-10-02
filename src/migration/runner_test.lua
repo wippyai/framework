@@ -5,6 +5,38 @@ local repository = require("repository")
 local migration_registry = require("migration_registry")
 
 local function define_tests()
+    test.describe("run_next discovery", function()
+        test.it("reports discovery failures as errors rather than successful empty work", function()
+            local instance = runner.setup("app:db")
+            instance.find_migrations = function()
+                return nil, "registry discovery failed"
+            end
+            local result = instance:run_next()
+            test.eq(result.status, "error")
+            test.eq(result.error, "registry discovery failed")
+        end)
+
+        test.it("keeps genuinely empty discovery successful", function()
+            local instance = runner.setup("app:db")
+            instance.find_migrations = function() return {} end
+            local result = instance:run_next()
+            test.eq(result.status, "complete")
+            test.eq(result.migrations_found, 0)
+            test.is_nil(result.error)
+        end)
+
+        test.it("keeps already-applied discovery successful", function()
+            local instance = runner.setup("app:db")
+            instance.find_migrations = function()
+                return {{ id = "app:rollback_alpha", applied = true }}
+            end
+            local result = instance:run_next({ allowed_ids = { "app:rollback_alpha" } })
+            test.eq(result.status, "complete")
+            test.eq(result.message, "All migrations have been applied")
+            test.is_nil(result.error)
+        end)
+    end)
+
     test.describe("rollback", function()
         local original_registry = migration_registry._registry
 
