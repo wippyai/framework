@@ -4,6 +4,7 @@ local status_handler = require("status_handler")
 local json = require("json")
 local env = require("env")
 local ctx = require("ctx")
+local llm = require("llm")
 
 local function define_tests()
     -- Toggle to enable/disable real API integration tests
@@ -766,20 +767,43 @@ local function define_tests()
             end)
         end)
 
-        describe("Model Profile Integration (claude-opus-5-5)", function()
-            local profile = { forced_tool_choice = false, thinking_mode = "adaptive_only", structured_output_mode = "native" }
+        describe("Adaptive route integration", function()
+            it("generates with Sonnet 5 and reports the removed caller temperature", function()
+                if not RUN_INTEGRATION_TESTS then
+                    print("Skipping adaptive route integration - not enabled")
+                    return
+                end
+                local response, err = llm.generate("Reply with the word hello.", {
+                    provider_id = "wippy.llm.claude:provider",
+                    model = "claude-sonnet-5",
+                    accepts = { thinking = "adaptive", sampling = false },
+                    thinking_effort = 50,
+                    temperature = 0.7,
+                    max_tokens = 2000
+                })
+                test.is_nil(err, tostring(err))
+                test.not_nil(response)
+                test.eq(response.metadata.adjusted.temperature.requested, 0.7)
+                test.is_nil(response.metadata.adjusted.temperature.sent)
+            end)
+        end)
+
+        describe("Route Facts Integration (claude-opus-5-5)", function()
+            local profile = { forced_tool_choice = false, thinking = "adaptive", structured_output = "native" }
 
             it("should call the finish tool when a forced choice is sent as auto under the fallback", function()
                 if not RUN_INTEGRATION_TESTS then
-                    print("Skipping model profile tool test - not enabled")
+                    print("Skipping route facts tool test - not enabled")
                     return
                 end
 
-                local response, err = generate_handler.handler({
+                -- The forced tool choice fallback rule lives in llm.lua
+                -- (apply_forced_tool_choice), not in the Claude handler, so this
+                -- goes through llm.generate rather than calling the handler directly.
+                local response, err = llm.generate("Report the number 42 by calling the finish tool.", {
+                    provider_id = "wippy.llm.claude:provider",
                     model = "claude-opus-5-5",
-                    messages = {
-                        { role = "user", content = {{ type = "text", text = "Report the number 42 by calling the finish tool." }} }
-                    },
+                    accepts = profile,
                     tools = {
                         {
                             name = "finish",
@@ -793,11 +817,13 @@ local function define_tests()
                         }
                     },
                     tool_choice = "any",
-                    options = { max_tokens = 2000, thinking_effort = 20, model_profile = profile, tool_choice_fallback = "auto" }
+                    tool_choice_fallback = "auto",
+                    max_tokens = 2000,
+                    thinking_effort = 20
                 })
 
                 test.is_nil(err, "API request failed: " .. tostring(err))
-                assert(response and response.success)
+                assert(response)
                 test.eq(response.metadata.tool_choice.sent, "auto")
                 test.eq(response.result.tool_calls[1].name, "finish")
                 test.eq(response.result.tool_calls[1].arguments.answer, 42)
@@ -805,12 +831,13 @@ local function define_tests()
 
             it("should return native structured output", function()
                 if not RUN_INTEGRATION_TESTS then
-                    print("Skipping model profile structured output test - not enabled")
+                    print("Skipping route facts structured output test - not enabled")
                     return
                 end
 
                 local response, err = structured_output_handler.handler({
                     model = "claude-opus-5-5",
+                    accepts = profile,
                     messages = {
                         { role = "user", content = {{ type = "text", text = "Name one primary colour and list the numbers 1 and 2." }} }
                     },
@@ -831,7 +858,7 @@ local function define_tests()
                         required = { "colour", "numbers" },
                         additionalProperties = false
                     },
-                    options = { max_tokens = 2000, thinking_effort = 20, model_profile = profile }
+                    options = { max_tokens = 2000, thinking_effort = 20 }
                 })
 
                 test.is_nil(err, "API request failed: " .. tostring(err))

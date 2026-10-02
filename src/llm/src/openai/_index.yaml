@@ -65,6 +65,10 @@ entries:
     meta:
       name: OpenAI LLM Driver
       comment: OpenAI implementation of LLM contracts with context-based configuration and streaming support
+      # This driver owns the legacy reasoning_model_request route/call flag
+      # (util/route.lua converts it to thinking = adaptive, sampling = false
+      # only for a route bound to a driver that declares this).
+      legacy_reasoning_flag: true
       tags:
         - openai
         - llm
@@ -222,6 +226,7 @@ entries:
       - json
     imports:
       output: wippy.llm:output
+      route: wippy.llm.util:route
 
   # wippy.llm.openai:mapper_test
   - name: mapper_test

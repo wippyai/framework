@@ -1,8 +1,24 @@
+local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local route = require("route")
 
 local mapper = {}
+
+mapper.CAPABILITY = {
+    name = "Claude",
+    defaults = {
+        thinking = "budget",
+        sampling = true,
+        forced_tool_choice = true,
+        structured_output = "tool"
+    },
+    supported = {
+        thinking = { adaptive = true, budget = true, none = true },
+        structured_output = { native = true, tool = true }
+    }
+}
 
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
 mapper.FINISH_REASON_MAP["end_turn"] = output.FINISH_REASON.STOP
@@ -64,39 +80,54 @@ local function sanitize_tool_id(original_id)
     return sanitized
 end
 
--- Simple cache marker collapse: keep all system markers + most recent message markers
-local function collapse_cache_positions(system_positions, message_positions)
-    local total_positions = #system_positions + #message_positions
+local function last_cacheable_message_position(messages)
+    for message_index = #messages, 1, -1 do
+        local content = messages[message_index].content or {}
+        for block_index = #content, 1, -1 do
+            local block = content[block_index]
+            if block and (
+                (block.type == "text" and block.text and block.text ~= "")
+                or block.type == "tool_use" or block.type == "tool_result"
+                or block.type == "image" or block.type == "document"
+            ) then
+                return { message = message_index, block = block_index }
+            end
+        end
+    end
+    return nil
+end
 
-    -- No collapse needed
-    if total_positions <= MAX_CACHE_BREAKPOINTS then
-        return system_positions, message_positions
+-- Deduplicate mapped positions and leave room for the newest history boundary.
+local function collapse_cache_positions(system_positions, message_positions)
+    local unique_system = {}
+    local unique_messages = {}
+    local seen_system = {}
+    local seen_messages = {}
+    for _, pos in ipairs(system_positions) do
+        if not seen_system[pos] then
+            unique_system[#unique_system + 1] = pos
+            seen_system[pos] = true
+        end
+    end
+    for _, pos in ipairs(message_positions) do
+        local key = tostring(pos.message) .. ":" .. tostring(pos.block)
+        if not seen_messages[key] then
+            unique_messages[#unique_messages + 1] = pos
+            seen_messages[key] = true
+        end
     end
 
     local final_system = {}
     local final_message = {}
-
-    -- Keep all system markers (usually 1-2)
-    for _, pos in ipairs(system_positions) do
-        table.insert(final_system, pos)
+    local system_limit = MAX_CACHE_BREAKPOINTS - (#unique_messages > 0 and 1 or 0)
+    for i = 1, math.min(#unique_system, system_limit) do
+        final_system[#final_system + 1] = unique_system[i]
     end
 
-    -- Use remaining slots for most recent message markers
     local remaining_slots = MAX_CACHE_BREAKPOINTS - #final_system
-
-    if remaining_slots > 0 and #message_positions > 0 then
-        if #message_positions <= remaining_slots then
-            -- Keep all message markers
-            for _, pos in ipairs(message_positions) do
-                table.insert(final_message, pos)
-            end
-        else
-            -- Keep most recent N markers
-            local start_idx = math.max(1, #message_positions - remaining_slots + 1)
-            for i = start_idx, #message_positions do
-                table.insert(final_message, message_positions[i])
-            end
-        end
+    local start_idx = math.max(1, #unique_messages - remaining_slots + 1)
+    for i = start_idx, #unique_messages do
+        final_message[#final_message + 1] = unique_messages[i]
     end
 
     return final_system, final_message
@@ -300,10 +331,17 @@ function mapper.map_messages(contract_messages)
         elseif msg.role == "cache_marker" then
             if in_system_phase then
                 -- Cache marker applies to system blocks
-                table.insert(system_cache_positions, #system_blocks)
+                for pos = #system_blocks, 1, -1 do
+                    if system_blocks[pos].type == "text" and system_blocks[pos].text ~= "" then
+                        table.insert(system_cache_positions, pos)
+                        break
+                    end
+                end
             else
-                -- Cache marker applies to claude messages
-                table.insert(message_cache_positions, #claude_messages)
+                local position = last_cacheable_message_position(claude_messages)
+                if position then
+                    table.insert(message_cache_positions, position)
+                end
             end
         elseif msg.role == prompt.ROLE.DEVELOPER then
             in_system_phase = false
@@ -328,6 +366,15 @@ function mapper.map_messages(contract_messages)
                     elseif last_msg.content and last_msg.content[1] and
                        last_msg.content[1].type == "tool_result" then
                         should_create_new_message = true
+                    else
+                        -- A later developer note must not alter a prefix already
+                        -- selected for caching by a preceding marker.
+                        for _, position in ipairs(message_cache_positions) do
+                            if position.message == #claude_messages then
+                                should_create_new_message = true
+                                break
+                            end
+                        end
                     end
                 end
 
@@ -470,12 +517,9 @@ function mapper.map_messages(contract_messages)
     -- Apply cache control to claude messages
     if #final_message_positions > 0 and #claude_messages > 0 then
         for _, pos in ipairs(final_message_positions) do
-            if pos > 0 and pos <= #claude_messages then
-                -- Apply cache control to the last content block of the message
-                local msg = claude_messages[pos]
-                if msg.content and #msg.content > 0 then
-                    msg.content[#msg.content].cache_control = { type = "ephemeral" }
-                end
+            local msg: any = (claude_messages :: any)[pos.message]
+            if msg and msg.content and msg.content[pos.block] then
+                msg.content[pos.block].cache_control = { type = "ephemeral" }
             end
         end
     end
@@ -535,16 +579,7 @@ function mapper.map_tools(contract_tools)
     return claude_tools, name_to_id_map
 end
 
--- A model whose provider options carry model_profile.forced_tool_choice = false
--- rejects "any" and named tool choices. Such a choice is sent as "auto" only when
--- the caller permits that fallback (tool_choice_fallback = "auto"), because only
--- a caller that enforces tool use itself keeps the guarantee the choice promised.
-local function forced_choice_unsupported(options)
-    local profile = options and options.model_profile
-    return type(profile) == "table" and profile.forced_tool_choice == false
-end
-
-function mapper.map_tool_choice(contract_choice, available_tools, options)
+function mapper.map_tool_choice(contract_choice, available_tools)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -553,49 +588,31 @@ function mapper.map_tool_choice(contract_choice, available_tools, options)
         return { type = "auto" }
     elseif contract_choice == "none" then
         return { type = "none" }
-    end
-
-    local forced
-    if contract_choice == "any" then
-        forced = { type = "any" }
+    elseif contract_choice == "any" then
+        return { type = "any" }
     elseif type(contract_choice) == "string" then
         for _, tool in ipairs(available_tools) do
             if tool.name == contract_choice then
-                forced = { type = "tool", name = contract_choice }
-                break
+                return { type = "tool", name = contract_choice }
             end
         end
-        if not forced then
-            return nil, "Tool '" .. contract_choice .. "' not found in available tools"
-        end
-    else
-        return nil, "Invalid tool_choice format"
+        return nil, "Tool '" .. contract_choice .. "' not found in available tools"
     end
 
-    if not forced_choice_unsupported(options) then
-        return forced
-    end
-    if options.tool_choice_fallback == "auto" then
-        return { type = "auto" }
-    end
-    return nil, "Model does not accept a forced tool choice (model_profile.forced_tool_choice = false): tool_choice '"
-        .. contract_choice .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
+    return nil, "Invalid tool_choice format"
 end
 
--- thinking_effort (0-100) on the effort levels of adaptive-thinking models.
-local function effort_level(thinking_effort)
-    if thinking_effort >= 100 then return "max" end
-    if thinking_effort >= 80 then return "xhigh" end
-    if thinking_effort > 50 then return "high" end
-    if thinking_effort >= 20 then return "medium" end
-    return "low"
-end
-
-function mapper.map_options(contract_options, model)
+function mapper.map_options(contract_options, accepts): (table, table, string?)
     local claude_options = {}
+    local adjusted = {}
+
+    local unsupported = route.unsupported_fact_error(accepts, mapper.CAPABILITY)
+    if unsupported then
+        return claude_options, adjusted, unsupported
+    end
 
     if not contract_options then
-        return claude_options
+        return claude_options, adjusted
     end
 
     claude_options.temperature = contract_options.temperature
@@ -603,15 +620,14 @@ function mapper.map_options(contract_options, model)
     claude_options.top_p = contract_options.top_p
     claude_options.stop_sequences = contract_options.stop_sequences
 
-    local profile = contract_options.model_profile
-    local adaptive_only = type(profile) == "table" and profile.thinking_mode == "adaptive_only"
+    local mode = route.fact(accepts, "thinking", mapper.CAPABILITY)
 
-    if adaptive_only then
-        -- Thinking is always on and takes no budget: effort is its only control.
+    if mode == "adaptive" then
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
-            claude_options.output_config = { effort = effort_level(contract_options.thinking_effort) }
+            claude_options.thinking = { type = "adaptive" }
+            claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
         end
-    elseif contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+    elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
 
@@ -620,14 +636,19 @@ function mapper.map_options(contract_options, model)
             budget_tokens = thinking_budget
         }
 
-        claude_options.temperature = 1
+        -- Extended thinking requires temperature 1; the provider default is
+        -- already 1, so a caller value other than 1 is dropped, never sent.
+        if contract_options.temperature ~= nil and contract_options.temperature ~= 1 then
+            adjusted.temperature = { requested = contract_options.temperature }
+            claude_options.temperature = nil
+        end
 
         if not claude_options.max_tokens or claude_options.max_tokens <= thinking_budget then
             claude_options.max_tokens = thinking_budget + 1024
         end
     end
 
-    return claude_options
+    return claude_options, adjusted
 end
 
 function mapper.extract_response_content(claude_response)

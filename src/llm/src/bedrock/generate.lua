@@ -1,6 +1,7 @@
 local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
+local route = require("route")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -95,7 +96,14 @@ function generate_handler.handler(contract_args)
     }
 
     local mapped = generate_handler._mapper.map_messages(contract_args.messages)
-    local inference_config, additional_fields = generate_handler._mapper.map_options(contract_args.options or {})
+    local inference_config, additional_fields, adjusted, options_err = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
+    local strict_err = route.strict_error(tostring(contract_args._provider_id or contract_args.model), contract_args._strict, adjusted)
+    if strict_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(strict_err):build()
+    end
 
     if not inference_config.maxTokens then
         inference_config.maxTokens = 2000
@@ -153,7 +161,9 @@ function generate_handler.handler(contract_args)
             return nil, err:from(stream_err):build()
         end
 
-        return handle_streaming(stream_response, context, contract_args.stream, err)
+        local result, result_err = handle_streaming(stream_response, context, contract_args.stream, err)
+        route.attach_adjusted(result, adjusted)
+        return result, result_err
     end
 
     local response, request_err = generate_handler._client.converse(
@@ -166,7 +176,9 @@ function generate_handler.handler(contract_args)
         return nil, err:from(request_err):build()
     end
 
-    return generate_handler._mapper.format_success_response(response, context.name_to_id_map)
+    local result = generate_handler._mapper.format_success_response(response, context.name_to_id_map)
+    route.attach_adjusted(result, adjusted)
+    return result
 end
 
 return generate_handler

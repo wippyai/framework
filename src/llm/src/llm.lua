@@ -3,6 +3,7 @@ local providers = require("providers")
 local contract = require("contract")
 local security = require("security")
 local evaluation = require("evaluation")
+local route = require("route")
 
 type Message = {
     role: string,
@@ -99,6 +100,11 @@ type StatusResponse = {
 type ProviderRef = {
     id: string,
     provider_model: string?,
+    context: table?,
+    thinking: "adaptive" | "budget" | "none" | nil,
+    sampling: boolean?,
+    forced_tool_choice: boolean?,
+    structured_output: "native" | "tool" | nil,
     options: table?,
     priority: number?
 }
@@ -346,6 +352,22 @@ local function get_usage_tracker()
     return nil -- No usage tracking available
 end
 
+-- Returns a shallow copy of the caller's options with the actor id set as
+-- `user`. The caller's table is never written to.
+local function options_for_actor(options)
+    local copy = {}
+    for k, v in pairs(options) do
+        copy[k] = v
+    end
+
+    local actor = security.actor()
+    if actor then
+        copy.user = actor:id()
+    end
+
+    return copy
+end
+
 -- Merge provider options into contract arguments
 local function merge_provider_options(contract_args, provider_info)
     if provider_info and provider_info.options then
@@ -465,6 +487,81 @@ llm.FINISH_REASON = {
 -- Public API Methods
 ---------------------------
 
+local function prepare_route(contract_args, provider_info: any, options, providers_module)
+    local legacy_reasoning_flag, flag_err = providers_module.driver_declares_legacy_reasoning_flag(provider_info.id)
+    if flag_err then return nil, flag_err end
+    local accepts, err = route.accepts(provider_info :: table, options,
+        options.provider_id and "direct" or "resolved", legacy_reasoning_flag)
+    if not accepts then return nil, err end
+    contract_args.accepts = accepts
+    contract_args.options = route.clean_options(contract_args.options)
+    local strict = contract_args.options.strict == true
+    contract_args.options.strict = nil
+    contract_args._strict = strict
+    local adjusted = {}
+    local function remove(key)
+        local value = contract_args.options[key]
+        if value ~= nil then
+            adjusted[key] = { requested = value }
+            contract_args.options[key] = nil
+        end
+    end
+    if accepts.sampling == false then
+        remove("temperature")
+        remove("top_p")
+        remove("top_k")
+    end
+    if accepts.thinking == "none" and (contract_args.options.thinking_effort or 0) > 0 then
+        remove("thinking_effort")
+    end
+    local strict_err = route.strict_error(tostring(provider_info.id), strict, adjusted)
+    if strict_err then return nil, strict_err end
+    return adjusted, nil
+end
+
+-- The forced tool choice rule is provider-agnostic: a route declaring
+-- forced_tool_choice = false rejects a caller tool_choice of "any" or a tool
+-- name, unless the caller permits sending it as "auto" instead. Only
+-- llm.generate takes a caller tool_choice; structured output always forces
+-- its own extraction tool internally.
+local function apply_forced_tool_choice(contract_args): (table?, string?)
+    local accepts = contract_args.accepts
+    if not accepts or accepts.forced_tool_choice ~= false then return nil, nil end
+    if not contract_args.tools or #contract_args.tools == 0 then return nil, nil end
+    local choice = contract_args.tool_choice
+    if choice == nil or choice == "auto" or choice == "none" then return nil, nil end
+
+    if contract_args.options.tool_choice_fallback == "auto" then
+        contract_args.tool_choice = "auto"
+        return { requested = choice, sent = "auto" }, nil
+    end
+
+    return nil, "Model does not accept a forced tool choice (forced_tool_choice = false): tool_choice '"
+        .. tostring(choice) .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
+end
+
+local function merge_adjustments(raw_result, adjusted)
+    if not raw_result or next(adjusted) == nil then return end
+    raw_result.metadata = raw_result.metadata or {}
+    local merged = raw_result.metadata.adjusted or {}
+    for key, value in pairs(adjusted) do
+        if merged[key] then
+            merged[key].requested = value.requested
+        else
+            merged[key] = value
+        end
+    end
+    raw_result.metadata.adjusted = merged
+end
+
+-- Reports the "any" / named tool_choice a route could not honor, sent as
+-- "auto" instead, the same shape merge_adjustments gives metadata.adjusted.
+local function merge_tool_choice(raw_result, tool_choice)
+    if not raw_result or not tool_choice then return end
+    raw_result.metadata = raw_result.metadata or {}
+    raw_result.metadata.tool_choice = tool_choice
+end
+
 function llm.generate(prompt_input, options)
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, "Model is required in options"
@@ -472,10 +569,7 @@ function llm.generate(prompt_input, options)
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -510,7 +604,14 @@ function llm.generate(prompt_input, options)
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
+        if not adjusted then return nil, route_err end
+        local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
+        if tool_choice_err then return nil, tool_choice_err end
+
         local raw_result, err = (provider_instance as any):generate(contract_args)
+        merge_adjustments(raw_result, adjusted)
+        merge_tool_choice(raw_result, tool_choice)
         if err then
             return nil, err:message()
         end
@@ -573,7 +674,14 @@ function llm.generate(prompt_input, options)
         hoist_transport_options(contract_args)
 
         -- Call provider contract
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
+        if not adjusted then return nil, route_err end
+        local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
+        if tool_choice_err then return nil, tool_choice_err end
+
         local raw_result, err = (provider_instance as any):generate(contract_args)
+        merge_adjustments(raw_result, adjusted)
+        merge_tool_choice(raw_result, tool_choice)
         if err then
             return nil, err:message()
         end
@@ -608,10 +716,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -647,7 +752,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         contract_args._provider_id = provider_info.id
 
         -- Call provider contract directly with standard format
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
+        if not adjusted then return nil, route_err end
+
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
+        merge_adjustments(raw_result, adjusted)
         if err then
             return nil, err:message()
         end
@@ -711,7 +820,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         merge_user_options(contract_args, options, {"model", "schema", "model_profile"})
         hoist_transport_options(contract_args)
 
+        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
+        if not adjusted then return nil, route_err end
+
         local raw_result, err = (provider_instance as any):structured_output(contract_args)
+        merge_adjustments(raw_result, adjusted)
         if err then
             return nil, err:message()
         end
@@ -742,10 +855,7 @@ function llm.embed(text, options)
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -877,10 +987,7 @@ function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
 
     local model_card, provider_info
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     -- Check if provider_id is specified for direct provider call
     if options.provider_id then
@@ -1007,10 +1114,7 @@ function llm.status(options)
         return nil, "Model is required in options"
     end
 
-    local actor = security.actor()
-    if actor then
-        options.user = actor:id()
-    end
+    options = options_for_actor(options)
 
     local contract_args = { model = options.model, options = {} }
     local provider_info = nil

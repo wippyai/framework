@@ -1,0 +1,24 @@
+version: "1.0"
+namespace: app
+entries:
+  - name: test_dep
+    kind: ns.dependency
+    component: wippy/test
+    version: "*"
+  - name: terminal_dep
+    kind: ns.dependency
+    component: wippy/terminal
+    version: "*"
+  - name: processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
+  - name: failing_hook_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: runner
+    source: file://failing_hook_test.lua
+    method: run
+    imports:
+      test: wippy.test:test

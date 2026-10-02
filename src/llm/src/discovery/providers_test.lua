@@ -42,6 +42,21 @@ local function define_tests()
                         }
                     }
                 }
+            },
+            {
+                id = "wippy.llm.binding:openai_driver",
+                kind = "contract.binding",
+                meta = {
+                    name = "OpenAI Driver",
+                    legacy_reasoning_flag = true
+                }
+            },
+            {
+                id = "wippy.llm.binding:anthropic_driver",
+                kind = "contract.binding",
+                meta = {
+                    name = "Anthropic Driver"
+                }
             }
         }
 
@@ -332,6 +347,33 @@ local function define_tests()
                 test.is_nil(instance)
                 test.not_nil(err)
                 test.not_nil(err:match("Failed to open provider binding"))
+            end)
+        end)
+
+        describe("driver_declares_legacy_reasoning_flag", function()
+            it("is true for a provider bound to a driver that declares the legacy flag", function()
+                test.is_true(providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:openai"))
+            end)
+
+            it("is false for a provider bound to a driver that does not declare the legacy flag", function()
+                test.is_false(providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:anthropic"))
+            end)
+
+            it("reports an unknown provider as an error", function()
+                local declared, err = providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:missing")
+                test.is_nil(declared)
+                test.contains(err, "wippy.llm.provider:missing")
+            end)
+
+            it("reports a registry failure as an error instead of an undeclared flag", function()
+                providers._registry = {
+                    get = function(_id)
+                        return nil, "Registry connection failed"
+                    end
+                }
+                local declared, err = providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:openai")
+                test.is_nil(declared)
+                test.contains(err, "Registry connection failed")
             end)
         end)
 

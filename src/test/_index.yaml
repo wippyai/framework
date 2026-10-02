@@ -61,6 +61,13 @@ entries:
       - json
       - ctx
 
+  - name: runner_host
+    kind: process.host
+    meta:
+      comment: Isolated host for runner-owned test commands
+    lifecycle:
+      auto_start: true
+
   # wippy.test:runner_policy
   - name: runner_policy
     kind: security.policy
@@ -70,6 +77,25 @@ entries:
       resources: '*'
       actions: '*'
       effect: allow
+
+  # wippy.test:runner
+  - name: runner_verdict
+    kind: library.lua
+    meta:
+      comment: Fail closed when a test process drops declared BDD cases or aborts a hook.
+    source: file://runner_verdict.lua
+
+  # wippy.test:runner
+  - name: runner_entry
+    kind: process.lua
+    meta:
+      comment: Runner-owned test execution process
+    source: file://runner_entry.lua
+    method: run
+    modules:
+      - funcs
+      - channel
+      - time
 
   # wippy.test:runner
   - name: runner
@@ -89,7 +115,6 @@ entries:
     method: main
     modules:
       - io
-      - funcs
       - time
       - channel
     imports:
@@ -97,6 +122,7 @@ entries:
       registry: wippy.test:registry
       discovery: wippy.test:discovery
       display: wippy.test:display
+      verdict: wippy.test:runner_verdict
 
   # wippy.test:self_test
   - name: self_test
