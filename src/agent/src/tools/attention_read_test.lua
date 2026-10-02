@@ -56,10 +56,10 @@ local function define_tests()
                 local receipt = read.receipt(reason, PREFIX.."attention_get_selection")
                 receipt.invalid = true
                 test.eq(receipt.reason, reason)
-                test.not_nil(receipt.instruction:find("pass {}",1,true))
+                test.not_nil((receipt.instruction:find("pass {}",1,true)))
                 test.is_true(#json.encode(receipt) <= 512)
             end
-            test.is_nil(read.receipt("read-budget-exhausted", PREFIX.."attention_get_selection").instruction:find("Correct",1,true))
+            test.is_nil((read.receipt("read-budget-exhausted", PREFIX.."attention_get_selection").instruction:find("Correct",1,true)))
         end)
         test.it("deduplicates complete paths and preserves canonical identity", function()
             local path = {}
