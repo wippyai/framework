@@ -159,10 +159,15 @@ local function define_tests()
             }
 
             mock_contract = {
+                _open_calls = {},
                 get = function(contract_id)
                     if contract_id == "wippy.agent:memory" then
                         return {
                             open = function(self, implementation_id, context)
+                                table.insert(mock_contract._open_calls, {
+                                    implementation_id = implementation_id,
+                                    context = context,
+                                })
                                 -- Return the mock contract that was set up for each test
                                 return mock_contract._current_instance, mock_contract._current_error
                             end
@@ -942,10 +947,16 @@ local function define_tests()
 
                 test_agent:step(prompt_builder, runtime_options)
 
-                -- We can't directly inspect the context passed to memory contract in this implementation,
-                -- but we can verify the call was made successfully
                 local call_log = memory_contract:get_call_log()
                 test.eq(#call_log, 1)
+                test.eq(#mock_contract._open_calls, 1)
+                local opened = mock_contract._open_calls[1]
+                test.eq(opened.implementation_id, "test:memory")
+                test.eq(opened.context.memory_type, "vector")
+                test.eq(opened.context.collection_name, "test_memories")
+                test.eq(opened.context.session_id, "test_session_123")
+                test.eq(opened.context.shared_key, "from_runtime_context")
+                test.eq(spec.memory_contract.context.shared_key, "from_contract_context")
             end)
 
             it("should include agent_id in memory context", function()
@@ -972,9 +983,45 @@ local function define_tests()
 
                 test_agent:step(prompt_builder)
 
-                -- Verify memory contract was called (agent_id would be in context)
                 local call_log = memory_contract:get_call_log()
                 test.eq(#call_log, 1)
+                test.eq(#mock_contract._open_calls, 1)
+                test.eq(mock_contract._open_calls[1].context.agent_id, "unique-test-agent-123")
+            end)
+
+            it("uses per-run identity keys without leaking them into a later recall", function()
+                local memory_contract = create_mock_memory_contract()
+                mock_contract._current_instance = memory_contract
+                local defaults = { namespace = "project" }
+                local instance, create_err = agent.new({
+                    id = "memory-agent", name = "Memory Agent", prompt = "Test agent", tools = {},
+                    memory_contract = {
+                        implementation_id = "test:memory", context = defaults,
+                        options = { min_conversation_length = 1 },
+                    },
+                })
+                test.is_nil(create_err)
+                for _, identity in ipairs({
+                    { tenant_id = "tenant-a", user_id = "user-a", session_id = "session-a", run_id = "run-a", agent_id = "wrong" },
+                    { tenant_id = "tenant-b", user_id = "user-b", session_id = "session-b", run_id = "run-b", agent_id = "wrong" },
+                    {},
+                }) do
+                    local builder = mock_prompt.new()
+                    builder:add_user("Recall this run's memories")
+                    local result, err = instance:step(builder, { context = identity })
+                    test.is_nil(err)
+                    test.not_nil(result)
+                    local opened = mock_contract._open_calls[#mock_contract._open_calls]
+                    test.eq(opened.context.agent_id, "memory-agent")
+                    test.eq(opened.context.namespace, "project")
+                    for _, key in ipairs({ "tenant_id", "user_id", "session_id", "run_id" }) do
+                        test.eq(opened.context[key], identity[key])
+                        test.is_nil(defaults[key])
+                    end
+                    test.eq(identity.agent_id, identity.run_id and "wrong" or nil)
+                end
+                test.eq(#mock_contract._open_calls, 3)
+                test.eq(#memory_contract:get_call_log(), 3)
             end)
         end)
 

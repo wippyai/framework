@@ -342,7 +342,30 @@ one trait, behavior-generated bindings and wrappers precede legacy `bindings`
 and `tool_wrappers` at equal priority. Both forms may be used together and
 remain separate entries. Options for a behavior merge in this order: trait
 options, behavior options, attachment options, then phase options. Legacy
-binding option precedence remains unchanged.
+lifecycle and tool-wrapper binding option precedence remains unchanged.
+
+Checkpoint scheduling uses trait defaults, then explicit `agent_options.checkpoint`,
+then session/node checkpoint overrides. Maps merge recursively; lists replace
+(an empty list clears); `false`, zero, and empty strings are explicit overrides.
+Absent configuration does not enable checkpointing. The same detached effective
+options reach the checkpoint binding and function fallback, above binding defaults.
+A strict binding failure stops processing without trying the function fallback.
+Each binding attempt receives its own option copy.
+
+Tool wrappers may adjust arguments, redirect a tool, or reorder calls, but must
+preserve every original tool-call ID exactly once. Dropping, duplicating, adding,
+or replacing an ID fails validation before tools execute, regardless of wrapper
+strictness: providers require matching results for every original call.
+
+`wippy.agent:memory.recall` remains the existing automatic recall contract; a
+behavior named `memory` does not configure it implicitly. Checkpointing reduces
+the active conversation, whereas a durable memory provider owns storage, aging,
+retrieval, and authorization. Host identity refs are not authorization grants.
+Lifecycle hooks do not automatically apply returned `context` as host config or
+bridge it to `_control`; agent/model/trait/tool changes still use the host's
+existing control path. There is no compact-now control in this interface.
+Critical durable writes must not depend on `deactivate`, which cannot run after
+a hard kill; providers need stable persisted IDs and idempotent writes.
 
 The compiler retains the public `bindings` and `tool_wrappers` plans. To catch
 misspelled phases or missing lifecycle/tool handlers while authoring, call

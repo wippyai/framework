@@ -663,6 +663,11 @@ entries:
         reference; the wrapper owns no memory or checkpoint lifecycle. Traits can
         attach multiple focused bindings and each binding is invoked only for the
         phases declared by that trait.
+
+        Before-execute adjustments must preserve every original tool-call ID
+        exactly once. Tool names and arguments may change and calls may reorder,
+        but an ID cannot be dropped, added, duplicated, or replaced: providers
+        pair tool results with the original IDs. Violations fail validation.
     methods:
       - name: apply
         description: Apply one wrapper phase to an agent tool execution.

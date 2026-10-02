@@ -257,7 +257,5 @@ local function define_tests()
 end
 
 return {
-    run_tests = function()
-        return require("test").run_cases(define_tests)
-    end
+    run_tests = require("test").run_cases(define_tests)
 }

@@ -389,6 +389,13 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
 
     reset_wrapper_diagnostics(self)
 
+    -- Providers pair results by the original call IDs, even if a wrapper redirects a tool.
+    local original_ids: {[string]: boolean} = {}
+    local original_count = #tool_calls
+    for _, tool_call in ipairs(tool_calls) do
+        original_ids[tool_call.id] = true
+    end
+
     local before_payload: ToolWrapperApplyRequest = {
         phase = BEFORE_EXECUTE :: ToolWrapperPhase,
         host = self.wrapper_context.host,
@@ -402,6 +409,18 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     end
 
     tool_calls = wrapped_payload.tool_calls or tool_calls
+    local seen_ids: {[string]: boolean} = {}
+    local seen_count = 0
+    for _, tool_call in ipairs(tool_calls) do
+        if not original_ids[tool_call.id] or seen_ids[tool_call.id] then
+            return nil, "Tool wrapper must preserve every tool call ID exactly once"
+        end
+        seen_ids[tool_call.id] = true
+        seen_count = seen_count + 1
+    end
+    if seen_count ~= original_count then
+        return nil, "Tool wrapper must preserve every tool call ID exactly once"
+    end
     self.last_tool_calls = tool_calls
 
     local validated_tools: {[string]: any} = {}
