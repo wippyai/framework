@@ -2,6 +2,7 @@ local json = require("json")
 local tools = require("tools")
 local funcs = require("funcs")
 local contract = require("contract")
+local behavior_controls = require("behavior_controls")
 
 type ToolCall = {
     id: string,
@@ -41,6 +42,7 @@ type ToolWrapperSpec = {
     priority: number?,
     strict: boolean?,
     order: number?,
+    source: string?,
 }
 
 type ToolWrapperHostRef = {
@@ -92,6 +94,7 @@ type ToolWrapperApplyResponse = {
     tool_calls: {ToolCall}?,
     observations: {ToolWrapperObservation}?,
     metadata: table?,
+    _control: table?,
 }
 
 type ToolWrapperError = {
@@ -179,6 +182,7 @@ function tool_caller.new(): any
     self.wrapper_observations = {}
     self.wrapper_metadata = {}
     self.wrapper_errors = {}
+    self.wrapper_controls = {}
     self.last_tool_calls = {}
     return self
 end
@@ -238,6 +242,11 @@ local function reset_wrapper_diagnostics(self: any)
     self.wrapper_observations = {}
     self.wrapper_metadata = {}
     self.wrapper_errors = {}
+    self.wrapper_controls = {}
+end
+
+function tool_caller:get_wrapper_controls(): {table}
+    return behavior_controls.prepare(self.wrapper_controls or {}) or {}
 end
 
 local function wrapper_supports_phase(wrapper: ToolWrapperSpec, phase: ToolWrapperPhase): boolean
@@ -298,6 +307,12 @@ local function call_contract_wrapper(wrapper: ToolWrapperSpec, payload: ToolWrap
     if apply_err then
         return nil, tostring(apply_err)
     end
+    if wrapper.source == "behavior" and payload.phase == PHASE.AFTER_EXECUTE and
+        type(result) == "table" and result._control ~= nil then
+        local controls, err = behavior_controls.prepare({ result._control })
+        if not controls then return nil, err end
+        result._control = controls[1]
+    end
     return (type(result) == "table" and result or {}) :: ToolWrapperApplyResponse, nil
 end
 
@@ -308,6 +323,10 @@ end
 local function record_wrapper_result(self: any, wrapper: ToolWrapperSpec, phase: ToolWrapperPhase, result: ToolWrapperApplyResponse?)
     if type(result) ~= "table" then
         return
+    end
+
+    if wrapper.source == "behavior" and phase == PHASE.AFTER_EXECUTE and type(result._control) == "table" then
+        self.wrapper_controls[#self.wrapper_controls + 1] = result._control
     end
 
     for _, observation in ipairs(result.observations or {}) do
@@ -384,6 +403,7 @@ end
 local function validate_call_ids(tool_calls: {ToolCall}): string?
     local seen = {}
     for _, call in ipairs(tool_calls) do
+        if type(call) ~= "table" then return "Tool call must be a table" end
         if type(call.id) ~= "string" or not call.id:match("%S") then return "Tool call ID is required" end
         if seen[call.id] then return "Duplicate tool call ID: " .. call.id end
         seen[call.id] = true
@@ -401,6 +421,13 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     local identity_err = validate_call_ids(tool_calls)
     if identity_err then return nil, identity_err end
 
+    -- Providers pair results by the original call IDs, even if a wrapper redirects a tool.
+    local original_ids: {[string]: boolean} = {}
+    local original_count = #tool_calls
+    for _, tool_call in ipairs(tool_calls) do
+        original_ids[tool_call.id] = true
+    end
+
     local before_payload: ToolWrapperApplyRequest = {
         phase = BEFORE_EXECUTE :: ToolWrapperPhase,
         host = self.wrapper_context.host,
@@ -414,12 +441,23 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     end
 
     tool_calls = wrapped_payload.tool_calls or tool_calls
-    self.last_tool_calls = tool_calls
-
-    -- Validate the wrapper-expanded batch before building an ID-keyed map. Otherwise
-    -- duplicate IDs silently overwrite an intent, including before exclusive filtering.
     identity_err = validate_call_ids(tool_calls)
-    if identity_err then return nil, identity_err end
+    if identity_err then
+        return nil, "Tool wrapper must preserve every tool call ID exactly once: " .. identity_err
+    end
+    local seen_ids: {[string]: boolean} = {}
+    local seen_count = 0
+    for _, tool_call in ipairs(tool_calls) do
+        if type(tool_call) ~= "table" or not original_ids[tool_call.id] or seen_ids[tool_call.id] then
+            return nil, "Tool wrapper must preserve every tool call ID exactly once"
+        end
+        seen_ids[tool_call.id] = true
+        seen_count = seen_count + 1
+    end
+    if seen_count ~= original_count then
+        return nil, "Tool wrapper must preserve every tool call ID exactly once"
+    end
+    self.last_tool_calls = tool_calls
 
     local validated_tools: {[string]: any} = {}
     local has_exclusive = false
@@ -655,6 +693,7 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
 end
 
 function tool_caller:execute(context: any, validated_tools: any): any
+    self.wrapper_controls = {}
     -- Handle nil validated_tools
     if not validated_tools then
         validated_tools = {}

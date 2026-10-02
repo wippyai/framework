@@ -1294,6 +1294,173 @@ local function define_tests()
                 test.eq(compiled_spec.tool_wrappers[2].phases[1], "after_execute")
                 test.is_true(compiled_spec.tool_wrappers[2].options.include_results)
             end)
+
+            it("should keep map-form behavior and legacy binding order deterministic without deduplication", function()
+                trait_definitions.map_trait = {
+                    id = "map_trait",
+                    name = "Map Trait",
+                    prompt = "",
+                    tools = {},
+                    behaviors = {
+                        zeta = {
+                            handles = { "activate" },
+                            handlers = { lifecycle = "test:zeta" },
+                            priority = 100,
+                        },
+                        alpha = {
+                            handles = { "activate" },
+                            handlers = { lifecycle = "test:shared" },
+                            priority = 100,
+                        },
+                    },
+                    bindings = {
+                        z_legacy = {
+                            id = "legacy_last",
+                            kind = "lifecycle",
+                            contract = "wippy.agent:lifecycle",
+                            binding = "test:last",
+                            phases = { "activate" },
+                            priority = 100,
+                        },
+                        a_legacy = {
+                            id = "legacy_first",
+                            kind = "lifecycle",
+                            contract = "wippy.agent:lifecycle",
+                            binding = "test:shared",
+                            phases = { "activate" },
+                            priority = 100,
+                        },
+                        checkpoint = {
+                            id = "legacy_checkpoint",
+                            contract = "wippy.agent:checkpoint",
+                            binding = "test:checkpoint",
+                        },
+                    },
+                }
+
+                local spec = { id = "test:map", prompt = "base", traits = { "map_trait" } }
+                for _ = 1, 3 do
+                    local compiled, err = compiler.compile(spec)
+                    test.is_nil(err)
+                    test.eq(#compiled.bindings.lifecycle, 4)
+                    test.eq(compiled.bindings.lifecycle[1].id, "alpha")
+                    test.eq(compiled.bindings.lifecycle[2].id, "zeta")
+                    test.eq(compiled.bindings.lifecycle[3].id, "legacy_first")
+                    test.eq(compiled.bindings.lifecycle[4].id, "legacy_last")
+                    test.eq(compiled.bindings.lifecycle[1].binding, compiled.bindings.lifecycle[3].binding)
+                    test.eq(compiled.bindings.checkpoint[1].id, "legacy_checkpoint")
+                end
+                trait_definitions.map_trait = nil
+            end)
+
+            it("should return actionable diagnostics for malformed behavior definitions", function()
+                local issues = compiler.validate_behaviors({
+                    broken = {
+                        handles = { "before_stpe", "activate", "before_execute" },
+                    },
+                })
+                test.eq(#issues, 3)
+                test.eq(issues[1].path, "behaviors.broken.handles.1")
+                test.eq(issues[1].code, "unknown_handle")
+                test.eq(issues[2].path, "behaviors.broken.handlers.lifecycle")
+                test.eq(issues[2].code, "missing_handler")
+                test.eq(issues[3].path, "behaviors.broken.handlers.tool_wrapper")
+                test.eq(issues[3].code, "missing_handler")
+
+                test.eq(#compiler.validate_behaviors({
+                    valid = {
+                        handles = { "checkpoint" },
+                        checkpoint = { token_threshold = 12000 },
+                    }
+                }), 0)
+            end)
+
+            it("configures canonical recall and checkpointing from one trait attachment", function()
+                trait_definitions.complete_memory = {
+                    id = "complete_memory",
+                    behaviors = {
+                        memory = {
+                            handles = { "recall", "checkpoint" },
+                            handlers = { recall = "test:recall", checkpoint = "test:checkpoint" },
+                            options = { max_items = 3 },
+                            recall = { recall_cooldown = 2 },
+                            checkpoint = { token_threshold = 12000 },
+                        },
+                    },
+                }
+                local spec = {
+                    id = "test:memory",
+                    traits = {{ id = "complete_memory", context = { project_id = "project-a" } }},
+                }
+                local compiled, err = compiler.compile(spec)
+                test.is_nil(err)
+                test.not_nil(compiled.memory_contract)
+                test.eq(compiled.memory_contract.implementation_id, "test:recall")
+                test.eq(compiled.memory_contract.context.project_id, "project-a")
+                test.eq(compiled.memory_contract.context.agent_id, spec.id)
+                test.eq(compiled.memory_contract.options.max_items, 3)
+                test.eq(compiled.memory_contract.options.recall_cooldown, 2)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 12000)
+                test.eq(compiled.bindings.checkpoint[1].context.project_id, "project-a")
+                compiled.memory_contract.context.project_id = "changed"
+                compiled.memory_contract.options.max_items = 99
+                local again = compiler.compile(spec)
+                test.eq(again.memory_contract.context.project_id, "project-a")
+                test.eq(again.memory_contract.options.max_items, 3)
+                spec.memory_contract = { implementation_id = "test:explicit", options = { enabled = false } }
+                local explicit = compiler.compile(spec)
+                test.eq(explicit.memory_contract.implementation_id, "test:explicit")
+                test.is_false(explicit.memory_contract.options.enabled)
+                spec.memory_contract = {}
+                test.is_nil(compiler.compile(spec).memory_contract.implementation_id)
+                trait_definitions.complete_memory = nil
+            end)
+
+            it("diagnoses recall handlers and refuses ambiguous automatic recall providers", function()
+                local issues = compiler.validate_behaviors({ memory = { handles = { "recall" } } })
+                test.eq(#issues, 1)
+                test.eq(issues[1].code, "missing_handler")
+                test.eq(issues[1].path, "behaviors.memory.handlers.recall")
+                trait_definitions.ambiguous_memory = {
+                    id = "ambiguous_memory",
+                    behaviors = {
+                        first = { handles = { "recall" }, handlers = { recall = "test:first" } },
+                        second = { handles = { "recall" }, handlers = { recall = "test:second" } },
+                    },
+                }
+                local compiled, err = compiler.compile({ id = "test:ambiguous", traits = { "ambiguous_memory" } })
+                test.is_nil(compiled)
+                test.not_nil(err)
+                test.is_true(tostring(err):find("multiple recall providers", 1, true) ~= nil)
+                trait_definitions.ambiguous_memory = nil
+            end)
+
+            it("should preserve a trait's checkpoint disabling and allow explicit agent overrides", function()
+                trait_definitions.disabled_checkpoint = {
+                    id = "disabled_checkpoint",
+                    name = "Disabled checkpoint",
+                    behaviors = {
+                        checkpoint = {
+                            handles = { "checkpoint" },
+                            checkpoint = { enabled = false, token_threshold = 100 },
+                        },
+                    },
+                }
+                local compiled, err = compiler.compile({ id = "test:disabled", traits = { "disabled_checkpoint" } })
+                test.is_nil(err)
+                test.is_false(compiled.agent_options.checkpoint.enabled)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 100)
+
+                compiled, err = compiler.compile({
+                    id = "test:enabled",
+                    traits = { "disabled_checkpoint" },
+                    agent_options = { checkpoint = { enabled = true, token_threshold = 200 } },
+                })
+                test.is_nil(err)
+                test.is_true(compiled.agent_options.checkpoint.enabled)
+                test.eq(compiled.agent_options.checkpoint.token_threshold, 200)
+                trait_definitions.disabled_checkpoint = nil
+            end)
         end)
 
         describe("Unified Tool Structure Support", function()

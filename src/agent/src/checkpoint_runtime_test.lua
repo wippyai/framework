@@ -88,6 +88,88 @@ local function define_tests()
             test.is_nil(result.result)
         end)
 
+        it("resolves host overrides last without mutating agent defaults", function()
+            local agent = {
+                token_threshold = 12000,
+                enabled = true,
+                function_id = "agent:summary",
+                provider = { model = "agent-model", max_tokens = 3000 },
+            }
+            local host = {
+                token_threshold = 50000,
+                enabled = false,
+                function_id = "host:summary",
+                provider = { max_tokens = 1000 },
+            }
+            local resolved = checkpoint_runtime.resolve_options(agent, host)
+            test.eq(resolved.token_threshold, 50000)
+            test.is_false(resolved.enabled)
+            test.eq(resolved.function_id, "host:summary")
+            test.eq(resolved.provider.model, "agent-model")
+            test.eq(resolved.provider.max_tokens, 1000)
+            resolved.provider.model = "changed"
+            test.eq(agent.provider.model, "agent-model")
+            test.eq(agent.token_threshold, 12000)
+            test.eq(host.provider.max_tokens, 1000)
+        end)
+
+        it("preserves explicit zero and empty overrides and never enables absent configuration", function()
+            test.is_nil(checkpoint_runtime.resolve_options(nil, nil))
+            local resolved = checkpoint_runtime.resolve_options({
+                token_threshold = 12000,
+                function_id = "agent:summary",
+            }, { token_threshold = 0, function_id = "" })
+            test.eq(resolved.token_threshold, 0)
+            test.eq(resolved.function_id, "")
+        end)
+
+        it("passes effective agent and host options above binding defaults", function()
+            local input = payload()
+            input.options = { token_threshold = 50000, model = "host-model" }
+            local binding = {
+                binding = "memory",
+                options = { token_threshold = 12000, model = "trait-model", max_tokens = 3000 },
+            }
+            local _, err = checkpoint_runtime.create({ binding }, input)
+            test.is_nil(err)
+            test.eq(calls[1].payload.options.token_threshold, 50000)
+            test.eq(calls[1].payload.options.model, "host-model")
+            test.eq(calls[1].payload.options.max_tokens, 3000)
+            calls[1].payload.options.model = "mutated-by-provider"
+            test.eq(input.options.model, "host-model")
+            test.eq(binding.options.model, "trait-model")
+        end)
+
+        it("replaces option lists, including an explicit empty list", function()
+            local defaults = { namespaces = { "project", "user" }, provider = { tags = { "agent" } } }
+            local host = { namespaces = {}, provider = { tags = { "host" } } }
+            local resolved = checkpoint_runtime.resolve_options(defaults, host)
+            test.eq(#resolved.namespaces, 0)
+            test.eq(#resolved.provider.tags, 1)
+            test.eq(resolved.provider.tags[1], "host")
+            resolved.provider.tags[1] = "mutated"
+            test.eq(host.provider.tags[1], "host")
+            test.eq(defaults.provider.tags[1], "agent")
+            test.eq(#defaults.namespaces, 2)
+        end)
+
+        it("does not let a failed provider mutate the next provider's options", function()
+            behaviors.bad = function(input)
+                input.options.provider.max_tokens = 999999
+                return nil, "failed"
+            end
+            local input = payload()
+            input.options = { provider = { max_tokens = 1000 } }
+            local _, err = checkpoint_runtime.create({
+                { binding = "bad", priority = 1 },
+                { binding = "good", priority = 2 },
+            }, input)
+            test.is_nil(err)
+            test.eq(#calls, 2)
+            test.eq(calls[2].payload.options.provider.max_tokens, 1000)
+            test.eq(input.options.provider.max_tokens, 1000)
+        end)
+
         it("calls the highest-priority checkpoint binding with context and options", function()
             behaviors.early = function(in_payload, binding_context)
                 return {
@@ -212,7 +294,5 @@ local function define_tests()
 end
 
 return {
-    run_tests = function()
-        return require("test").run_cases(define_tests)
-    end
+    run_tests = require("test").run_cases(define_tests)
 }

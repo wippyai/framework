@@ -216,6 +216,33 @@ local function define_tests()
             tool_caller._contract = mock_contract
         end)
 
+        it("collects behavior controls without changing outcomes and resets them each execution", function()
+            local control = { config = { model = "stronger" } }
+            wrapper_behaviors["test.wrapper:policy"] = function(payload)
+                test.not_nil(payload.tool_results.call_calculator)
+                return { _control = control }
+            end
+            local caller = tool_caller.new()
+            local wrapper = { binding = "test.wrapper:policy", source = "behavior", phases = { "after_execute" } }
+            caller:set_tool_wrappers({ wrapper })
+            caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+            local validated, err = caller:validate({{
+                id = "call_calculator", name = "calculator", registry_id = "test:calculator", arguments = { a = 2, b = 3 },
+            }})
+            test.is_nil(err)
+            local results = caller:execute({}, validated)
+            test.not_nil(results.call_calculator)
+            test.eq(results.call_calculator.result, 42)
+            local controls = caller:get_wrapper_controls()
+            test.eq(#controls, 1)
+            controls[1].config.model = "changed"
+            test.eq(control.config.model, "stronger")
+            test.eq(caller:get_wrapper_controls()[1].config.model, "stronger")
+            wrapper.source = nil
+            caller:execute({}, validated)
+            test.eq(#caller:get_wrapper_controls(), 0, "legacy wrappers never acquire new control semantics")
+        end)
+
         after_each(function()
             tool_caller._json = nil
             tool_caller._tools = nil
@@ -914,6 +941,32 @@ local function define_tests()
                 }
             end
 
+            it("rejects wrapper rewrites that break tool call/result identity", function()
+                local rewrites = {
+                    function() return {} end,
+                    function() return { calculator_call("replacement") } end,
+                    function() return { calculator_call(), calculator_call() } end,
+                    function() return { calculator_call(), calculator_call("extra") } end,
+                    function(payload)
+                        payload.tool_calls[1].id = "mutated"
+                        return payload.tool_calls
+                    end,
+                }
+                for _, rewrite in ipairs(rewrites) do
+                    wrapper_behaviors["test.wrapper:guard"] = function(payload)
+                        return { tool_calls = rewrite(payload) }, nil
+                    end
+                    local caller = tool_caller.new()
+                    caller:set_tool_wrappers({ {
+                        binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                    } })
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                    local validated, err = caller:validate({ calculator_call() })
+                    test.is_nil(validated)
+                    test.contains(err, "preserve every tool call ID exactly once")
+                end
+            end)
+
             it("should apply focused before and after wrapper bindings without losing context", function()
                 wrapper_behaviors["test.wrapper:guard"] = function(payload, binding_context)
                     test.eq(payload.phase, tool_caller.PHASE.BEFORE_EXECUTE)
@@ -928,7 +981,7 @@ local function define_tests()
                     return {
                         tool_calls = {
                             {
-                                id = "call_weather",
+                                id = "call_calculator",
                                 name = "get_weather",
                                 arguments = { city = "NYC" },
                                 registry_id = "test:weather"
@@ -957,8 +1010,8 @@ local function define_tests()
                     test.eq(payload.options.include_results, true)
                     test.eq(binding_context.policy, "audit")
                     test.eq(payload.tool_calls[1].registry_id, "test:weather")
-                    test.not_nil(payload.tool_results.call_weather)
-                    test.eq(payload.tool_results.call_weather.result, "Sunny, 25°C")
+                    test.not_nil(payload.tool_results.call_calculator)
+                    test.eq(payload.tool_results.call_calculator.result, "Sunny, 25°C")
                     test.eq(payload.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
                     test.eq(payload.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_RESULTS_RECORDED)
 
@@ -1027,12 +1080,12 @@ local function define_tests()
                 local validated, validate_err = caller:validate({ calculator_call() })
                 test.is_nil(validate_err)
                 test.not_nil(validated)
-                test.not_nil(validated.call_weather)
-                test.eq(validated.call_weather.registry_id, "test:weather")
+                test.not_nil(validated.call_calculator)
+                test.eq(validated.call_calculator.registry_id, "test:weather")
 
                 local results = caller:execute({}, validated)
-                test.not_nil(results.call_weather)
-                test.eq(results.call_weather.result, "Sunny, 25°C")
+                test.not_nil(results.call_calculator)
+                test.eq(results.call_calculator.result, "Sunny, 25°C")
 
                 test.eq(#wrapper_calls, 2)
                 test.eq(wrapper_calls[1].binding, "test.wrapper:guard")
@@ -1047,6 +1100,52 @@ local function define_tests()
                 test.eq(#metadata, 1)
                 test.eq(metadata[1].wrapper_id, "guard")
                 test.is_true(metadata[1].metadata.checked)
+            end)
+
+            it("allows wrappers to reorder calls while preserving their IDs", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload)
+                    return { tool_calls = { payload.tool_calls[2], payload.tool_calls[1] } }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call("first"), calculator_call("second") })
+                test.is_nil(err)
+                test.not_nil(validated.first)
+                test.not_nil(validated.second)
+                test.eq(caller.last_tool_calls[1].id, "second")
+                test.eq(caller.last_tool_calls[2].id, "first")
+            end)
+
+            it("rejects an in-place drop that leaves a sparse tool-call list", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload)
+                    payload.tool_calls[1] = nil
+                    return { tool_calls = payload.tool_calls }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call("first"), calculator_call("second") })
+                test.is_nil(validated)
+                test.contains(err, "preserve every tool call ID exactly once")
+            end)
+
+            it("rejects malformed wrapper calls with a validation error instead of throwing", function()
+                wrapper_behaviors["test.wrapper:guard"] = function()
+                    return { tool_calls = { true } }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call() })
+                test.is_nil(validated)
+                test.contains(err, "preserve every tool call ID exactly once")
             end)
 
             it("should require host context when wrappers are configured", function()
