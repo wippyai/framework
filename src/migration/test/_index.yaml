@@ -39,3 +39,76 @@ entries:
     kind: function.lua
     source: file://rollback_stub.lua
     method: revert
+
+  - name: concurrent_sqlite_a
+    kind: db.sql.sqlite
+    file: ./.wippy/concurrency.db
+
+  - name: concurrent_sqlite_b
+    kind: db.sql.sqlite
+    file: ./.wippy/concurrency.db
+
+  - name: concurrent_pg_a
+    kind: db.sql.postgres
+    host: localhost
+    port: 5433
+    database: up_migration_concurrency
+    username: kickside
+    password: kickside
+    options:
+      sslmode: disable
+
+  - name: concurrent_pg_b
+    kind: db.sql.postgres
+    host: localhost
+    port: 5433
+    database: up_migration_concurrency
+    username: kickside
+    password: kickside
+    options:
+      sslmode: disable
+
+  - name: concurrency_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-concurrency
+    source: file://concurrency_test.lua
+    method: run
+    modules: [sql, channel, env]
+    imports:
+      runner_lib: wippy.migration:runner
+      test: wippy.test:test
+
+  - name: test_os_env
+    kind: env.storage.os
+
+  - name: enable_postgres
+    kind: env.variable
+    storage: app:test_os_env
+    variable: MIGRATION_TEST_POSTGRES
+    default: "false"
+
+  - name: concurrency_1
+    kind: function.lua
+    source: file://concurrency_fixture.lua
+    method: first
+    modules: [time]
+    imports:
+      migration_api: wippy.migration:migration
+
+  - name: concurrency_2
+    kind: function.lua
+    source: file://concurrency_fixture.lua
+    method: second
+    modules: [time]
+    imports:
+      migration_api: wippy.migration:migration
+
+  - name: concurrency_3
+    kind: function.lua
+    source: file://concurrency_fixture.lua
+    method: third
+    modules: [time]
+    imports:
+      migration_api: wippy.migration:migration
