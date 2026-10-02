@@ -291,9 +291,9 @@ entries:
     meta:
       type: tool
       private: true
-      comment: Internal Attention guard receipt. Do not advertise to the model.
+      comment: Internal Attention guard receipt. It keeps the refused call's own arguments and reads the refusal from tool context. Do not advertise to the model.
       input_schema: |
-        {"type":"object","properties":{"reason":{"type":"string","minLength":1,"maxLength":64},"original_registry_id":{"type":"string","minLength":1,"maxLength":128},"invalid":{"type":"boolean"}},"required":["reason","original_registry_id"],"additionalProperties":false}
+        {"type":"object","properties":{},"additionalProperties":true}
     source: file://ui_action_tool.lua
     modules:
       - ctx

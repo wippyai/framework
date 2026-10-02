@@ -79,11 +79,18 @@ function M.apply_history(payload, history)
             if reason then
                 local invalid_call = normalized == nil
                 if invalid_call then invalid = invalid + 1 end
-                -- Preserve provider pairing and metadata, replacing only execution.
+                -- Preserve provider pairing, metadata and the model's own arguments,
+                -- replacing only execution. Session persists arguments as the
+                -- assistant's call, so the refusal travels in tool context instead.
                 local receipt = {}
                 for key, value in pairs(call) do receipt[key] = value end
                 receipt.registry_id = read.receipt_id
-                receipt.arguments = {reason=reason, original_registry_id=call.registry_id, invalid=invalid_call}
+                local context = {}
+                if type(call.context) == "table" then
+                    for key, value in pairs(call.context) do context[key] = value end
+                end
+                context.attention_refusal = {reason=reason, original_registry_id=call.registry_id, invalid=invalid_call}
+                receipt.context = context
                 result[#result+1] = receipt
                 refusals[#refusals+1] = {call_id=call.id, reason=reason, original_registry_id=call.registry_id}
             else

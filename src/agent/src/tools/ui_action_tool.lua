@@ -212,14 +212,18 @@ function ui_action_tool.attention_get_focus(args) return inspect_named("attentio
 function ui_action_tool.attention_get_selection(args) return inspect_named("attention_get_selection", args) end
 function ui_action_tool.attention_hit_test(args) return inspect_named("attention_hit_test", args) end
 
-function ui_action_tool.attention_read_receipt(args)
+-- The guard keeps the refused call's own arguments for history and passes the
+-- refusal in tool context. The arguments are never read here.
+function ui_action_tool.attention_read_receipt(_args)
     local read = require("attention_read")
+    local refusal = ctx.get("attention_refusal")
+    if type(refusal) ~= "table" then refusal = {} end
     local allowed = { ["history-unavailable"]=true, ["read-budget-exhausted"]=true,
         ["repair-budget-exhausted"]=true, ["one-read-per-batch"]=true, ["duplicate-read"]=true }
-    local reason = (allowed[args.reason] or read.validation_errors[args.reason]) and args.reason or "invalid-request"
-    local id = read.is_read(args.original_registry_id) and args.original_registry_id or nil
+    local reason = (allowed[refusal.reason] or read.validation_errors[refusal.reason]) and refusal.reason or "invalid-request"
+    local id = read.is_read(refusal.original_registry_id) and refusal.original_registry_id or nil
     local receipt = read.receipt(reason, id)
-    receipt.invalid = args.invalid == true
+    receipt.invalid = refusal.invalid == true
     return receipt
 end
 

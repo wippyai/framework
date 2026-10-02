@@ -143,7 +143,7 @@ local function define_tests()
                                             return nil, result_data.error
                                         else
                                             if type(result_data.execute) == "function" then
-                                                return result_data.execute(args)
+                                                return result_data.execute(args, ctx)
                                             end
                                             return result_data.result, nil
                                         end
@@ -161,7 +161,7 @@ local function define_tests()
                                             final_error = result_data.error
                                         else
                                             if type(result_data.execute) == "function" then
-                                                final_result, final_error = result_data.execute(args)
+                                                final_result, final_error = result_data.execute(args, ctx)
                                             else
                                                 final_result = result_data.result
                                             end
@@ -476,8 +476,9 @@ local function define_tests()
                     end
                     (tool_results :: any)[prefix .. "attention_get_focus"] = {execute=run_read}
                     (tool_results :: any)[prefix .. "attention_get_cursor"] = {execute=run_read}
-                    (tool_results :: any)[receipt_id] = {execute=function(args)
-                        return funcs.new():call(receipt_id,args)
+                    (tool_results :: any)[receipt_id] = {execute=function(args, context)
+                        -- The real receipt tool reads the refusal from its execution context.
+                        return funcs.new():with_context(context or {}):call(receipt_id,args)
                     end}
                     wrapper_behaviors["test:attention"] = function(payload)
                         return attention_guard.apply_history(payload,history)
@@ -485,10 +486,11 @@ local function define_tests()
                     local caller = tool_caller.new():set_strategy(strategy)
                     caller:set_tool_wrappers({{id="attention",phases={tool_caller.PHASE.BEFORE_EXECUTE},binding="test:attention",strict=true}})
                     caller:set_wrapper_context({host={kind="session",session_id="s1"}})
+                    local scope = {host_instance_id="host",node_id="scope-node",mount_id="mount",generation=1}
                     local input = {
                         {id="read-1",name="attention_get_focus",registry_id=prefix .. "attention_get_focus",arguments={}},
                         {id="ordinary",name="calculator",registry_id="test:calculator",arguments={}},
-                        {id="read-2",name="attention_get_cursor",registry_id=prefix .. "attention_get_cursor",arguments={}},
+                        {id="read-2",name="attention_get_cursor",registry_id=prefix .. "attention_get_cursor",arguments={scope=scope}},
                     }
                     local validated, validation_error = caller:validate(input)
                     test.is_nil(validation_error)
@@ -504,10 +506,30 @@ local function define_tests()
                         test.eq(result.tool_call.name,call.name)
                         if result.tool_call.registry_id == receipt_id then
                             receipts = receipts + 1
+                            test.eq(result.tool_call.args.scope.node_id,"scope-node")
+                            test.is_nil(result.tool_call.args.reason)
                             test.eq(result.result.reason,"one-read-per-batch")
+                            test.eq(result.result.original_registry_id,call.registry_id)
+                            test.is_false(result.result.invalid)
                         end
                     end
                     test.eq(receipts,1)
+                    -- An invalid read keeps its arguments, and the receipt result carries
+                    -- invalid=true so the guard can count the repair budget from history.
+                    local bad = {id="bad",name="attention_get_focus",registry_id=prefix .. "attention_get_focus",arguments={arbitrary=true}}
+                    local invalid_results = caller:execute({},caller:validate({bad}))
+                    test.eq(dispatched,1)
+                    test.eq(invalid_results.bad.tool_call.registry_id,receipt_id)
+                    test.eq(invalid_results.bad.tool_call.args.arbitrary,true)
+                    test.eq(invalid_results.bad.result.reason,"unexpected-field")
+                    test.is_true(invalid_results.bad.result.invalid)
+                    for index=1,2 do
+                        history.events[#history.events+1]={id="invalid-"..index,role="private_function",content=bad.arguments,
+                            metadata={registry_id=receipt_id,result=invalid_results.bad.result}}
+                    end
+                    local repair = caller:execute({},caller:validate({input[1]}))
+                    test.eq(dispatched,1)
+                    test.eq(repair["read-1"].result.reason,"repair-budget-exhausted")
                     for index=1,4 do
                         history.events[#history.events+1]={id="prior-"..index,role="private_function",content={},metadata={registry_id=prefix.."attention_get_focus"}}
                     end
