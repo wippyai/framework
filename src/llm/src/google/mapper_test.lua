@@ -35,6 +35,40 @@ local function define_tests()
         end)
 
         describe("Message Mapping", function()
+            it("keeps tool-only rounds separate while cache markers preserve parallel pairing", function()
+                local mapped = mapper.map_messages({
+                    { role = "assistant", content = "" },
+                    { role = "function_call", function_call = { id = "one", name = "lookup", arguments = {},
+                        provider_metadata = { function_call_id = "one" } } },
+                    { role = "function_result", name = "lookup", function_call_id = "one", content = "denied", is_error = true },
+                    { role = "cache_marker", marker_id = "within-round" },
+                    { role = "function_call", function_call = { id = "two", name = "lookup", arguments = {},
+                        provider_metadata = { function_call_id = "two" } } },
+                    { role = "function_result", name = "lookup", function_call_id = "two", content = "found" },
+                    { role = "assistant", content = "" },
+                    { role = "function_call", function_call = { id = "three", name = "lookup", arguments = {},
+                        provider_metadata = { function_call_id = "three" } } },
+                    { role = "function_result", name = "lookup", function_call_id = "three", content = "corrected" },
+                })
+                tests.eq(#mapped, 4)
+                tests.eq(mapped[1].role, "model")
+                tests.eq(#mapped[1].parts, 2)
+                tests.eq(mapped[2].role, "user")
+                tests.eq(#mapped[2].parts, 2)
+                for index, id in ipairs({ "one", "two" }) do
+                    tests.eq(mapped[1].parts[index].functionCall.id, id)
+                    tests.eq(mapped[2].parts[index].functionResponse.id, id)
+                end
+                tests.eq(mapped[2].parts[1].functionResponse.response.error, "denied")
+                tests.eq(mapped[3].role, "model")
+                tests.eq(#mapped[3].parts, 1)
+                tests.eq(mapped[3].parts[1].functionCall.id, "three")
+                tests.eq(mapped[4].role, "user")
+                tests.eq(#mapped[4].parts, 1)
+                tests.eq(mapped[4].parts[1].functionResponse.id, "three")
+                tests.eq(mapped[4].parts[1].functionResponse.response.content, "corrected")
+            end)
+
             it("pairs parallel calls in one model turn and their results in the following user turn", function()
                 local mapped = mapper.map_messages({
                     { role = "assistant", content = "checking" },
