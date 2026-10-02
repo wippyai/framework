@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/wippyai/framework/compare/llm-v0.5.3...llm-v0.5.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* preserve tool identity and canonical model feedback ([#158](https://github.com/wippyai/framework/issues/158)) ([0eaf9ab](https://github.com/wippyai/framework/commit/0eaf9ab516aa6436c3c2f3042793cbd8f7876b4b))
+
 ## [0.5.3](https://github.com/wippyai/framework/compare/llm-v0.5.2...llm-v0.5.3) (2026-10-01)
 
 
