@@ -19,7 +19,7 @@ local function can_access_as_unauthorized(page)
     local result, err = funcs.new()
         :with_actor(unauthorized_actor)
         :with_scope(empty_scope)
-        :call("wippy.views:page_access_probe", page)
+        :call("app:page_access_probe", page)
     if err then
         error(err)
     end
@@ -31,7 +31,7 @@ end
 -- rather than the probe failing closed for an unrelated reason.
 local function can_access_as_authorized(page)
     local authorized_actor = security.new_actor("wippy.views.test:authorized")
-    local view_policy, err = security.policy("wippy.views:test_page_view_policy")
+    local view_policy, err = security.policy("app:test_page_view_policy")
     if err then
         error(err)
     end
@@ -40,7 +40,7 @@ local function can_access_as_authorized(page)
     local result, call_err = funcs.new()
         :with_actor(authorized_actor)
         :with_scope(view_scope)
-        :call("wippy.views:page_access_probe", page)
+        :call("app:page_access_probe", page)
     if call_err then
         error(call_err)
     end

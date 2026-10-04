@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: "*"
+
   - name: db
     kind: db.sql.sqlite
     meta:
@@ -19,3 +26,45 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
+
+  # app:embeddings_test
+  - name: embeddings_test
+    kind: function.lua
+    meta:
+      name: Embeddings Library Test
+      type: test
+      comment: Tests the embeddings library error reporting
+      group: LLM / Embeddings (SQL)
+      tags:
+        - embeddings
+        - tests
+    source: file://embeddings_test.lua
+    modules:
+      - uuid
+    imports:
+      embeddings: wippy.embeddings:embeddings
+      test: wippy.test:test
+    method: run
+
+  # app:embedding_repo_test
+  - name: embedding_repo_test
+    kind: function.lua
+    meta:
+      name: Embedding Repository Test
+      type: test
+      comment: Tests the embedding_repo library for vector operations
+      group: LLM / Embeddings (SQL)
+      tags:
+        - embeddings
+        - vector
+        - tests
+    source: file://embedding_repo_test.lua
+    modules:
+      - sql
+      - uuid
+      - json
+      - registry
+    imports:
+      embedding_repo: wippy.embeddings:embedding_repo
+      test: wippy.test:test
+    method: run

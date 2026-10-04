@@ -1291,7 +1291,7 @@ local function define_tests()
                         message = "Hello from real tool!",
                         delay_ms = 50
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 }
             }
 
@@ -1337,7 +1337,7 @@ local function define_tests()
                         message = "First call",
                         delay_ms = 30
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 },
                 {
                     id = "call_second",
@@ -1346,7 +1346,7 @@ local function define_tests()
                         message = "Second call",
                         delay_ms = 20
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 },
                 {
                     id = "call_third",
@@ -1355,7 +1355,7 @@ local function define_tests()
                         message = "Third call",
                         delay_ms = 40
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 }
             }
 
@@ -1410,7 +1410,7 @@ local function define_tests()
                         message = "Parallel call 1",
                         delay_ms = 60
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 },
                 {
                     id = "call_parallel_2",
@@ -1419,7 +1419,7 @@ local function define_tests()
                         message = "Parallel call 2",
                         delay_ms = 40
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 },
                 {
                     id = "call_parallel_3",
@@ -1428,7 +1428,7 @@ local function define_tests()
                         message = "Parallel call 3",
                         delay_ms = 50
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 }
             }
 
@@ -1500,7 +1500,7 @@ local function define_tests()
                         id = "call_param_test_" .. i,
                         name = "delayed_echo",
                         arguments = test_case,
-                        registry_id = "wippy.agent.tools:delay_tool"
+                        registry_id = "app:delay_tool"
                     }
                 }
 
@@ -1546,7 +1546,7 @@ local function define_tests()
                         message = "Test message",
                         delay_ms = -50  -- Negative delay might cause issues
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 }
             }
 
@@ -1583,7 +1583,7 @@ local function define_tests()
                         message = "Context verification test",
                         delay_ms = 20
                     },
-                    registry_id = "wippy.agent.tools:delay_tool",
+                    registry_id = "app:delay_tool",
                     context = {
                         tool_context_key = "tool_value",
                         shared_key = "from_tool_context",
@@ -1645,7 +1645,7 @@ local function define_tests()
                         message = "Empty context test",
                         delay_ms = 15
                     },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                     -- No context field at all
                 }
             }
@@ -1688,13 +1688,13 @@ local function define_tests()
                     id = "seq_call_1",
                     name = "delayed_echo",
                     arguments = { message = "Sequential 1", delay_ms = 30 },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 },
                 {
                     id = "seq_call_2",
                     name = "delayed_echo",
                     arguments = { message = "Sequential 2", delay_ms = 20 },
-                    registry_id = "wippy.agent.tools:delay_tool"
+                    registry_id = "app:delay_tool"
                 }
             }
 

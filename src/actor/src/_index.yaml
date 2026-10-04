@@ -8,14 +8,6 @@ entries:
       title: Actor
       description: Actor pattern library for message-passing concurrency
 
-  # Dependencies
-  - name: dep.wippy.test
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/test"
-    version: ">=v0.2.0"
-
   # wippy.actor:actor
   - name: actor
     kind: library.lua
@@ -24,27 +16,3 @@ entries:
     source: file://actor.lua
     modules:
       - time
-
-  # wippy.actor:actor_test
-  - name: actor_test
-    kind: function.lua
-    meta:
-      name: Actor Library Test
-      type: test
-      suite: actor
-      comment: Tests the actor library's messaging and event handling capabilities
-      group: Actor Framework
-      tags:
-        - actor
-        - library
-        - message-passing
-        - concurrency
-        - tests
-    source: file://actor_test.lua
-    imports:
-      actor: wippy.actor:actor
-      test: wippy.test:test
-    modules:
-      - time
-      - json
-    method: run

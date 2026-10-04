@@ -63,7 +63,7 @@ local function define_tests()
                     name = "fast_echo",
                     description = "Fast echo tool",
                     schema = { type = "object", properties = {} },
-                    registry_id = "wippy.agent.tools:delay_tool",
+                    registry_id = "app:delay_tool",
                     context = {
                         delay = 25,
                         priority = "high",
@@ -74,7 +74,7 @@ local function define_tests()
                     name = "slow_echo",
                     description = "Slow echo tool",
                     schema = { type = "object", properties = {} },
-                    registry_id = "wippy.agent.tools:delay_tool",
+                    registry_id = "app:delay_tool",
                     context = {
                         delay = 80,
                         priority = "low",
@@ -296,13 +296,13 @@ local function define_tests()
                                     id = "call_fast_123",
                                     name = "fast_echo", -- Alias name matches context key
                                     arguments = { message = "fast test" },
-                                    registry_id = "wippy.agent.tools:delay_tool"
+                                    registry_id = "app:delay_tool"
                                 },
                                 {
                                     id = "call_slow_456",
                                     name = "slow_echo", -- Alias name matches context key
                                     arguments = { message = "slow test" },
-                                    registry_id = "wippy.agent.tools:delay_tool"
+                                    registry_id = "app:delay_tool"
                                 }
                             },
                             tokens = { prompt_tokens = 25, completion_tokens = 20, total_tokens = 45 },
@@ -788,14 +788,14 @@ local function define_tests()
 
                 -- Verify fast_echo context
                 test.eq(fast_call.name, "fast_echo")
-                test.eq(fast_call.registry_id, "wippy.agent.tools:delay_tool")
+                test.eq(fast_call.registry_id, "app:delay_tool")
                 test.not_nil(fast_call.context)
                 test.eq(fast_call.context.delay, 25)
                 test.eq(fast_call.context.priority, "high")
 
                 -- Verify slow_echo context
                 test.eq(slow_call.name, "slow_echo")
-                test.eq(slow_call.registry_id, "wippy.agent.tools:delay_tool")
+                test.eq(slow_call.registry_id, "app:delay_tool")
                 test.not_nil(slow_call.context)
                 test.eq(slow_call.context.delay, 80)
                 test.eq(slow_call.context.priority, "low")
@@ -1183,10 +1183,10 @@ local function define_tests()
                 for _, tool in ipairs(opts.tools) do
                     if tool.name == "fast_echo" then
                         found_fast = true
-                        test.eq(tool.registry_id, "wippy.agent.tools:delay_tool")
+                        test.eq(tool.registry_id, "app:delay_tool")
                     elseif tool.name == "slow_echo" then
                         found_slow = true
-                        test.eq(tool.registry_id, "wippy.agent.tools:delay_tool")
+                        test.eq(tool.registry_id, "app:delay_tool")
                     end
                 end
                 test.is_true(found_fast)

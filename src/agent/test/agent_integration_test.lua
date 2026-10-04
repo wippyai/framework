@@ -75,7 +75,7 @@ Be concise in your text responses but ALWAYS use the tools when requested.]],
             -- Tools with aliases - same registry tool, different names and contexts
             tools = {
                 {
-                    id = "wippy.agent.tools:delay_tool",
+                    id = "app:delay_tool",
                     alias = "fast_echo",
                     description = "Quick response tool for immediate feedback and speed tests",
                     context = {
@@ -86,7 +86,7 @@ Be concise in your text responses but ALWAYS use the tools when requested.]],
                     }
                 },
                 {
-                    id = "wippy.agent.tools:delay_tool",
+                    id = "app:delay_tool",
                     alias = "slow_echo",
                     description = "Thorough response tool for detailed processing and tests",
                     context = {
@@ -145,7 +145,7 @@ Be concise but ALWAYS use the tools when requested.]],
 
             tools = {
                 {
-                    id = "wippy.agent.tools:delay_tool",
+                    id = "app:delay_tool",
                     alias = "test_tool_1",
                     description = "First test tool",
                     context = {
@@ -154,7 +154,7 @@ Be concise but ALWAYS use the tools when requested.]],
                     }
                 },
                 {
-                    id = "wippy.agent.tools:delay_tool",
+                    id = "app:delay_tool",
                     alias = "test_tool_2",
                     description = "Second test tool",
                     context = {
@@ -163,7 +163,7 @@ Be concise but ALWAYS use the tools when requested.]],
                     }
                 },
                 {
-                    id = "wippy.agent.tools:delay_tool",
+                    id = "app:delay_tool",
                     alias = "test_tool_3",
                     description = "Third test tool",
                     context = {
@@ -476,8 +476,8 @@ Be concise but ALWAYS use the tools when requested.]],
             local sc = slow_call :: any
 
             -- Verify tool call properties
-            test.eq(fc.registry_id, "wippy.agent.tools:delay_tool")
-            test.eq(sc.registry_id, "wippy.agent.tools:delay_tool")
+            test.eq(fc.registry_id, "app:delay_tool")
+            test.eq(sc.registry_id, "app:delay_tool")
 
             print("Tool calls have correct registry IDs")
 
@@ -566,7 +566,7 @@ Be concise but ALWAYS use the tools when requested.]],
                 prompt = "You are a context testing agent.",
                 tools = {
                     {
-                        id = "wippy.agent.tools:delay_tool",
+                        id = "app:delay_tool",
                         alias = "context_test_tool",
                         description = "Tool for testing context precedence rules",
                         context = {

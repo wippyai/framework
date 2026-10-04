@@ -1,0 +1,34 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.2.0"
+
+  # app:actor_test
+  - name: actor_test
+    kind: function.lua
+    meta:
+      name: Actor Library Test
+      type: test
+      suite: actor
+      comment: Tests the actor library's messaging and event handling capabilities
+      group: Actor Framework
+      tags:
+        - actor
+        - library
+        - message-passing
+        - concurrency
+        - tests
+    source: file://actor_test.lua
+    imports:
+      actor: wippy.actor:actor
+      test: wippy.test:test
+    modules:
+      - time
+      - json
+    method: run

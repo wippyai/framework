@@ -88,13 +88,6 @@ entries:
     default: "wippy.terminal:host"
 
   # Dependencies
-  - name: dep.wippy.test
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/test"
-    version: ">=v0.4.0"
-
   - name: dep.wippy.security
     kind: "ns.dependency"
     meta:
@@ -343,52 +336,6 @@ entries:
       comment: Shared provider-independent validation for typed evaluation requests
     source: file://evaluation.lua
 
-  # wippy.llm:llm_test
-  - name: llm_test
-    kind: function.lua
-    meta:
-      name: LLM Library Test
-      type: test
-      comment: Tests the modern LLM library with smart model resolution and contract-based providers
-      group: LLM / General
-      tags:
-        - llm
-        - generation
-        - structured_output
-        - embeddings
-        - evaluate
-        - contracts
-        - providers
-        - tests
-    source: file://llm_test.lua
-    modules:
-      - json
-      - uuid
-      - security
-    imports:
-      llm: wippy.llm:llm
-      test: wippy.test:test
-    method: run_tests
-
-  # wippy.llm:route_flow_test
-  - name: route_flow_test
-    kind: function.lua
-    meta:
-      name: Route Driver Flow Test
-      type: test
-      group: LLM / General
-    source: file://route_flow_test.lua
-    imports:
-      llm: wippy.llm:llm
-      claude_generate: wippy.llm.claude:generate
-      claude_structured: wippy.llm.claude:structured_output
-      bedrock_generate: wippy.llm.bedrock:generate
-      bedrock_structured: wippy.llm.bedrock:structured_output
-      google_generate: wippy.llm.google:generate
-      google_structured: wippy.llm.google:structured_output
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm:output
   - name: output
     kind: library.lua
@@ -399,83 +346,15 @@ entries:
     modules:
       - logger
 
-  # wippy.llm:output_test
-  - name: output_test
-    kind: function.lua
-    meta:
-      name: Output Library Test
-      type: test
-      comment: Tests the output library functionality for formatting LLM responses
-      group: LLM / General
-      tags:
-        - llm
-        - output
-        - formatting
-        - tests
-      depends_on:
-        - ns:wippy.test
-    source: file://output_test.lua
-    modules:
-      - json
-      - time
-    imports:
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm:prompt
   - name: prompt
     kind: library.lua
     meta:
       type: library
       comment: Universal abstract prompt builder for LLM messages with multi-modal support
-      depends_on:
-        - ns:wippy.test
     source: file://prompt.lua
     modules:
       - json
-
-  # wippy.llm:prompt_test
-  - name: prompt_test
-    kind: function.lua
-    meta:
-      name: Prompt Library Test
-      type: test
-      comment: Tests the prompt library functionality for building LLM messages
-      group: LLM / General
-      tags:
-        - llm
-        - prompts
-        - messages
-        - tests
-      depends_on:
-        - ns:wippy.test
-    source: file://prompt_test.lua
-    modules:
-      - json
-    imports:
-      prompt: wippy.llm:prompt
-      test: wippy.test:test
-    method: run_tests
-
-  - name: process_security_test
-    kind: function.lua
-    meta:
-      name: LLM Process Security Test
-      type: test
-      comment: Ensures auto-start LLM background services run under the platform process scope.
-      group: LLM / General
-      tags:
-        - llm
-        - security
-        - process
-        - tests
-    source: file://process_security_test.lua
-    modules:
-      - registry
-    imports:
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm:provider
   - name: provider
