@@ -10,7 +10,7 @@
   "src/relay": "0.3.15",
   "src/security": "0.4.3",
   "src/terminal": "0.4.6",
-  "src/test": "0.4.19",
+  "src/test": "0.4.20",
   "src/usage": "0.3.25",
   "src/views": "0.5.11"
 }
