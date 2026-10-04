@@ -121,7 +121,7 @@ entries:
     imports:
       migration_api: wippy.migration:migration
 
-  # wippy.migration:core_test
+  # app:core_test
   - name: core_test
     kind: function.lua
     meta:
@@ -134,7 +134,7 @@ entries:
       core: wippy.migration:core
       test: wippy.test:test
 
-  # wippy.migration:registry_test
+  # app:registry_test
   - name: registry_test
     kind: function.lua
     meta:
