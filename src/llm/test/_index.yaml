@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.4.0"
+
   - name: env_storage
     kind: env.storage.os
     meta:
@@ -91,3 +98,1185 @@ entries:
     imports:
       test: wippy.test:test
       providers: wippy.llm.discovery:providers
+
+  # app:llm_test
+  - name: llm_test
+    kind: function.lua
+    meta:
+      name: LLM Library Test
+      type: test
+      comment: Tests the modern LLM library with smart model resolution and contract-based providers
+      group: LLM / General
+      tags:
+        - llm
+        - generation
+        - structured_output
+        - embeddings
+        - evaluate
+        - contracts
+        - providers
+        - tests
+    source: file://llm_test.lua
+    modules:
+      - json
+      - uuid
+      - security
+    imports:
+      llm: wippy.llm:llm
+      test: wippy.test:test
+    method: run_tests
+
+  # app:route_flow_test
+  - name: route_flow_test
+    kind: function.lua
+    meta:
+      name: Route Driver Flow Test
+      type: test
+      group: LLM / General
+    source: file://route_flow_test.lua
+    imports:
+      llm: wippy.llm:llm
+      claude_generate: wippy.llm.claude:generate
+      claude_structured: wippy.llm.claude:structured_output
+      bedrock_generate: wippy.llm.bedrock:generate
+      bedrock_structured: wippy.llm.bedrock:structured_output
+      google_generate: wippy.llm.google:generate
+      google_structured: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:output_test
+  - name: output_test
+    kind: function.lua
+    meta:
+      name: Output Library Test
+      type: test
+      comment: Tests the output library functionality for formatting LLM responses
+      group: LLM / General
+      tags:
+        - llm
+        - output
+        - formatting
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://output_test.lua
+    modules:
+      - json
+      - time
+    imports:
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:prompt_test
+  - name: prompt_test
+    kind: function.lua
+    meta:
+      name: Prompt Library Test
+      type: test
+      comment: Tests the prompt library functionality for building LLM messages
+      group: LLM / General
+      tags:
+        - llm
+        - prompts
+        - messages
+        - tests
+      depends_on:
+        - ns:wippy.test
+    source: file://prompt_test.lua
+    modules:
+      - json
+    imports:
+      prompt: wippy.llm:prompt
+      test: wippy.test:test
+    method: run_tests
+
+  - name: process_security_test
+    kind: function.lua
+    meta:
+      name: LLM Process Security Test
+      type: test
+      comment: Ensures auto-start LLM background services run under the platform process scope.
+      group: LLM / General
+      tags:
+        - llm
+        - security
+        - process
+        - tests
+    source: file://process_security_test.lua
+    modules:
+      - registry
+    imports:
+      test: wippy.test:test
+    method: run_tests
+
+  # Tests
+  - name: bedrock_sigv4_test
+    kind: function.lua
+    meta:
+      name: AWS SigV4 Signing Unit Tests
+      type: test
+      comment: Unit tests for AWS SigV4 request signing
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - sigv4
+        - aws
+        - bedrock
+    source: file://bedrock/sigv4_test.lua
+    modules:
+      - crypto
+      - hash
+      - time
+    imports:
+      sigv4: wippy.llm.bedrock:sigv4
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_client_test
+    kind: function.lua
+    meta:
+      name: Bedrock Client Unit Tests
+      type: test
+      comment: Unit tests for the Bedrock Runtime client covering transport retry
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - client
+        - bedrock
+    source: file://bedrock/client_test.lua
+    modules:
+      - json
+    imports:
+      bedrock_client: wippy.llm.bedrock:client
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_mapper_test
+    kind: function.lua
+    meta:
+      name: Bedrock Converse Mapper Unit Tests
+      type: test
+      comment: Unit tests for Converse API request/response mapping
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - mapper
+        - bedrock
+    source: file://bedrock/mapper_test.lua
+    modules:
+      - json
+    imports:
+      mapper: wippy.llm.bedrock:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_generate_test
+    kind: function.lua
+    meta:
+      name: Bedrock Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock text generation handler using Converse API
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - generation
+        - bedrock
+    source: file://bedrock/generate_test.lua
+    modules:
+      - json
+    imports:
+      generate_handler: wippy.llm.bedrock:generate
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_structured_output_test
+    kind: function.lua
+    meta:
+      name: Bedrock Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock structured output handler using Converse API
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - structured-output
+        - bedrock
+    source: file://bedrock/structured_output_test.lua
+    modules:
+      - json
+    imports:
+      structured_output_handler: wippy.llm.bedrock:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_embed_test
+    kind: function.lua
+    meta:
+      name: Bedrock Embed Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock embedding handler with Titan and Cohere format adapters
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - embed
+        - bedrock
+    source: file://bedrock/embed_test.lua
+    modules:
+      - json
+    imports:
+      embed_handler: wippy.llm.bedrock:embed
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_status_test
+    kind: function.lua
+    meta:
+      name: Bedrock Status Handler Unit Tests
+      type: test
+      comment: Unit tests for Bedrock status handler
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - status
+        - bedrock
+    source: file://bedrock/status_test.lua
+    imports:
+      status_handler: wippy.llm.bedrock:status
+      test: wippy.test:test
+    method: run_tests
+
+  - name: bedrock_integration_test
+    kind: function.lua
+    meta:
+      timeout: 300s
+      name: Bedrock Integration Tests
+      type: test
+      comment: Integration tests for Bedrock using real API calls
+      group: LLM / Drivers / Bedrock
+      tags:
+        - integration-test
+        - bedrock
+    source: file://bedrock/integration_test.lua
+    modules:
+      - json
+      - env
+    imports:
+      generate_handler: wippy.llm.bedrock:generate
+      status_handler: wippy.llm.bedrock:status
+      structured_output_handler: wippy.llm.bedrock:structured_output
+      embed_handler: wippy.llm.bedrock:embed
+      bedrock_credentials: wippy.llm.bedrock:credentials
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:claude_client_test
+  - name: claude_client_test
+    kind: function.lua
+    meta:
+      name: Claude Client Unit Tests
+      type: test
+      comment: Unit tests for Claude client covering context resolution, HTTP handling, streaming, and error parsing
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - client
+        - http
+        - streaming
+        - context
+        - claude
+    source: file://claude/client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      claude_client: wippy.llm.claude:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:claude_generate_test
+  - name: claude_generate_test
+    kind: function.lua
+    meta:
+      name: Claude Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for Claude text generation handler covering contract validation, streaming, and tool calling
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - generation
+        - streaming
+        - tools
+        - contract
+        - claude
+    source: file://claude/generate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      generate_handler: wippy.llm.claude:generate
+      test: wippy.test:test
+    method: run_tests
+
+  # app:claude_integration_test
+  - name: claude_integration_test
+    kind: function.lua
+    meta:
+      timeout: 300s
+      name: Claude Contract Integration Tests
+      type: test
+      comment: Integration tests for all Claude contract handlers using real API calls when enabled
+      group: LLM / Drivers / Claude
+      tags:
+        - integration-test
+        - api
+        - generation
+        - structured-output
+        - status
+        - contract
+        - claude
+    source: file://claude/integration_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      llm: wippy.llm:llm
+      generate_handler: wippy.llm.claude:generate
+      status_handler: wippy.llm.claude:status
+      structured_output_handler: wippy.llm.claude:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:claude_mapper_test
+  - name: claude_mapper_test
+    kind: function.lua
+    meta:
+      name: Claude Mapper Test
+      type: test
+      comment: Tests for Claude mapper functionality
+      group: LLM / Drivers / Claude
+      tags:
+        - llm
+        - claude
+        - mapper
+        - transformation
+    source: file://claude/mapper_test.lua
+    modules:
+      - json
+      - hash
+    imports:
+      prompt: wippy.llm:prompt
+      mapper: wippy.llm.claude:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:claude_status_test
+  - name: claude_status_test
+    kind: function.lua
+    meta:
+      name: Claude Status Handler Unit Tests
+      type: test
+      comment: Unit tests for Claude status handler covering health checks and connection testing
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+        - claude
+    source: file://claude/status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.claude:status
+      test: wippy.test:test
+    method: run_tests
+
+  # app:claude_structured_output_test
+  - name: claude_structured_output_test
+    kind: function.lua
+    meta:
+      name: Claude Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for Claude structured output handler covering schema validation and tool-based structured generation
+      group: LLM / Drivers / Claude
+      tags:
+        - unit-test
+        - structured-output
+        - schema
+        - tools
+        - contract
+        - claude
+    source: file://claude/structured_output_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - hash
+    imports:
+      structured_output_handler: wippy.llm.claude:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:discovery_models_test
+  - name: discovery_models_test
+    kind: function.lua
+    meta:
+      name: Models Discovery Library Test
+      type: test
+      comment: Tests the model discovery library functionality for finding models and classes
+      group: LLM / Discovery
+      tags:
+        - llm
+        - models
+        - discovery
+        - classes
+        - tests
+    source: file://discovery/models_test.lua
+    modules:
+      - registry
+    imports:
+      models: wippy.llm.discovery:models
+      test: wippy.test:test
+    method: run_tests
+
+  # app:discovery_providers_test
+  - name: discovery_providers_test
+    kind: function.lua
+    meta:
+      name: Providers Discovery Library Test
+      type: test
+      comment: Tests the provider discovery library functionality for listing and opening providers
+      group: LLM / Discovery
+      tags:
+        - llm
+        - providers
+        - discovery
+        - contracts
+        - tests
+    source: file://discovery/providers_test.lua
+    modules:
+      - registry
+      - contract
+    imports:
+      providers: wippy.llm.discovery:providers
+      test: wippy.test:test
+    method: run_tests
+
+  # app:e2e_integration_test
+  - name: e2e_integration_test
+    kind: function.lua
+    meta:
+      timeout: 300s
+      name: LLM E2E Integration Test
+      type: test
+      comment: End-to-end integration test for LLM provider calls through contract routing
+      group: LLM / E2E
+      tags:
+        - llm
+        - e2e
+        - integration
+        - providers
+    source: file://e2e/integration_test.lua
+    modules:
+      - env
+    imports:
+      bedrock_credentials: wippy.llm.bedrock:credentials
+      llm: wippy.llm:llm
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_client_test
+  - name: google_client_test
+    kind: function.lua
+    meta:
+      name: Google low-level HTTP client Unit Tests
+      type: test
+      comment: Unit tests for Google low-level HTTP client
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - google_http_client
+    source: file://google/client_test.lua
+    modules:
+      - json
+    imports:
+      google_client: wippy.llm.google:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_config_test
+  - name: google_config_test
+    kind: function.lua
+    meta:
+      name: Google configuration Unit Tests
+      type: test
+      comment: Unit tests for Google configuration
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - configuration
+    source: file://google/config_test.lua
+    modules:
+      - base64
+      - json
+    imports:
+      google_config: wippy.llm.google:config
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_generate_test
+  - name: google_generate_test
+    kind: function.lua
+    meta:
+      name: Google Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for Google generate handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - generation
+    source: file://google/generate_test.lua
+    modules:
+      - base64
+      - json
+    imports:
+      google_generate: wippy.llm.google:generate
+      google_config: wippy.llm.google:config
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_integration_test
+  - name: google_integration_test
+    kind: function.lua
+    meta:
+      timeout: 300s
+      name: Google Integration Tests
+      type: test
+      comment: Integration tests for Google LLM driver
+      group: LLM / Drivers / Google
+      tags:
+        - integration-test
+        - google
+    source: file://google/integration_test.lua
+    modules:
+      - env
+    imports:
+      google_generate: wippy.llm.google:generate
+      google_structured_output: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_mapper_test
+  - name: google_mapper_test
+    kind: function.lua
+    meta:
+      name: Google Mapper Unit Tests
+      type: test
+      comment: Unit tests for Google mapper
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - mapper
+    source: file://google/mapper_test.lua
+    imports:
+      google_mapper: wippy.llm.google:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_status_test
+  - name: google_status_test
+    kind: function.lua
+    meta:
+      name: Google provider status handler Unit Tests
+      type: test
+      comment: Unit tests for Google provider status handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - status
+    source: file://google/status_test.lua
+    imports:
+      google_status: wippy.llm.google:status
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_structured_output_test
+  - name: google_structured_output_test
+    kind: function.lua
+    meta:
+      name: Google structured output handler Unit Tests
+      type: test
+      comment: Unit tests for Google structured output handler
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - structured-output
+    source: file://google/structured_output_test.lua
+    imports:
+      google_structured_output: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_generative_ai_client_test
+  - name: google_generative_ai_client_test
+    kind: function.lua
+    meta:
+      name: Google Generative AI Client Unit Tests
+      type: test
+      comment: Unit tests for Google Generative AI client
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - generative_ai_client
+    source: file://google/generative_ai/client_test.lua
+    modules:
+      - json
+    imports:
+      generative_ai_client: wippy.llm.google.generative_ai:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:google_vertex_client_test
+  - name: google_vertex_client_test
+    kind: function.lua
+    meta:
+      name: Google Vertex AI Client Unit Tests
+      type: test
+      comment: Unit tests for Google Vertex AI client
+      group: LLM / Drivers / Google
+      tags:
+        - unit-test
+        - vertex_ai_client
+    source: file://google/vertex/client_test.lua
+    modules:
+      - json
+    imports:
+      vertex_client: wippy.llm.google.vertex:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_client_test
+  - name: openai_client_test
+    kind: function.lua
+    meta:
+      name: OpenAI Client Unit Tests
+      type: test
+      comment: Unit tests for OpenAI client covering context resolution, HTTP handling, streaming, and error parsing
+      group: LLM / Drivers / OpenAI
+      tags:
+        - unit-test
+        - client
+        - http
+        - streaming
+        - context
+    source: file://openai/client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      openai_client: wippy.llm.openai:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_embed_test
+  - name: openai_embed_test
+    kind: function.lua
+    meta:
+      name: OpenAI Embeddings Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI embeddings handler covering single and batch embedding generation via contract
+      group: LLM / Drivers / OpenAI
+      tags:
+        - unit-test
+        - embeddings
+        - batch
+        - contract
+    source: file://openai/embed_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      embed_handler: wippy.llm.openai:embed
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_generate_test
+  - name: openai_generate_test
+    kind: function.lua
+    meta:
+      name: OpenAI Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI text generation handler covering contract validation, streaming, and tool calling
+      group: LLM / Drivers / OpenAI
+      tags:
+        - unit-test
+        - generation
+        - streaming
+        - tools
+        - contract
+    source: file://openai/generate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      generate_handler: wippy.llm.openai:generate
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_integration_test
+  - name: openai_integration_test
+    kind: function.lua
+    meta:
+      timeout: 300s
+      name: OpenAI Contract Integration Tests
+      type: test
+      comment: Integration tests for all OpenAI contract handlers using real API calls when enabled
+      group: LLM / Drivers / OpenAI
+      tags:
+        - integration-test
+        - api
+        - generation
+        - embeddings
+        - structured-output
+        - status
+        - contract
+    source: file://openai/integration_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      embed_handler: wippy.llm.openai:embed
+      generate_handler: wippy.llm.openai:generate
+      status_handler: wippy.llm.openai:status
+      structured_output_handler: wippy.llm.openai:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_mapper_test
+  - name: openai_mapper_test
+    kind: function.lua
+    meta:
+      name: OpenAI Mapper Unit Tests
+      type: test
+      comment: Unit tests for OpenAI mapper covering tool mapping, options mapping, response mapping, and error handling
+      group: LLM / Drivers / OpenAI
+      tags:
+        - unit-test
+        - mapper
+        - tools
+        - options
+        - responses
+    source: file://openai/mapper_test.lua
+    modules:
+      - json
+    imports:
+      openai_mapper: wippy.llm.openai:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_status_test
+  - name: openai_status_test
+    kind: function.lua
+    meta:
+      name: OpenAI Status Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI status handler covering health checks and connection testing
+      group: LLM / Drivers / OpenAI
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+    source: file://openai/status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.openai:status
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_structured_output_test
+  - name: openai_structured_output_test
+    kind: function.lua
+    meta:
+      name: OpenAI Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI structured output handler covering schema validation and JSON parsing via contract
+      group: LLM / Drivers / OpenAI
+      tags:
+        - unit-test
+        - structured-output
+        - schema
+        - json
+        - contract
+    source: file://openai/structured_output_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - hash
+    imports:
+      structured_output_handler: wippy.llm.openai:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_client_test
+  - name: openai_compat_client_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Client Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible client covering context resolution, HTTP, streaming, and error parsing
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - client
+        - http
+        - streaming
+        - context
+    source: file://openai_compat/client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      openai_client: wippy.llm.openai_compat:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_embed_test
+  - name: openai_compat_embed_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Embeddings Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible embeddings handler covering single and batch generation
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - embeddings
+        - batch
+        - contract
+    source: file://openai_compat/embed_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      embed_handler: wippy.llm.openai_compat:embed
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_generate_test
+  - name: openai_compat_generate_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Generate Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible text generation handler covering validation, streaming, and tool calling
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - generation
+        - streaming
+        - tools
+        - contract
+    source: file://openai_compat/generate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      generate_handler: wippy.llm.openai_compat:generate
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_integration_test
+  - name: openai_compat_integration_test
+    kind: function.lua
+    meta:
+      timeout: 300s
+      name: OpenAI-Compatible Integration Tests
+      type: test
+      comment: Integration tests for OpenAI-compatible contract handlers using real API calls when enabled
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - integration-test
+        - api
+        - generation
+        - embeddings
+        - structured-output
+        - status
+        - contract
+    source: file://openai_compat/integration_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      embed_handler: wippy.llm.openai_compat:embed
+      generate_handler: wippy.llm.openai_compat:generate
+      status_handler: wippy.llm.openai_compat:status
+      structured_output_handler: wippy.llm.openai_compat:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_mapper_test
+  - name: openai_compat_mapper_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Mapper Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible mapper covering tool mapping, options, response mapping, and error handling
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - mapper
+        - tools
+        - options
+        - responses
+    source: file://openai_compat/mapper_test.lua
+    modules:
+      - json
+    imports:
+      openai_mapper: wippy.llm.openai_compat:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_status_test
+  - name: openai_compat_status_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Status Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible status handler covering health checks and connection testing
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+    source: file://openai_compat/status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.openai_compat:status
+      test: wippy.test:test
+    method: run_tests
+
+  # app:openai_compat_structured_output_test
+  - name: openai_compat_structured_output_test
+    kind: function.lua
+    meta:
+      name: OpenAI-Compatible Structured Output Handler Unit Tests
+      type: test
+      comment: Unit tests for OpenAI-compatible structured output handler covering schema validation and JSON parsing
+      group: LLM / Drivers / OpenAI Compatible
+      tags:
+        - unit-test
+        - structured-output
+        - schema
+        - json
+        - contract
+    source: file://openai_compat/structured_output_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - hash
+    imports:
+      structured_output_handler: wippy.llm.openai_compat:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:typesafe_client_test
+  - name: typesafe_client_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Client Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe client covering context resolution, HTTP, retry, and error parsing
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - client
+        - http
+        - retry
+        - context
+    source: file://typesafe/client_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+      - http_client
+    imports:
+      typesafe_client: wippy.llm.typesafe:client
+      test: wippy.test:test
+    method: run_tests
+
+  # app:typesafe_integration_test
+  - name: typesafe_integration_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Integration Tests
+      type: test
+      comment: Integration tests driving the TypeSafe contract binding against the real API when enabled
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - integration-test
+        - api
+        - evaluate
+        - status
+        - contract
+    source: file://typesafe/integration_test.lua
+    modules:
+      - env
+      - contract
+    imports:
+      test: wippy.test:test
+    method: run_tests
+
+  # app:typesafe_mapper_test
+  - name: typesafe_mapper_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Mapper Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe mapper covering questions, readings, tokens, and error classification
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - mapper
+        - evaluate
+        - readings
+    source: file://typesafe/mapper_test.lua
+    imports:
+      typesafe_mapper: wippy.llm.typesafe:mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  # app:typesafe_status_test
+  - name: typesafe_status_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Status Handler Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe status handler covering health checks and connection testing
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - status
+        - health-check
+        - contract
+    source: file://typesafe/status_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      status_handler: wippy.llm.typesafe:status
+      test: wippy.test:test
+    method: run_tests
+
+  # app:typesafe_evaluate_test
+  - name: typesafe_evaluate_test
+    kind: function.lua
+    meta:
+      name: TypeSafe Evaluation Handler Unit Tests
+      type: test
+      comment: Unit tests for the TypeSafe evaluate handler covering validation, request building, readings, and errors
+      group: LLM / Drivers / TypeSafe
+      tags:
+        - unit-test
+        - evaluate
+        - readings
+        - contract
+    source: file://typesafe/evaluate_test.lua
+    modules:
+      - json
+      - env
+      - ctx
+    imports:
+      evaluate_handler: wippy.llm.typesafe:evaluate
+      test: wippy.test:test
+    method: run_tests
+
+  # app:util_compress_test
+  - name: util_compress_test
+    kind: function.lua
+    meta:
+      name: Compress Library Test
+      type: test
+      comment: Tests the intelligent content compression library functionality for adapting to model context limits
+      group: LLM / Utils
+      tags:
+        - llm
+        - compression
+        - summarization
+        - text-processing
+        - tests
+    source: file://util/compress_test.lua
+    modules:
+      - env
+      - text
+    imports:
+      compress: wippy.llm.util:compress
+      llm: wippy.llm:llm
+      models: wippy.llm.discovery:models
+      test: wippy.test:test
+    method: run_tests
+
+  # app:util_transport_test
+  - name: util_transport_test
+    kind: function.lua
+    meta:
+      name: Provider Transport Test
+      type: test
+      comment: Tests config lookup, method dispatch, retry and health classification of the shared provider transport
+      group: LLM / Utils
+      tags:
+        - llm
+        - http
+        - retry
+        - tests
+    source: file://util/transport_test.lua
+    imports:
+      transport: wippy.llm.util:transport
+      test: wippy.test:test
+    method: run_tests
+
+  - name: util_route_test
+    kind: function.lua
+    meta:
+      name: Route Facts Test
+      type: test
+      group: LLM / Utils
+    source: file://util/route_test.lua
+    imports:
+      route: wippy.llm.util:route
+      test: wippy.test:test
+    method: run_tests

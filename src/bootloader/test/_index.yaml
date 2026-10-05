@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.3.0"
+
   - name: envs
     kind: env.storage.memory
     meta:
@@ -72,4 +79,18 @@ entries:
     method: run_tests
     imports:
       bootloader: wippy.bootloader:bootloader
+      test: wippy.test:test
+
+  # app:bootloader_test
+  - name: bootloader_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: bootloader
+      comment: Tests for bootloader utilities and registry
+    source: file://bootloader_test.lua
+    method: run
+    imports:
+      bootloader: wippy.bootloader:bootloader
+      bootloader_registry: wippy.bootloader:bootloader_registry
       test: wippy.test:test

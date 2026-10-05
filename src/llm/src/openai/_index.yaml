@@ -34,31 +34,6 @@ entries:
       transport: wippy.llm.util:transport
       openai_mapper: wippy.llm.openai:mapper
 
-  # wippy.llm.openai:client_test
-  - name: client_test
-    kind: function.lua
-    meta:
-      name: OpenAI Client Unit Tests
-      type: test
-      comment: Unit tests for OpenAI client covering context resolution, HTTP handling, streaming, and error parsing
-      group: LLM / Drivers / OpenAI
-      tags:
-        - unit-test
-        - client
-        - http
-        - streaming
-        - context
-    source: file://client_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-      - http_client
-    imports:
-      openai_client: wippy.llm.openai:client
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.openai:driver
   - name: driver
     kind: contract.binding
@@ -123,29 +98,6 @@ entries:
     pool:
       max_size: 50
 
-  # wippy.llm.openai:embed_test
-  - name: embed_test
-    kind: function.lua
-    meta:
-      name: OpenAI Embeddings Handler Unit Tests
-      type: test
-      comment: Unit tests for OpenAI embeddings handler covering single and batch embedding generation via contract
-      group: LLM / Drivers / OpenAI
-      tags:
-        - unit-test
-        - embeddings
-        - batch
-        - contract
-    source: file://embed_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      embed_handler: wippy.llm.openai:embed
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.openai:generate
   - name: generate
     kind: function.lua
@@ -162,60 +114,6 @@ entries:
     pool:
       max_size: 50
 
-  # wippy.llm.openai:generate_test
-  - name: generate_test
-    kind: function.lua
-    meta:
-      name: OpenAI Generate Handler Unit Tests
-      type: test
-      comment: Unit tests for OpenAI text generation handler covering contract validation, streaming, and tool calling
-      group: LLM / Drivers / OpenAI
-      tags:
-        - unit-test
-        - generation
-        - streaming
-        - tools
-        - contract
-    source: file://generate_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      generate_handler: wippy.llm.openai:generate
-      test: wippy.test:test
-    method: run_tests
-
-  # wippy.llm.openai:integration_test
-  - name: integration_test
-    kind: function.lua
-    meta:
-      timeout: 300s
-      name: OpenAI Contract Integration Tests
-      type: test
-      comment: Integration tests for all OpenAI contract handlers using real API calls when enabled
-      group: LLM / Drivers / OpenAI
-      tags:
-        - integration-test
-        - api
-        - generation
-        - embeddings
-        - structured-output
-        - status
-        - contract
-    source: file://integration_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      embed_handler: wippy.llm.openai:embed
-      generate_handler: wippy.llm.openai:generate
-      status_handler: wippy.llm.openai:status
-      structured_output_handler: wippy.llm.openai:structured_output
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.openai:mapper
   - name: mapper
     kind: library.lua
@@ -227,29 +125,6 @@ entries:
     imports:
       output: wippy.llm:output
       route: wippy.llm.util:route
-
-  # wippy.llm.openai:mapper_test
-  - name: mapper_test
-    kind: function.lua
-    meta:
-      name: OpenAI Mapper Unit Tests
-      type: test
-      comment: Unit tests for OpenAI mapper covering tool mapping, options mapping, response mapping, and error handling
-      group: LLM / Drivers / OpenAI
-      tags:
-        - unit-test
-        - mapper
-        - tools
-        - options
-        - responses
-    source: file://mapper_test.lua
-    modules:
-      - json
-    imports:
-      openai_mapper: wippy.llm.openai:mapper
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.openai:organization
   - name: organization
@@ -298,29 +173,6 @@ entries:
     pool:
       max_size: 10
 
-  # wippy.llm.openai:status_test
-  - name: status_test
-    kind: function.lua
-    meta:
-      name: OpenAI Status Handler Unit Tests
-      type: test
-      comment: Unit tests for OpenAI status handler covering health checks and connection testing
-      group: LLM / Drivers / OpenAI
-      tags:
-        - unit-test
-        - status
-        - health-check
-        - contract
-    source: file://status_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      status_handler: wippy.llm.openai:status
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.openai:structured_output
   - name: structured_output
     kind: function.lua
@@ -337,31 +189,6 @@ entries:
     method: handler
     pool:
       max_size: 25
-
-  # wippy.llm.openai:structured_output_test
-  - name: structured_output_test
-    kind: function.lua
-    meta:
-      name: OpenAI Structured Output Handler Unit Tests
-      type: test
-      comment: Unit tests for OpenAI structured output handler covering schema validation and JSON parsing via contract
-      group: LLM / Drivers / OpenAI
-      tags:
-        - unit-test
-        - structured-output
-        - schema
-        - json
-        - contract
-    source: file://structured_output_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-      - hash
-    imports:
-      structured_output_handler: wippy.llm.openai:structured_output
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.openai:timeout
   - name: timeout

@@ -118,25 +118,6 @@ entries:
       transport: wippy.llm.util:transport
       google_mapper: wippy.llm.google:mapper
 
-  # wippy.llm.google:client_test
-  - name: client_test
-    kind: function.lua
-    meta:
-      name: Google low-level HTTP client Unit Tests
-      type: test
-      comment: Unit tests for Google low-level HTTP client
-      group: LLM / Drivers / Google
-      tags:
-        - unit-test
-        - google_http_client
-    source: file://client_test.lua
-    modules:
-      - json
-    imports:
-      google_client: wippy.llm.google:client
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.google:config
   - name: config
     kind: library.lua
@@ -155,26 +136,6 @@ entries:
     imports:
       transport: wippy.llm.util:transport
 
-  # wippy.llm.google:config_test
-  - name: config_test
-    kind: function.lua
-    meta:
-      name: Google configuration Unit Tests
-      type: test
-      comment: Unit tests for Google configuration
-      group: LLM / Drivers / Google
-      tags:
-        - unit-test
-        - configuration
-    source: file://config_test.lua
-    modules:
-      - base64
-      - json
-    imports:
-      google_config: wippy.llm.google:config
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.google:generate
   - name: generate
     kind: function.lua
@@ -190,48 +151,6 @@ entries:
       google_config: wippy.llm.google:config
     method: handler
 
-  # wippy.llm.google:generate_test
-  - name: generate_test
-    kind: function.lua
-    meta:
-      name: Google Generate Handler Unit Tests
-      type: test
-      comment: Unit tests for Google generate handler
-      group: LLM / Drivers / Google
-      tags:
-        - unit-test
-        - generation
-    source: file://generate_test.lua
-    modules:
-      - base64
-      - json
-    imports:
-      google_generate: wippy.llm.google:generate
-      google_config: wippy.llm.google:config
-      test: wippy.test:test
-    method: run_tests
-
-  # wippy.llm.google:integration_test
-  - name: integration_test
-    kind: function.lua
-    meta:
-      timeout: 300s
-      name: Google Integration Tests
-      type: test
-      comment: Integration tests for Google LLM driver
-      group: LLM / Drivers / Google
-      tags:
-        - integration-test
-        - google
-    source: file://integration_test.lua
-    modules:
-      - env
-    imports:
-      google_generate: wippy.llm.google:generate
-      google_structured_output: wippy.llm.google:structured_output
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.google:mapper
   - name: mapper
     kind: library.lua
@@ -244,24 +163,6 @@ entries:
     imports:
       output: wippy.llm:output
       route: wippy.llm.util:route
-
-  # wippy.llm.google:mapper_test
-  - name: mapper_test
-    kind: function.lua
-    meta:
-      name: Google Mapper Unit Tests
-      type: test
-      comment: Unit tests for Google mapper
-      group: LLM / Drivers / Google
-      tags:
-        - unit-test
-        - mapper
-    source: file://mapper_test.lua
-    imports:
-      google_mapper: wippy.llm.google:mapper
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.google:status
   - name: status
@@ -276,23 +177,6 @@ entries:
       google_config: wippy.llm.google:config
       transport: wippy.llm.util:transport
     method: handler
-
-  # wippy.llm.google:status_test
-  - name: status_test
-    kind: function.lua
-    meta:
-      name: Google provider status handler Unit Tests
-      type: test
-      comment: Unit tests for Google provider status handler
-      group: LLM / Drivers / Google
-      tags:
-        - unit-test
-        - status
-    source: file://status_test.lua
-    imports:
-      google_status: wippy.llm.google:status
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.google:structured_output
   - name: structured_output
@@ -310,20 +194,3 @@ entries:
       google_mapper: wippy.llm.google:mapper
       output: wippy.llm:output
     method: handler
-
-  # wippy.llm.google:structured_output_test
-  - name: structured_output_test
-    kind: function.lua
-    meta:
-      name: Google structured output handler Unit Tests
-      type: test
-      comment: Unit tests for Google structured output handler
-      group: LLM / Drivers / Google
-      tags:
-        - unit-test
-        - structured-output
-    source: file://structured_output_test.lua
-    imports:
-      google_structured_output: wippy.llm.google:structured_output
-      test: wippy.test:test
-    method: run_tests

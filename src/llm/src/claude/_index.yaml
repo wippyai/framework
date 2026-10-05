@@ -42,32 +42,6 @@ entries:
       output: wippy.llm:output
       transport: wippy.llm.util:transport
 
-  # wippy.llm.claude:client_test
-  - name: client_test
-    kind: function.lua
-    meta:
-      name: Claude Client Unit Tests
-      type: test
-      comment: Unit tests for Claude client covering context resolution, HTTP handling, streaming, and error parsing
-      group: LLM / Drivers / Claude
-      tags:
-        - unit-test
-        - client
-        - http
-        - streaming
-        - context
-        - claude
-    source: file://client_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-      - http_client
-    imports:
-      claude_client: wippy.llm.claude:client
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.claude:driver
   - name: driver
     kind: contract.binding
@@ -129,61 +103,6 @@ entries:
       route: wippy.llm.util:route
     method: handler
 
-  # wippy.llm.claude:generate_test
-  - name: generate_test
-    kind: function.lua
-    meta:
-      name: Claude Generate Handler Unit Tests
-      type: test
-      comment: Unit tests for Claude text generation handler covering contract validation, streaming, and tool calling
-      group: LLM / Drivers / Claude
-      tags:
-        - unit-test
-        - generation
-        - streaming
-        - tools
-        - contract
-        - claude
-    source: file://generate_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      generate_handler: wippy.llm.claude:generate
-      test: wippy.test:test
-    method: run_tests
-
-  # wippy.llm.claude:integration_test
-  - name: integration_test
-    kind: function.lua
-    meta:
-      timeout: 300s
-      name: Claude Contract Integration Tests
-      type: test
-      comment: Integration tests for all Claude contract handlers using real API calls when enabled
-      group: LLM / Drivers / Claude
-      tags:
-        - integration-test
-        - api
-        - generation
-        - structured-output
-        - status
-        - contract
-        - claude
-    source: file://integration_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      llm: wippy.llm:llm
-      generate_handler: wippy.llm.claude:generate
-      status_handler: wippy.llm.claude:status
-      structured_output_handler: wippy.llm.claude:structured_output
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.claude:mapper
   - name: mapper
     kind: library.lua
@@ -198,30 +117,6 @@ entries:
       prompt: wippy.llm:prompt
       output: wippy.llm:output
       route: wippy.llm.util:route
-
-  # wippy.llm.claude:mapper_test
-  - name: mapper_test
-    kind: function.lua
-    meta:
-      name: Claude Mapper Test
-      type: test
-      comment: Tests for Claude mapper functionality
-      group: LLM / Drivers / Claude
-      tags:
-        - llm
-        - claude
-        - mapper
-        - transformation
-    source: file://mapper_test.lua
-    modules:
-      - json
-      - hash
-    imports:
-      prompt: wippy.llm:prompt
-      mapper: wippy.llm.claude:mapper
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.claude:provider
   - name: provider
@@ -263,30 +158,6 @@ entries:
       transport: wippy.llm.util:transport
     method: handler
 
-  # wippy.llm.claude:status_test
-  - name: status_test
-    kind: function.lua
-    meta:
-      name: Claude Status Handler Unit Tests
-      type: test
-      comment: Unit tests for Claude status handler covering health checks and connection testing
-      group: LLM / Drivers / Claude
-      tags:
-        - unit-test
-        - status
-        - health-check
-        - contract
-        - claude
-    source: file://status_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      status_handler: wippy.llm.claude:status
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.claude:structured_output
   - name: structured_output
     kind: function.lua
@@ -303,32 +174,6 @@ entries:
       output: wippy.llm:output
       route: wippy.llm.util:route
     method: handler
-
-  # wippy.llm.claude:structured_output_test
-  - name: structured_output_test
-    kind: function.lua
-    meta:
-      name: Claude Structured Output Handler Unit Tests
-      type: test
-      comment: Unit tests for Claude structured output handler covering schema validation and tool-based structured generation
-      group: LLM / Drivers / Claude
-      tags:
-        - unit-test
-        - structured-output
-        - schema
-        - tools
-        - contract
-        - claude
-    source: file://structured_output_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-      - hash
-    imports:
-      structured_output_handler: wippy.llm.claude:structured_output
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.claude:timeout
   - name: timeout

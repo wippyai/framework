@@ -1,6 +1,6 @@
 directories:
     modules: .wippy
-    src: ../src
+    src: ..
 modules:
     - name: wippy/terminal
       version: 0.4.2

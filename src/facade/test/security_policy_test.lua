@@ -1,7 +1,7 @@
 local test = require("test")
 local security = require("security")
 
-local function load_policy(id)
+local function load_policy(id: string)
     local policy, err = security.policy(id)
     if not policy then
         error("missing policy " .. id .. ": " .. tostring(err))
@@ -9,7 +9,7 @@ local function load_policy(id)
     return policy
 end
 
-local function decision(policy_id, action, resource)
+local function decision(policy_id: string, action: string, resource: string): string
     local actor = security.new_actor("wippy.facade:test", {})
     local result = load_policy(policy_id):evaluate(actor, action, resource, {})
     if result == "allow" or result == "deny" then

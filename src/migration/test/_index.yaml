@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.3.0"
+
   - name: db
     kind: db.sql.sqlite
     meta:
@@ -113,3 +120,44 @@ entries:
     modules: [time]
     imports:
       migration_api: wippy.migration:migration
+
+  # app:core_test
+  - name: core_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-core
+      comment: Tests for migration core DSL
+    source: file://core_test.lua
+    method: run
+    imports:
+      core: wippy.migration:core
+      test: wippy.test:test
+
+  # app:registry_test
+  - name: registry_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-registry
+      comment: Tests for migration registry queries
+    source: file://registry_test.lua
+    method: run
+    imports:
+      migration_registry: wippy.migration:registry
+      test: wippy.test:test
+
+  - name: runner_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-runner
+      comment: SQL rollback ordering and filtering regressions
+    source: file://runner_test.lua
+    method: run
+    modules: [sql]
+    imports:
+      runner: wippy.migration:runner
+      repository: wippy.migration:repository
+      migration_registry: wippy.migration:registry
+      test: wippy.test:test

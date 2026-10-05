@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.2.0"
+
   - name: user
     kind: registry.entry
     meta:
@@ -11,3 +18,69 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
+
+  # app:consts_test
+  - name: consts_test
+    kind: function.lua
+    meta:
+      name: Relay Constants Test
+      type: test
+      suite: relay
+      comment: Tests relay configuration constants and derived values
+      group: Relay
+      tags:
+        - relay
+        - constants
+        - tests
+    source: file://consts_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules:
+      - env
+      - time
+    method: run
+
+  # app:user_test
+  - name: user_test
+    kind: function.lua
+    meta:
+      name: Relay User Hub Test
+      type: test
+      suite: relay
+      comment: Tests user-hub websocket payload compatibility.
+      group: Relay
+      tags:
+        - relay
+        - user
+        - tests
+    source: file://user_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+      user: wippy.relay:user
+    modules:
+      - time
+      - security
+    method: run
+
+  # app:central_test
+  - name: central_test
+    kind: function.lua
+    meta:
+      name: Relay Central Identity Test
+      type: test
+      suite: relay
+      comment: Tests user identity and scope propagation from websocket metadata.
+      group: Relay
+      tags:
+        - relay
+        - identity
+        - tests
+    source: file://central_test.lua
+    imports:
+      central: wippy.relay:central
+      test: wippy.test:test
+    modules:
+      - time
+    method: run
