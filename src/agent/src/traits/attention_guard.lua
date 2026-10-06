@@ -12,7 +12,7 @@ local function read_history(payload)
     if type(pointer) ~= "table" or type(pointer.binding) ~= "string" or pointer.contract ~= "wippy.agent:run_context" then
         return nil
     end
-    local definition = contract.get(pointer.contract)
+    local definition = contract.get("wippy.agent:run_context")
     if not definition then return nil end
     local instance = definition:open(pointer.binding)
     if not instance then return nil end
