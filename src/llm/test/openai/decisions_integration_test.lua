@@ -17,8 +17,11 @@ local function define_tests()
             test.not_nil(err)
             test.contains(err:message(), "temperature")
             local compat, compat_err = evaluator:open("wippy.llm.openai_compat:driver")
-            test.is_nil(compat)
-            test.not_nil(compat_err)
+            test.is_nil(compat_err)
+            assert(compat)
+            -- Opening a binding is lazy. Methods come from the contracts the
+            -- binding actually implements, so unsupported evaluation is absent.
+            test.is_nil(compat.evaluate)
         end)
 
         it("evaluates predicates, choices and scores through the native OpenAI binding", function()
