@@ -9,11 +9,11 @@ entries:
       description: Application bootloader and initialization orchestrator
 
   # Dependencies
-  - name: dep.wippy.test
+  - name: dep.wippy.security
     kind: "ns.dependency"
     meta:
-      description: "Testing component"
-    component: "wippy/test"
+      description: "Security policy groups referenced by background services"
+    component: "wippy/security"
     version: ">=v0.3.0"
 
   # Requirements
@@ -65,23 +65,10 @@ entries:
     host: app:processes
     lifecycle:
       auto_start: true
+      startup: complete
       restart:
         initial_delay: 1s
       security:
         groups:
           - wippy.security:process
     process: bootloader
-
-  # wippy.bootloader:bootloader_test
-  - name: bootloader_test
-    kind: function.lua
-    meta:
-      type: test
-      suite: bootloader
-      comment: Tests for bootloader utilities and registry
-    source: file://bootloader_test.lua
-    method: run
-    imports:
-      bootloader: wippy.bootloader:bootloader
-      bootloader_registry: wippy.bootloader:bootloader_registry
-      test: wippy.test:test

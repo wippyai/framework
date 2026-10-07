@@ -1,6 +1,7 @@
 local client = require("google_client")
 local config = require("google_config")
 local json = require("json")
+local transport = require("transport")
 
 local generative_ai_client = {
     _client = client,
@@ -41,7 +42,8 @@ function generative_ai_client.request(contract_args)
         base_url = base_url .. ":" .. contract_args.endpoint_path
     end
 
-    local response, err = generative_ai_client._client.request(contract_args.options.method, base_url, options)
+    local retry = transport.request_retry(contract_args.options.retry, generative_ai_client._config.get_retry())
+    local response, err = generative_ai_client._client.request(contract_args.options.method, base_url, options, retry)
 
     if err then
         return err

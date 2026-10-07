@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: "*"
+
   - name: gateway
     kind: http.service
     meta:
@@ -49,7 +56,7 @@ entries:
     modules:
       - security
 
-  - name: config_handler_test
+  - name: config_dependency_test
     kind: function.lua
     meta:
       type: test
@@ -62,3 +69,33 @@ entries:
     modules:
       - json
       - registry
+
+  # Tests
+  - name: config_handler_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Config handler tests
+    source: file://config_handler_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - json
+      - registry
+
+  - name: theming_helpers_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Tests for theming_helpers (CSS generation + file-ref resolution)
+    source: file://theming_helpers_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      theming_helpers: wippy.facade:theming_helpers
+    modules:
+      - fs
+      - json

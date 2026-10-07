@@ -1,7 +1,17 @@
 local json = require("json")
 local output = require("output")
+local route = require("route")
 
 local openai_mapper = {}
+
+openai_mapper.CAPABILITY = {
+    name = "OpenAI",
+    defaults = { thinking = "none" },
+    supported = {
+        thinking = { adaptive = true, none = true },
+        structured_output = { native = true }
+    }
+}
 
 -- Error type mapping from HTTP status codes and message content
 local function map_error_type(status_code, message)
@@ -224,7 +234,7 @@ function openai_mapper.map_messages(contract_messages, options)
                     table.insert(items, {
                         type = "function_call_output",
                         call_id = call_id,
-                        output = out_text
+                        output = msg.is_error == true and json.encode({ error = out_text }) or out_text
                     })
                 end
             end
@@ -293,11 +303,15 @@ local function map_thinking_effort(effort)
     return "xhigh"
 end
 
-function openai_mapper.map_options(contract_options)
+function openai_mapper.map_options(contract_options, accepts): (table, string?)
+    local unsupported = route.unsupported_fact_error(accepts, openai_mapper.CAPABILITY)
+    if unsupported then
+        return {}, unsupported
+    end
     if not contract_options then return {} end
 
     local opts = {}
-    local is_reasoning_request = contract_options.reasoning_model_request == true
+    local is_reasoning_request = route.fact(accepts, "thinking", openai_mapper.CAPABILITY) == "adaptive"
 
     if contract_options.max_tokens then
         opts.max_output_tokens = contract_options.max_tokens
@@ -311,13 +325,12 @@ function openai_mapper.map_options(contract_options)
         if next(reasoning) then
             opts.reasoning = reasoning
         end
-    else
-        if contract_options.temperature ~= nil then
-            opts.temperature = contract_options.temperature
-        end
-        if contract_options.top_p ~= nil then
-            opts.top_p = contract_options.top_p
-        end
+    end
+    if contract_options.temperature ~= nil then
+        opts.temperature = contract_options.temperature
+    end
+    if contract_options.top_p ~= nil then
+        opts.top_p = contract_options.top_p
     end
 
     if contract_options.user then
@@ -374,6 +387,14 @@ local function collect_message_text(message_items)
         end
     end
     return text, refusal
+end
+
+-- Collect the assistant text carried by the `message` items of a Responses
+-- output array. Shared with the streaming client, which reads it from the
+-- terminal response when a backend sends no output_text deltas.
+function openai_mapper.collect_output_text(output_items): (string, string?)
+    local messages = partition_output(output_items)
+    return collect_message_text(messages)
 end
 
 function openai_mapper.collect_reasoning_text(output_items)
@@ -469,7 +490,6 @@ function openai_mapper.map_tokens(usage)
     if usage.input_tokens_details and usage.input_tokens_details.cached_tokens then
         local cached = tonumber(usage.input_tokens_details.cached_tokens) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, prompt_tokens - cached)
         tokens.prompt_tokens = math.max(0, prompt_tokens - cached)
     end
 

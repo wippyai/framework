@@ -21,28 +21,24 @@ entries:
       llm: wippy.llm:llm
       models: wippy.llm.discovery:models
     
-  # wippy.llm.util:compress_test
-  - name: compress_test
-    kind: function.lua
+  # wippy.llm.util:transport
+  - name: transport
+    kind: library.lua
     meta:
-      name: Compress Library Test
-      type: test
-      comment: Tests the intelligent content compression library functionality for adapting to model context limits
-      group: LLM / Utils
+      type: library
+      comment: Shared provider HTTP transport - context config lookup, method dispatch, bounded retry and health classification
       tags:
         - llm
-        - compression
-        - summarization
-        - text-processing
-        - tests
-    source: file://compress_test.lua
+        - http
+        - retry
+    source: file://transport.lua
     modules:
-      - env
-      - text
-    imports:
-      compress: wippy.llm.util:compress
-      llm: wippy.llm:llm
-      models: wippy.llm.discovery:models
-      test: wippy.test:test
-    method: run_tests
-    
+      - time
+
+  - name: route
+    kind: library.lua
+    source: file://route.lua
+
+  - name: thinking
+    kind: library.lua
+    source: file://thinking.lua

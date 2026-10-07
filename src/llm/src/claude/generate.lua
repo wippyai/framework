@@ -2,6 +2,7 @@ local claude_client = require("claude_client")
 local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
+local route = require("route")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -97,7 +98,14 @@ function generate_handler.handler(contract_args)
     }
 
     local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped_options, adjusted, options_err = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
+    local strict_err = route.strict_error(tostring(contract_args._provider_id or contract_args.model), contract_args._strict, adjusted)
+    if strict_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(strict_err):build()
+    end
 
     local claude_payload = {
         model = contract_args.model,
@@ -138,7 +146,8 @@ function generate_handler.handler(contract_args)
     end
 
     local request_options = {
-        timeout = contract_args.timeout or 600
+        timeout = contract_args.timeout or 600,
+        retry = contract_args.retry
     }
 
     local stream_config = nil
@@ -157,11 +166,15 @@ function generate_handler.handler(contract_args)
         return nil, err:from(request_err):build()
     end
 
+    local result, result_err
     if stream_config then
-        return handle_streaming(response, context, stream_config, err)
+        result, result_err = handle_streaming(response, context, stream_config, err)
     else
-        return generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
+        result = generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
     end
+
+    route.attach_adjusted(result, adjusted)
+    return result, result_err
 end
 
 return generate_handler

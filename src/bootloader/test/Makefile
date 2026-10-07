@@ -1,5 +1,5 @@
 test:
-	wippy run test \
+	wippy test \
 		-o wippy.bootloader:application_host:default=app:processes \
 		-o wippy.bootloader:env_storage:default=app:envs
 

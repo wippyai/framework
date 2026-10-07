@@ -63,6 +63,7 @@ function embeddings_handler.handler(contract_args)
         result = {
             embeddings = embeddings
         },
+        model = openai_response.model,
         metadata = openai_response.metadata or {}
     }
 

@@ -6,6 +6,7 @@ local registry = require("registry")
 
 local log = logger:named("boot")
 local registry_provider = registry
+local bootloader_registry_provider = bootloader_registry
 
 type BootloaderMeta = {
     type: string,
@@ -87,6 +88,10 @@ end
 
 local function set_registry_for_test(mock_registry: any?)
     registry_provider = mock_registry or registry
+end
+
+local function set_bootloader_registry_for_test(mock_bootloader_registry: any?)
+    bootloader_registry_provider = mock_bootloader_registry or bootloader_registry
 end
 
 -- Classifies a dependency id as "bootloader" or "service".
@@ -278,28 +283,14 @@ local function execute_bootloader(entry, options, completed_bootloaders)
     return result :: BootloaderResult
 end
 
-local function run(options: any?): (boolean, BootloaderStats | string)
+-- Executes the given bootloaders in the given order, stopping at the first
+-- error. satisfied lists bootloader ids whose work is already in place (they
+-- completed earlier in this runtime), so a meta.requires on one of them holds
+-- without running it again. The boot chain passes none; a caller that brings a
+-- module online after boot passes the bootloaders that already ran.
+local function run_chain(bootloaders: {BootloaderEntry}, options: any?, satisfied: {string}?): (boolean, BootloaderStats)
     options = options or {}
 
-    log:info("Starting application bootloader")
-
-    -- Find all bootloaders
-    local bootloaders, err = bootloader_registry.find()
-    if err then
-        log:error("Failed to discover bootloaders", { error = err })
-        return false, "Failed to discover bootloaders: " .. tostring(err)
-    end
-
-    if not bootloaders or #bootloaders == 0 then
-        log:warn("No bootloaders found")
-        return true, "No bootloaders to execute"
-    end
-
-    log:info("Discovered bootloaders", {
-        count = #bootloaders
-    })
-
-    -- Log sorted bootloader list
     for i, entry in ipairs(bootloaders) do
         log:info("Bootloader scheduled", {
             position = i,
@@ -309,7 +300,6 @@ local function run(options: any?): (boolean, BootloaderStats | string)
         })
     end
 
-    -- Execution statistics
     local total_stats: BootloaderStats = {
         success = 0,
         failed = 0,
@@ -320,14 +310,15 @@ local function run(options: any?): (boolean, BootloaderStats | string)
 
     local had_failure = false
     local completed_bootloaders: {string} = {}
+    for _, id in ipairs(satisfied or {}) do
+        table.insert(completed_bootloaders, id)
+    end
 
-    -- Execute each bootloader in order
     for _, entry in ipairs(bootloaders) do
         local result = execute_bootloader(entry, options, completed_bootloaders)
 
         log_bootloader_result(entry, result)
 
-        -- Save result
         table.insert(total_stats.bootloaders, {
             id = entry.id,
             order = entry.meta and entry.meta.order,
@@ -336,10 +327,8 @@ local function run(options: any?): (boolean, BootloaderStats | string)
             duration = result.duration
         })
 
-        -- Update counters
         if result.status == "success" then
             total_stats.success = total_stats.success + 1
-            -- Track completed bootloaders for dependency checking
             table.insert(completed_bootloaders, entry.id)
         elseif result.status == "error" then
             total_stats.failed = total_stats.failed + 1
@@ -370,13 +359,56 @@ local function run(options: any?): (boolean, BootloaderStats | string)
         skipped = total_stats.skipped
     })
 
-    return not had_failure, total_stats :: BootloaderStats
+    return not had_failure, total_stats
+end
+
+local function run(options: any?): (BootloaderStats?, string?)
+    log:info("Starting application bootloader")
+
+    local bootloaders, err = bootloader_registry_provider.find()
+    if err then
+        local msg = "Failed to discover bootloaders: " .. tostring(err)
+        log:error("Failed to discover bootloaders", { error = err })
+        return nil, msg
+    end
+
+    if not bootloaders or #bootloaders == 0 then
+        log:warn("No bootloaders found")
+        return {
+            success = 0,
+            failed = 0,
+            skipped = 0,
+            total = 0,
+            bootloaders = {},
+        }, nil
+    end
+
+    log:info("Discovered bootloaders", {
+        count = #bootloaders
+    })
+
+    local ok, stats = run_chain(bootloaders, options, nil)
+    if not ok then
+        local fail_msg = "Bootloader execution failed"
+        if type(stats) == "table" and stats.bootloaders then
+            for _, b in ipairs(stats.bootloaders) do
+                if b.status == "error" then
+                    fail_msg = string.format("Bootloader %s failed: %s", b.id, b.message)
+                    break
+                end
+            end
+        end
+        return nil, fail_msg
+    end
+    return stats, nil
 end
 
 return {
     run = run,
+    run_chain = run_chain,
     _is_service_id = is_service_id,
     _dependency_kind = dependency_kind,
     _check_dependencies = check_dependencies,
     _set_registry_for_test = set_registry_for_test,
+    _set_bootloader_registry_for_test = set_bootloader_registry_for_test,
 }

@@ -1,7 +1,18 @@
 local json = require("json")
 local output = require("output")
+local route = require("route")
 
 local openai_mapper = {}
+local MAX_CACHE_BREAKPOINTS = 4
+
+openai_mapper.CAPABILITY = {
+    name = "OpenAI-compatible",
+    defaults = { thinking = "none" },
+    supported = {
+        thinking = { adaptive = true, none = true },
+        structured_output = { native = true }
+    }
+}
 
 -- Error type mapping from HTTP status codes and message content
 local function map_error_type(status_code, message)
@@ -42,15 +53,17 @@ local function is_claude_model(model_name)
     return lower_model:match("claude") ~= nil
 end
 
--- Apply cache control to text parts of a message
-local function apply_cache_control_to_message(message)
-    if not message or not message.content then return end
-
-    for _, content_part in ipairs(message.content) do
-        if content_part.type == "text" then
-            content_part.cache_control = { type = "ephemeral" }
+-- Chat-completions tool and assistant messages use string content. Only structured
+-- text parts can carry an explicit breakpoint without changing their shape.
+local function last_cacheable_text_part(message)
+    if not message or type(message.content) ~= "table" then return nil end
+    for i = #message.content, 1, -1 do
+        local part = message.content[i]
+        if part.type == "text" and part.text and part.text ~= "" then
+            return part
         end
     end
+    return nil
 end
 
 -- Extract reasoning text from reasoning_details (OpenRouter)
@@ -136,6 +149,7 @@ function openai_mapper.map_messages(contract_messages, options)
     local processed_messages = {}
     local i = 1
     local is_claude = is_claude_model(options.model)
+    local cache_positions = {}
 
     while i <= #contract_messages do
         local msg = contract_messages[i]
@@ -143,9 +157,14 @@ function openai_mapper.map_messages(contract_messages, options)
         msg.metadata = nil
 
         if msg.role == "cache_marker" then
-            -- Handle cache marker for Claude models
+            -- A marker after a string tool result cannot be represented as a
+            -- content-part breakpoint without changing the provider payload.
             if is_claude and #processed_messages > 0 then
-                apply_cache_control_to_message(processed_messages[#processed_messages] :: any)
+                local last_message = processed_messages[#processed_messages]
+                local part = last_cacheable_text_part(last_message)
+                if part then
+                    cache_positions[#cache_positions + 1] = { message = last_message, part = part }
+                end
             end
             -- Skip cache marker message (don't add to processed_messages)
             i = i + 1
@@ -234,7 +253,7 @@ function openai_mapper.map_messages(contract_messages, options)
 
                 local tool_msg = {
                     role = "tool",
-                    content = tool_content
+                    content = result_msg.is_error == true and json.encode({ error = tool_content }) or tool_content
                 }
                 if result_msg.function_call_id then
                     tool_msg.tool_call_id = result_msg.function_call_id
@@ -268,7 +287,7 @@ function openai_mapper.map_messages(contract_messages, options)
 
             local tool_msg = {
                 role = "tool",
-                content = tool_content -- Simple string for OpenRouter compatibility
+                content = msg.is_error == true and json.encode({ error = tool_content }) or tool_content
             }
 
             if msg.function_call_id then
@@ -343,6 +362,37 @@ function openai_mapper.map_messages(contract_messages, options)
             i = i + 1
         end
     end
+    if #cache_positions > 0 then
+        local unique = {}
+        local seen = {}
+        for _, position in ipairs(cache_positions) do
+            if not seen[position.part] then
+                unique[#unique + 1] = position
+                seen[position.part] = true
+            end
+        end
+
+        -- Retain a stable system prefix, then the most recent message boundaries.
+        local first_system = nil
+        for _, position in ipairs(unique) do
+            if position.message.role == "system" then
+                first_system = position
+                break
+            end
+        end
+        local slots = MAX_CACHE_BREAKPOINTS - (first_system and 1 or 0)
+        if first_system then
+            first_system.part.cache_control = { type = "ephemeral" }
+        end
+        for j = #unique, 1, -1 do
+            if slots == 0 then break end
+            if unique[j] ~= first_system then
+                unique[j].part.cache_control = { type = "ephemeral" }
+                slots = slots - 1
+            end
+        end
+    end
+
     return processed_messages
 end
 
@@ -396,11 +446,15 @@ function openai_mapper.map_tool_choice(contract_choice, available_tools)
     return "auto", nil
 end
 
-function openai_mapper.map_options(contract_options)
+function openai_mapper.map_options(contract_options, accepts): (table, string?)
+    local unsupported = route.unsupported_fact_error(accepts, openai_mapper.CAPABILITY)
+    if unsupported then
+        return {}, unsupported
+    end
     if not contract_options then return {} end
 
     local openai_options = {}
-    local is_reasoning_request = contract_options.reasoning_model_request == true
+    local is_reasoning_request = route.fact(accepts, "thinking", openai_mapper.CAPABILITY) == "adaptive"
 
     if contract_options.max_tokens then
         if is_reasoning_request then
@@ -419,10 +473,9 @@ function openai_mapper.map_options(contract_options)
         else
             openai_options.reasoning_effort = "high"
         end
-    else
-        if contract_options.temperature ~= nil and not is_reasoning_request then
-            openai_options.temperature = contract_options.temperature
-        end
+    end
+    if contract_options.temperature ~= nil then
+        openai_options.temperature = contract_options.temperature
     end
 
     openai_options.top_p = contract_options.top_p
@@ -494,7 +547,6 @@ function openai_mapper.map_tokens(openai_usage)
     if openai_usage.prompt_tokens_details and openai_usage.prompt_tokens_details.cached_tokens then
         local cached = tonumber(openai_usage.prompt_tokens_details.cached_tokens) or 0
         tokens.cache_read_tokens = cached
-        tokens.cache_write_tokens = math.max(0, tonumber(tokens.prompt_tokens - cached) or 0)
         tokens.prompt_tokens = tokens.prompt_tokens - cached
     end
 

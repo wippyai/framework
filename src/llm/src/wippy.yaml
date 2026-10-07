@@ -2,12 +2,13 @@ organization: wippy
 module: llm
 type: library
 description: LLM integration library with multi-provider support
-license: Apache-2.0
+license: MPL-2.0
 repository: https://github.com/wippyai/framework
 homepage: https://wippy.ai
 keywords:
   - llm
   - ai
+  - evaluate
   - claude
   - openai
   - google

@@ -9,5 +9,5 @@ modules:
       version: 0.4.5
       hash: 028180c6044cdd9bbe15330255a4926770e02a291511930264a615f6388824f0
     - name: wippy/test
-      version: 0.4.17
-      hash: 37a304cc20aa3005004255e9fda16835a94119db520c0c97e1db044c7844a229
+      version: 0.4.18
+      hash: 048d88d2748ec6901fba703ed1317c27f7027650735f653a51d38c07741e1b99

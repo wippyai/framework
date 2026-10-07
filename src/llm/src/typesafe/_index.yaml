@@ -1,0 +1,140 @@
+version: "1.0"
+namespace: wippy.llm.typesafe
+
+entries:
+  # wippy.llm.typesafe:api_key
+  - name: api_key
+    kind: env.variable
+    meta:
+      comment: API key for the TypeSafe System One API
+      icon: tabler:key
+    variable: TYPESAFE_API_KEY
+
+  # wippy.llm.typesafe:base_url
+  - name: base_url
+    kind: env.variable
+    meta:
+      comment: Base URL for the TypeSafe API
+      icon: tabler:world
+    variable: TYPESAFE_BASE_URL
+
+  # wippy.llm.typesafe:client
+  - name: client
+    kind: library.lua
+    meta:
+      comment: HTTP client for the TypeSafe System One API with bearer auth and retry
+    source: file://client.lua
+    modules:
+      - json
+      - http_client
+      - env
+      - ctx
+      - security
+    imports:
+      transport: wippy.llm.util:transport
+
+  # wippy.llm.typesafe:driver
+  - name: driver
+    kind: contract.binding
+    meta:
+      name: TypeSafe Evaluation Driver
+      comment: Evaluates typed questions with Jev without generating text
+      tags:
+        - typesafe
+        - llm
+        - driver
+        - evaluate
+    contracts:
+      - contract: wippy.llm:evaluator
+        methods:
+          evaluate: wippy.llm.typesafe:evaluate
+      - contract: wippy.llm:provider
+        methods:
+          status: wippy.llm.typesafe:status
+    optional_context:
+      api_key:
+        type: string
+        description: API key for the TypeSafe API
+        default_env: TYPESAFE_API_KEY
+      base_url:
+        type: string
+        description: Base URL of the TypeSafe API
+        default_env: TYPESAFE_BASE_URL
+        default_value: https://api.typesafe.ai/v1
+      timeout:
+        type: integer
+        description: Request timeout in seconds
+        default_env: TYPESAFE_TIMEOUT
+        default_value: 60
+      retry:
+        type: object
+        description: Provider-level retry policy for transient transport/provider failures
+
+  # wippy.llm.typesafe:mapper
+  - name: mapper
+    kind: library.lua
+    meta:
+      comment: Mapper between the evaluator contract and the TypeSafe System One wire format
+    source: file://mapper.lua
+    imports:
+      output: wippy.llm:output
+
+  # wippy.llm.typesafe:provider
+  - name: provider
+    kind: registry.entry
+    meta:
+      name: typesafe
+      type: llm.provider
+      title: TypeSafe
+      comment: Provider for typed probabilistic evaluations via the TypeSafe System One API (Jev)
+      tags:
+        - llm
+        - provider
+        - typesafe
+        - evaluate
+    depends_on:
+      - wippy.llm.typesafe:api_key
+      - wippy.llm.typesafe:base_url
+      - wippy.llm.typesafe:timeout
+    driver:
+      id: wippy.llm.typesafe:driver
+      options:
+        api_key_env: wippy.llm.typesafe:api_key
+        base_url_env: wippy.llm.typesafe:base_url
+        timeout_env: wippy.llm.typesafe:timeout
+
+  # wippy.llm.typesafe:status
+  - name: status
+    kind: function.lua
+    meta:
+      comment: Status handler for TypeSafe API health checks
+    source: file://status.lua
+    imports:
+      transport: wippy.llm.util:transport
+      typesafe_client: wippy.llm.typesafe:client
+    method: handler
+    pool:
+      max_size: 10
+
+  # wippy.llm.typesafe:timeout
+  - name: timeout
+    kind: env.variable
+    meta:
+      comment: Request timeout in seconds for TypeSafe API calls
+      icon: tabler:clock
+    variable: TYPESAFE_TIMEOUT
+
+  # wippy.llm.typesafe:evaluate
+  - name: evaluate
+    kind: function.lua
+    meta:
+      comment: Typed evaluator handler for the TypeSafe System One endpoint
+    source: file://evaluate.lua
+    imports:
+      typesafe_client: wippy.llm.typesafe:client
+      typesafe_mapper: wippy.llm.typesafe:mapper
+      output: wippy.llm:output
+      evaluation: wippy.llm:evaluation
+    method: handler
+    pool:
+      max_size: 50

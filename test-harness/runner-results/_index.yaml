@@ -1,0 +1,66 @@
+version: "1.0"
+namespace: app
+entries:
+  - name: terminal_dep
+    kind: ns.dependency
+    component: wippy/terminal
+    version: "*"
+  - name: returns_false
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: returns_false
+  - name: returns_true
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: returns_true
+  - name: returns_nil
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: returns_nil
+  - name: raises_error
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: raises_error
+  - name: error_status
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: error_status
+  - name: completion_without_plan
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: completion_without_plan
+  - name: missing_completion
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: missing_completion
+  - name: conflicting_completion
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: conflicting_completion
+  - name: empty_completion
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: empty_completion
+  - name: failing_case
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://cases.lua
+    method: failing_case
+    imports:
+      test: wippy.test:test
+  - name: skipped_case
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://cases.lua
+    method: skipped_case
+    imports:
+      test: wippy.test:test

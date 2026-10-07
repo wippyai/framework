@@ -1,0 +1,19 @@
+version: "1.0"
+namespace: app
+entries:
+  - name: terminal_dep
+    kind: ns.dependency
+    component: wippy/terminal
+    version: "*"
+  - name: runner_verdict_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: runner
+    source: file://runner_verdict_test.lua
+    method: run
+    modules:
+      - time
+    imports:
+      test: wippy.test:test
+      verdict: wippy.test:runner_verdict

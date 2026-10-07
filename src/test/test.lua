@@ -799,44 +799,31 @@ local function run_test(suite, test_case)
     return result
 end
 
--- Run all tests in a suite and its child suites
+-- Run all tests in a suite and its descendant suites. A suite's before_all
+-- runs once before its own tests and every descendant's, and its after_all
+-- once after all of them.
 local function run_suite_with_children(suite)
     local results = {}
 
-    -- Get all ancestors to run their before_all hooks in order
-    local ancestry = get_suite_ancestry(suite)
-
-    -- Execute before_all hooks from ancestors to the current suite
-    for _, ancestor in ipairs(ancestry) do
-        if ancestor.before_all then
-            ancestor.before_all()
-        end
+    if suite.before_all then
+        suite.before_all()
     end
 
-    -- Run the tests in this suite
     for _, test_case in ipairs(suite.tests) do
         local result = run_test(suite, test_case)
         table.insert(results, result)
         table.insert(_default_context.results.tests, result)
     end
 
-    -- Run tests in child suites if we're running the parent suite directly
-    -- (When the parent is processed, its children will be visited as well)
-    if not suite.parent then
-        for _, child in ipairs(suite.children) do
-            local child_results = run_suite_with_children(child)
-            for _, result in ipairs(child_results) do
-                table.insert(results, result)
-            end
+    for _, child in ipairs(suite.children) do
+        local child_results = run_suite_with_children(child)
+        for _, result in ipairs(child_results) do
+            table.insert(results, result)
         end
     end
 
-    -- Execute after_all hooks from current suite to ancestors (reverse order)
-    for i = #ancestry, 1, -1 do
-        local ancestor = ancestry[i]
-        if ancestor.after_all then
-            ancestor.after_all()
-        end
+    if suite.after_all then
+        suite.after_all()
     end
 
     -- Make sure all mocks are restored after the suite

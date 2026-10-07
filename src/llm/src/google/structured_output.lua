@@ -86,7 +86,10 @@ function structured_output.handler(contract_args)
         payload.systemInstruction = { parts = system_instructions }
     end
 
-    local mapped_options = structured_output._mapper.map_options(contract_args.options)
+    local mapped_options, options_err = structured_output._mapper.map_options(contract_args.options, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
     for key, value in pairs(mapped_options) do
         if value ~= nil then
             payload.generationConfig[key] = value
@@ -115,7 +118,7 @@ function structured_output.handler(contract_args)
         endpoint_path = "generateContent",
         model = contract_args.model,
         payload = payload,
-        options = { timeout = contract_args.timeout }
+        options = { timeout = contract_args.timeout, retry = contract_args.retry }
     })
 
     if response.status_code < 200 or response.status_code >= 300 then

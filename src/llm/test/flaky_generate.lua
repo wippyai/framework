@@ -1,5 +1,5 @@
-local output = require("output")
 local store = require("store")
+local ctx = require("ctx")
 
 local function handler(contract_args)
     local s, serr = store.get("app:test_store")
@@ -7,6 +7,7 @@ local function handler(contract_args)
 
     local count = (s:get("flaky_generate_count") or 0) + 1
     s:set("flaky_generate_count", count)
+    s:set("flaky_generate_retry", ctx.all().retry or false)
 
     if count < 3 then
         return nil, errors.new({

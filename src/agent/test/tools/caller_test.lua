@@ -1,0 +1,2077 @@
+local env = require("env")
+local funcs = require("funcs")
+local attention_guard = require("attention_guard")
+
+local function define_tests()
+    -- Helper function to count table elements
+    local function count_table_elements(tbl)
+        local count = 0
+        for _ in pairs(tbl) do
+            count = count + 1
+        end
+        return count
+    end
+
+    describe("Tool Caller", function()
+        local tool_caller
+        local wrapper_calls
+        local wrapper_behaviors
+        local execution_contexts
+
+        -- Mock tool schemas
+        local tool_schemas = {
+            ["test:calculator"] = {
+                id = "test:calculator",
+                name = "calculator",
+                description = "Perform calculations",
+                meta = { type = "tool" }
+            },
+            ["test:weather"] = {
+                id = "test:weather",
+                name = "get_weather",
+                description = "Get weather information",
+                meta = { type = "tool" }
+            },
+            ["test:exclusive"] = {
+                id = "test:exclusive",
+                name = "exclusive_tool",
+                description = "An exclusive tool",
+                meta = { type = "tool", exclusive = true }
+            },
+            ["test:non_exclusive"] = {
+                id = "test:non_exclusive",
+                name = "non_exclusive_tool",
+                description = "A regular tool",
+                meta = { type = "tool" }
+            },
+            ["test:failing_tool"] = {
+                id = "test:failing_tool",
+                name = "failing_tool",
+                description = "A tool that fails",
+                meta = { type = "tool" }
+            },
+            ["wippy.agent.tools:ui_action_highlight"] = {
+                id = "wippy.agent.tools:ui_action_highlight",
+                name = "highlight",
+                description = "Highlight a UI target",
+                meta = { type = "tool", exclusive = true }
+            },
+            ["wippy.agent.tools:attention_get_tree"] = {
+                id = "wippy.agent.tools:attention_get_tree",
+                name = "attention_get_tree",
+                description = "Read an Attention tree page",
+                meta = { type = "tool" }
+            },
+            ["wippy.agent.tools:ui_action_highlight_evil"] = {
+                id = "wippy.agent.tools:ui_action_highlight_evil",
+                name = "highlight_evil",
+                description = "Near-match tool",
+                meta = { type = "tool" }
+            }
+        }
+
+        -- Mock call results
+        local tool_results = {
+            ["test:calculator"] = { result = 42 },
+            ["test:weather"] = { result = "Sunny, 25°C" },
+            ["test:exclusive"] = { result = "exclusive_result" },
+            ["test:non_exclusive"] = { result = "regular_result" },
+            ["test:failing_tool"] = { error = "Tool execution failed" },
+            ["wippy.agent.tools:ui_action_highlight"] = { result = { status = "confirmed" } },
+            ["wippy.agent.tools:ui_action_highlight_evil"] = { result = { status = "ok" } }
+        }
+
+        before_each(function()
+            -- Reset tool results to ensure clean state
+            tool_results = {
+                ["test:calculator"] = { result = 42 },
+                ["test:weather"] = { result = "Sunny, 25°C" },
+                ["test:exclusive"] = { result = "exclusive_result" },
+                ["test:non_exclusive"] = { result = "regular_result" },
+                ["test:failing_tool"] = { error = "Tool execution failed" },
+                ["wippy.agent.tools:ui_action_highlight"] = { result = { status = "confirmed" } },
+                ["wippy.agent.tools:attention_get_tree"] = { result = { status = "inspected" } },
+                ["wippy.agent.tools:ui_action_highlight_evil"] = { result = { status = "ok" } },
+                ["test:denied_tool"] = { start_error = "not allowed: test:denied_tool" }
+            }
+            wrapper_calls = {}
+            wrapper_behaviors = {}
+            execution_contexts = {}
+
+            -- Create mock modules
+            local mock_json = {
+                encode = function(obj)
+                    if type(obj) == "table" then
+                        return '{"mocked":"json"}'
+                    else
+                        return tostring(obj)
+                    end
+                end,
+                decode = function(str)
+                    if str == '{"expression": "2 + 2"}' then
+                        return { expression = "2 + 2" }
+                    elseif str == '{"invalid": json}' then
+                        return nil, "Invalid JSON"
+                    else
+                        return { parsed = true }
+                    end
+                end
+            }
+
+            local mock_tools = {
+                get_tool_schema = function(registry_id)
+                    local schema = (tool_schemas :: any)[registry_id]
+                    if schema then
+                        return schema, nil
+                    else
+                        return nil, "Tool not found: " .. registry_id
+                    end
+                end
+            }
+
+            local mock_funcs = {
+                new = function()
+                    local executor = {
+                        context = {},
+                        with_context = function(self, ctx)
+                            table.insert(execution_contexts, ctx)
+                            local new_executor = {
+                                context = ctx,
+                                call = function(self, registry_id, args)
+                                    local result_data = (tool_results :: any)[registry_id]
+                                    if result_data then
+                                        if result_data.error then
+                                            return nil, result_data.error
+                                        else
+                                            if type(result_data.execute) == "function" then
+                                                return result_data.execute(args, ctx)
+                                            end
+                                            return result_data.result, nil
+                                        end
+                                    else
+                                        return nil, "Tool execution failed"
+                                    end
+                                end,
+                                async = function(self, registry_id, args)
+                                    local result_data = (tool_results :: any)[registry_id]
+                                    if result_data and result_data.start_error then
+                                        return nil, result_data.start_error
+                                    end
+                                    local final_result = nil
+                                    local final_error = nil
+
+                                    if result_data then
+                                        if result_data.error then
+                                            final_error = result_data.error
+                                        else
+                                            if type(result_data.execute) == "function" then
+                                                final_result, final_error = result_data.execute(args, ctx)
+                                            else
+                                                final_result = result_data.result
+                                            end
+                                        end
+                                    else
+                                        final_error = "Tool execution failed"
+                                    end
+
+                                    return {
+                                        response = function()
+                                            return {
+                                                receive = function()
+                                                    return {}, true
+                                                end
+                                            }
+                                        end,
+                                        is_canceled = function() return false end,
+                                        result = function()
+                                            if final_error then
+                                                return nil, final_error
+                                            else
+                                                return {
+                                                    data = function()
+                                                        return final_result
+                                                    end
+                                                }, nil
+                                            end
+                                        end
+                                    }
+                                end
+                            }
+                            return new_executor
+                        end
+                    }
+                    return executor
+                end
+            }
+
+            local mock_contract = {
+                get = function(contract_id)
+                    if contract_id ~= "wippy.agent:tool_wrapper" then
+                        return nil, "unknown contract: " .. tostring(contract_id)
+                    end
+
+                    local function open_with_context(binding_context)
+                        return {
+                            open = function(self, binding)
+                                return {
+                                    apply = function(self, payload)
+                                        table.insert(wrapper_calls, {
+                                            binding = binding,
+                                            context = binding_context or {},
+                                            payload = payload
+                                        })
+
+                                        local behavior = wrapper_behaviors[binding]
+                                        if behavior then
+                                            return behavior(payload, binding_context or {})
+                                        end
+                                        return {}, nil
+                                    end
+                                }, nil
+                            end
+                        }
+                    end
+
+                    return {
+                        with_context = function(self, binding_context)
+                            return open_with_context(binding_context)
+                        end,
+                        open = function(self, binding)
+                            return open_with_context({}):open(binding)
+                        end
+                    }, nil
+                end
+            }
+
+            -- Inject mocks via internal fields
+            tool_caller = require("tool_caller")
+            tool_caller._json = mock_json
+            tool_caller._tools = mock_tools
+            tool_caller._funcs = mock_funcs
+            tool_caller._contract = mock_contract
+        end)
+
+        it("collects behavior controls without changing outcomes and resets them each execution", function()
+            local control = { config = { model = "stronger" } }
+            wrapper_behaviors["test.wrapper:policy"] = function(payload)
+                test.not_nil(payload.tool_results.call_calculator)
+                return { _control = control }
+            end
+            local caller = tool_caller.new()
+            local wrapper = { binding = "test.wrapper:policy", source = "behavior", phases = { "after_execute" } }
+            caller:set_tool_wrappers({ wrapper })
+            caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+            local validated, err = caller:validate({{
+                id = "call_calculator", name = "calculator", registry_id = "test:calculator", arguments = { a = 2, b = 3 },
+            }})
+            test.is_nil(err)
+            local results = caller:execute({}, validated)
+            test.not_nil(results.call_calculator)
+            test.eq(results.call_calculator.result, 42)
+            local controls = caller:get_wrapper_controls()
+            test.eq(#controls, 1)
+            controls[1].config.model = "changed"
+            test.eq(control.config.model, "stronger")
+            test.eq(caller:get_wrapper_controls()[1].config.model, "stronger")
+            wrapper.source = nil
+            caller:execute({}, validated)
+            test.eq(#caller:get_wrapper_controls(), 0, "legacy wrappers never acquire new control semantics")
+        end)
+
+        after_each(function()
+            tool_caller._json = nil
+            tool_caller._tools = nil
+            tool_caller._funcs = nil
+            tool_caller._contract = nil
+            tool_caller = nil
+            wrapper_calls = nil
+            wrapper_behaviors = nil
+            execution_contexts = nil
+        end)
+
+        describe("explicit failure results", function()
+            it("normalizes explicit failure payloads in both strategies while allowing model correction", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    local payload = { success = false, error = "automation not found" }
+                    tool_results["test:failing_tool"] = { result = payload }
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                    caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit" } })
+                    local validated = caller:validate({ { id = "bad", name = "failing_tool",
+                        registry_id = "test:failing_tool", arguments = {} },
+                        { id = "good", name = "calculator", registry_id = "test:calculator", arguments = {} } })
+                    local results = caller:execute({}, validated)
+                    test.eq(results.bad.error, "automation not found")
+                    test.eq(results.bad.result, payload)
+                    test.eq(results.good.result, 42)
+                    test.is_nil(results.good.error)
+                    local after = wrapper_calls[#wrapper_calls].payload
+                    test.eq(after.tool_results.bad.error, "automation not found")
+                    test.eq(after.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
+                    test.eq(after.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_EXECUTION_FAILED)
+                end
+            end)
+
+            it("preserves ordinary data containing error fields or a false success value", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    for _, payload in ipairs({ { error = "ordinary data" },
+                        { success = true, error = "ordinary data" }, { success = false },
+                        { success = false, error = "" }, { success = false, error = { detail = "data" } } }) do
+                        tool_results["test:calculator"] = { result = payload }
+                        local caller = tool_caller.new():set_strategy(strategy)
+                        local results = caller:execute({}, { good = { valid = true, name = "calculator",
+                            registry_id = "test:calculator", args = {} } })
+                        test.eq(results.good.result, payload)
+                        test.is_nil(results.good.error)
+                    end
+                end
+            end)
+
+            it("retains canonical execution errors and their continues outcome", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                    caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit" } })
+                    local results = caller:execute({}, { bad = { valid = true, name = "failing_tool",
+                        registry_id = "test:failing_tool", args = {} } })
+                    test.eq(results.bad.error, "Tool execution failed")
+                    test.is_nil(results.bad.result)
+                    local after = wrapper_calls[#wrapper_calls].payload
+                    test.eq(after.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
+                    test.eq(after.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_EXECUTION_FAILED)
+                end
+            end)
+        end)
+
+        describe("Constructor and Strategy", function()
+            it("should create a new tool caller instance", function()
+                local caller = tool_caller.new()
+
+                test.not_nil(caller)
+                test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
+                test.not_nil(caller.executor)
+            end)
+
+            it("should default to sequential strategy", function()
+                local caller = tool_caller.new()
+
+                test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
+            end)
+
+            it("should allow setting parallel strategy", function()
+                local caller = tool_caller.new()
+                local result = caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+                test.eq(caller.strategy, tool_caller.STRATEGY.PARALLEL)
+                test.eq(result, caller) -- Should return self for chaining
+            end)
+
+            it("should ignore invalid strategies", function()
+                local caller = tool_caller.new()
+                local original_strategy = caller.strategy
+
+                caller:set_strategy("invalid_strategy")
+
+                test.eq(caller.strategy, original_strategy)
+            end)
+
+            it("should allow strategy chaining", function()
+                local caller = tool_caller.new()
+
+                local result = caller:set_strategy(tool_caller.STRATEGY.PARALLEL):set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
+
+                test.eq(result, caller)
+                test.eq(caller.strategy, tool_caller.STRATEGY.SEQUENTIAL)
+            end)
+        end)
+
+        describe("Ephemeral runtime context", function()
+            it("rejects inherited authority in both execution strategies without a fresh grant", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    for _, resolver_present in ipairs({ false, true }) do
+                        for _, tool_id in ipairs({ "wippy.agent.tools:attention_get_tree", "test:calculator" }) do
+                            execution_contexts = {} :: {any}
+                            local caller = tool_caller.new():set_strategy(strategy)
+                            if resolver_present then
+                                caller:set_runtime_context_resolver(function() return nil, nil end)
+                            end
+                            local inherited = {
+                                attention_inspection_runtime = { delivery_handle = "old-read" },
+                                attention_context_runtime = { capability = "old-setting" },
+                                ui_action_runtime = { delivery_handle = "old-action" },
+                                ordinary = "tool",
+                            }
+                            local validated = caller:validate({ {
+                                id = "read", name = "read", arguments = {},
+                                registry_id = tool_id, context = inherited,
+                            } })
+                            local results = caller:execute({
+                                attention_inspection_runtime = { delivery_handle = "session-read" },
+                                attention_context_runtime = { capability = "session-setting" },
+                                ui_action_runtime = { delivery_handle = "session-action" },
+                                ordinary = "session",
+                            }, validated)
+                            test.is_nil(results.read.error)
+                            test.eq(#execution_contexts, 1)
+                            test.eq(execution_contexts[1].ordinary, "session")
+                            test.eq(execution_contexts[1].call_id, "read")
+                            test.is_nil(execution_contexts[1].attention_inspection_runtime)
+                            test.is_nil(execution_contexts[1].attention_context_runtime)
+                            test.is_nil(execution_contexts[1].ui_action_runtime)
+                            test.eq(inherited.attention_inspection_runtime.delivery_handle, "old-read")
+                        end
+                    end
+                end
+            end)
+
+            it("uses only fresh inspection authority and stops on revocation in both strategies", function()
+                for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                    execution_contexts = {} :: {any}
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    local allowed = true
+                    caller:set_runtime_context_resolver(function(call_id, tool_call)
+                        test.eq(call_id, "read")
+                        test.eq(tool_call.registry_id, "wippy.agent.tools:attention_get_tree")
+                        if not allowed then return nil, "current tool authority revoked" end
+                        return { attention_inspection_runtime = { delivery_handle = "fresh-read" } }, nil
+                    end)
+                    local validated = caller:validate({ {
+                        id = "read", name = "read", arguments = {},
+                        registry_id = "wippy.agent.tools:attention_get_tree",
+                        context = { ui_action_runtime = { delivery_handle = "old-action" } },
+                    } })
+                    local results = caller:execute({ attention_context_runtime = { capability = "old-setting" } }, validated)
+                    test.is_nil(results.read.error)
+                    test.eq(execution_contexts[1].attention_inspection_runtime.delivery_handle, "fresh-read")
+                    test.is_nil(execution_contexts[1].ui_action_runtime)
+                    test.is_nil(execution_contexts[1].attention_context_runtime)
+                    test.is_nil(validated.read.context.attention_inspection_runtime)
+                    allowed = false
+                    local denied = caller:execute({}, validated)
+                    test.eq(denied.read.error, "current tool authority revoked")
+                    test.eq(#execution_contexts, 1)
+                end
+            end)
+
+            it("merges runtime context last only for exact first-party UI action IDs", function()
+                local caller = tool_caller.new()
+                local resolver_calls = 0
+                caller:set_runtime_context_resolver(function(call_id, tool_call)
+                    resolver_calls = resolver_calls + 1
+                    test.eq(call_id, "call_ui")
+                    test.eq(tool_call.registry_id, "wippy.agent.tools:ui_action_highlight")
+                    return {
+                        shared = "runtime",
+                        ui_action_runtime = { delivery_handle = "live-only" }
+                    }
+                end)
+
+                local validated = caller:validate({
+                    {
+                        id = "call_ui",
+                        name = "highlight",
+                        arguments = {},
+                        registry_id = "wippy.agent.tools:ui_action_highlight",
+                        context = { shared = "tool" }
+                    }
+                })
+                local results = caller:execute({ shared = "session" }, validated)
+
+                test.is_nil(results.call_ui.error)
+                test.eq(resolver_calls, 1)
+                test.eq(execution_contexts[1].shared, "runtime")
+                test.eq(execution_contexts[1].ui_action_runtime.delivery_handle, "live-only")
+                test.is_nil(validated.call_ui.context.ui_action_runtime)
+                test.is_nil(caller:get_last_tool_calls()[1].ui_action_runtime)
+            end)
+
+            it("does not invoke the resolver for near-match or unrelated tool IDs", function()
+                local caller = tool_caller.new()
+                local resolver_calls = 0
+                caller:set_runtime_context_resolver(function()
+                    resolver_calls = resolver_calls + 1
+                    return { ui_action_runtime = { delivery_handle = "must-not-leak" } }
+                end)
+
+                local validated = caller:validate({
+                    {
+                        id = "near_match",
+                        name = "highlight_evil",
+                        arguments = {},
+                        registry_id = "wippy.agent.tools:ui_action_highlight_evil"
+                    },
+                    {
+                        id = "ordinary",
+                        name = "calculator",
+                        arguments = {},
+                        registry_id = "test:calculator"
+                    }
+                })
+                caller:execute({}, validated)
+
+                test.eq(resolver_calls, 0)
+                test.is_nil(execution_contexts[1].ui_action_runtime)
+                test.is_nil(execution_contexts[2].ui_action_runtime)
+            end)
+
+            it("grants no runtime authority to the removed attention_inspect ID", function()
+                local removed_id = "wippy.agent.tools:attention_inspect"
+                local schemas: any = tool_schemas
+                local results: any = tool_results
+                test.is_nil(tool_caller.RUNTIME_CONTEXT_TOOL_IDS[removed_id])
+                -- Even if an entry with that ID were registered, the resolver must not run.
+                schemas[removed_id] = { id = removed_id, name = "attention_inspect", meta = { type = "tool" } }
+                results[removed_id] = { result = { status = "inspected" } }
+                local caller = tool_caller.new()
+                local resolver_calls = 0
+                caller:set_runtime_context_resolver(function()
+                    resolver_calls = resolver_calls + 1
+                    return { attention_inspection_runtime = { delivery_handle = "must-not-leak" } }
+                end)
+                local executed = caller:execute({}, caller:validate({ {
+                    id = "removed", name = "attention_inspect", arguments = {}, registry_id = removed_id,
+                } }))
+                schemas[removed_id] = nil
+                test.is_nil(executed.removed.error)
+                test.eq(resolver_calls, 0)
+                test.is_nil(execution_contexts[1].attention_inspection_runtime)
+            end)
+
+            it("keeps runtime context out of before and after wrapper payloads", function()
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "audit",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE, tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test:wrapper"
+                    }
+                })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                caller:set_runtime_context_resolver(function()
+                    return { ui_action_runtime = { delivery_handle = "live-only" } }
+                end)
+
+                local validated = caller:validate({
+                    {
+                        id = "call_ui",
+                        name = "highlight",
+                        arguments = {},
+                        registry_id = "wippy.agent.tools:ui_action_highlight"
+                    }
+                })
+                caller:execute({}, validated)
+
+                test.eq(#wrapper_calls, 2)
+                test.is_nil(wrapper_calls[1].payload.tool_calls[1].ui_action_runtime)
+                test.is_nil(wrapper_calls[2].payload.tool_calls[1].ui_action_runtime)
+                test.is_nil(wrapper_calls[2].payload.tool_results.call_ui.tool_call.ui_action_runtime)
+            end)
+        end)
+
+        describe("Attention receipt execution", function()
+            it("preserves mixed batches and blocks fifth-read execution in both strategies", function()
+                local prefix = "wippy.agent.tools:"
+                local receipt_id = prefix .. "attention_read_receipt"
+                for _, name in ipairs({"attention_get_focus", "attention_get_cursor", "attention_read_receipt"}) do
+                    (tool_schemas :: any)[prefix .. name] = {id=prefix .. name,name=name,meta={type="tool",private=true}}
+                end
+                for _, strategy in ipairs({tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL}) do
+                    local dispatched = 0
+                    local history = {truncated=false,events={{id="user-1",role="user",content="Observe"}}}
+                    local run_read = function()
+                        dispatched = dispatched + 1
+                        return {status="inspected",outcome="empty"}, nil
+                    end
+                    (tool_results :: any)[prefix .. "attention_get_focus"] = {execute=run_read}
+                    (tool_results :: any)[prefix .. "attention_get_cursor"] = {execute=run_read}
+                    (tool_results :: any)[receipt_id] = {execute=function(args, context)
+                        -- The real receipt tool reads the refusal from its execution context.
+                        return funcs.new():with_context(context or {}):call(receipt_id,args)
+                    end}
+                    wrapper_behaviors["test:attention"] = function(payload)
+                        return attention_guard.apply_history(payload,history)
+                    end
+                    local caller = tool_caller.new():set_strategy(strategy)
+                    caller:set_tool_wrappers({{id="attention",phases={tool_caller.PHASE.BEFORE_EXECUTE},binding="test:attention",strict=true}})
+                    caller:set_wrapper_context({host={kind="session",session_id="s1"}})
+                    local scope = {host_instance_id="host",node_id="scope-node",mount_id="mount",generation=1}
+                    local input = {
+                        {id="read-1",name="attention_get_focus",registry_id=prefix .. "attention_get_focus",arguments={}},
+                        {id="ordinary",name="calculator",registry_id="test:calculator",arguments={}},
+                        {id="read-2",name="attention_get_cursor",registry_id=prefix .. "attention_get_cursor",arguments={scope=scope}},
+                    }
+                    local validated, validation_error = caller:validate(input)
+                    test.is_nil(validation_error)
+                    local results = caller:execute({},validated)
+                    test.eq(count_table_elements(results),3)
+                    test.eq(results.ordinary.result,42)
+                    test.eq(dispatched,1)
+                    local receipts = 0
+                    for _, call in ipairs(input) do
+                        local result = results[call.id]
+                        test.is_nil(result.error)
+                        test.eq(result.tool_call.call_id,call.id)
+                        test.eq(result.tool_call.name,call.name)
+                        if result.tool_call.registry_id == receipt_id then
+                            receipts = receipts + 1
+                            test.eq(result.tool_call.args.scope.node_id,"scope-node")
+                            test.is_nil(result.tool_call.args.reason)
+                            test.eq(result.result.reason,"one-read-per-batch")
+                            test.eq(result.result.original_registry_id,call.registry_id)
+                            test.is_false(result.result.invalid)
+                        end
+                    end
+                    test.eq(receipts,1)
+                    -- An invalid read keeps its arguments, and the receipt result carries
+                    -- invalid=true so the guard can count the repair budget from history.
+                    local bad = {id="bad",name="attention_get_focus",registry_id=prefix .. "attention_get_focus",arguments={arbitrary=true}}
+                    local invalid_results = caller:execute({},caller:validate({bad}))
+                    test.eq(dispatched,1)
+                    test.eq(invalid_results.bad.tool_call.registry_id,receipt_id)
+                    test.eq(invalid_results.bad.tool_call.args.arbitrary,true)
+                    test.eq(invalid_results.bad.result.reason,"unexpected-field")
+                    test.is_true(invalid_results.bad.result.invalid)
+                    for index=1,2 do
+                        history.events[#history.events+1]={id="invalid-"..index,role="private_function",content=bad.arguments,
+                            metadata={registry_id=receipt_id,result=invalid_results.bad.result}}
+                    end
+                    local repair = caller:execute({},caller:validate({input[1]}))
+                    test.eq(dispatched,1)
+                    test.eq(repair["read-1"].result.reason,"repair-budget-exhausted")
+                    for index=1,4 do
+                        history.events[#history.events+1]={id="prior-"..index,role="private_function",content={},metadata={registry_id=prefix.."attention_get_focus"}}
+                    end
+                    local limited = caller:execute({},caller:validate({input[1],input[2]}))
+                    test.eq(dispatched,1)
+                    test.eq(limited["read-1"].result.reason,"read-budget-exhausted")
+                    test.eq(limited.ordinary.result,42)
+                end
+            end)
+        end)
+
+        describe("Validation", function()
+            it("rejects empty IDs and duplicates introduced by a before-execute wrapper", function()
+                local caller = tool_caller.new()
+                for _, id in ipairs({ "", " \t\n" }) do
+                    local _, missing_err = caller:validate({{ id = id, name = "calculator",
+                        arguments = {}, registry_id = "test:calculator" }})
+                    test.not_nil(missing_err)
+                end
+                caller.apply_tool_wrappers = function(_self, _phase, payload)
+                    payload.tool_calls = {
+                        { id = "collision", name = "calculator", arguments = {}, registry_id = "test:calculator" },
+                        { id = "collision", name = "get_weather", arguments = {}, registry_id = "test:weather" },
+                    }
+                    return payload
+                end
+                local validated, err = caller:validate({{ id = "original", name = "calculator",
+                    arguments = {}, registry_id = "test:calculator" }})
+                test.is_nil(validated)
+                test.contains(err, "Duplicate tool call ID")
+            end)
+            it("foundation regression: rejects duplicate IDs before replacing an earlier call", function()
+                local caller = tool_caller.new()
+                local _, err = caller:validate({
+                    { id = "same-call", name = "calculator", arguments = { expression = "2+2" }, registry_id = "test:calculator" },
+                    { id = "same-call", name = "get_weather", arguments = { location = "NYC" }, registry_id = "test:weather" },
+                })
+                test.not_nil(err, "a map keyed by call ID must not silently replace a call")
+            end)
+
+            it("should validate basic tool calls", function()
+                local caller = tool_caller.new()
+
+                local tool_calls = {
+                    {
+                        id = "call_123",
+                        name = "calculator",
+                        arguments = { expression = "2 + 2" },
+                        registry_id = "test:calculator"
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 1)
+
+                local tool_data = next(validated_tools)
+                test.not_nil(validated_tools[tool_data])
+                test.is_true(validated_tools[tool_data].valid)
+                test.eq(validated_tools[tool_data].name, "calculator")
+                test.eq(validated_tools[tool_data].registry_id, "test:calculator")
+                test.eq(type(validated_tools[tool_data].args), "table")
+            end)
+
+            it("should handle multiple tool calls", function()
+                local caller = tool_caller.new()
+
+                local tool_calls = {
+                    {
+                        id = "call_123",
+                        name = "calculator",
+                        arguments = { expression = "2 + 2" },
+                        registry_id = "test:calculator"
+                    },
+                    {
+                        id = "call_456",
+                        name = "get_weather",
+                        arguments = { location = "New York" },
+                        registry_id = "test:weather"
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 2)
+
+                -- Check both tools are valid
+                for _, tool_data in pairs(validated_tools) do
+                    test.is_true(tool_data.valid)
+                end
+            end)
+
+            it("should handle empty tool calls", function()
+                local caller = tool_caller.new()
+
+                local validated_tools, err = caller:validate({})
+
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 0)
+            end)
+
+            it("should handle nil tool calls", function()
+                local caller = tool_caller.new()
+
+                local validated_tools, err = caller:validate(nil)
+
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 0)
+            end)
+
+            it("should handle tool schema errors", function()
+                local caller = tool_caller.new()
+
+                local tool_calls = {
+                    {
+                        id = "call_123",
+                        name = "nonexistent",
+                        arguments = {},
+                        registry_id = "nonexistent:tool"
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+
+                test.is_nil(err)
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 1)
+
+                local tool_data = next(validated_tools)
+                test.is_false(validated_tools[tool_data].valid)
+                test.contains(validated_tools[tool_data].error, "Failed to get tool schema")
+            end)
+
+            it("should preserve tool context", function()
+                local caller = tool_caller.new()
+
+                local tool_calls = {
+                    {
+                        id = "call_123",
+                        name = "calculator",
+                        arguments = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        context = { precision = "high", timeout = 30 }
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+
+                test.is_nil(err)
+                local tool_data = next(validated_tools)
+                test.not_nil(validated_tools[tool_data].context)
+                test.eq(validated_tools[tool_data].context.precision, "high")
+                test.eq(validated_tools[tool_data].context.timeout, 30)
+            end)
+
+            it("should handle exclusive tools", function()
+                local caller = tool_caller.new()
+
+                local tool_calls = {
+                    {
+                        id = "call_123",
+                        name = "exclusive_tool",
+                        arguments = {},
+                        registry_id = "test:exclusive"
+                    },
+                    {
+                        id = "call_456",
+                        name = "non_exclusive_tool",
+                        arguments = {},
+                        registry_id = "test:non_exclusive"
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+
+                test.eq(err, "Exclusive tool found, other tools skipped")
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 1)
+
+                local tool_data = next(validated_tools)
+                test.eq(validated_tools[tool_data].name, "exclusive_tool")
+            end)
+
+            it("should reject multiple exclusive tools", function()
+                -- Add another exclusive tool for this test
+                tool_schemas["test:exclusive2"] = {
+                    id = "test:exclusive2",
+                    name = "exclusive_tool2",
+                    description = "Another exclusive tool",
+                    meta = { type = "tool", exclusive = true }
+                }
+
+                local caller = tool_caller.new()
+
+                local tool_calls = {
+                    {
+                        id = "call_123",
+                        name = "exclusive_tool",
+                        arguments = {},
+                        registry_id = "test:exclusive"
+                    },
+                    {
+                        id = "call_456",
+                        name = "exclusive_tool2",
+                        arguments = {},
+                        registry_id = "test:exclusive2"
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+
+                test.not_nil(validated_tools)
+                test.eq(count_table_elements(validated_tools), 0)
+                test.eq(err, "Multiple exclusive tools found, cannot process")
+            end)
+        end)
+
+        describe("Sequential Execution", function()
+            it("should execute tools sequentially", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true,
+                        context = { precision = "high" }
+                    }
+                }
+
+                local context = { user_id = "test_user" }
+                local results = caller:execute(context, validated_tools)
+
+                test.not_nil(results)
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42)
+                test.is_nil(results["call_123"].error)
+                test.not_nil(results["call_123"].tool_call)
+            end)
+
+            it("should execute multiple tools in sequence", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    },
+                    ["call_456"] = {
+                        call_id = "call_456",
+                        name = "get_weather",
+                        args = { location = "New York" },
+                        registry_id = "test:weather",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 2)
+                test.eq(results["call_123"].result, 42)
+                test.eq(results["call_456"].result, "Sunny, 25°C")
+            end)
+
+            it("should handle tool execution errors", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "failing_tool",
+                        args = {},
+                        registry_id = "test:failing_tool",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+                test.eq(results["call_123"].error, "Tool execution failed")
+            end)
+
+            it("should handle invalid tools", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "invalid_tool",
+                        args = {},
+                        registry_id = "test:invalid",
+                        valid = false,
+                        error = "Tool validation failed"
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+                test.eq(results["call_123"].error, "Tool validation failed")
+                test.not_nil(results["call_123"].tool_call)
+            end)
+
+            it("should parse string arguments", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = '{"expression": "2 + 2"}',  -- String args
+                        registry_id = "test:calculator",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42)
+            end)
+
+            it("should handle invalid JSON arguments", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = '{"invalid": json}',  -- Invalid JSON
+                        registry_id = "test:calculator",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+                test.contains(results["call_123"].error, "Failed to parse arguments")
+            end)
+
+            it("should merge contexts with session priority", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = {},
+                        registry_id = "test:calculator",
+                        valid = true,
+                        context = { precision = "high", shared_key = "from_tool" }
+                    }
+                }
+
+                local context = { user_id = "test_user", shared_key = "from_session" }
+                local results = caller:execute(context, validated_tools)
+
+                -- The test passes if execution succeeded with proper context merging
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42)
+            end)
+        end)
+
+        describe("Parallel Execution", function()
+            it("should execute tools in parallel", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    },
+                    ["call_456"] = {
+                        call_id = "call_456",
+                        name = "get_weather",
+                        args = { location = "New York" },
+                        registry_id = "test:weather",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 2)
+                test.eq(results["call_123"].result, 42)
+                test.eq(results["call_456"].result, "Sunny, 25°C")
+            end)
+
+            it("should handle parallel execution errors", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    },
+                    ["call_456"] = {
+                        call_id = "call_456",
+                        name = "failing_tool",
+                        args = {},
+                        registry_id = "test:failing_tool",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.eq(results["call_123"].result, 42)
+                test.is_nil(results["call_123"].error)
+                test.is_nil(results["call_456"].result)
+                test.eq(results["call_456"].error, "Tool execution failed")
+            end)
+
+            it("should report a tool that cannot be started as that call's error", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    },
+                    ["call_789"] = {
+                        call_id = "call_789",
+                        name = "denied_tool",
+                        args = {},
+                        registry_id = "test:denied_tool",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.eq(results["call_123"].result, 42)
+                test.is_nil(results["call_123"].error)
+                test.is_nil(results["call_789"].result)
+                test.eq(results["call_789"].error, "not allowed: test:denied_tool")
+                test.eq(results["call_789"].tool_call.name, "denied_tool")
+            end)
+
+            it("should handle parallel execution with invalid tools", function()
+                local caller = tool_caller.new()
+                caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    },
+                    ["call_456"] = {
+                        call_id = "call_456",
+                        name = "invalid_tool",
+                        args = {},
+                        registry_id = "test:invalid",
+                        valid = false,
+                        error = "Tool validation failed"
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.eq(results["call_123"].result, 42)
+                test.eq(results["call_456"].error, "Tool validation failed")
+            end)
+        end)
+
+        describe("Edge Cases and Error Handling", function()
+            it("should handle execution with empty validated tools", function()
+                local caller = tool_caller.new()
+
+                local results = caller:execute({}, {})
+
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 0)
+            end)
+
+            it("should handle execution with nil context", function()
+                local caller = tool_caller.new()
+
+                local results = caller:execute(nil, {})
+
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 0)
+            end)
+
+            it("should handle execution with nil validated tools", function()
+                local caller = tool_caller.new()
+
+                local results = caller:execute({}, nil)
+
+                test.not_nil(results)
+                test.eq(count_table_elements(results), 0)
+            end)
+
+            it("should handle missing registry_id in tool calls", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        -- No registry_id field at all
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                -- Just check that we get some kind of error
+                test.not_nil(results["call_123"])
+                test.is_nil(results["call_123"].result)
+
+                -- The execute should have failed in some way
+                -- Either error is set, or result is nil, or both
+                local has_error = results["call_123"].error ~= nil
+                local no_result = results["call_123"].result == nil
+
+                test.is_true(has_error or no_result)
+            end)
+
+            it("should set call_id in execution context", function()
+                local caller = tool_caller.new()
+
+                local validated_tools = {
+                    ["call_123"] = {
+                        call_id = "call_123",
+                        name = "calculator",
+                        args = { expression = "2 + 2" },
+                        registry_id = "test:calculator",
+                        valid = true
+                    }
+                }
+
+                local results = caller:execute({}, validated_tools)
+
+                test.not_nil(results["call_123"])
+                test.eq(results["call_123"].result, 42) -- Execution succeeded
+                test.is_nil(results["call_123"].error)
+            end)
+        end)
+
+        describe("Constants Export", function()
+            it("should export strategy constants", function()
+                test.not_nil(tool_caller.STRATEGY)
+                test.eq(tool_caller.STRATEGY.SEQUENTIAL, "sequential")
+                test.eq(tool_caller.STRATEGY.PARALLEL, "parallel")
+            end)
+
+            it("should export function status constants", function()
+                test.not_nil(tool_caller.FUNC_STATUS)
+                test.eq(tool_caller.FUNC_STATUS.PENDING, "pending")
+                test.eq(tool_caller.FUNC_STATUS.SUCCESS, "success")
+                test.eq(tool_caller.FUNC_STATUS.ERROR, "error")
+            end)
+        end)
+
+        describe("Tool Wrapper Contracts", function()
+            local function calculator_call(call_id)
+                return {
+                    id = call_id or "call_calculator",
+                    name = "calculator",
+                    arguments = { expression = "2 + 2" },
+                    registry_id = "test:calculator"
+                }
+            end
+
+            it("rejects wrapper rewrites that break tool call/result identity", function()
+                local rewrites = {
+                    function() return {} end,
+                    function() return { calculator_call("replacement") } end,
+                    function() return { calculator_call(), calculator_call() } end,
+                    function() return { calculator_call(), calculator_call("extra") } end,
+                    function(payload)
+                        payload.tool_calls[1].id = "mutated"
+                        return payload.tool_calls
+                    end,
+                }
+                for _, rewrite in ipairs(rewrites) do
+                    wrapper_behaviors["test.wrapper:guard"] = function(payload)
+                        return { tool_calls = rewrite(payload) }, nil
+                    end
+                    local caller = tool_caller.new()
+                    caller:set_tool_wrappers({ {
+                        binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                    } })
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                    local validated, err = caller:validate({ calculator_call() })
+                    test.is_nil(validated)
+                    test.contains(err, "preserve every tool call ID exactly once")
+                end
+            end)
+
+            it("should apply focused before and after wrapper bindings without losing context", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload, binding_context)
+                    test.eq(payload.phase, tool_caller.PHASE.BEFORE_EXECUTE)
+                    test.eq(payload.host.kind, "session")
+                    test.eq(payload.host.session_id, "session-1")
+                    test.eq(payload.agent.id, "agent-1")
+                    test.eq(payload.options.max_calls, 1)
+                    test.eq(binding_context.policy, "guard")
+                    test.eq(binding_context.agent_id, "agent-1")
+                    test.eq(binding_context.trait_id, "trait:guard")
+
+                    return {
+                        tool_calls = {
+                            {
+                                id = "call_calculator",
+                                name = "get_weather",
+                                arguments = { city = "NYC" },
+                                registry_id = "test:weather"
+                            }
+                        },
+                        observations = {
+                            {
+                                level = "info",
+                                code = "guard.checked",
+                                content = "tool calls checked"
+                            }
+                        },
+                        metadata = {
+                            checked = true
+                        }
+                    }, nil
+                end
+
+                wrapper_behaviors["test.wrapper:audit"] = function(payload, binding_context)
+                    test.eq(payload.phase, tool_caller.PHASE.AFTER_EXECUTE)
+                    test.eq(payload.host.kind, "session")
+                    test.eq(payload.host.session_id, "session-1")
+                    test.eq(payload.agent.model, "gpt-test")
+                    test.eq(payload.run_context.contract, "wippy.agent:run_context")
+                    test.eq(payload.run_context.binding, "wippy.session.run_context:binding")
+                    test.eq(payload.options.include_results, true)
+                    test.eq(binding_context.policy, "audit")
+                    test.eq(payload.tool_calls[1].registry_id, "test:weather")
+                    test.not_nil(payload.tool_results.call_calculator)
+                    test.eq(payload.tool_results.call_calculator.result, "Sunny, 25°C")
+                    test.eq(payload.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES)
+                    test.eq(payload.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_RESULTS_RECORDED)
+
+                    return {
+                        observations = {
+                            {
+                                level = "info",
+                                code = "audit.recorded",
+                                content = "tool results recorded"
+                            }
+                        }
+                    }, nil
+                end
+
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "audit",
+                        trait_id = "trait:audit",
+                        phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit",
+                        priority = 20,
+                        context = {
+                            policy = "audit",
+                            trait_id = "trait:audit"
+                        },
+                        options = {
+                            include_results = true
+                        }
+                    },
+                    {
+                        id = "guard",
+                        trait_id = "trait:guard",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                        binding = "test.wrapper:guard",
+                        priority = 10,
+                        context = {
+                            policy = "guard",
+                            agent_id = "agent-1",
+                            trait_id = "trait:guard"
+                        },
+                        options = {
+                            max_calls = 1
+                        }
+                    }
+                })
+                caller:set_wrapper_context({
+                    host = {
+                        kind = "session",
+                        session_id = "session-1"
+                    },
+                    agent = {
+                        id = "agent-1",
+                        model = "gpt-test"
+                    },
+                    run_context = {
+                        contract = "wippy.agent:run_context",
+                        binding = "wippy.session.run_context:binding",
+                        host = {
+                            kind = "session",
+                            session_id = "session-1"
+                        }
+                    }
+                })
+
+                local validated, validate_err = caller:validate({ calculator_call() })
+                test.is_nil(validate_err)
+                test.not_nil(validated)
+                test.not_nil(validated.call_calculator)
+                test.eq(validated.call_calculator.registry_id, "test:weather")
+
+                local results = caller:execute({}, validated)
+                test.not_nil(results.call_calculator)
+                test.eq(results.call_calculator.result, "Sunny, 25°C")
+
+                test.eq(#wrapper_calls, 2)
+                test.eq(wrapper_calls[1].binding, "test.wrapper:guard")
+                test.eq(wrapper_calls[2].binding, "test.wrapper:audit")
+
+                local observations = caller:get_wrapper_observations()
+                test.eq(#observations, 2)
+                test.eq(observations[1].code, "guard.checked")
+                test.eq(observations[2].code, "audit.recorded")
+
+                local metadata = caller:get_wrapper_metadata()
+                test.eq(#metadata, 1)
+                test.eq(metadata[1].wrapper_id, "guard")
+                test.is_true(metadata[1].metadata.checked)
+            end)
+
+            it("allows wrappers to reorder calls while preserving their IDs", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload)
+                    return { tool_calls = { payload.tool_calls[2], payload.tool_calls[1] } }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call("first"), calculator_call("second") })
+                test.is_nil(err)
+                test.not_nil(validated.first)
+                test.not_nil(validated.second)
+                test.eq(caller.last_tool_calls[1].id, "second")
+                test.eq(caller.last_tool_calls[2].id, "first")
+            end)
+
+            it("rejects an in-place drop that leaves a sparse tool-call list", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload)
+                    payload.tool_calls[1] = nil
+                    return { tool_calls = payload.tool_calls }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call("first"), calculator_call("second") })
+                test.is_nil(validated)
+                test.contains(err, "preserve every tool call ID exactly once")
+            end)
+
+            it("rejects malformed wrapper calls with a validation error instead of throwing", function()
+                wrapper_behaviors["test.wrapper:guard"] = function()
+                    return { tool_calls = { true } }, nil
+                end
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({ {
+                    binding = "test.wrapper:guard", phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                } })
+                caller:set_wrapper_context({ host = { kind = "session", session_id = "s1" } })
+                local validated, err = caller:validate({ calculator_call() })
+                test.is_nil(validated)
+                test.contains(err, "preserve every tool call ID exactly once")
+            end)
+
+            it("should require host context when wrappers are configured", function()
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "guard",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                        binding = "test.wrapper:guard",
+                        strict = true
+                    }
+                })
+
+                local validated, err = caller:validate({ calculator_call() })
+
+                test.is_nil(validated)
+                test.not_nil(err)
+                test.not_nil(err:match("host is required"))
+                test.eq(#wrapper_calls, 0)
+            end)
+
+            it("should block validation on strict before wrapper errors", function()
+                wrapper_behaviors["test.wrapper:guard"] = function(payload, binding_context)
+                    return nil, "blocked by policy"
+                end
+
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "guard",
+                        trait_id = "trait:guard",
+                        phases = { tool_caller.PHASE.BEFORE_EXECUTE },
+                        binding = "test.wrapper:guard",
+                        strict = true
+                    }
+                })
+                caller:set_wrapper_context({
+                    host = { kind = "dataflow", dataflow_id = "df-1", node_id = "node-1", iteration = 3 },
+                    agent = { id = "agent-1" }
+                })
+
+                local validated, err = caller:validate({ calculator_call() })
+
+                test.is_nil(validated)
+                test.not_nil(err)
+                test.not_nil(err:match("blocked by policy"))
+
+                local wrapper_errors = caller:get_wrapper_errors()
+                test.eq(#wrapper_errors, 1)
+                test.eq(wrapper_errors[1].phase, tool_caller.PHASE.BEFORE_EXECUTE)
+                test.is_true(wrapper_errors[1].strict)
+            end)
+
+            it("should preserve tool results on after wrapper errors", function()
+                wrapper_behaviors["test.wrapper:audit"] = function(payload, binding_context)
+                    test.eq(payload.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_RESULTS_RECORDED)
+                    return nil, "audit sink unavailable"
+                end
+
+                local caller = tool_caller.new()
+                caller:set_tool_wrappers({
+                    {
+                        id = "audit",
+                        trait_id = "trait:audit",
+                        phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit",
+                        strict = false
+                    }
+                })
+                caller:set_wrapper_context({
+                    host = { kind = "dataflow", dataflow_id = "df-1", node_id = "node-1", iteration = 7 },
+                    agent = { id = "agent-1", model = "gpt-test" }
+                })
+
+                local validated, validate_err = caller:validate({ calculator_call("call_123") })
+                test.is_nil(validate_err)
+                test.not_nil(validated)
+
+                local results = caller:execute({}, validated)
+                test.not_nil(results.call_123)
+                test.eq(results.call_123.result, 42)
+
+                local wrapper_errors = caller:get_wrapper_errors()
+                test.eq(#wrapper_errors, 1)
+                test.eq(wrapper_errors[1].phase, tool_caller.PHASE.AFTER_EXECUTE)
+                test.is_false(wrapper_errors[1].strict)
+            end)
+        end)
+
+        describe("Interface Completeness", function()
+            it("should have all required methods", function()
+                local caller = tool_caller.new()
+
+                test.eq(type(caller.validate), "function")
+                test.eq(type(caller.execute), "function")
+                test.eq(type(caller.set_strategy), "function")
+                test.eq(type(caller.set_tool_wrappers), "function")
+                test.eq(type(caller.set_wrapper_context), "function")
+            end)
+
+            it("should maintain consistent interface", function()
+                local caller = tool_caller.new()
+
+                -- Test method chaining
+                local result = caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+                test.eq(result, caller)
+
+                -- Test that methods return expected types
+                local validated, err = caller:validate({})
+                test.eq(type(validated), "table")
+                test.is_true(err == nil or type(err) == "string")
+
+                local execution_result = caller:execute({}, {})
+                test.eq(type(execution_result), "table")
+            end)
+        end)
+    end)
+
+    describe("Real Tool Integration", function()
+        if not env.get("ENABLE_INTEGRATION_TESTS") then
+            return
+        end
+
+        before_all(function()
+            -- Use real modules for integration tests
+            tool_caller = require("tool_caller")
+            tool_caller._json = nil
+            tool_caller._tools = nil
+            tool_caller._funcs = nil
+        end)
+
+        it("should call real delay tool sequentially", function()
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+            caller:set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
+
+            -- Create tool call for real delay_tool
+            local tool_calls = {
+                {
+                    id = "call_delay_1",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Hello from real tool!",
+                        delay_ms = 50
+                    },
+                    registry_id = "app:delay_tool"
+                }
+            }
+
+            -- Validate the tool call
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)
+            test.not_nil(validated_tools)
+            test.eq(count_table_elements(validated_tools), 1)
+
+            -- Execute the tool
+            local context = { test_run = "integration" }
+            local results = caller:execute(context, validated_tools)
+
+            -- Verify results
+            test.not_nil(results)
+            local call_id = next(validated_tools)
+            test.not_nil(results[call_id])
+            test.is_nil(results[call_id].error)
+            test.not_nil(results[call_id].result)
+
+            -- Check the actual result from delay tool
+            local result = results[call_id].result
+            test.eq(result.message, "Hello from real tool!")
+            test.eq(result.delay_applied, 50)
+            test.not_nil(result.timestamp)
+            test.not_nil(result.unix_time)
+        end)
+
+        it("should execute multiple real tools sequentially with proper ordering", function()
+            local time = require("time")
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+            caller:set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
+
+            local start_time = time.now()
+
+            -- Create multiple tool calls with different delays
+            local tool_calls = {
+                {
+                    id = "call_first",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "First call",
+                        delay_ms = 30
+                    },
+                    registry_id = "app:delay_tool"
+                },
+                {
+                    id = "call_second",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Second call",
+                        delay_ms = 20
+                    },
+                    registry_id = "app:delay_tool"
+                },
+                {
+                    id = "call_third",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Third call",
+                        delay_ms = 40
+                    },
+                    registry_id = "app:delay_tool"
+                }
+            }
+
+            -- Validate and execute
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)
+            test.eq(count_table_elements(validated_tools), 3)
+
+            local results = caller:execute({}, validated_tools)
+            local end_time = time.now()
+
+            -- Verify all calls succeeded
+            test.not_nil(results)
+            test.eq(count_table_elements(results), 3)
+
+            for call_id, result in pairs(results) do
+                test.is_nil(result.error)
+                test.not_nil(result.result)
+            end
+
+            -- Verify total execution time is at least sum of delays (sequential)
+            local total_duration = end_time:sub(start_time):milliseconds()
+            test.is_true(total_duration >= 90) -- 30+20+40 = 90ms minimum
+
+            -- Note: We can't easily verify exact execution order since the tool calls
+            -- are processed from a hash table, not in array order. The important thing
+            -- is that they execute sequentially (verified by timing) and all succeed.
+            local messages_found = {}
+            for _, result in pairs(results) do
+                messages_found[result.result.message] = true
+            end
+
+            test.is_true(messages_found["First call"])
+            test.is_true(messages_found["Second call"])
+            test.is_true(messages_found["Third call"])
+        end)
+
+        it("should execute multiple real tools in parallel", function()
+            local time = require("time")
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+            caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+            local start_time = time.now()
+
+            -- Create multiple tool calls with delays
+            local tool_calls = {
+                {
+                    id = "call_parallel_1",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Parallel call 1",
+                        delay_ms = 60
+                    },
+                    registry_id = "app:delay_tool"
+                },
+                {
+                    id = "call_parallel_2",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Parallel call 2",
+                        delay_ms = 40
+                    },
+                    registry_id = "app:delay_tool"
+                },
+                {
+                    id = "call_parallel_3",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Parallel call 3",
+                        delay_ms = 50
+                    },
+                    registry_id = "app:delay_tool"
+                }
+            }
+
+            -- Validate and execute in parallel
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)
+            test.eq(count_table_elements(validated_tools), 3)
+
+            local results = caller:execute({}, validated_tools)
+            local end_time = time.now()
+
+            -- Verify all calls succeeded
+            test.not_nil(results)
+            test.eq(count_table_elements(results), 3)
+
+            for call_id, result in pairs(results) do
+                test.is_nil(result.error)
+                test.not_nil(result.result)
+            end
+
+            -- Verify total execution time is closer to max delay (parallel)
+            local total_duration = end_time:sub(start_time):milliseconds()
+            test.is_true(total_duration < 150) -- Should be much less than 150ms (60+40+50)
+            test.is_true(total_duration >= 60)  -- Should be at least max delay (60ms)
+
+            -- Verify all results are present
+            local messages = {}
+            for _, result in pairs(results) do
+                table.insert(messages, result.result.message)
+            end
+
+            local message_set = {}
+            for _, msg in ipairs(messages) do
+                message_set[msg] = true
+            end
+
+            test.is_true(message_set["Parallel call 1"])
+            test.is_true(message_set["Parallel call 2"])
+            test.is_true(message_set["Parallel call 3"])
+        end)
+
+        it("should handle real tool with various parameter combinations", function()
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+
+            -- Test different parameter combinations
+            local test_cases = {
+                {
+                    message = "Default delay",
+                    -- No delay_ms specified, should use default 100ms
+                },
+                {
+                    message = "Custom message with custom delay",
+                    delay_ms = 25
+                },
+                {
+                    message = "",  -- Empty message
+                    delay_ms = 10
+                },
+                {
+                    delay_ms = 0  -- Zero delay
+                    -- No message, should use default "Hello"
+                }
+            }
+
+            for i, test_case in ipairs(test_cases) do
+                local tool_calls = {
+                    {
+                        id = "call_param_test_" .. i,
+                        name = "delayed_echo",
+                        arguments = test_case,
+                        registry_id = "app:delay_tool"
+                    }
+                }
+
+                local validated_tools, err = caller:validate(tool_calls)
+                test.is_nil(err)
+
+                local results = caller:execute({}, validated_tools)
+                local call_id = next(validated_tools)
+
+                test.is_nil(results[call_id].error)
+                test.not_nil(results[call_id].result)
+
+                local result = results[call_id].result
+                test.not_nil(result.delay_applied)
+                test.not_nil(result.timestamp)
+                test.not_nil(result.unix_time)
+
+                -- Verify defaults work
+                if not test_case.message then
+                    test.eq(result.message, "Hello")
+                else
+                    test.eq(result.message, test_case.message)
+                end
+
+                if not test_case.delay_ms then
+                    test.eq(result.delay_applied, 100) -- Default
+                else
+                    test.eq(result.delay_applied, test_case.delay_ms)
+                end
+            end
+        end)
+
+        it("should handle real tool errors gracefully", function()
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+
+            -- Test with invalid parameters that might cause errors
+            local tool_calls = {
+                {
+                    id = "call_with_negative_delay",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Test message",
+                        delay_ms = -50  -- Negative delay might cause issues
+                    },
+                    registry_id = "app:delay_tool"
+                }
+            }
+
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)
+
+            local results = caller:execute({}, validated_tools)
+            local call_id = next(validated_tools)
+
+            -- The tool should either succeed (if it handles negative gracefully)
+            -- or fail with a proper error message
+            test.not_nil(results[call_id])
+
+            if results[call_id].error then
+                -- If it errors, it should be a string
+                test.eq(type(results[call_id].error), "string")
+                test.is_nil(results[call_id].result)
+            else
+                -- If it succeeds, result should be valid
+                test.not_nil(results[call_id].result)
+                test.eq(results[call_id].result.message, "Test message")
+            end
+        end)
+
+        it("should pass context to real tools and verify it's received", function()
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+
+            local tool_calls = {
+                {
+                    id = "call_context_verification",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Context verification test",
+                        delay_ms = 20
+                    },
+                    registry_id = "app:delay_tool",
+                    context = {
+                        tool_context_key = "tool_value",
+                        shared_key = "from_tool_context",
+                        tool_specific = "only_in_tool"
+                    }
+                }
+            }
+
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)
+
+            -- Execute with session context
+            local context = {
+                session_key = "session_value",
+                user_id = "test_user_123",
+                shared_key = "from_context", -- Should override tool context
+                test_run = "context_verification"
+            }
+
+            local results = caller:execute(context, validated_tools)
+            local call_id = next(validated_tools)
+
+            test.is_nil(results[call_id].error)
+            test.not_nil(results[call_id].result)
+
+            local result = results[call_id].result
+            test.eq(result.message, "Context verification test")
+            test.is_nil(result.context_error)
+            test.not_nil(result.context_received)
+
+            local ctx_received = result.context_received
+
+            -- Verify session context values were received
+            test.eq(ctx_received.session_key, "session_value")
+            test.eq(ctx_received.user_id, "test_user_123")
+            test.eq(ctx_received.test_run, "context_verification")
+
+            -- Verify tool context values were received
+            test.eq(ctx_received.tool_context_key, "tool_value")
+
+            -- Verify session context overrides tool context for shared keys
+            test.eq(ctx_received.shared_key, "from_context")
+
+            -- Verify call_id was set by the caller
+            test.not_nil(ctx_received.call_id)
+            test.eq(type(ctx_received.call_id), "string")
+        end)
+
+        it("should handle empty and nil contexts properly", function()
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+
+            -- Test with no tool context and no session context
+            local tool_calls = {
+                {
+                    id = "call_empty_context",
+                    name = "delayed_echo",
+                    arguments = {
+                        message = "Empty context test",
+                        delay_ms = 15
+                    },
+                    registry_id = "app:delay_tool"
+                    -- No context field at all
+                }
+            }
+
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)
+
+            -- Execute with empty session context
+            local results = caller:execute({}, validated_tools)
+            local call_id = next(validated_tools)
+
+            test.is_nil(results[call_id].error)
+            test.not_nil(results[call_id].result)
+
+            local result = results[call_id].result
+            test.is_nil(result.context_error)
+            test.not_nil(result.context_received)
+
+            local ctx_received = result.context_received
+
+            -- Should still have call_id set by caller
+            test.not_nil(ctx_received.call_id)
+
+            -- Other context values should be nil
+            test.is_nil(ctx_received.session_key)
+            test.is_nil(ctx_received.user_id)
+            test.is_nil(ctx_received.tool_context_key)
+            test.is_nil(ctx_received.shared_key)
+        end)
+
+        it("should produce consistent results with both sequential and parallel strategies", function()
+            local tool_caller = require("tool_caller")
+
+            -- Test same tool calls with sequential strategy
+            local sequential_caller = tool_caller.new()
+            sequential_caller:set_strategy(tool_caller.STRATEGY.SEQUENTIAL)
+
+            local tool_calls = {
+                {
+                    id = "seq_call_1",
+                    name = "delayed_echo",
+                    arguments = { message = "Sequential 1", delay_ms = 30 },
+                    registry_id = "app:delay_tool"
+                },
+                {
+                    id = "seq_call_2",
+                    name = "delayed_echo",
+                    arguments = { message = "Sequential 2", delay_ms = 20 },
+                    registry_id = "app:delay_tool"
+                }
+            }
+
+            local seq_validated, err = sequential_caller:validate(tool_calls)
+            test.is_nil(err)
+
+            local seq_results = sequential_caller:execute({}, seq_validated)
+            test.eq(count_table_elements(seq_results), 2)
+
+            -- Test same tool calls with parallel strategy
+            local parallel_caller = tool_caller.new()
+            parallel_caller:set_strategy(tool_caller.STRATEGY.PARALLEL)
+
+            local par_validated, err = parallel_caller:validate(tool_calls)
+            test.is_nil(err)
+
+            local par_results = parallel_caller:execute({}, par_validated)
+            test.eq(count_table_elements(par_results), 2)
+
+            -- Both should succeed with same results (different timing)
+            for _, result in pairs(seq_results) do
+                test.is_nil(result.error)
+                test.not_nil(result.result)
+            end
+
+            for _, result in pairs(par_results) do
+                test.is_nil(result.error)
+                test.not_nil(result.result)
+            end
+
+            -- Verify both strategies produced the expected messages
+            local seq_messages = {}
+            for _, result in pairs(seq_results) do
+                seq_messages[result.result.message] = true
+            end
+
+            local par_messages = {}
+            for _, result in pairs(par_results) do
+                par_messages[result.result.message] = true
+            end
+
+            test.is_true(seq_messages["Sequential 1"])
+            test.is_true(seq_messages["Sequential 2"])
+            test.is_true(par_messages["Sequential 1"])
+            test.is_true(par_messages["Sequential 2"])
+        end)
+
+        it("should handle real tool validation failures", function()
+            local tool_caller = require("tool_caller")
+            local caller = tool_caller.new()
+
+            -- Test with non-existent tool
+            local tool_calls = {
+                {
+                    id = "call_nonexistent",
+                    name = "nonexistent_function",
+                    arguments = { test = "data" },
+                    registry_id = "wippy.agent.tools:nonexistent_tool"
+                }
+            }
+
+            local validated_tools, err = caller:validate(tool_calls)
+            test.is_nil(err)  -- Validation doesn't fail, but marks tool as invalid
+            test.not_nil(validated_tools)
+            test.eq(count_table_elements(validated_tools), 1)
+
+            local call_id = next(validated_tools)
+            test.is_false(validated_tools[call_id].valid)
+            test.not_nil(validated_tools[call_id].error)
+
+            -- Execute anyway - should handle invalid tool gracefully
+            local results = caller:execute({}, validated_tools)
+            test.not_nil(results[call_id])
+            test.is_nil(results[call_id].result)
+            test.not_nil(results[call_id].error)
+        end)
+    end)
+end
+
+return require("test").run_cases(define_tests)

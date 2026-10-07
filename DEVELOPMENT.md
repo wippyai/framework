@@ -479,8 +479,9 @@ Tests communicate with the runner via process messages on topic `test:update`:
 ```yaml
 organization: wippy
 module: relay
+type: library
 description: WebSocket relay and messaging infrastructure
-license: Apache-2.0
+license: MPL-2.0
 repository: https://github.com/wippyai/framework
 homepage: https://wippy.ai
 keywords:
@@ -494,6 +495,10 @@ exclude_meta:
 exclude:
   - "app:**"
 ```
+
+Module manifests carry no `version`: `.release-please-manifest.json` holds each module's current
+version, and the release workflow passes it to `wippy publish --version`. `make check-manifests`
+enforces this and that every module is registered in both release-please files.
 
 ### Exclusion
 
@@ -522,25 +527,33 @@ Wildcard syntax: `*` matches one segment, `**` matches zero or more segments.
 | `scope: [dev]` | llm, agent, views, facade |
 | `exclude: ["app:**"]` | facade, views |
 
-### Publishing Command
+### Release Flow
+
+Every module is a separate release-please package (`release-please-config.json`, keyed by
+`src/<module>`) and is versioned and published on its own. Before 1.0 a breaking change bumps the
+minor version, and features and fixes bump the patch version.
+
+1. Land conventional commits on `master`. A commit belongs to the modules whose files it touches;
+   scope the message by module (`fix(llm): ...`) so the changelog entry reads well.
+2. `.github/workflows/release.yml` runs the CI checks, then release-please opens or updates a single
+   release PR that bumps each affected module in `.release-please-manifest.json` and
+   `src/<module>/CHANGELOG.md`.
+3. Merging the PR creates one GitHub release and tag per module (`llm-v0.5.1`, `views-v0.5.12`).
+4. For each released path the workflow checks out the module tag, runs
+   `wippy publish --version <released version> --dry-run`, then publishes `wippy/<module>` to the hub with the release notes
+   from that version's changelog section. Publishing authenticates with the `WIPPY_TOKEN` secret.
+
+### Manual Publishing
 
 ```bash
-wippy publish                         # interactive version bump
-wippy publish --version 1.2.0         # specific version
-wippy publish --dry-run               # pack only, verify content
-wippy publish --label latest          # mutable label
-wippy publish --protected             # immutable version
-wippy publish --release-notes "..."   # release notes
+wippy publish --config src/relay/src --dry-run          # pack only, verify content
+wippy publish --config src/views --version 1.2.0        # publish a version
+wippy publish --config src/views --release-notes "..."  # release notes
 ```
 
-### Framework Makefile
-
-```bash
-make publish-all         # publish all packages
-make <package>           # publish specific package (e.g., make relay)
-```
-
-Flat packages publish from `src/<package>/`, src packages from `src/<package>/src/`.
+Flat packages publish from `src/<package>/`, src packages from `src/<package>/src/`. Manual
+publishing bypasses the release flow, so the hub version and the release tag diverge; use it
+only for recovery, and publish the version the tag already carries.
 
 ## Dependency Management
 

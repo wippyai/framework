@@ -13,6 +13,17 @@ LLM agent framework with compilation, tool execution, traits, delegation, and me
 
 Requires `wippy/llm >= 0.4.0`.
 
+Tool execution preserves canonical executor errors. A normal result of
+`{ success = false, error = "non-empty error text" }` also sets the existing
+`ToolExecResult.error` field, while keeping the original result intact. Both
+sequential and parallel callers apply this before after-execute wrappers run.
+An `error` field alone, or a false `success` without a non-empty string error,
+remains ordinary result data.
+
+Errors keep the wrapper outcome `continues` / `tool_execution_failed`: the
+model may correct a call. The host owns retry limits and stopping the turn;
+the caller adds no retry API or configuration.
+
 ## Agent Context
 
 The primary SDK entry point. Chains configuration calls and produces a compiled agent runner.
@@ -306,6 +317,107 @@ entries:
       time_interval: 15
       timezone: UTC
 ```
+
+### Trait behaviors and compatibility
+
+Put related lifecycle, checkpoint, and tool behavior under `data.behaviors` in a
+trait registry entry. `handles` selects phases; a handler binding runs only for
+the selected phases. A checkpoint configuration without a checkpoint handler
+still contributes the supported agent checkpoint options.
+
+```yaml
+entries:
+  - name: durable_memory
+    kind: registry.entry
+    meta:
+      type: agent.trait
+      name: Durable Memory
+    data:
+      behaviors:
+        memory:
+          kind: memory
+          handles: [recall, activate, before_step, checkpoint, deactivate]
+          handlers:
+            recall: my_ns:memory_impl
+            lifecycle: my_ns:memory_lifecycle
+            checkpoint: my_ns:memory_checkpoint
+          options:
+            namespace: project
+          recall:
+            max_items: 5
+          checkpoint:
+            token_threshold: 12000
+```
+
+Behavior maps compile in key order; arrays compile in declaration order. Within
+one trait, behavior-generated bindings and wrappers precede legacy `bindings`
+and `tool_wrappers` at equal priority. Both forms may be used together and
+remain separate entries. Options for a behavior merge in this order: trait
+options, behavior options, attachment options, then phase options. Legacy
+lifecycle and tool-wrapper binding option precedence remains unchanged.
+
+Checkpoint scheduling uses trait defaults, then explicit `agent_options.checkpoint`,
+then session/node checkpoint overrides. Maps merge recursively; lists replace
+(an empty list clears); `false`, zero, and empty strings are explicit overrides.
+Absent configuration does not enable checkpointing. The same detached effective
+options reach the checkpoint binding and function fallback, above binding defaults.
+A strict binding failure stops processing without trying the function fallback.
+Each binding attempt receives its own option copy.
+
+Tool wrappers may adjust arguments, redirect a tool, or reorder calls, but must
+preserve every original tool-call ID exactly once. Dropping, duplicating, adding,
+or replacing an ID fails validation before tools execute, regardless of wrapper
+strictness: providers require matching results for every original call.
+
+`wippy.agent:memory.recall` remains the automatic recall contract. Explicit
+`handles: [recall]` and `handlers.recall` select its provider; naming a behavior
+`memory` alone does not. The provider receives detached attachment context and
+effective recall options. An explicit agent `memory_contract` takes precedence
+(an empty map disables provider selection); ambiguous trait providers fail
+compilation. `recall.enabled = false` disables automatic recall.
+
+Checkpointing reduces the active conversation. The memory provider still owns
+durable storage, aging, retrieval, and authorization; there is no built-in
+long-term memory store. Host identity refs are not authorization grants.
+
+Behavior lifecycle handlers in `before_step`/`after_step` and tool wrappers in
+`after_execute` can return `_control`. The supported declarative subset is
+`config` (agent/model/traits/tools), `context` (session/public_meta set/delete,
+public_meta clear), and `memory.compact` (boolean). Hosts reuse their canonical
+control handlers and apply proposals only after the round's outcomes settle.
+`after_step` itself is before tools execute; `after_execute` is before host
+persistence. Returned `context` without `_control` is not a host configuration
+change. Legacy bindings do not acquire behavior controls implicitly.
+
+Session and Dataflow persist proposals with the round and replay them after
+recovery. Replay is at-least-once, not exactly-once external writes; providers
+must make writes and lifecycle hooks idempotent using stable host refs.
+`memory.compact = true` requests checkpointing without a token threshold, but
+does not bypass an explicit disable or supply a missing provider. False does
+not cancel an earlier request. There are no automatic evaluator calls, new
+loop thresholds, or built-in steering policies for existing apps.
+Critical durable writes must not depend on `deactivate`, which cannot run after
+a hard kill; providers need stable persisted IDs and idempotent writes.
+
+The compiler retains the public `bindings` and `tool_wrappers` plans. To catch
+misspelled phases or missing lifecycle/tool handlers while authoring, call
+`compiler.validate_behaviors(trait.data.behaviors)`; it returns an array of
+`{path, code, message}` diagnostics. Compilation remains permissive for
+existing registry entries.
+
+Hosts can use `wippy.agent:lifecycle_controller` to keep transition state in
+their own table. `activate(state, {id, model, agent, variant}, opts)` dispatches
+`deactivate` for the old agent before `activate` for the new one; `deactivate`
+handles host finish. The host supplies `opts.payload(phase, descriptor)` and
+`opts.dispatch(agent, phase, payload)`, so it retains reason, refs, checkpoint
+scheduling, and tool policy. A successful same-ID/model refresh emits no phases.
+An optional `variant` (for example, the effective trait overlay) is copied and
+compared by value: changing it causes a transition even at the same ID/model.
+Without a variant, existing same-ID/model behavior is preserved. A failed
+deactivation keeps the old state; a failed activation leaves it inactive.
+A missing stored agent object requires a fallback with matching ID, model,
+revision, and trait variant. An unavailable or mismatched fallback fails without
+dispatching against a different agent or silently discarding the active state.
 
 ### Trait Functions
 

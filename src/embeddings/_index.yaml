@@ -31,11 +31,6 @@ entries:
     component: wippy/migration
     version: "*"
 
-  - name: test
-    kind: ns.dependency
-    component: wippy/test
-    version: "*"
-
   # wippy.embeddings:embedding_repo
   - name: embedding_repo
     kind: library.lua
@@ -54,29 +49,6 @@ entries:
       - uuid
       - time
       - registry
-
-  # wippy.embeddings:embedding_repo_test
-  - name: embedding_repo_test
-    kind: function.lua
-    meta:
-      name: Embedding Repository Test
-      type: test
-      comment: Tests the embedding_repo library for vector operations
-      group: LLM / Embeddings (SQL)
-      tags:
-        - embeddings
-        - vector
-        - tests
-    source: file://embedding_repo_test.lua
-    modules:
-      - sql
-      - uuid
-      - json
-      - registry
-    imports:
-      embedding_repo: wippy.embeddings:embedding_repo
-      test: wippy.test:test
-    method: run
 
   # wippy.embeddings:embeddings
   - name: embeddings

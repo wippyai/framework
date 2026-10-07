@@ -49,6 +49,69 @@ local result = llm.generate(builder, {
 })
 ```
 
+### Route facts
+
+Each provider route declares what the model accepts on the wire. These optional facts use a fixed vocabulary:
+
+| Fact | Values | Meaning |
+|---|---|---|
+| `thinking` | `adaptive`, `budget`, `none` | How thinking effort is encoded |
+| `sampling` | `true`, `false` | Whether temperature, top_p and top_k are accepted |
+| `forced_tool_choice` | `true`, `false` | Whether `tool_choice = "any"` or a named tool is accepted |
+| `structured_output` | `native`, `tool` | Native JSON schema output or a structured-output tool |
+
+Missing facts preserve each driver's defaults. Claude and Bedrock default to budget thinking, sampling and forced tool choice enabled, and tool-based structured output. OpenAI, OpenAI-compatible and Google default to no thinking. Invalid fact values (outside the fixed vocabulary above) produce an `invalid_request` error naming the route, key and allowed values. A value inside that vocabulary but outside what a specific driver can honor is also `invalid_request`, naming the fact, the value and that driver's supported values: Bedrock only supports tool-based structured output, OpenAI and OpenAI-compatible only support `adaptive` or `none` thinking, and Google only supports `none` thinking.
+
+Facts are normalized when building generation and structured-output requests. Discovery cards, `llm.available_models`, `llm.resolve_model`, and resolver results retain their original shape. Canonical route facts win over legacy forms and caller options. Resolved calls ignore caller `model_profile` and reject caller `accepts`. Direct calls can declare facts:
+
+```lua
+local response, err = llm.generate("Explain the result", {
+    provider_id = "wippy.llm.claude:provider",
+    model = "claude-sonnet-5",
+    accepts = { thinking = "adaptive", sampling = false },
+    thinking_effort = 50,
+    temperature = 0.7
+})
+-- response.metadata.adjusted.temperature = { requested = 0.7 }
+```
+
+When `sampling = false`, the request removes temperature, top_p and top_k. When `thinking = "none"`, it removes a positive thinking_effort. Each removal appears in `metadata.adjusted[param] = { requested = value, sent = nil }` (Lua omits the nil field). With caller `strict = true`, adjustments fail with `invalid_request` naming the parameters before the provider HTTP request. The strict flag and fact/legacy options are not sent as driver request options.
+
+Claude and Bedrock budget thinking never injects a temperature; the provider default is already 1. A caller temperature of 1 is sent unchanged with no adjustment. Any other caller temperature is dropped, never sent, and reported as `metadata.adjusted.temperature = { requested = value }` (no `sent`); with `sampling = false`, `metadata.adjusted` reports exactly this one entry, since sampling removal already stripped the option before the driver saw it.
+
+Adaptive Claude and Bedrock requests with positive thinking_effort send `thinking.type = "adaptive"` and an effort level in `output_config`; they do not calculate a budget or touch temperature. An absent or zero effort sends no thinking fields.
+
+The forced tool choice rule is provider-agnostic: a route with `forced_tool_choice = false` rejects a `tool_choice` of `"any"` or a tool name, for every driver, unless the caller permits `tool_choice_fallback = "auto"`. The caller must enforce tool use itself when accepting that fallback. The response reports `metadata.tool_choice = { requested = "any", sent = "auto" }` independently of `metadata.adjusted`. A route that can only produce structured output by forcing a tool (`structured_output = "tool"`, Bedrock's only mode) rejects `forced_tool_choice = false` the same way. Native Claude structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path.
+
+Legacy forms remain supported through the normalizer:
+
+| Legacy form | Canonical form / behavior |
+|---|---|
+| Route `options.reasoning_model_request = true` | Only on a route whose driver declares it owns this flag (OpenAI, OpenAI-compatible): `thinking: adaptive`, `sampling: false`; false, absent, or a driver that does not declare it derives nothing |
+| Route `options.model_profile.thinking_mode = adaptive_only` | `thinking: adaptive` only |
+| Route `options.model_profile.forced_tool_choice` | `forced_tool_choice`, preserving both true and false |
+| Route `options.model_profile.structured_output_mode = native` | `structured_output: native` |
+| Caller `reasoning_model_request = true` | Same driver-declares-it rule as the route form; when it applies, derives adaptive thinking and no sampling unless canonically declared on the route |
+| Direct caller `model_profile` | Same legacy mappings; direct caller `accepts` wins |
+| Connection keys in route `options` | Still supported; use route `context` for new configuration |
+
+`reasoning_model_request` is a legacy flag owned by the driver that historically read it: a driver's `contract.binding` entry declares `meta.legacy_reasoning_flag: true` (OpenAI, OpenAI-compatible) to opt in. A route or provider entry bound to any other driver (Claude, Bedrock, Google, or a custom driver that never declared it) ignores the flag entirely; the request behaves exactly as if it were absent.
+
+Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
+
+### Retry
+
+Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.
+
+```lua
+llm.generate(builder, {
+    model = "claude",
+    retry = { attempts = 3, backoff_ms = 500 }  -- retries after the first attempt; backoff doubles each time
+})
+```
+
+A per-call `retry` replaces the provider policy, which is set in the provider entry's `driver.options.retry` or in a resolved provider's `context` and reaches the driver through its context. `attempts` is capped at 10 and `backoff_ms` at 60000.
+
 ### Response Format
 
 ```lua
@@ -193,6 +256,82 @@ local result, err = llm.embed({"Hello", "World"}, {
 -- result.result = {{...}, {...}}
 ```
 
+## Typed evaluation
+
+`llm.evaluate(state, questions, options)` asks a model to assess a string or JSON-compatible state against independent named questions. It returns model-estimated probabilities, not generated text or a new application state. Your code chooses thresholds, validates business rules, and takes actions. `choice` is categorical, `predicate` is a probability that a statement holds, and `score` is an ordinal rubric (not an arbitrary numeric/reward score).
+
+```lua
+local result, err = llm.evaluate(conversation, {
+    intent = {
+        type = "choice",
+        instructions = "Which queue owns this conversation",
+        domain = {
+            billing = "Payments, refunds and invoices",
+            technical = "Bugs, outages and integrations",
+            other = "None of these"
+        }
+    },
+    resolved = {
+        type = "predicate",
+        instructions = "The customer considers the issue closed"
+    },
+    mood = {
+        type = "score",
+        instructions = "Emotional temperature of the customer",
+        domain = {"calm", "frustrated", "angry"}
+    }
+}, {model = "jev"})
+```
+
+`state` is input context, not a state-machine state. The model sees every question against that same context; answers are not a joint distribution or a guaranteed consistent assignment. Slot keys are caller identifiers and are never shown to the model. A `choice` domain is an array of unique option names or a map of option to description; include `other` when none may fit. A `score` domain is an ordered array of at least two level descriptions; a `predicate` domain is optional and describes the `yes` and `no` outcomes. A predicate is not a boolean: apply a domain-specific threshold in code.
+
+### Readings
+
+```lua
+-- result.result structure:
+{
+    intent = {
+        type = "choice",
+        choice = "technical",
+        probabilities = {billing = 0.08, technical = 0.85, other = 0.07},
+        confidence = 0.82   -- provider-specific certainty statistic, if supplied
+    },
+    resolved = {
+        type = "predicate",
+        probability = 0.92
+    },
+    mood = {
+        type = "score",
+        score = 2.6,                       -- expected 1-based level index, NOT a physical quantity
+        level = 3,                         -- 1-based index of the highest-probability level
+        probabilities = {0.05, 0.3, 0.65}, -- aligned with the declared domain
+        confidence = 0.78                 -- not interchangeable across providers
+    }
+}
+```
+
+`result.result` holds the readings; the raw evaluator contract uses `result.readings`. Preserve the full distributions: an expected ordinal score can hide ambiguity between very different levels. Confidence is a provider-defined statistic derived from a distribution; do not transfer a confidence threshold between models without evaluation. Calibration is an empirical property of a model on your own data, not guaranteed by this contract.
+
+### Registering an evaluation model
+
+```yaml
+entries:
+  - name: jev
+    kind: registry.entry
+    meta:
+      type: llm.model
+      name: jev
+      title: Jev (System One)
+      class: [evaluate]
+      capabilities: [evaluate]
+      priority: 100
+    providers:
+      - id: wippy.llm.typesafe:provider
+        provider_model: jev-latest
+```
+
+The module ships the `wippy.llm.typesafe:provider` entry bound to its driver and credential variables. Driver env vars: `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` (default `https://api.typesafe.ai/v1`), `TYPESAFE_TIMEOUT`.
+
 ## Streaming
 
 ```lua
@@ -263,6 +402,7 @@ llm.CAPABILITY = {
     TOOL_USE = "tool_use",
     STRUCTURED_OUTPUT = "structured_output",
     EMBED = "embed",
+    EVALUATE = "evaluate",
     THINKING = "thinking",
     VISION = "vision",
     CACHING = "caching"
@@ -300,6 +440,8 @@ llm.ERROR_TYPE = {
 
 ## Registering Models
 
+The entry keeps metadata, limits, pricing and a `providers` list. **Only the first route is used**; route fallback is not implemented. Put connection and transport settings (API keys, base URL, timeout, retry, headers) in `context`, and request defaults in `options`.
+
 ```yaml
 entries:
   - name: claude-sonnet
@@ -307,43 +449,76 @@ entries:
     meta:
       type: llm.model
       name: claude-sonnet
-      title: Claude Sonnet
+      title: Claude Sonnet 5
       class: [fast, chat]
       capabilities: [generate, tool_use, vision, thinking, caching]
       priority: 100
     providers:
       - id: wippy.llm.claude:provider
-        provider_model: claude-sonnet-4-20250514
+        provider_model: claude-sonnet-5
+        thinking: adaptive
+        sampling: false
+        forced_tool_choice: true
+        structured_output: native
+        context:
+          timeout: 120
         options:
-          temperature: 0.7
-    max_tokens: 200000
-    output_tokens: 8192
-    pricing:
-      input: 3
-      output: 15
+          thinking_effort: 40
+    max_tokens: 1000000
+    output_tokens: 128000
+    pricing: { input: 2, output: 10 }
 ```
 
-#### Bedrock Model Registration
-
-Use `wippy.llm.bedrock:provider` and the Bedrock model ID (inference profile format for newer models):
+Additional model entries can use these routes with the same top-level structure. Limits and pricing should reflect your provider's current offering.
 
 ```yaml
-entries:
-  - name: claude-haiku-bedrock
-    kind: registry.entry
-    meta:
-      type: llm.model
-      name: claude-haiku-bedrock
-      title: Claude Haiku 4.5 (Bedrock)
-      class: [fast]
-      capabilities: [generate, tool_use, structured_output]
-      priority: 100
-    providers:
-      - id: wippy.llm.bedrock:provider
-        provider_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
-    max_tokens: 200000
-    output_tokens: 8192
+# Claude Opus 5.5
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-opus-5-5
+    thinking: adaptive
+    sampling: false
+    forced_tool_choice: false
+    structured_output: native
+    options:
+      thinking_effort: 60
 ```
+
+```yaml
+# Claude Haiku 4.5: absent facts retain the driver's budget-thinking defaults
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-haiku-4-5-20251001
+    options:
+      temperature: 0.7
+```
+
+```yaml
+# OpenAI reasoning model
+providers:
+  - id: wippy.llm.openai:provider
+    provider_model: gpt-5-mini
+    thinking: adaptive
+    sampling: false
+    options:
+      thinking_effort: 50
+```
+
+```yaml
+# Claude via Bedrock, using an inference profile
+providers:
+  - id: wippy.llm.bedrock:provider
+    provider_model: us.anthropic.claude-sonnet-4-6
+    thinking: adaptive
+    sampling: true
+    context:
+      timeout: 120
+      retry: { attempts: 3 }
+    options:
+      thinking_effort: 50
+```
+
+The reserved route keys are `id`, `provider_model`, `context`, `options`, `priority`, and the four facts above. Custom model resolvers return the same card and route structure.
 
 ### Model Classes
 
@@ -409,6 +584,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 - `wippy.llm:generator` - Text generation with tool calling
 - `wippy.llm:embedder` - Embedding generation
+- `wippy.llm:evaluator` - Typed probabilistic evaluations
 - `wippy.llm:structured_output` - Schema-constrained generation
 - `wippy.llm:provider` - Provider health status
 - `wippy.llm:usage_tracker` - Token usage tracking
@@ -420,6 +596,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 - `wippy.llm.openai` - OpenAI native (Responses API)
 - `wippy.llm.openai_compat` - OpenAI-compatible (Chat Completions) for Ollama / vLLM / OpenRouter / Together / Groq / etc.
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
+- `wippy.llm.typesafe` - TypeSafe Jev evaluation provider
 - `wippy.llm.discovery` - Model and provider discovery
 - `wippy.llm.util` - Utilities (text compression)
 - `wippy.llm.env` - Environment configuration

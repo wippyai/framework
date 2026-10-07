@@ -37,7 +37,10 @@ function generate.handler(contract_args)
         payload.systemInstruction = { parts = system_instructions }
     end
 
-    local mapped_options = generate._mapper.map_options(contract_args.options)
+    local mapped_options, options_err = generate._mapper.map_options(contract_args.options, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
     for key, value in pairs(mapped_options) do
         if value ~= nil then
             payload.generationConfig[key] = value
@@ -81,7 +84,7 @@ function generate.handler(contract_args)
     end
 
     local endpoint_path = "generateContent"
-    local request_options = { timeout = contract_args.timeout }
+    local request_options = { timeout = contract_args.timeout, retry = contract_args.retry }
 
     if contract_args.stream and contract_args.stream.reply_to then
         endpoint_path = "streamGenerateContent"

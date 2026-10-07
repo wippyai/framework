@@ -20,6 +20,13 @@ type RunnerOptions = {
     count: number?,
 }
 
+type RollbackMigration = {
+    id: string,
+    applied_at: string,
+    description: string?,
+    registry_entry: table?,
+}
+
 local runner = {}
 
 local function create_error(message: string): any
@@ -48,7 +55,7 @@ local function compare_applied(a: any, b: any): boolean
     return registry_finder.compare(a, b)
 end
 
-local function compare_rollback(a: any, b: any): boolean
+local function compare_rollback(a: RollbackMigration, b: RollbackMigration): boolean
     local a_applied_at = tostring(a.applied_at or "")
     local b_applied_at = tostring(b.applied_at or "")
     if a_applied_at ~= b_applied_at then
@@ -304,14 +311,7 @@ function Runner:run_next(options: RunnerOptions?): any
 
     local migrations, err = self:find_migrations(options)
     if err then
-        return {
-            status = "complete",
-            message = err,
-            migrations_found = 0,
-            migrations_applied = 0,
-            migrations_skipped = 0,
-            migrations_failed = 0
-        }
+        return create_error(err)
     end
 
     if not migrations or #migrations == 0 then
@@ -462,7 +462,7 @@ function Runner:rollback(options: RunnerOptions?): any
         return create_error("Failed to initialize migration tracking table: " .. tostring(init_err))
     end
 
-    local applied_migrations, query_err = repository.get_migrations(db)
+    local rows, query_err = repository.get_migrations(db)
     if query_err then
         db:release()
         return create_error("Failed to get applied migrations: " .. tostring(query_err))
@@ -470,7 +470,7 @@ function Runner:rollback(options: RunnerOptions?): any
 
     db:release()
 
-    if not applied_migrations or #applied_migrations == 0 then
+    if not rows or #rows == 0 then
         return {
             status = "complete",
             message = "No migrations to roll back",
@@ -481,11 +481,26 @@ function Runner:rollback(options: RunnerOptions?): any
         }
     end
 
-    for i, migration in ipairs(applied_migrations) do
-        local registry_entry = registry_finder.get(tostring(migration.id))
-        if registry_entry then
-            applied_migrations[i].registry_entry = registry_entry
+    local applied_migrations: {RollbackMigration} = {}
+    for _, row in ipairs(rows) do
+        if type(row) ~= "table" or type(row.id) ~= "string" then
+            return create_error("Invalid applied migration record")
         end
+        local description: string? = nil
+        if type(row.description) == "string" then
+            description = row.description
+        end
+        local entry = registry_finder.get(row.id)
+        local registry_entry: table? = nil
+        if type(entry) == "table" then
+            registry_entry = entry
+        end
+        table.insert(applied_migrations, {
+            id = row.id,
+            applied_at = tostring(row.applied_at or ""),
+            description = description,
+            registry_entry = registry_entry,
+        })
     end
 
     table.sort(applied_migrations, compare_rollback)
@@ -493,7 +508,7 @@ function Runner:rollback(options: RunnerOptions?): any
     local allowed_ids = options.allowed_ids or {}
 
     if #allowed_ids > 0 then
-        local filtered = {}
+        local filtered: {RollbackMigration} = {}
         for _, migration in ipairs(applied_migrations) do
             for _, allowed_id in ipairs(allowed_ids) do
                 if migration.id == allowed_id then
@@ -522,7 +537,7 @@ function Runner:rollback(options: RunnerOptions?): any
         count = #applied_migrations
     end
 
-    local to_rollback = {}
+    local to_rollback: {RollbackMigration} = {}
     for i = 1, count do
         table.insert(to_rollback, applied_migrations[i])
     end

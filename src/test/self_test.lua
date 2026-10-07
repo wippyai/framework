@@ -2,6 +2,43 @@
 local test = require("test")
 
 local function define_tests()
+    -- Hook bookkeeping for the "suite hooks" suites below: a suite's before_all
+    -- and after_all run once around the suite and all of its descendants.
+    local hooks = { outer_before = 0, outer_after = 0, grandchild_ran = false }
+
+    test.describe("suite hooks", function()
+        test.before_all(function() hooks.outer_before = hooks.outer_before + 1 end)
+        test.after_all(function() hooks.outer_after = hooks.outer_after + 1 end)
+
+        test.describe("first child", function()
+            test.it("runs after the outer before_all ran once", function()
+                test.eq(hooks.outer_before, 1)
+                test.eq(hooks.outer_after, 0)
+            end)
+        end)
+
+        test.describe("second child", function()
+            test.it("still sees the outer before_all once and no after_all", function()
+                test.eq(hooks.outer_before, 1)
+                test.eq(hooks.outer_after, 0)
+            end)
+
+            test.describe("grandchild", function()
+                test.it("runs", function()
+                    hooks.grandchild_ran = true
+                end)
+            end)
+        end)
+    end)
+
+    test.describe("suite hooks afterwards", function()
+        test.it("ran the outer after_all exactly once, after every descendant", function()
+            test.eq(hooks.outer_before, 1)
+            test.eq(hooks.outer_after, 1)
+            test.is_true(hooks.grandchild_ran)
+        end)
+    end)
+
     test.describe("assertions", function()
         test.it("eq passes for equal values", function()
             test.eq(1, 1)

@@ -102,15 +102,16 @@ function migrations.get_target_dbs(): ({string}?, string?)
     end
 
     -- Extract unique target databases
-    local target_dbs = {}
+    local target_dbs: {[string]: boolean} = {}
     for _, entry in ipairs(entries) do
-        if entry.meta and entry.meta.target_db then
-            target_dbs[entry.meta.target_db] = true
+        local target_db = entry.meta and entry.meta.target_db
+        if type(target_db) == "string" then
+            target_dbs[target_db] = true
         end
     end
 
     -- Convert to sorted array
-    local result = {}
+    local result: {string} = {}
     for db in pairs(target_dbs) do
         table.insert(result, db)
     end
@@ -133,17 +134,19 @@ function migrations.get_tags(): ({string}?, string?)
     end
 
     -- Extract unique tags
-    local tags_map = {}
+    local tags_map: {[string]: boolean} = {}
     for _, entry in ipairs(entries) do
         if entry.meta and entry.meta.tags then
             for _, tag in ipairs(entry.meta.tags) do
-                tags_map[tag] = true
+                if type(tag) == "string" then
+                    tags_map[tag] = true
+                end
             end
         end
     end
 
     -- Convert to sorted array
-    local result = {}
+    local result: {string} = {}
     for tag in pairs(tags_map) do
         table.insert(result, tag)
     end

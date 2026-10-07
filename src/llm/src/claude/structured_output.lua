@@ -3,6 +3,7 @@ local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
 local hash = require("hash")
+local route = require("route")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -60,6 +61,73 @@ local function validate_schema(schema)
     return #errors == 0, errors
 end
 
+-- Native structured output (output_config.format) constrains every object in the
+-- schema: each one must close itself with additionalProperties = false. Offending
+-- objects are reported by path; the caller's schema is never rewritten, since
+-- closing an open object changes what the caller accepts.
+local SUBSCHEMA_LISTS = { "anyOf", "allOf", "oneOf", "prefixItems" }
+local SUBSCHEMA_MAPS = { "properties", "$defs", "definitions" }
+
+local function has_type(node, name)
+    if node.type == name then return true end
+    if type(node.type) == "table" then
+        for _, t in ipairs(node.type) do
+            if t == name then return true end
+        end
+    end
+    return false
+end
+
+local function open_objects(node, path, found)
+    if type(node) ~= "table" then return found end
+    if (has_type(node, "object") or node.properties ~= nil) and node.additionalProperties ~= false then
+        table.insert(found, path == "" and "(root)" or path)
+    end
+    local prefix = path == "" and "" or (path .. ".")
+    for _, key in ipairs(SUBSCHEMA_MAPS) do
+        if type(node[key]) == "table" then
+            local names = {}
+            for name in pairs(node[key]) do table.insert(names, name) end
+            table.sort(names)
+            for _, name in ipairs(names) do
+                open_objects(node[key][name], prefix .. key .. "." .. name, found)
+            end
+        end
+    end
+    if type(node.items) == "table" then open_objects(node.items, prefix .. "items", found) end
+    for _, key in ipairs(SUBSCHEMA_LISTS) do
+        if type(node[key]) == "table" then
+            for i, sub in ipairs(node[key]) do open_objects(sub, prefix .. key .. "." .. i, found) end
+        end
+    end
+    return found
+end
+
+-- The answer of a native structured output call: the JSON text of the response,
+-- decoded. Refusals, truncation and non-JSON text are errors, never results.
+local function native_result(response, err)
+    if response.stop_reason == "refusal" then
+        return nil, err:kind(output.ERROR_TYPE.CONTENT_FILTER)
+            :message("Claude declined the structured output request (stop_reason refusal)"):build()
+    end
+    if response.stop_reason == "max_tokens" then
+        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output was truncated (stop_reason max_tokens)"):build()
+    end
+    local text = ""
+    for _, block in ipairs(response.content or {}) do
+        if block.type == "text" and type(block.text) == "string" then
+            text = text .. block.text
+        end
+    end
+    local data, decode_err = json.decode(text)
+    if decode_err or type(data) ~= "table" then
+        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output is not a JSON object: " .. tostring(decode_err or text:sub(1, 120))):build()
+    end
+    return data
+end
+
 function structured_output_handler.handler(contract_args)
     local err = output.errors.structured_output(contract_args)
         :classifier(structured_output_handler._mapper.classify_error :: ClassifyError)
@@ -85,8 +153,85 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
+    local native = route.fact(contract_args.accepts, "structured_output", mapper.CAPABILITY) == "native"
+
+    if native then
+        local open = open_objects(contract_args.schema, "", {})
+        if #open > 0 then
+            return nil, err
+                :kind(output.ERROR_TYPE.INVALID_REQUEST)
+                :message("Invalid schema for native structured output: objects without 'additionalProperties: false' at "
+                    .. table.concat(open, ", "))
+                :details({ schema_errors = open })
+                :build()
+        end
+    else
+        local forced_err = route.forced_tool_output_error(contract_args.accepts, mapper.CAPABILITY)
+        if forced_err then
+            return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(forced_err):build()
+        end
+    end
+
     local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped_options, adjusted, options_err = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
+    local strict_err = route.strict_error(tostring(contract_args._provider_id or contract_args.model), contract_args._strict, adjusted)
+    if strict_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(strict_err):build()
+    end
+
+    if native then
+        local output_config = mapped_options.output_config or {}
+        output_config.format = { type = "json_schema", schema = contract_args.schema }
+
+        local native_payload = {
+            model = contract_args.model,
+            messages = mapped_messages.messages,
+            max_tokens = mapped_options.max_tokens or 2000
+        }
+        if mapped_messages.system then
+            native_payload.system = mapped_messages.system
+        end
+        for k, v in pairs(mapped_options) do
+            if k ~= "max_tokens" then
+                native_payload[k] = v
+            end
+        end
+        native_payload.output_config = output_config
+
+        local response, request_err = structured_output_handler._client.request(
+            structured_output_handler._client.ENDPOINTS.MESSAGES,
+            native_payload,
+            { timeout = contract_args.timeout, retry = contract_args.retry }
+        )
+        if request_err then
+            return nil, err:from(request_err):build()
+        end
+        if not response or not response.content then
+            return nil, err
+                :kind(output.ERROR_TYPE.SERVER_ERROR)
+                :message("Invalid response structure from Claude")
+                :details(response and response.metadata or nil)
+                :build()
+        end
+
+        local data, data_err = native_result(response, err)
+        if not data then
+            return nil, data_err
+        end
+
+        local result = {
+            success = true,
+            result = { data = data },
+            tokens = structured_output_handler._mapper.map_tokens(response.usage),
+            finish_reason = "stop",
+            metadata = response.metadata or {}
+        }
+        route.attach_adjusted(result, adjusted)
+        return result
+    end
 
     local structured_tool = {
         name = "structured_output",
@@ -120,7 +265,8 @@ function structured_output_handler.handler(contract_args)
     end
 
     local request_options = {
-        timeout = contract_args.timeout
+        timeout = contract_args.timeout,
+        retry = contract_args.retry
     }
 
     local response, request_err = structured_output_handler._client.request(
@@ -163,7 +309,7 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    return {
+    local result = {
         success = true,
         result = {
             data = tool_use_block.input
@@ -172,6 +318,8 @@ function structured_output_handler.handler(contract_args)
         finish_reason = "stop",
         metadata = response.metadata or {}
     }
+    route.attach_adjusted(result, adjusted)
+    return result
 end
 
 return structured_output_handler

@@ -2,6 +2,7 @@ local json = require("json")
 local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
+local transport = require("transport")
 
 type ClaudeConfig = {
     api_key: string?,
@@ -9,6 +10,7 @@ type ClaudeConfig = {
     api_version: string,
     beta_features: {string},
     timeout: number,
+    retry: transport.Retry?,
     headers: {[string]: string}?
 }
 
@@ -29,22 +31,10 @@ claude_client.ENDPOINTS = {
 }
 
 local function resolve_config()
-    local ctx_all = claude_client._ctx.all() or {}
+    local ctx_all = (claude_client._ctx.all() or {}) :: {[string]: any}
 
     local function resolve_string(key: string, default_env: string?): string?
-        if ctx_all[key] then
-            return tostring(ctx_all[key])
-        end
-        local env_key = key .. "_env"
-        if ctx_all[env_key] then
-            local val = claude_client._env.get(tostring(ctx_all[env_key]))
-            if val and val ~= "" then return val end
-        end
-        if default_env then
-            local val = claude_client._env.get(default_env)
-            if val and val ~= "" then return val end
-        end
-        return nil
+        return transport.config_value(ctx_all, claude_client._env, key, default_env)
     end
 
     local config = {
@@ -53,6 +43,7 @@ local function resolve_config()
         api_version = resolve_string("api_version", "ANTHROPIC_API_VERSION") or "2023-06-01",
         beta_features = ctx_all.beta_features or {},
         timeout = tonumber(resolve_string("timeout", "ANTHROPIC_TIMEOUT")) or 600,
+        retry = transport.normalize_retry(ctx_all.retry),
         headers = ctx_all.headers
     }
     return config
@@ -83,20 +74,21 @@ local function extract_response_metadata(http_response)
     return metadata
 end
 
-local function parse_error_response(http_response)
-    local error_info = {
-        status_code = http_response and http_response.status_code or 0,
-        message = "Claude API error: " .. (http_response and http_response.status_code or "connection failed")
+local function parse_error_response(http_response: transport.HttpResponse): transport.RequestError
+    local error_info: transport.RequestError = {
+        status_code = http_response.status_code,
+        message = "Claude API error: " .. tostring(http_response.status_code)
     }
 
-    if http_response and http_response.headers then
-        error_info.request_id = http_response.headers["request-id"] or
-            http_response.headers["x-request-id"]
+    local headers = http_response.headers or {}
+    local header_request_id = headers["request-id"] or headers["x-request-id"]
+    if header_request_id then
+        error_info.request_id = tostring(header_request_id)
     end
 
-    local error_body = http_response and http_response.body
-    if http_response and http_response.stream then
-        error_body = http_response.stream:read(4096)
+    local error_body = http_response.body
+    if http_response.stream then
+        error_body = http_response.stream:read(4096) :: string?
     end
 
     if error_body and #error_body > 0 then
@@ -106,11 +98,13 @@ local function parse_error_response(http_response)
                 error_info.error = parsed.error
                 error_info.message = parsed.error.message or error_info.message
             end
-            error_info.request_id = parsed.request_id or error_info.request_id
+            if parsed.request_id then
+                error_info.request_id = tostring(parsed.request_id)
+            end
         end
     end
 
-    error_info.metadata = extract_response_metadata(http_response :: any)
+    error_info.metadata = extract_response_metadata(http_response)
     return error_info
 end
 
@@ -137,7 +131,7 @@ local function prepare_headers(api_key, api_version, beta_features, method, addi
 end
 
 
-function claude_client.request(endpoint_path, payload, options)
+function claude_client.request(endpoint_path, payload, options): (any, transport.RequestError?)
     options = options or {}
     local method = options.method or "POST"
 
@@ -172,28 +166,14 @@ function claude_client.request(endpoint_path, payload, options)
         end
     end
 
-    local response, err
-    if method == "GET" then
-        response, err = claude_client._http_client.get(full_url, http_options)
-    elseif method == "DELETE" then
-        response, err = claude_client._http_client.delete(full_url, http_options)
-    elseif method == "PUT" then
-        response, err = claude_client._http_client.put(full_url, http_options)
-    elseif method == "PATCH" then
-        response, err = claude_client._http_client.patch(full_url, http_options)
-    else
-        response, err = claude_client._http_client.post(full_url, http_options)
+    local function send_once()
+        return transport.dispatch(claude_client._http_client, method, full_url, http_options)
     end
 
+    local retry = transport.request_retry(options.retry, config.retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry)
     if not response then
-        return nil, {
-            status_code = 0,
-            message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
-        }
-    end
-
-    if response.status_code < 200 or response.status_code >= 300 then
-        return nil, parse_error_response(response)
+        return nil, request_error
     end
 
     if options.stream and response.stream then
@@ -214,7 +194,7 @@ function claude_client.request(endpoint_path, payload, options)
         }
     end
 
-    parsed.metadata = extract_response_metadata(response :: any)
+    parsed.metadata = extract_response_metadata(response)
     return parsed
 end
 

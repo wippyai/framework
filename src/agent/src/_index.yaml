@@ -9,13 +9,6 @@ entries:
       description: LLM agent framework with tool support and conversation management
 
   # Dependencies
-  - name: dep.wippy.test
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/test"
-    version: ">=v0.4.0"
-
   - name: dep.wippy.llm
     kind: "ns.dependency"
     meta:
@@ -38,90 +31,6 @@ entries:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
       output: wippy.llm:output
-
-  # wippy.agent:agent_integration_test
-  - name: agent_integration_test
-    kind: function.lua
-    meta:
-      name: Agent Integration Test
-      type: test
-      comment: Comprehensive integration tests for the full agent system chain - Raw Spec to Compiler to Agent to Tool Caller to Real Tools
-      group: Agent Framework
-      tags:
-        - agents
-        - integration
-        - compiler
-        - tool_caller
-        - parallel_execution
-        - tool_aliases
-        - tests
-    source: file://agent_integration_test.lua
-    modules:
-      - time
-      - json
-      - env
-    imports:
-      prompt: wippy.llm:prompt
-      agent: wippy.agent:agent
-      output: wippy.llm:output
-      compiler: wippy.agent.compiler:compiler
-      test: wippy.test:test
-      tool_caller: wippy.agent.tools:caller
-    method: run_tests
-
-  # wippy.agent:agent_memory_test
-  - name: agent_memory_test
-    kind: function.lua
-    meta:
-      name: Agent Memory Processing Test
-      type: test
-      comment: Detailed tests for agent memory contract integration and processing logic
-      group: Agent Framework
-      tags:
-        - agents
-        - memory
-        - contracts
-        - processing
-        - tests
-    source: file://agent_memory_test.lua
-    modules:
-      - time
-      - json
-    imports:
-      prompt: wippy.llm:prompt
-      agent: wippy.agent:agent
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
-
-  # wippy.agent:agent_test
-  - name: agent_test
-    kind: function.lua
-    meta:
-      name: Agent Test
-      type: test
-      comment: Tests the agent runner library functionality for executing LLM agents with conversation and tool support
-      group: Agent Framework
-      tags:
-        - agents
-        - llm
-        - conversation
-        - tools
-        - tests
-    source: file://agent_test.lua
-    modules:
-      - time
-      - json
-      - env
-    imports:
-      prompt: wippy.llm:prompt
-      agent: wippy.agent:agent
-      agent_registry: wippy.agent.discovery:registry
-      llm: wippy.llm:llm
-      output: wippy.llm:output
-      test: wippy.test:test
-      tool_caller: wippy.agent.tools:caller
-    method: run_tests
 
   # wippy.agent:context
   - name: context
@@ -146,26 +55,21 @@ entries:
       compiler: wippy.agent.compiler:compiler
       output: wippy.llm:output
 
-  # wippy.agent:context_test
-  - name: context_test
-    kind: function.lua
+  # wippy.agent:lifecycle_controller
+  - name: lifecycle_controller
+    kind: library.lua
     meta:
-      name: Agent Context Test
-      type: test
-      comment: Tests the agent context manager functionality for loading, compilation, and runtime switching
-      group: Agent Framework
-      tags:
-        - agents
-        - context
-        - runtime
-        - switching
-        - tests
-    source: file://context_test.lua
-    imports:
-      context: wippy.agent:context
-      compiler: wippy.agent.compiler:compiler
-      test: wippy.test:test
-    method: run_tests
+      type: library
+      comment: Shared activation and deactivation state machine for agent hosts
+    source: file://lifecycle_controller.lua
+
+  - name: behavior_controls
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validation and detached preparation of declarative behavior proposals
+    source: file://behavior_controls.lua
+    modules: [json]
 
   # wippy.agent:lifecycle_runtime
   - name: lifecycle_runtime
@@ -176,26 +80,8 @@ entries:
     source: file://lifecycle_runtime.lua
     modules:
       - contract
-
-  # wippy.agent:lifecycle_runtime_test
-  - name: lifecycle_runtime_test
-    kind: function.lua
-    meta:
-      name: Agent Lifecycle Runtime Test
-      type: test
-      comment: Unit tests for optional trait-owned lifecycle contract dispatch
-      group: Agent Framework
-      tags:
-        - agents
-        - lifecycle
-        - traits
-        - contracts
-        - tests
-    source: file://lifecycle_runtime_test.lua
     imports:
-      lifecycle_runtime: wippy.agent:lifecycle_runtime
-      test: wippy.test:test
-    method: run_tests
+      behavior_controls: wippy.agent:behavior_controls
 
   # wippy.agent:checkpoint_runtime
   - name: checkpoint_runtime
@@ -206,26 +92,6 @@ entries:
     source: file://checkpoint_runtime.lua
     modules:
       - contract
-
-  # wippy.agent:checkpoint_runtime_test
-  - name: checkpoint_runtime_test
-    kind: function.lua
-    meta:
-      name: Agent Checkpoint Runtime Test
-      type: test
-      comment: Unit tests for optional trait-owned checkpoint contract dispatch
-      group: Agent Framework
-      tags:
-        - agents
-        - checkpoint
-        - traits
-        - contracts
-        - tests
-    source: file://checkpoint_runtime_test.lua
-    imports:
-      checkpoint_runtime: wippy.agent:checkpoint_runtime
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.agent:memory
   - name: memory
@@ -573,6 +439,15 @@ entries:
               {
                 "type": "object",
                 "properties": {
+                  "_control": {
+                    "type": "object",
+                    "description": "Opt-in behavior proposals; step controls take effect only after the round is recorded.",
+                    "properties": {
+                      "config": { "type": "object" },
+                      "context": { "type": "object" },
+                      "memory": { "type": "object", "properties": { "compact": { "type": "boolean" } } }
+                    }
+                  },
                   "messages": { "type": "array", "items": { "type": "object" } },
                   "context": { "type": "object" },
                   "observations": { "type": "array", "items": { "type": "object" } },
@@ -641,6 +516,11 @@ entries:
         reference; the wrapper owns no memory or checkpoint lifecycle. Traits can
         attach multiple focused bindings and each binding is invoked only for the
         phases declared by that trait.
+
+        Before-execute adjustments must preserve every original tool-call ID
+        exactly once. Tool names and arguments may change and calls may reorder,
+        but an ID cannot be dropped, added, duplicated, or replaced: providers
+        pair tool results with the original IDs. Violations fail validation.
     methods:
       - name: apply
         description: Apply one wrapper phase to an agent tool execution.
@@ -694,7 +574,7 @@ entries:
                     "properties": {
                       "state": {
                         "type": "string",
-                        "enum": ["continues", "completed", "failed", "compacted", "delegated"]
+                        "enum": ["continues", "completed", "failed", "delegated"]
                       },
                       "reason": {
                         "type": "string",
@@ -725,6 +605,15 @@ entries:
               {
                 "type": "object",
                 "properties": {
+                  "_control": {
+                    "type": "object",
+                    "description": "Opt-in after_execute behavior proposals; the host applies them after every outcome is recorded.",
+                    "properties": {
+                      "config": { "type": "object" },
+                      "context": { "type": "object" },
+                      "memory": { "type": "object", "properties": { "compact": { "type": "boolean" } } }
+                    }
+                  },
                   "skipped": {
                     "type": "boolean"
                   },

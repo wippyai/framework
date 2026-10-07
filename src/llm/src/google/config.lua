@@ -3,6 +3,7 @@ local env = require("env")
 local json = require("json")
 local store = require("store")
 local ctx = require("ctx")
+local transport = require("transport")
 
 local config = {
     _env = env,
@@ -14,13 +15,13 @@ config.OAUTH2_TOKEN_CACHE_KEY = "google_oauth2_token"
 config.DEFAULT_CACHE_ID = "app:cache"
 config.CLIENT_CONTRACT_ID = "wippy.llm.google:client_contract"
 
+local function safe_ctx_get(ctx_key)
+    local success, v = pcall(function() return config._ctx.get(ctx_key) end)
+
+    return success and v or nil
+end
+
 local function get_value(key, default_env_var)
-    local safe_ctx_get = function (ctx_key)
-        local success, v = pcall(function() return config._ctx.get(ctx_key) end)
-
-        return success and v or nil
-    end
-
     -- Check for direct value first
     local ctx_value = safe_ctx_get(key)
     if ctx_value and ctx_value ~= "" then
@@ -116,6 +117,10 @@ function config.get_vertex_timeout()
     local timeout = get_value("timeout", "VERTEX_AI_TIMEOUT")
 
     return (timeout and tonumber(timeout)) or 600
+end
+
+function config.get_retry(): transport.Retry?
+    return transport.normalize_retry(safe_ctx_get("retry"))
 end
 
 function config.get_generative_ai_base_url()
