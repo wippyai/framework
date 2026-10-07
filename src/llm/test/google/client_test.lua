@@ -689,6 +689,126 @@ local function define_tests()
                 tests.eq(err.status_code, 503)
                 tests.eq(http.calls, 1)
             end)
+
+            it("should not retry past the call deadline", function()
+                local http = flaky_http({ 503, 503, 200 })
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", {
+                    headers = {}
+                }, { attempts = 3, backoff_ms = 0 }, 1)
+
+                tests.is_nil(response)
+                tests.eq(err.status_code, 503)
+                tests.eq(http.calls, 1)
+            end)
+        end)
+
+        describe("Stream fallback signals", function()
+            local sent
+
+            local function streaming_http(chunks: {string})
+                local index = 0
+                client._http_client = {
+                    post = function(url, options)
+                        return {
+                            status_code = 200,
+                            stream = { read = function()
+                                index = index + 1
+                                return chunks[index]
+                            end }
+                        }
+                    end
+                }
+            end
+
+            local function stream_options(reply_to: string?)
+                return {
+                    headers = {},
+                    stream = true,
+                    stream_reply_to = reply_to,
+                    stream_topic = "test_stream",
+                    stream_buffer_size = 10
+                }
+            end
+
+            before_each(function()
+                sent = {}
+                mock("process.send", function(pid, topic, payload)
+                    table.insert(sent, payload)
+                    return true
+                end)
+            end)
+
+            it("should hold the error chunk back when the stream fails before anything was sent", function()
+                streaming_http({ 'data: {"error":{"message":"quota exceeded","code":429}}\n\n' })
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", stream_options("pid"))
+
+                tests.is_nil(response)
+                tests.eq(#sent, 0)
+                tests.eq(err.status_code, 500)
+                tests.is_false(err.stream_started)
+                tests.eq(err.deferred_error_type, "server_error")
+                tests.eq(err.deferred_error_message, "quota exceeded")
+            end)
+
+            it("should send the error chunk once part of the answer reached the client", function()
+                streaming_http({
+                    'data: {"candidates":[{"content":{"parts":[{"text":"Hello world."}]}}]}\n\n',
+                    'data: {"error":{"message":"quota exceeded"}}\n\n'
+                })
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", stream_options("pid"))
+
+                tests.is_nil(response)
+                tests.eq(#sent, 2)
+                tests.eq(sent[1].content, "Hello world.")
+                tests.eq(sent[2].type, "error")
+                tests.eq(sent[2].error.message, "quota exceeded")
+                tests.is_true(err.stream_started)
+                tests.is_nil(err.deferred_error_type)
+            end)
+
+            it("should report a missing stream target as an internal error", function()
+                streaming_http({})
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", stream_options(nil))
+
+                tests.is_nil(response)
+                tests.eq(err.status_code, 500)
+                tests.eq(err.message, "Failed to create streamer")
+                tests.is_nil(err.stream_started)
+            end)
+
+            it("should mark a request error on a streaming request as not started", function()
+                client._http_client = {
+                    post = function()
+                        return { status_code = 503, body = '{"error":{"message":"busy"}}', headers = {} }
+                    end
+                }
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", stream_options("pid"))
+
+                tests.is_nil(response)
+                tests.eq(#sent, 0)
+                tests.eq(err.status_code, 503)
+                tests.eq(err.message, "busy")
+                tests.is_false(err.stream_started)
+            end)
+
+            it("should leave stream_started unset on a request error without streaming", function()
+                client._http_client = {
+                    post = function()
+                        return { status_code = 503, body = '{"error":{"message":"busy"}}', headers = {} }
+                    end
+                }
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", { headers = {} })
+
+                tests.is_nil(response)
+                tests.eq(err.status_code, 503)
+                tests.is_nil(err.stream_started)
+            end)
         end)
     end)
 end

@@ -39,6 +39,17 @@ entries:
     kind: library.lua
     source: file://route.lua
 
+  # wippy.llm.util:fallback
+  - name: fallback
+    kind: library.lua
+    meta:
+      type: library
+      comment: Fallback chain policy - route order, switching decisions, call budget and failure summaries
+      tags:
+        - llm
+        - fallback
+    source: file://fallback.lua
+
   - name: thinking
     kind: library.lua
     source: file://thinking.lua

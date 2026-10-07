@@ -28,6 +28,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
     local finish_reason = nil
     local final_usage = nil
     local reasoning_details = nil
+    local deferred: any = nil
 
     local _, stream_err, _ = generate_handler._client.process_stream(stream_response, {
         on_content = function(chunk)
@@ -64,7 +65,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
 
         on_error = function(error_info)
             local e = err:from(error_info):build()
-            streamer:send_error(tostring(e:kind()), tostring(e:message()), nil)
+            deferred = output.send_or_defer_error(streamer, tostring(e:kind()), tostring(e:message()))
         end,
 
         on_done = function(result)
@@ -78,6 +79,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
     if stream_err then
         return nil, err
             :from({ message = stream_err, status_code = 500 })
+            :details(output.stream_error_details(streamer.sent_any == true, deferred))
             :build()
     end
 
@@ -171,7 +173,11 @@ function generate_handler.handler(contract_args)
     )
 
     if request_err then
-        return nil, err:from(request_err):build()
+        local failure = err:from(request_err)
+        if stream_config then
+            failure = failure:details(output.stream_error_details(false, nil))
+        end
+        return nil, failure:build()
     end
 
     if stream_config then

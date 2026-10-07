@@ -85,8 +85,10 @@ function generate.handler(contract_args)
 
     local endpoint_path = "generateContent"
     local request_options = { timeout = contract_args.timeout, retry = contract_args.retry }
+    local streaming = false
 
     if contract_args.stream and contract_args.stream.reply_to then
+        streaming = true
         endpoint_path = "streamGenerateContent"
         request_options.stream = true
         request_options.stream_reply_to = contract_args.stream.reply_to
@@ -102,7 +104,18 @@ function generate.handler(contract_args)
     })
 
     if response.status_code < 200 or response.status_code >= 300 then
-        return nil, err:from(response):build()
+        local failure = err:from(response)
+        if streaming and response.stream_started ~= nil then
+            local deferred: any = nil
+            if response.deferred_error_type ~= nil then
+                deferred = {
+                    type = tostring(response.deferred_error_type),
+                    message = tostring(response.deferred_error_message or "")
+                }
+            end
+            failure = failure:details(output.stream_error_details(response.stream_started == true, deferred))
+        end
+        return nil, failure:build()
     end
 
     local success, mapped_response = pcall(function()

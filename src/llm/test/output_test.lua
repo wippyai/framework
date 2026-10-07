@@ -362,6 +362,175 @@ local function define_tests()
                 test.is_true(#output.TRUNCATION_MSG > 0)
             end)
         end)
+
+        describe("Streamer delivery tracking", function()
+            local sent_messages
+            local delivered
+
+            before_each(function()
+                sent_messages = {}
+                delivered = true
+                mock("process.send", function(pid, topic, payload)
+                    table.insert(sent_messages, payload)
+                    return delivered
+                end)
+            end)
+
+            it("should start with nothing sent", function()
+                local streamer = assert(output.streamer("test-pid"))
+                test.is_false(streamer.sent_any)
+            end)
+
+            it("should not count content still held in the buffer", function()
+                local streamer = assert(output.streamer("test-pid", "t", 20))
+                streamer:buffer_content("Hello")
+                test.eq(#sent_messages, 0)
+                test.is_false(streamer.sent_any)
+
+                streamer:flush()
+                test.eq(#sent_messages, 1)
+                test.is_true(streamer.sent_any)
+            end)
+
+            it("should count a buffered chunk once it is delivered", function()
+                local streamer = assert(output.streamer("test-pid"))
+                streamer:buffer_content("Hello world.")
+                test.eq(#sent_messages, 1)
+                test.is_true(streamer.sent_any)
+            end)
+
+            it("should count every kind of delivered chunk", function()
+                local senders = {
+                    function(s) s:send_content("text") end,
+                    function(s) s:send_thinking("thought") end,
+                    function(s) s:send_tool_call("tool", "{}", "call-1") end,
+                    function(s) s:send_error(output.ERROR_TYPE.SERVER_ERROR, "boom", nil) end,
+                    function(s) s:send_done({ finish_reason = "stop" }) end,
+                }
+                for _, send in ipairs(senders) do
+                    local streamer = assert(output.streamer("test-pid"))
+                    send(streamer)
+                    test.is_true(streamer.sent_any)
+                end
+            end)
+
+            it("should not count a chunk the process did not accept", function()
+                delivered = false
+                local streamer = assert(output.streamer("test-pid"))
+                streamer:send_content("text")
+                streamer:send_thinking("thought")
+                test.eq(#sent_messages, 2)
+                test.is_false(streamer.sent_any)
+            end)
+        end)
+
+        describe("Stream error deferral", function()
+            local sent_messages
+
+            before_each(function()
+                sent_messages = {}
+                mock("process.send", function(pid, topic, payload)
+                    table.insert(sent_messages, payload)
+                    return true
+                end)
+            end)
+
+            it("should hold the error chunk back while nothing was sent", function()
+                local streamer = assert(output.streamer("test-pid"))
+                streamer:buffer_content("Hel")
+                local deferred = output.send_or_defer_error(streamer, "server_error", "Overloaded")
+                test.eq(#sent_messages, 0)
+                local held = assert(deferred)
+                test.eq(held.type, "server_error")
+                test.eq(held.message, "Overloaded")
+            end)
+
+            it("should send the error chunk once the client received part of the answer", function()
+                local streamer = assert(output.streamer("test-pid"))
+                streamer:send_thinking("thought")
+                local deferred = output.send_or_defer_error(streamer, "server_error", "Overloaded")
+                test.is_nil(deferred)
+                test.eq(#sent_messages, 2)
+                local chunk = assert(sent_messages[2])
+                test.eq(chunk.type, output.TYPE.ERROR)
+                test.eq(chunk.error.type, "server_error")
+                test.eq(chunk.error.message, "Overloaded")
+            end)
+
+            it("should treat a streamer double without sent_any as nothing sent", function()
+                local calls = 0
+                local double = { send_error = function() calls = calls + 1 end }
+                local deferred = output.send_or_defer_error(double, "UNAVAILABLE", "lost")
+                test.eq(calls, 0)
+                test.eq(assert(deferred).type, "UNAVAILABLE")
+            end)
+
+            it("should describe a stream error without a held chunk", function()
+                local started = output.stream_error_details(true, nil)
+                test.is_true(started.stream_started)
+                test.is_nil(started.deferred_error_type)
+                test.is_nil(started.deferred_error_message)
+
+                local not_started = output.stream_error_details(false, nil)
+                test.is_false(not_started.stream_started)
+            end)
+
+            it("should carry a held chunk in the details", function()
+                local details = output.stream_error_details(false, { type = "server_error", message = "Overloaded" })
+                test.is_false(details.stream_started)
+                test.eq(details.deferred_error_type, "server_error")
+                test.eq(details.deferred_error_message, "Overloaded")
+            end)
+        end)
+
+        describe("Error builder", function()
+            it("should keep the LLM error type in the details", function()
+                local err = output.errors.generate({ model = "m", _provider_id = "p" })
+                    :kind(output.ERROR_TYPE.CONTEXT_LENGTH)
+                    :message("too long")
+                    :build()
+                local details = err:details()
+                test.eq(details.error_type, output.ERROR_TYPE.CONTEXT_LENGTH)
+                test.eq(details.provider, "p")
+                test.eq(details.operation, "generate")
+                test.eq(details.model, "m")
+                test.eq(err:message(), "too long")
+            end)
+
+            it("should record server_error when no kind is given", function()
+                local err = output.errors.embed({}):message("unclear"):build()
+                test.eq(err:details().error_type, output.ERROR_TYPE.SERVER_ERROR)
+            end)
+
+            it("should record the kind the classifier reports", function()
+                local err = output.errors.generate({})
+                    :classifier(function(http_err)
+                        return output.ERROR_TYPE.RATE_LIMIT, "slow down", { status_code = http_err.status_code }
+                    end)
+                    :from({ status_code = 429 })
+                    :build()
+                local details = err:details()
+                test.eq(details.error_type, output.ERROR_TYPE.RATE_LIMIT)
+                test.eq(details.status_code, 429)
+            end)
+
+            it("should let the resolved kind win over an error_type passed in details", function()
+                local err = output.errors.generate({})
+                    :kind(output.ERROR_TYPE.AUTHENTICATION)
+                    :message("denied")
+                    :details({ error_type = "something_else", stream_started = false })
+                    :build()
+                local details = err:details()
+                test.eq(details.error_type, output.ERROR_TYPE.AUTHENTICATION)
+                test.is_false(details.stream_started)
+            end)
+
+            it("should keep an unknown kind as the error type", function()
+                local err = output.errors.status({}):kind("brand_new_type"):message("odd"):build()
+                test.eq(err:details().error_type, "brand_new_type")
+                test.is_false(err:retryable())
+            end)
+        end)
     end)
 end
 

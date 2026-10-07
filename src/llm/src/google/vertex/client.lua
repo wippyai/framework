@@ -78,7 +78,8 @@ function vertex_client.request(contract_args)
     end
 
     local retry = transport.request_retry(contract_args.options.retry, vertex_client._config.get_retry())
-    local response, err = vertex_client._client.request(contract_args.options.method, build_url(base_url, contract_args), options, retry)
+    local response, err = vertex_client._client.request(contract_args.options.method, build_url(base_url, contract_args), options, retry,
+        vertex_client._config.get_deadline_at())
 
     if err then
         return err

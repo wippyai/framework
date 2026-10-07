@@ -323,12 +323,16 @@ entries:
     source: file://llm.lua
     modules:
       - security
+      - time
+      - logger
     imports:
       contract: contract
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
       evaluation: wippy.llm:evaluation
       route: wippy.llm.util:route
+      fallback: wippy.llm.util:fallback
+      output: wippy.llm:output
 
   - name: evaluation
     kind: library.lua
@@ -723,11 +727,21 @@ entries:
                         "structured_output": {"type": "string", "enum": ["native", "tool"]},
                         "context": {"type": "object", "additionalProperties": true},
                         "options": {"type": "object", "additionalProperties": true},
-                        "priority": {"type": "number"}
+                        "priority": {"type": "number", "description": "Routes are tried by descending priority; unset counts as 0 and ties keep list order"}
                       },
                       "required": ["id", "provider_model"],
                       "additionalProperties": true
                     }
+                  },
+                  "fallback": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Models tried after this card's routes when a call fails: names or class:<name>, in order. Not followed transitively and never used for embeddings"
+                  },
+                  "fallback_on": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Error types (output.ERROR_TYPE) that move a call past this card's first route; defaults to rate_limit_exceeded, server_error, timeout_error and network_error; an empty list counts as unset"
                   }
                 },
                 "required": ["name", "providers"],

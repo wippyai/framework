@@ -1318,9 +1318,14 @@ local function define_tests()
                 test.eq(llm.ERROR_TYPE.RATE_LIMIT, "rate_limit_exceeded")
                 test.eq(llm.ERROR_TYPE.SERVER_ERROR, "server_error")
                 test.eq(llm.ERROR_TYPE.CONTEXT_LENGTH, "context_length_exceeded")
-                test.eq(llm.ERROR_TYPE.CONTENT_FILTER, "content_filter")
                 test.eq(llm.ERROR_TYPE.TIMEOUT, "timeout_error")
                 test.eq(llm.ERROR_TYPE.MODEL_ERROR, "model_error")
+            end)
+
+            it("should use the error types drivers report", function()
+                -- content_filter never matched an emitted error: drivers report content_filtered.
+                test.eq(llm.ERROR_TYPE.CONTENT_FILTER, "content_filtered")
+                test.eq(llm.ERROR_TYPE.NETWORK_ERROR, "network_error")
             end)
 
             it("should preserve FINISH_REASON constants", function()
@@ -1877,6 +1882,935 @@ local function define_tests()
                 local second_result, second_err = llm.generate("Hello again", options)
                 test.is_nil(second_err)
                 assert_unchanged(before, options)
+            end)
+        end)
+
+        describe("Fallback chain", function()
+            local cards
+            local behaviour
+            local opened
+            local calls
+            local resolutions
+
+            local function answer(text: string, method: string): any
+                local result: any = { content = text, tool_calls = {} }
+                if method == "structured_output" then
+                    result = { data = { answer = text } }
+                elseif method == "embed" then
+                    result = { embeddings = { { 0.1 } } }
+                elseif method == "evaluate" then
+                    result = { readings = { resolved = { type = "predicate", probability = 0.5 } } }
+                end
+                return {
+                    success = true,
+                    result = result,
+                    tokens = { prompt_tokens = 3, completion_tokens = 2, total_tokens = 5 },
+                    metadata = {}
+                }
+            end
+
+            local function failure(error_type: string?, extra: { [string]: any }?): any
+                local details: { [string]: any } = {}
+                if error_type then
+                    details.error_type = error_type
+                end
+                for key, value in pairs(extra or {}) do
+                    details[key] = value
+                end
+                return errors.new({ message = tostring(error_type or "untyped") .. " failure", kind = errors.UNAVAILABLE, details = details })
+            end
+
+            local function fail_with(error_type: string?, extra: { [string]: any }?)
+                return function()
+                    return nil, failure(error_type, extra)
+                end
+            end
+
+            local function card(name: string, routes: {any}, extra: { [string]: any }?): any
+                local result: { [string]: any } = { id = "app.models:" .. name, name = name, capabilities = { "generate" }, providers = routes }
+                for key, value in pairs(extra or {}) do
+                    result[key] = value
+                end
+                return result
+            end
+
+            local function called_models(): string
+                local names = {}
+                for _, entry in ipairs(calls) do
+                    table.insert(names, tostring(entry.args.model))
+                end
+                return table.concat(names, ",")
+            end
+
+            before_each(function()
+                cards = {}
+                behaviour = {}
+                opened = {}
+                calls = {}
+                resolutions = {}
+                llm._model_resolver = {
+                    resolve = function(_, args)
+                        table.insert(resolutions, args.model)
+                        return cards[args.model]
+                    end
+                }
+                mock_providers.open = function(provider_id, context)
+                    table.insert(opened, { provider_id = provider_id, context = context })
+                    if provider_id == "p.closed" then
+                        return nil, "binding denied"
+                    end
+                    local instance = {}
+                    for _, method in ipairs({ "generate", "structured_output", "embed", "evaluate" }) do
+                        instance[method] = function(_, args)
+                            table.insert(calls, { method = method, args = args, provider_id = provider_id })
+                            local respond = behaviour[args.model]
+                            if respond then
+                                return respond(args)
+                            end
+                            return answer("from " .. tostring(args.model), method)
+                        end
+                    end
+                    return instance
+                end
+            end)
+
+            after_each(function()
+                llm._clock = nil
+            end)
+
+            describe("switching", function()
+                it("answers from the primary and reports the route", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from a-1")
+                    test.eq(result.metadata.route.model, "primary")
+                    test.eq(result.metadata.route.provider_id, "p.a")
+                    test.eq(result.metadata.route.provider_model, "a-1")
+                    test.is_nil(result.metadata.fallbacks)
+                    test.eq(mock_usage_tracker.last_model_id, "primary")
+                    test.eq(table.concat(resolutions, ","), "primary")
+                end)
+
+                it("falls back to the next model on a transient error and records why", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("rate_limit_exceeded")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from b-1")
+                    test.eq(called_models(), "a-1,b-1")
+                    test.eq(result.metadata.route.model, "backup")
+                    test.eq(#result.metadata.fallbacks, 1)
+                    local first = result.metadata.fallbacks[1]
+                    test.eq(first.model, "primary")
+                    test.eq(first.provider_id, "p.a")
+                    test.eq(first.provider_model, "a-1")
+                    test.eq(first.error_type, "rate_limit_exceeded")
+                    test.eq(first.message, "rate_limit_exceeded failure")
+                    test.eq(mock_usage_tracker.last_model_id, "backup")
+                end)
+
+                it("switches on every default transient type", function()
+                    for _, error_type in ipairs({ "rate_limit_exceeded", "server_error", "timeout_error", "network_error" }) do
+                        calls = {}
+                        cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                        cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                        behaviour["a-1"] = fail_with(error_type)
+                        local result, err = llm.generate("Hi", { model = "primary" })
+                        test.is_nil(err, error_type)
+                        test.eq(result.result, "from b-1", error_type)
+                    end
+                end)
+
+                it("tries the routes of the card by priority before fallback models", function()
+                    cards.primary = card("primary", {
+                        { id = "p.a", provider_model = "low", priority = 1 },
+                        { id = "p.b", provider_model = "high", priority = 9 },
+                    }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["high"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "high,low")
+                    test.eq(result.metadata.route.model, "primary")
+                    test.eq(result.metadata.route.provider_model, "low")
+                end)
+
+                it("does not switch away from the primary on a request error", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("invalid_request")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(err, "invalid_request failure")
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("does not switch on an error without a type", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = function() return nil, errors.new("plain failure") end
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(err, "plain failure")
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("switches away from the primary on exactly the types its card lists", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } },
+                        { fallback = { "backup" }, fallback_on = { "authentication_error" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+
+                    behaviour["a-1"] = fail_with("authentication_error")
+                    local switched, switch_err = llm.generate("Hi", { model = "primary" })
+                    test.is_nil(switch_err)
+                    test.eq(switched.result, "from b-1")
+
+                    calls = {}
+                    behaviour["a-1"] = fail_with("server_error")
+                    local stopped, stop_err = llm.generate("Hi", { model = "primary" })
+                    test.is_nil(stopped)
+                    test.eq(stop_err, "server_error failure")
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("skips a fallback candidate that cannot serve the request", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+                    behaviour["b-1"] = fail_with("authentication_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from c-1")
+                    test.eq(called_models(), "a-1,b-1,c-1")
+                    test.eq(#result.metadata.fallbacks, 2)
+                    test.eq(result.metadata.fallbacks[2].error_type, "authentication_error")
+                end)
+
+                it("moves past fallback candidates on missing models and short context windows", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third", "fourth" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    cards.fourth = card("fourth", { { id = "p.d", provider_model = "d-1" } })
+                    behaviour["a-1"] = fail_with("timeout_error")
+                    behaviour["b-1"] = fail_with("model_error")
+                    behaviour["c-1"] = fail_with("context_length_exceeded")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from d-1")
+                end)
+
+                it("stops at a fallback candidate that rejects the request itself", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+                    behaviour["b-1"] = fail_with("content_filtered")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(called_models(), "a-1,b-1")
+                    test.eq(err, "content_filtered failure (fallback: primary via p.a: server_error; "
+                        .. "backup via p.b: content_filtered)")
+                end)
+
+                it("reports every candidate when the chain runs out", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+                    behaviour["b-1"] = fail_with("rate_limit_exceeded")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(err, "rate_limit_exceeded failure (fallback: primary via p.a: server_error; "
+                        .. "backup via p.b: rate_limit_exceeded)")
+                end)
+
+                it("keeps the plain message when the primary was the only candidate", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                end)
+            end)
+
+            describe("candidates", function()
+                it("skips fallback references that do not resolve and records them", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "missing", "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from b-1")
+                    local skipped = result.metadata.fallbacks[2]
+                    test.eq(skipped.model, "missing")
+                    test.is_true(skipped.skipped)
+                    test.contains(skipped.message, "missing")
+                end)
+
+                it("resolves fallback references only when the chain reaches them", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local _, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(table.concat(resolutions, ","), "primary,backup")
+                end)
+
+                it("tries a card once and does not follow the fallback list of a fallback card", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "primary" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } }, { fallback = { "third" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+                    behaviour["b-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1,b-1")
+                end)
+
+                it("skips a class reference that resolves to the primary itself", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "class:fast", "backup" } })
+                    cards["class:fast"] = cards.primary
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,b-1")
+                    test.eq(#result.metadata.fallbacks, 1)
+                end)
+
+                it("caps the number of candidates per call", function()
+                    cards.primary = card("primary", {
+                        { id = "p.a", provider_model = "a-1" },
+                        { id = "p.a", provider_model = "a-2" },
+                        { id = "p.a", provider_model = "a-3" },
+                    }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" }, { id = "p.b", provider_model = "b-2" } })
+                    for _, model in ipairs({ "a-1", "a-2", "a-3", "b-1", "b-2" }) do
+                        behaviour[model] = fail_with("server_error")
+                    end
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1,a-2,a-3,b-1")
+                end)
+
+                it("uses the fallback list of the call over the card's", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", fallback = { "third" } })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,c-1")
+                    test.eq(result.metadata.route.model, "third")
+                end)
+
+                it("disables fallback for the call, including other routes of the card", function()
+                    cards.primary = card("primary", {
+                        { id = "p.a", provider_model = "a-1" },
+                        { id = "p.b", provider_model = "a-2" },
+                    }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.c", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", fallback = false })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("skips a fallback candidate whose provider cannot be opened", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third" } })
+                    cards.backup = card("backup", { { id = "p.closed", provider_model = "b-1" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from c-1")
+                    local skipped = result.metadata.fallbacks[2]
+                    test.eq(skipped.model, "backup")
+                    test.is_true(skipped.skipped)
+                    test.eq(skipped.message, "Failed to open provider: binding denied")
+                end)
+
+                it("fails the call when the primary provider cannot be opened", function()
+                    cards.primary = card("primary", { { id = "p.closed", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(err, "Failed to open provider: binding denied")
+                    test.eq(#calls, 0)
+                end)
+
+                it("skips a fallback candidate whose route facts reject the call", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1", sampling = false } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", temperature = 0.4, strict = true })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,c-1")
+                    test.is_true(result.metadata.fallbacks[2].skipped)
+                    test.contains(result.metadata.fallbacks[2].message, "temperature")
+                end)
+            end)
+
+            describe("candidate isolation", function()
+                it("opens each candidate with its own context and request defaults", function()
+                    cards.primary = card("primary", { {
+                        id = "p.a", provider_model = "a-1",
+                        context = { api_key = "key-a", timeout = 30 }, options = { thinking_effort = 60 }
+                    } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { {
+                        id = "p.b", provider_model = "b-1",
+                        context = { api_key = "key-b" }, options = { temperature = 0.2 }
+                    } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local _, err = llm.generate("Hi", { model = "primary", max_tokens = 100 })
+
+                    test.is_nil(err)
+                    test.eq(opened[1].context.api_key, "key-a")
+                    test.eq(opened[2].context.api_key, "key-b")
+                    test.eq(calls[1].args.options.thinking_effort, 60)
+                    test.eq(calls[1].args.timeout, 30)
+                    local backup_args = calls[2].args
+                    test.is_nil(backup_args.options.thinking_effort)
+                    test.is_nil(backup_args.timeout)
+                    test.eq(backup_args.options.temperature, 0.2)
+                    test.eq(backup_args.options.max_tokens, 100)
+                    test.eq(backup_args._provider_id, "p.b")
+                end)
+
+                it("normalizes route facts for each candidate", function()
+                    cards.primary = card("primary", { { id = "p.claude", provider_model = "claude-x", thinking = "adaptive", sampling = false } },
+                        { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.gemini", provider_model = "gemini-x", thinking = "none" } })
+                    behaviour["claude-x"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", temperature = 0.5, thinking_effort = 50 })
+
+                    test.is_nil(err)
+                    local primary_args = calls[1].args
+                    test.eq(primary_args.accepts.thinking, "adaptive")
+                    test.is_false(primary_args.accepts.sampling)
+                    test.is_nil(primary_args.options.temperature)
+                    test.eq(primary_args.options.thinking_effort, 50)
+                    local backup_args = calls[2].args
+                    test.eq(backup_args.accepts.thinking, "none")
+                    test.is_nil(backup_args.accepts.sampling)
+                    test.eq(backup_args.options.temperature, 0.5)
+                    test.is_nil(backup_args.options.thinking_effort)
+                    test.eq(result.metadata.adjusted.thinking_effort.requested, 50)
+                    test.is_nil(result.metadata.adjusted.temperature)
+                end)
+
+                it("keeps call options away from the driver", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } })
+
+                    local _, err = llm.generate("Hi", { model = "primary", fallback = { "backup" }, deadline_ms = 60000,
+                        temperature = 0.3 })
+
+                    test.is_nil(err)
+                    local args = calls[1].args
+                    test.is_nil(args.options.fallback)
+                    test.is_nil(args.options.deadline_ms)
+                    test.is_nil(args.options.route)
+                    test.eq(args.options.temperature, 0.3)
+                end)
+
+                it("keeps call options away from a direct provider call", function()
+                    local _, err = llm.generate("Hi", { model = "wire-model", provider_id = "p.direct",
+                        fallback = { "backup" }, deadline_ms = 60000 })
+
+                    test.is_nil(err)
+                    local args = calls[1].args
+                    test.eq(args.model, "wire-model")
+                    test.is_nil(args.options.fallback)
+                    test.is_nil(args.options.deadline_ms)
+                    test.eq(args._provider_id, "p.direct")
+                end)
+
+                it("falls back for structured output with the schema on every candidate", function()
+                    local schema = { type = "object", properties = { answer = { type = "string" } } }
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.structured_output(schema, "Extract", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result.answer, "from b-1")
+                    test.eq(calls[2].args.schema, schema)
+                    test.eq(calls[2].method, "structured_output")
+                end)
+            end)
+
+            describe("streaming", function()
+                local sent
+                local stream = { reply_to = "pid-1", topic = "chat" }
+
+                before_each(function()
+                    sent = {}
+                    mock("process.send", function(pid, topic, payload)
+                        table.insert(sent, { pid = pid, topic = topic, payload = payload })
+                        return true
+                    end)
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                end)
+
+                it("falls back when the driver reports that nothing was sent", function()
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = false })
+
+                    local result, err = llm.generate("Hi", { model = "primary", stream = stream })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from b-1")
+                    test.eq(calls[2].args.stream.reply_to, "pid-1")
+                    test.eq(#sent, 0)
+                end)
+
+                it("does not fall back once the stream started", function()
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = true })
+
+                    local result, err = llm.generate("Hi", { model = "primary", stream = stream })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("does not fall back when the driver does not report stream_started", function()
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", stream = stream })
+
+                    test.is_nil(result)
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("emits the held-back error chunk when the whole call fails", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } })
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = false,
+                        deferred_error_type = "Unavailable", deferred_error_message = "Overloaded" })
+
+                    local result, err = llm.generate("Hi", { model = "primary", stream = stream })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                    test.eq(#sent, 1)
+                    test.eq(sent[1].pid, "pid-1")
+                    test.eq(sent[1].topic, "chat")
+                    test.eq(sent[1].payload.type, "error")
+                    test.eq(sent[1].payload.error.type, "Unavailable")
+                    test.eq(sent[1].payload.error.message, "Overloaded")
+                end)
+
+                it("does not emit a held-back chunk when a fallback answers", function()
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = false,
+                        deferred_error_type = "Unavailable", deferred_error_message = "Overloaded" })
+
+                    local result, err = llm.generate("Hi", { model = "primary", stream = stream })
+
+                    test.is_nil(err)
+                    test.not_nil(result)
+                    test.eq(#sent, 0)
+                end)
+
+                it("emits only the held-back chunk of the last candidate", function()
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = false,
+                        deferred_error_type = "Unavailable", deferred_error_message = "Overloaded" })
+                    behaviour["b-1"] = fail_with("rate_limit_exceeded", { stream_started = false })
+
+                    local result, err = llm.generate("Hi", { model = "primary", stream = stream })
+
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(#sent, 0)
+                end)
+
+                it("emits the held-back chunk of a failed direct call", function()
+                    behaviour["wire-model"] = fail_with("server_error", { stream_started = false,
+                        deferred_error_type = "Unavailable", deferred_error_message = "Overloaded" })
+
+                    local result, err = llm.generate("Hi", { model = "wire-model", provider_id = "p.direct", stream = stream })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                    test.eq(#sent, 1)
+                    test.eq(sent[1].payload.error.message, "Overloaded")
+                end)
+            end)
+
+            describe("call budget", function()
+                local clock_ms
+
+                before_each(function()
+                    clock_ms = 1000000
+                    llm._clock = function() return clock_ms end
+                end)
+
+                it("caps the request timeout and passes the deadline to the provider", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1", context = { timeout = 600 } } })
+
+                    local _, err = llm.generate("Hi", { model = "primary", deadline_ms = 30000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.timeout, 30)
+                    test.eq(opened[1].context.deadline_at, 1030000)
+                end)
+
+                it("leaves the request untouched without a budget", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1", context = { timeout = 600 } } })
+
+                    local _, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.timeout, 600)
+                    test.is_nil(opened[1].context.deadline_at)
+                end)
+
+                it("gives a fallback candidate only the budget that is left", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = function()
+                        clock_ms = clock_ms + 20000
+                        return nil, failure("server_error")
+                    end
+
+                    local _, err = llm.generate("Hi", { model = "primary", deadline_ms = 30000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[2].args.timeout, 10)
+                end)
+
+                it("does not start a fallback candidate with too little budget left", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = function()
+                        clock_ms = clock_ms + 27000
+                        return nil, failure("server_error")
+                    end
+
+                    local result, err = llm.generate("Hi", { model = "primary", deadline_ms = 30000 })
+
+                    test.is_nil(result)
+                    test.eq(called_models(), "a-1")
+                    test.contains(err, "backup via p.b: skipped, call budget exhausted")
+                end)
+
+                it("applies the budget to a direct provider call", function()
+                    local _, err = llm.generate("Hi", { model = "wire-model", provider_id = "p.direct", deadline_ms = 45000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.timeout, 45)
+                    test.eq(opened[1].context.deadline_at, 1045000)
+                end)
+            end)
+
+            describe("pinned route", function()
+                before_each(function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", {
+                        { id = "p.b", provider_model = "b-1" },
+                        { id = "p.b", provider_model = "b-2" },
+                    }, { fallback = { "third" } })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                end)
+
+                it("calls exactly the pinned route", function()
+                    local result, err = llm.generate("Hi", { model = "primary", route = { model = "backup", provider_id = "p.b" } })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "b-1")
+                    test.eq(result.metadata.route.model, "backup")
+                    test.eq(mock_usage_tracker.last_model_id, "backup")
+                end)
+
+                it("narrows the pinned route by provider model", function()
+                    local result, err = llm.generate("Hi", { model = "primary",
+                        route = { model = "backup", provider_id = "p.b", provider_model = "b-2" } })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "b-2")
+                    test.eq(result.metadata.route.provider_model, "b-2")
+                end)
+
+                it("does not fall back from a pinned route", function()
+                    behaviour["b-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", route = { model = "backup", provider_id = "p.b" } })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                    test.eq(called_models(), "b-1")
+                end)
+
+                it("accepts the route metadata of a previous answer as the pin", function()
+                    behaviour["a-1"] = fail_with("server_error")
+                    local first, first_err = llm.generate("Hi", { model = "primary" })
+                    test.is_nil(first_err)
+
+                    calls = {}
+                    local second, second_err = llm.generate("Again", { model = "primary", route = first.metadata.route })
+                    test.is_nil(second_err)
+                    test.eq(called_models(), "b-1")
+                    test.eq(second.metadata.route.model, "backup")
+                end)
+
+                it("rejects an incomplete pin", function()
+                    local result, err = llm.generate("Hi", { model = "primary", route = { model = "backup" } })
+
+                    test.is_nil(result)
+                    test.eq(err, "options.route requires model and provider_id")
+                end)
+
+                it("rejects a pin together with a direct provider call", function()
+                    local result, err = llm.generate("Hi", { model = "wire-model", provider_id = "p.direct",
+                        route = { model = "backup", provider_id = "p.b" } })
+
+                    test.is_nil(result)
+                    test.eq(err, "options.route cannot be combined with provider_id")
+                    test.eq(#calls, 0)
+                    test.eq(#opened, 0)
+                end)
+
+                it("reports a pinned route that does not exist", function()
+                    local result, err = llm.generate("Hi", { model = "primary", route = { model = "backup", provider_id = "p.z" } })
+
+                    test.is_nil(result)
+                    test.eq(err, "Route not found: backup via p.z")
+                end)
+            end)
+
+            describe("embeddings and evaluation", function()
+                it("never falls back to another model for embeddings", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "embed-a" } },
+                        { capabilities = { "embed" }, fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "embed-b" } }, { capabilities = { "embed" } })
+                    behaviour["embed-a"] = fail_with("server_error")
+
+                    local result, err = llm.embed("text", { model = "primary" })
+
+                    test.is_nil(result)
+                    test.eq(err, "server_error failure")
+                    test.eq(called_models(), "embed-a")
+                end)
+
+                it("moves between routes of the same embedding model", function()
+                    cards.primary = card("primary", {
+                        { id = "p.a", provider_model = "embed-a" },
+                        { id = "p.b", provider_model = "embed-a-mirror" },
+                    }, { capabilities = { "embed" }, dimensions = 256 })
+                    behaviour["embed-a"] = fail_with("rate_limit_exceeded")
+
+                    local result, err = llm.embed("text", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "embed-a,embed-a-mirror")
+                    test.eq(result.model, "embed-a-mirror")
+                    test.eq(calls[2].args.options.dimensions, 256)
+                end)
+
+                it("skips fallback models that do not declare the evaluate capability", function()
+                    local questions = { resolved = { type = "predicate", instructions = "Closed" } }
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "eval-a" } },
+                        { capabilities = { "evaluate" }, fallback = { "plain", "evaluator" } })
+                    cards.plain = card("plain", { { id = "p.b", provider_model = "chat-b" } })
+                    cards.evaluator = card("evaluator", { { id = "p.c", provider_model = "eval-c" } }, { capabilities = { "evaluate" } })
+                    behaviour["eval-a"] = fail_with("server_error")
+
+                    local result, err = llm.evaluate("text", questions, { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "eval-a,eval-c")
+                    test.eq(result.metadata.route.model, "evaluator")
+                    local skipped = result.metadata.fallbacks[2]
+                    test.eq(skipped.model, "plain")
+                    test.is_true(skipped.skipped)
+                end)
+            end)
+
+            describe("fallback_on", function()
+                it("treats an empty list as the default set", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } },
+                        { fallback = { "backup" }, fallback_on = {} })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+
+                    behaviour["a-1"] = fail_with("server_error")
+                    local switched, switch_err = llm.generate("Hi", { model = "primary" })
+                    test.is_nil(switch_err)
+                    test.eq(switched.result, "from b-1")
+
+                    calls = {}
+                    behaviour["a-1"] = fail_with("authentication_error")
+                    local stopped, stop_err = llm.generate("Hi", { model = "primary" })
+                    test.is_nil(stopped)
+                    test.eq(stop_err, "authentication_error failure")
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("treats a list without usable entries as the default set", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } },
+                        { fallback = { "backup" }, fallback_on = { 429, "" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = fail_with("rate_limit_exceeded")
+
+                    local result, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(result.result, "from b-1")
+                end)
+            end)
+
+            describe("output limit", function()
+                it("lowers max_tokens to the output limit of the card and reports it", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { output_tokens = 4096 })
+
+                    local result, err = llm.generate("Hi", { model = "primary", max_tokens = 8000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.options.max_tokens, 4096)
+                    test.eq(result.metadata.adjusted.max_tokens.requested, 8000)
+                    test.eq(result.metadata.adjusted.max_tokens.sent, 4096)
+                end)
+
+                it("leaves max_tokens alone within the limit", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { output_tokens = 4096 })
+
+                    local result, err = llm.generate("Hi", { model = "primary", max_tokens = 1000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.options.max_tokens, 1000)
+                    test.is_nil(result.metadata.adjusted)
+                end)
+
+                it("leaves max_tokens alone when the card declares no output limit", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { output_tokens = 0 })
+                    cards.bare = card("bare", { { id = "p.b", provider_model = "b-1" } })
+
+                    local first, first_err = llm.generate("Hi", { model = "primary", max_tokens = 8000 })
+                    test.is_nil(first_err)
+                    test.eq(calls[1].args.options.max_tokens, 8000)
+                    test.is_nil(first.metadata.adjusted)
+
+                    local second, second_err = llm.generate("Hi", { model = "bare", max_tokens = 8000 })
+                    test.is_nil(second_err)
+                    test.eq(calls[2].args.options.max_tokens, 8000)
+                    test.is_nil(second.metadata.adjusted)
+                end)
+
+                it("applies the limit of each candidate", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } },
+                        { output_tokens = 8000, fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } }, { output_tokens = 1000 })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", max_tokens = 5000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.options.max_tokens, 5000)
+                    test.eq(calls[2].args.options.max_tokens, 1000)
+                    test.eq(result.metadata.adjusted.max_tokens.requested, 5000)
+                    test.eq(result.metadata.adjusted.max_tokens.sent, 1000)
+                end)
+
+                it("caps the route default as well as the caller's value", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1", options = { max_tokens = 9000 } } },
+                        { output_tokens = 4096 })
+
+                    local _, err = llm.generate("Hi", { model = "primary" })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.options.max_tokens, 4096)
+                end)
+
+                it("rejects a request above the limit under strict", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { output_tokens = 4096 })
+
+                    local result, err = llm.generate("Hi", { model = "primary", max_tokens = 8000, strict = true })
+
+                    test.is_nil(result)
+                    test.eq(err, "route p.a requires adjustments to: max_tokens")
+                    test.eq(#calls, 0)
+                end)
+
+                it("skips a fallback candidate that would need the cap under strict", function()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } },
+                        { output_tokens = 8000, fallback = { "backup", "third" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } }, { output_tokens = 1000 })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } }, { output_tokens = 8000 })
+                    behaviour["a-1"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "primary", max_tokens = 5000, strict = true })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,c-1")
+                    test.is_true(result.metadata.fallbacks[2].skipped)
+                    test.contains(result.metadata.fallbacks[2].message, "max_tokens")
+                end)
+
+                it("caps structured output too", function()
+                    local schema = { type = "object", properties = { answer = { type = "string" } } }
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { output_tokens = 4096 })
+
+                    local result, err = llm.structured_output(schema, "Extract", { model = "primary", max_tokens = 8000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.options.max_tokens, 4096)
+                    test.eq(result.metadata.adjusted.max_tokens.sent, 4096)
+                end)
+
+                it("does not cap a direct provider call", function()
+                    local _, err = llm.generate("Hi", { model = "wire-model", provider_id = "p.direct", max_tokens = 8000 })
+
+                    test.is_nil(err)
+                    test.eq(calls[1].args.options.max_tokens, 8000)
+                end)
             end)
         end)
     end)

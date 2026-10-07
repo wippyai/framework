@@ -42,6 +42,7 @@ type Streamer = {
     topic: string,
     buffer: string,
     buffer_size: number,
+    sent_any: boolean,
     send_content: (self: Streamer, text: string) -> boolean,
     send_thinking: (self: Streamer, text: string) -> boolean,
     send_tool_call: (self: Streamer, name: string, arguments: string, id: string?) -> boolean,
@@ -119,11 +120,13 @@ type ErrorBuilderFactory = (arg: ErrorContract?) -> ErrorBuilder
 -- Internal: turn (kind, message, details) into a stdlib `errors` value
 -- and log at the single observability point.
 local function build_error(kind_type: string?, message: string?, details: table?): StructuredError
-    local mapping = output.ERROR_KIND_MAP[kind_type or output.ERROR_TYPE.SERVER_ERROR] or
+    local error_type = kind_type or output.ERROR_TYPE.SERVER_ERROR
+    local mapping = output.ERROR_KIND_MAP[error_type] or
         { kind = errors.UNKNOWN, retryable = false }
 
     details = details or {}
     local d = details :: any
+    d.error_type = error_type
 
     local err = errors.new({
         message = message or "LLM error",
@@ -133,7 +136,7 @@ local function build_error(kind_type: string?, message: string?, details: table?
     })
 
     local log = logger:named("llm")
-    log:error("llm provider error", {
+    log:warn("llm provider error", {
         kind = mapping.kind,
         retryable = mapping.retryable,
         provider = d.provider,
@@ -372,35 +375,44 @@ function output.streamer(pid: string?, topic: string?, buffer_size: number?): (S
         pid = pid,
         topic = topic or "llm_response",
         buffer = "",
-        buffer_size = buffer_size or 10 -- Default buffer size
+        buffer_size = buffer_size or 10, -- Default buffer size
+        sent_any = false
     }
 
     local target_pid = tostring(pid)
     local target_topic = tostring(topic or "llm_response")
 
+    local function deliver(self: Streamer, chunk: OutputChunk): boolean
+        local sent = process.send(target_pid, target_topic, chunk)
+        if sent then
+            self.sent_any = true
+        end
+        return sent
+    end
+
     -- Send content chunk
     streamer.send_content = function(self: Streamer, text: string): boolean
-        return process.send(target_pid, target_topic, output.content(text))
+        return deliver(self, output.content(text))
     end
 
     -- Send thinking chunk
     streamer.send_thinking = function(self: Streamer, text: string): boolean
-        return process.send(target_pid, target_topic, output.thinking(text))
+        return deliver(self, output.thinking(text))
     end
 
     -- Send tool call chunk
     streamer.send_tool_call = function(self: Streamer, name: string, arguments: string, id: string?): boolean
-        return process.send(target_pid, target_topic, output.tool_call(name, arguments, id))
+        return deliver(self, output.tool_call(name, arguments, id))
     end
 
     -- Send error chunk
     streamer.send_error = function(self: Streamer, err_type: string, message: string, code: any?): boolean
-        return process.send(target_pid, target_topic, output.error(err_type, message, code))
+        return deliver(self, output.error(err_type, message, code))
     end
 
     -- Send done chunk
     streamer.send_done = function(self: Streamer, meta: DoneMeta?): boolean
-        return process.send(target_pid, target_topic, output.done(meta))
+        return deliver(self, output.done(meta))
     end
 
     -- Buffer content and send when a natural break is detected
@@ -409,7 +421,7 @@ function output.streamer(pid: string?, topic: string?, buffer_size: number?): (S
 
         -- Stream chunks when buffer is larger than buffer_size or sentence appears complete
         if self.buffer_size > 0 and (#self.buffer >= self.buffer_size or self.buffer:match("[%.%!%?]%s*$")) then
-            process.send(target_pid, target_topic, output.content(self.buffer))
+            deliver(self, output.content(self.buffer))
             self.buffer = ""
             return true
         end
@@ -420,7 +432,7 @@ function output.streamer(pid: string?, topic: string?, buffer_size: number?): (S
     -- Flush any remaining buffered content
     streamer.flush = function(self: Streamer): boolean
         if #self.buffer > 0 then
-            process.send(target_pid, target_topic, output.content(self.buffer))
+            deliver(self, output.content(self.buffer))
             self.buffer = ""
             return true
         end
@@ -428,6 +440,28 @@ function output.streamer(pid: string?, topic: string?, buffer_size: number?): (S
     end
 
     return streamer :: Streamer
+end
+
+local function set_detail(details: { [string]: any }, key: string, value: any)
+    details[key] = value
+end
+
+function output.send_or_defer_error(streamer: any, err_type: string, message: string): ErrorInfo?
+    if streamer.sent_any == true then
+        streamer:send_error(err_type, message, nil)
+        return nil
+    end
+    return { type = err_type, message = message }
+end
+
+function output.stream_error_details(started: boolean, deferred: ErrorInfo?): { [string]: any }
+    local details: { [string]: any } = {}
+    set_detail(details, "stream_started", started)
+    if deferred then
+        set_detail(details, "deferred_error_type", deferred.type)
+        set_detail(details, "deferred_error_message", deferred.message)
+    end
+    return details
 end
 
 -- Message injected into conversation when LLM output is truncated mid-tool-call

@@ -13,6 +13,7 @@ local function define_tests()
         describe("API Key Handling", function()
             it("should return 401 error when API key is missing", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_gemini_api_key = function()
                         return nil
                     end
@@ -26,6 +27,7 @@ local function define_tests()
 
             it("should use API key from config", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -56,11 +58,38 @@ local function define_tests()
                     payload = { contents = {} }
                 })
             end)
+
+            it("should pass the call deadline to the transport", function()
+                client._config = {
+                    get_deadline_at = function() return 1767225600000 end,
+                    get_retry = function() return { attempts = 2, backoff_ms = 10 } end,
+                    get_gemini_api_key = function() return "test-gemini-api-key" end,
+                    get_generative_ai_base_url = function()
+                        return "https://generativelanguage.googleapis.com/v1beta/models"
+                    end,
+                    get_generative_ai_timeout = function() return 60 end
+                }
+
+                local seen_retry, seen_deadline
+                client._client = {
+                    request = function(method, url, options, retry, deadline_at)
+                        seen_retry = retry
+                        seen_deadline = deadline_at
+                        return { status_code = 200 }
+                    end
+                }
+
+                client.request({ model = "gemini-2.5-flash", endpoint_path = "generateContent", payload = {} })
+
+                tests.eq(seen_deadline, 1767225600000)
+                tests.eq(seen_retry.attempts, 2)
+            end)
         end)
 
         describe("HTTP Method Support", function()
             it("should default to POST method", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -93,6 +122,7 @@ local function define_tests()
 
             it("should support GET method", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -138,6 +168,7 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -175,6 +206,7 @@ local function define_tests()
 
             it("should encode empty payload as empty object for POST", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -209,6 +241,7 @@ local function define_tests()
 
             it("should not include body for GET requests", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -244,6 +277,7 @@ local function define_tests()
         describe("URL Construction", function()
             it("should construct URL with model and endpoint_path", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -276,6 +310,7 @@ local function define_tests()
 
             it("should construct URL with only model when endpoint_path is missing", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -307,6 +342,7 @@ local function define_tests()
 
             it("should use base URL without model when model is empty", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -336,6 +372,7 @@ local function define_tests()
 
             it("should use custom base URL from options", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -373,6 +410,7 @@ local function define_tests()
         describe("Timeout Handling", function()
             it("should use default timeout from config", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -405,6 +443,7 @@ local function define_tests()
 
             it("should use custom timeout from options", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -454,6 +493,7 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -498,6 +538,7 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -536,6 +577,7 @@ local function define_tests()
         describe("Retry", function()
             local function use_config(context_retry)
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_gemini_api_key = function()
                         return "test-gemini-api-key"
                     end,

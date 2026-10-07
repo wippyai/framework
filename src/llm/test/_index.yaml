@@ -1280,3 +1280,21 @@ entries:
       route: wippy.llm.util:route
       test: wippy.test:test
     method: run_tests
+
+  # app:util_fallback_test
+  - name: util_fallback_test
+    kind: function.lua
+    meta:
+      name: Fallback Policy Test
+      type: test
+      comment: Tests route order, switching decisions, call budget and failure summaries of the fallback chain
+      group: LLM / Utils
+      tags:
+        - llm
+        - fallback
+        - tests
+    source: file://util/fallback_test.lua
+    imports:
+      fallback: wippy.llm.util:fallback
+      test: wippy.test:test
+    method: run_tests
