@@ -3,8 +3,7 @@ directories:
     src: ..
 modules:
     - name: wippy/llm
-      version: 0.4.7
-      hash: 2e55afcf55c441a8e79e3737691e5721d06138b9a3a46c7fb87199db6a5dd426
+      version: 0.5.5
     - name: wippy/security
       version: 0.4.2
       hash: 9020016afc9de612f5297d38ce99e8500c63a2986077e8b0e560d8636c506627
