@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   runtime-contracts:
-    name: Lua runtime contracts and benchmarks
+    name: Lua runtime contracts
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,19 +32,6 @@ jobs:
           WIPPY: ${{ steps.wippy.outputs.path }}
           RUNTIME_WORK_DIR: ${{ runner.temp }}/framework-runtime
         run: make test-runtime
-      - name: Measure Lua operations
-        env:
-          WIPPY: ${{ steps.wippy.outputs.path }}
-          RUNTIME_WORK_DIR: ${{ runner.temp }}/framework-runtime
-          BENCH_OUTPUT_DIR: ${{ runner.temp }}/framework-benchmarks
-        run: make bench
-      - name: Save benchmark reports
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: framework-benchmarks
-          path: ${{ runner.temp }}/framework-benchmarks/*.json
-          if-no-files-found: error
-
   test-runner:
     name: Test runner regressions
     runs-on: ubuntu-latest
