@@ -27,6 +27,17 @@ return {
         emit(args, "test:complete", {total = 1, passed = 0, failed = 1, skipped = 0})
         return true
     end,
+    planned_error_status = function(args)
+        one_pass(args)
+        emit(args, "test:complete", {total = 1, passed = 1, failed = 0, skipped = 0})
+        return {status = "error"}
+    end,
+    replaced_plan = function(args)
+        emit(args, "test:plan", {suites = {{tests = {"one", "two"}}}})
+        one_pass(args)
+        emit(args, "test:complete", {total = 1, passed = 1, failed = 0, skipped = 0})
+        return true
+    end,
     empty_completion = function(args)
         emit(args, "test:plan", {suites = {}})
         emit(args, "test:complete", {})

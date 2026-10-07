@@ -17,6 +17,8 @@ done <<'SCENARIOS'
 returns_false|test returned false
 raises_error|expected execution failure
 error_status|test returned false
+planned_error_status|test returned false
+replaced_plan|test process reported more than one plan
 completion_without_plan|test process did not report a plan
 missing_completion|test process did not report completion
 conflicting_completion|test completion counts disagree

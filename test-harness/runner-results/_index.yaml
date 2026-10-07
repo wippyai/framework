@@ -45,6 +45,16 @@ entries:
     meta: {type: test, suite: runner-results}
     source: file://results.lua
     method: conflicting_completion
+  - name: planned_error_status
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: planned_error_status
+  - name: replaced_plan
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://results.lua
+    method: replaced_plan
   - name: empty_completion
     kind: function.lua
     meta: {type: test, suite: runner-results}

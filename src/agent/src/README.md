@@ -219,9 +219,14 @@ local response, err = runner:step(builder, {
     stream_target = { reply_to = process.self(), topic = "stream" },
     tool_call = "auto",
     disable_memory_recall = false,
-    previous_memory_ids = { "mem_1", "mem_2" }
+    previous_memory_ids = { "mem_1", "mem_2" },
+    stop_check = function() return stop_requested end
 })
 ```
+
+`stop_check` runs after prompt functions and memory recall, immediately before
+provider generation. When it returns true, `step` returns `{ stopped = true }`
+without a provider request.
 
 ### Response Structure
 
@@ -389,9 +394,11 @@ control handlers and apply proposals only after the round's outcomes settle.
 persistence. Returned `context` without `_control` is not a host configuration
 change. Legacy bindings do not acquire behavior controls implicitly.
 
-Session and Dataflow persist proposals with the round and replay them after
-recovery. Replay is at-least-once, not exactly-once external writes; providers
-must make writes and lifecycle hooks idempotent using stable host refs.
+Hosts collect these proposals from the lifecycle summary (`controls`) and from
+`caller:get_wrapper_controls()`. `wippy/session` does not consume them yet. A
+host that persists proposals with the round and replays them after recovery
+gives at-least-once delivery, not exactly-once external writes; providers must
+make writes and lifecycle hooks idempotent using stable host refs.
 `memory.compact = true` requests checkpointing without a token threshold, but
 does not bypass an explicit disable or supply a missing provider. False does
 not cancel an earlier request. There are no automatic evaluator calls, new

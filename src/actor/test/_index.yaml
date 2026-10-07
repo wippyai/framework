@@ -55,9 +55,11 @@ entries:
       timeout: 20s
     source: file://actor_runtime_test.lua
     imports:
+      actor: wippy.actor:actor
       test: wippy.test:test
       benchmark: wippy.test:benchmark
     modules:
+      - system
       - time
       - env
     method: run
@@ -69,6 +71,64 @@ entries:
       suite: actor-benchmark
       timeout: 120s
     source: file://actor_runtime_test.lua
+    imports:
+      actor: wippy.actor:actor
+      test: wippy.test:test
+      benchmark: wippy.test:benchmark
+    modules:
+      - system
+      - time
+      - env
+    method: benchmark
+
+  - name: actor_lifecycle_benchmark
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-benchmark
+      timeout: 120s
+    source: file://actor_runtime_test.lua
+    imports:
+      actor: wippy.actor:actor
+      test: wippy.test:test
+      benchmark: wippy.test:benchmark
+    modules:
+      - system
+      - time
+      - env
+    method: lifecycle
+
+  - name: actor_resident_fixture
+    kind: process.lua
+    source: file://actor_runtime_fixture.lua
+    imports:
+      actor: wippy.actor:actor
+    modules:
+      - time
+    method: resident
+
+  - name: actor_runtime_resident_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-runtime
+      timeout: 25s
+    source: file://actor_resident_test.lua
+    imports:
+      test: wippy.test:test
+      benchmark: wippy.test:benchmark
+    modules:
+      - time
+      - env
+    method: run
+
+  - name: actor_resident_benchmark
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-benchmark
+      timeout: 120s
+    source: file://actor_resident_test.lua
     imports:
       test: wippy.test:test
       benchmark: wippy.test:benchmark
@@ -93,4 +153,9 @@ entries:
   - name: runtime_bench_size
     kind: env.variable
     variable: WIPPY_BENCH_SIZE
+    storage: app:runtime_env_storage
+
+  - name: runtime_bench_memory_operations
+    kind: env.variable
+    variable: WIPPY_BENCH_MEMORY_OPERATIONS
     storage: app:runtime_env_storage

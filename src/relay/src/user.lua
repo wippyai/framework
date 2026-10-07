@@ -287,21 +287,23 @@ end
 local function handle_client_join(state: UserState, payload_data: any)
     local client_pid = payload_data.client_pid :: string?
     if client_pid then
-        state.connected_clients[client_pid] = true
-        state.client_count = state.client_count + 1
+        if not state.connected_clients[client_pid] then
+            state.connected_clients[client_pid] = true
+            state.client_count = state.client_count + 1
 
-        logger:info("client connected", {
-            client_pid = client_pid,
-            client_count = state.client_count,
-            user_id = state.user_id
-        })
+            logger:info("client connected", {
+                client_pid = client_pid,
+                client_count = state.client_count,
+                user_id = state.user_id
+            })
 
-        if state.client_count == 1 then
-            local session_plugin = state.active_plugins["session_"]
-            if session_plugin then
-                local pid = session_plugin.pid
-                if pid then
-                    process.send(pid, "resume", {})
+            if state.client_count == 1 then
+                local session_plugin = state.active_plugins["session_"]
+                if session_plugin then
+                    local pid = session_plugin.pid
+                    if pid then
+                        process.send(pid, "resume", {})
+                    end
                 end
             end
         end
@@ -506,12 +508,10 @@ local function run(args: any): any
 
     local inbox = process.inbox()
     local events = process.events()
+    local select_cases = { inbox:case_receive(), events:case_receive() }
 
     while true do
-        local result = channel.select({
-            inbox:case_receive(),
-            events:case_receive()
-        })
+        local result = channel.select(select_cases)
 
         if not result.ok then
             break
@@ -519,9 +519,9 @@ local function run(args: any): any
 
         if result.channel == inbox then
             local msg: any = result.value
-            local topic = string(msg:topic())
+            local topic: string = msg:topic()
             local payload: any = msg:payload()
-            local from_pid = string(msg:from())
+            local from_pid: string = msg:from()
 
             if topic == consts.WS_TOPICS.JOIN then
                 handle_client_join(state, payload:data())

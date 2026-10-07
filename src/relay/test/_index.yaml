@@ -141,6 +141,24 @@ entries:
       - env
     method: benchmark
 
+  - name: relay_pipeline_benchmark
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay-benchmark
+      timeout: 120s
+    source: file://relay_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      benchmark: wippy.test:benchmark
+      consts: wippy.relay:consts
+    modules:
+      - time
+      - json
+      - security
+      - env
+    method: pipeline
+
   - name: runtime_env_storage
     kind: env.storage.os
 
@@ -157,6 +175,11 @@ entries:
   - name: runtime_bench_size
     kind: env.variable
     variable: WIPPY_BENCH_SIZE
+    storage: app:runtime_env_storage
+
+  - name: runtime_bench_memory_operations
+    kind: env.variable
+    variable: WIPPY_BENCH_MEMORY_OPERATIONS
     storage: app:runtime_env_storage
 
   - name: relay_runtime_finished_plugin

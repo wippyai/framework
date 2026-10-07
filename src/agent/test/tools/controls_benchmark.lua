@@ -22,22 +22,39 @@ local function define_tests()
                             control = {context = {session = {set = {scope = "benchmark"}}}}}}
                 end
                 local samples = {}
-                for iteration = 1, warmup + sample_count do
-                    local started = time.now()
-                    local validated, err = caller:validate(calls)
-                    test.is_nil(err)
-                    local results = caller:execute({}, validated)
-                    local elapsed = time.now():sub(started):seconds() * 1000
+                local function verify(results)
                     for index = 1, size do
                         local result = results["benchmark-" .. index]
                         test.is_nil(result.error)
                         test.eq(result.result.call_id, "benchmark-" .. index)
                         test.eq(result.result._control.context.session.set.scope, "benchmark")
                     end
+                end
+                local function execute()
+                    local validated, err = caller:validate(calls)
+                    test.is_nil(err)
+                    return caller:execute({}, validated)
+                end
+                for iteration = 1, warmup + sample_count do
+                    local started = time.now()
+                    local results = execute()
+                    local elapsed = time.now():sub(started):seconds() * 1000
+                    verify(results)
                     if iteration > warmup then samples[#samples + 1] = elapsed end
                 end
+                local memory
+                local memory_operations = tonumber((env.get("WIPPY_BENCH_MEMORY_OPERATIONS")))
+                if memory_operations then
+                    test.gt(memory_operations, 0)
+                    local rounds = math.ceil(memory_operations / size)
+                    local memory_err
+                    memory, memory_err = benchmark.measure_memory(function()
+                        for _ = 1, rounds do verify(execute()) end
+                    end, rounds * size)
+                    test.not_nil(memory, tostring(memory_err))
+                end
                 local report, report_err = benchmark.report({name = "tools_" .. strategy,
-                    size = size, operations_per_sample = size, samples_ms = samples})
+                    size = size, operations_per_sample = size, samples_ms = samples, memory = memory})
                 test.not_nil(report, tostring(report_err))
             end)
         end

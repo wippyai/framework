@@ -454,3 +454,8 @@ entries:
     kind: env.variable
     variable: WIPPY_BENCH_SIZE
     storage: app:env_storage
+
+  - name: bench_memory_operations
+    kind: env.variable
+    variable: WIPPY_BENCH_MEMORY_OPERATIONS
+    storage: app:env_storage

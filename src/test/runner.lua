@@ -157,11 +157,15 @@ local function run_tests(): number
                     end
 
                     if msg_type == "test:plan" then
-                        local count = 0
-                        for _, planned_suite in ipairs(data.suites or {}) do
-                            count = count + #(planned_suite.tests or {})
+                        if declared_cases[ref_id] ~= nil then
+                            declared_cases[ref_id] = -1
+                        else
+                            local count = 0
+                            for _, planned_suite in ipairs(data.suites or {}) do
+                                count = count + #(planned_suite.tests or {})
+                            end
+                            declared_cases[ref_id] = count
                         end
-                        declared_cases[ref_id] = count
 
                     elseif msg_type == "test:case:pass" then
                         local cs = case_stats[ref_id]
@@ -297,8 +301,8 @@ local function run_tests(): number
                         cases = cs,
                         completed = completion and completion.data or nil,
                         result_error = result_err,
-                        returned_false = value == false or (declared_cases[entry_id] == nil
-                            and type(value) == "table" and value.status == "error"),
+                        returned_false = value == false or (type(value) == "table" and value.status == "error"
+                            and not (cs and cs.failed > 0)),
                     })
 
                     if problem then

@@ -3,10 +3,13 @@
 TEST_MODULES = actor agent bootloader embeddings facade llm migration relay usage views
 WIPPY ?= wippy
 BENCH_OUTPUT_DIR ?= /tmp/wippy-framework-benchmarks
-BENCH_WARMUP ?= 5
-BENCH_SAMPLES ?= 30
+BENCH_WARMUP ?= 100
+BENCH_SAMPLES ?= 100
 BENCH_SIZES ?= 1 8 32
+BENCH_MEMORY_OPERATIONS ?= 10000
+BENCH_EXACT_ALLOCATIONS ?= 1
 BENCH_REVISION ?= $(shell git rev-parse HEAD)
+BENCH_PROFILER_FLAG = $(if $(filter 1,$(BENCH_EXACT_ALLOCATIONS)),--profiler)
 RUN_WIPPY = WIPPY="$(WIPPY)" bash scripts/run-wippy.sh
 
 .PHONY: help check-manifests run-tests run-lint install test-runtime bench
@@ -24,6 +27,7 @@ help:
 
 test-runtime:
 	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/actor/test test test -- actor_runtime_test
+	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/actor/test test test -- actor_runtime_resident_test
 	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/agent/test test \
 		-o wippy.llm:process_host:default=wippy.terminal:host \
 		-o wippy.llm:env_storage:default=app:env_storage test -- tools_controls_runtime_test
@@ -40,25 +44,35 @@ bench:
 	repo=$$(pwd -P); \
 	case "$$output/" in "$$repo/"*) echo 'Benchmark output must be outside the repository' >&2; exit 1;; esac; \
 	export WIPPY_BENCH_WARMUP="$(BENCH_WARMUP)" WIPPY_BENCH_SAMPLES="$(BENCH_SAMPLES)"; \
+	export WIPPY_BENCH_MEMORY_OPERATIONS="$(BENCH_MEMORY_OPERATIONS)"; \
+	export WIPPY_BENCH_EXACT_ALLOCATIONS="$(BENCH_EXACT_ALLOCATIONS)"; \
 	export WIPPY_TEST_REQUIRE_CASES=1; \
 	export WIPPY_BENCH_REVISION="$(BENCH_REVISION)"; \
 	WIPPY_BENCH_RUNTIME=$$("$(WIPPY)" version); export WIPPY_BENCH_RUNTIME; \
 	for size in $(BENCH_SIZES); do \
 		export WIPPY_BENCH_SIZE="$$size"; \
-		for name in actor_roundtrip tools_sequential tools_parallel relay_roundtrip; do \
+		for name in actor_roundtrip actor_lifecycle actor_resident tools_sequential tools_parallel relay_roundtrip relay_pipeline; do \
 			rm -f "$$output/$$name-$$size.json"; \
 		done; \
-		$(RUN_WIPPY) src/actor/test test -c \
+		$(RUN_WIPPY) src/actor/test test -c $(BENCH_PROFILER_FLAG) \
 			-o "wippy.test:benchmark_output:directory=$$output" test -- actor_runtime_benchmark; \
-		$(RUN_WIPPY) src/agent/test test -c \
+		$(RUN_WIPPY) src/actor/test test -c $(BENCH_PROFILER_FLAG) \
+			-o "wippy.test:benchmark_output:directory=$$output" test -- actor_lifecycle_benchmark; \
+		$(RUN_WIPPY) src/actor/test test -c $(BENCH_PROFILER_FLAG) \
+			-o "wippy.test:benchmark_output:directory=$$output" test -- actor_resident_benchmark; \
+		$(RUN_WIPPY) src/agent/test test -c $(BENCH_PROFILER_FLAG) \
 			-o "wippy.test:benchmark_output:directory=$$output" \
 			-o wippy.llm:process_host:default=wippy.terminal:host \
 			-o wippy.llm:env_storage:default=app:env_storage test -- tools_controls_benchmark; \
-		$(RUN_WIPPY) src/relay/test test -c \
+		$(RUN_WIPPY) src/relay/test test -c $(BENCH_PROFILER_FLAG) \
 			-o "wippy.test:benchmark_output:directory=$$output" \
 			-o wippy.relay:application_host:default=app:processes \
 			-o wippy.relay:user_security_scope:default=app:user test -- relay_runtime_benchmark; \
-		for name in actor_roundtrip tools_sequential tools_parallel relay_roundtrip; do \
+		$(RUN_WIPPY) src/relay/test test -c $(BENCH_PROFILER_FLAG) \
+			-o "wippy.test:benchmark_output:directory=$$output" \
+			-o wippy.relay:application_host:default=app:processes \
+			-o wippy.relay:user_security_scope:default=app:user test -- relay_pipeline_benchmark; \
+		for name in actor_roundtrip actor_lifecycle actor_resident tools_sequential tools_parallel relay_roundtrip relay_pipeline; do \
 			test -s "$$output/$$name-$$size.json"; \
 		done; \
 	done

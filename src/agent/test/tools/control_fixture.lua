@@ -35,10 +35,12 @@ local function apply(request)
             proposal = result.result.wrapper_control
         end
     end
+    local call_ids = {}
+    for _, call in ipairs(request.tool_calls or {}) do call_ids[#call_ids + 1] = call.id end
     return {
         _control = proposal,
         observations = {{level = "info", code = "runtime_outcome", content = request.outcome}},
-        metadata = {phase = request.phase},
+        metadata = {phase = request.phase, call_ids = call_ids},
     }
 end
 

@@ -84,6 +84,59 @@ local function define_tests()
                 test.eq(#caller:get_wrapper_errors(), 0)
             end)
 
+            it(strategy .. " keeps different nested controls paired with two successful calls", function()
+                local caller = tool_caller.new():set_strategy(strategy)
+                caller:set_wrapper_context({host = {kind = "session", session_id = "runtime"}})
+                local validated, err = caller:validate({
+                    call("left-id", {message = "left", control = {config = {model = "left-model"},
+                        context = {session = {set = {side = "left", nested = {depth = {value = 1}}}}}}}),
+                    call("right-id", {message = "right", control = {config = {model = "right-model"},
+                        context = {session = {set = {side = "right", nested = {depth = {value = 2}}}}}}}),
+                })
+                test.is_nil(err)
+                local results = caller:execute({}, validated)
+                test.eq(count(results), 2)
+                for id, side in pairs({["left-id"] = "left", ["right-id"] = "right"}) do
+                    local entry = results[id]
+                    test.is_nil(entry.error)
+                    test.eq(entry.tool_call.call_id, id)
+                    test.eq(entry.result.call_id, id)
+                    test.eq(entry.result.message, side)
+                    test.eq(entry.result._control.config.model, side .. "-model")
+                    test.eq(entry.result._control.context.session.set.side, side)
+                end
+                test.eq(results["left-id"].result._control.context.session.set.nested.depth.value, 1)
+                test.eq(results["right-id"].result._control.context.session.set.nested.depth.value, 2)
+                test.is_false(results["left-id"].result._control == results["right-id"].result._control)
+            end)
+
+            it(strategy .. " clears the previous round when a later round has no tool calls", function()
+                local caller = tool_caller.new():set_strategy(strategy)
+                caller:set_wrapper_context({host = {kind = "session", session_id = "runtime"}})
+                caller:set_tool_wrappers({wrapper("behavior", {"after_execute"})})
+                local validated, err = caller:validate({call("first-id", {message = "first",
+                    wrapper_control = {memory = {compact = true}}})})
+                test.is_nil(err)
+                caller:execute({}, validated)
+                test.eq(#caller:get_wrapper_controls(), 1)
+                test.eq(caller:get_wrapper_metadata()[1].metadata.call_ids[1], "first-id")
+
+                validated, err = caller:validate({})
+                test.is_nil(err)
+                test.eq(#caller:get_last_tool_calls(), 0)
+                test.eq(#caller:get_wrapper_observations(), 0)
+                test.eq(#caller:get_wrapper_metadata(), 0)
+                test.eq(#caller:get_wrapper_errors(), 0)
+                test.eq(#caller:get_wrapper_controls(), 0)
+
+                local results = caller:execute({}, validated)
+                test.eq(count(results), 0)
+                local metadata = caller:get_wrapper_metadata()
+                test.eq(#metadata, 1)
+                test.eq(#metadata[1].metadata.call_ids, 0)
+                test.eq(#caller:get_wrapper_controls(), 0)
+            end)
+
             it(strategy .. " keeps legacy wrappers from proposing behavior controls", function()
                 local caller = tool_caller.new():set_strategy(strategy)
                 caller:set_wrapper_context({host = {kind = "session", session_id = "runtime"}})

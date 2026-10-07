@@ -66,13 +66,7 @@ local function get_process(): any
         return actor._process
     end
 
-    return {
-        inbox = function() return process.inbox() end,
-        events = function() return process.events() end,
-        send = function(dest, topic, payload) return process.send(dest, topic, payload) end,
-        pid = function() return process.pid() end,
-        event = process.event
-    }
+    return process
 end
 
 function actor.new(initial_state: any, handlers: any): any
@@ -108,15 +102,15 @@ function actor.new(initial_state: any, handlers: any): any
             internal_channel:case_receive()
         }
 
+        -- Update in place: go-lua detaches this upvalue from run_loop after a caught error.
         local function rebuild_select_cases()
-            select_cases = {
-                inbox:case_receive(),
-                events:case_receive(),
-                internal_channel:case_receive()
-            }
-
+            local count = 3
             for _, channel_info in pairs(registered_channels) do
-                table.insert(select_cases, channel_info.chan:case_receive())
+                count = count + 1
+                select_cases[count] = channel_info.chan:case_receive()
+            end
+            for index = #select_cases, count + 1, -1 do
+                select_cases[index] = nil
             end
         end
 

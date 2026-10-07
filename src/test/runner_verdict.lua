@@ -52,6 +52,9 @@ local function check(state: RunState): RunnerError?
         return fail("test process did not report a plan")
     end
     if state.declared ~= nil then
+        if state.declared < 0 then
+            return fail("test process reported more than one plan")
+        end
         if state.observed ~= state.declared then
             return fail(tostring(state.declared) .. " declared cases, "
                 .. tostring(state.observed) .. " executed")
