@@ -94,6 +94,19 @@ local function define_tests()
             test.eq(err.message, "test process reported more than one plan")
         end)
 
+        test.it("required suites count failed cases as executed", function()
+            test.is_nil(verdict.check({require_cases = true, declared = 1, observed = 1,
+                cases = {passed = 0, failed = 1, skipped = 0},
+                completed = {total = 1, passed = 0, failed = 1, skipped = 0}}))
+        end)
+
+        test.it("reports a replaced plan before a missing required case", function()
+            local err = verdict.check({ require_cases = true, declared = -1, observed = 0,
+                completed = { total = 0, passed = 0, failed = 0, skipped = 0 } })
+            test.not_nil(err)
+            test.eq(err.message, "test process reported more than one plan")
+        end)
+
         test.it("accepts all declared cases with a successful completion", function()
             local err = verdict.check({ declared = 2, observed = 2,
                 completed = { total = 2, passed = 2, failed = 0, skipped = 0 } })
