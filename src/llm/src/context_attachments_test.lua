@@ -59,7 +59,7 @@ local function attention_attachment(text)
 end
 
 local function decode_rendered(part)
-    local newline = assert(string.find(part.text, "\n", 1, true))
+    local newline = assert((string.find(part.text, "\n", 1, true)))
     return assert(json.decode(string.sub(part.text, newline + 1))) :: any
 end
 
