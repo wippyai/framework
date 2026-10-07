@@ -32,3 +32,20 @@ for scenario in returns_true returns_nil skipped_case; do
   fi
 done
 printf 'runner result and protocol regressions passed\n'
+
+for scenario in empty_plan skipped_case returns_nil no-such-entry; do
+  set +e
+  output=$(WIPPY_TEST_REQUIRE_CASES=1 "$wippy_bin" test --config .wippy.yaml test -- "app:$scenario" 2>&1)
+  status=$?
+  set -e
+  if [ "$status" -ne 1 ]; then
+    printf 'required runner accepted %s (exit %s):\n%s\n' "$scenario" "$status" "$output"
+    exit 1
+  fi
+done
+if ! output=$("$wippy_bin" test --config .wippy.yaml test -- app:empty_plan 2>&1) ||
+   ! grep -Fq 'PASSED' <<< "$output"; then
+  printf 'runner rejected a generic empty plan:\n%s\n' "$output"
+  exit 1
+fi
+printf 'required case regressions passed\n'

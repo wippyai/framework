@@ -1,5 +1,6 @@
 -- Test runner with real-time per-case TUI display
 local io = require("io")
+local env = require("env")
 local registry = require("registry")
 local time = require("time")
 local channel = require("channel")
@@ -59,6 +60,7 @@ end
 -- Main test runner logic
 local function run_tests(): number
     local args: {string}? = io.args()
+    local require_cases = env.get("WIPPY_TEST_REQUIRE_CASES") == "1"
 
     display.begin()
 
@@ -71,7 +73,7 @@ local function run_tests(): number
 
     if not raw_entries or #raw_entries == 0 then
         display.info("No tests found")
-        return 0
+        return require_cases and 1 or 0
     end
 
     local entries: {discovery.TestEntry} = raw_entries
@@ -81,7 +83,7 @@ local function run_tests(): number
         entries = discovery.filter_tests(entries, args)
         if #entries == 0 then
             display.info("No tests match filter: " .. table.concat(args, ", "))
-            return 0
+            return require_cases and 1 or 0
         end
         display.info("Filter: " .. table.concat(args, ", "))
     end
@@ -265,6 +267,7 @@ local function run_tests(): number
                         ("test process termination failed: " .. tostring(terminate_err))
                         or cancel_error or protocol_error
                     local problem = verdict.check({
+                        require_cases = require_cases,
                         entry_id = entry_id,
                         declared = declared_cases[entry_id],
                         observed = case_stats[entry_id] and ((case_stats[entry_id].passed or 0) + (case_stats[entry_id].failed or 0) + (case_stats[entry_id].skipped or 0)) or 0,
@@ -287,6 +290,7 @@ local function run_tests(): number
                     local value: any = control.value
                     local result_err: any = control.result_error
                     local problem = verdict.check({
+                        require_cases = require_cases,
                         entry_id = entry_id,
                         declared = declared_cases[entry_id],
                         observed = case_count,

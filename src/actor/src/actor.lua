@@ -277,7 +277,7 @@ function actor.new(initial_state: any, handlers: any): any
         -- Main actor loop
         while true do
             local result: SelectResult = channel.select(select_cases)
-            if not result.ok then
+            if not result.ok and not channel_to_id[result.channel] then
                 break
             end
 

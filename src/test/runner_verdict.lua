@@ -1,6 +1,7 @@
 -- Validate the protocol independently of the case events already rendered by the runner.
 type RunState = {
     entry_id: string?,
+    require_cases: boolean?,
     declared: number?,
     observed: number,
     cases: {passed: number, failed: number, skipped: number}?,
@@ -73,6 +74,10 @@ local function check(state: RunState): RunnerError?
         if cases and (passed ~= cases.passed or failed ~= cases.failed or skipped ~= cases.skipped) then
             return fail("test completion counts disagree with declared cases")
         end
+    end
+    if state.require_cases and (state.declared == nil or not state.completed
+        or state.completed.passed + state.completed.failed == 0) then
+        return fail("required test suite executed no cases")
     end
     return nil
 end

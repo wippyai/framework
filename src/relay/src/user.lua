@@ -273,7 +273,10 @@ local function route_to_plugin(state: UserState, prefix: string, plugin_config: 
                 context = message_data.context
             }
 
-            process.send(pid, topic, payload_data)
+            local sent, send_err = process.send(pid, topic, payload_data)
+            if not sent then
+                return false, "Failed to send message to plugin: " .. tostring(send_err)
+            end
             return true
         end
     end
@@ -343,7 +346,7 @@ end
 
 local function handle_client_message(state: UserState, payload: any, from_pid: string)
     local message_data, err = json.decode(string(payload:data()))
-    if not message_data then
+    if err then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.INVALID_JSON,
             message = "Failed to decode JSON message"
@@ -351,8 +354,16 @@ local function handle_client_message(state: UserState, payload: any, from_pid: s
         return
     end
 
+    if type(message_data) ~= "table" then
+        process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+            error = consts.ERROR_CODES.UNKNOWN_COMMAND,
+            message = "Message must be a JSON object"
+        })
+        return
+    end
+
     local msg_type = message_data.type :: string?
-    if not msg_type then
+    if type(msg_type) ~= "string" or msg_type == "" then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.UNKNOWN_COMMAND,
             message = "Message type is required"

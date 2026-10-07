@@ -32,3 +32,65 @@ entries:
       - time
       - json
     method: run
+
+  - name: runtime_processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
+
+  - name: actor_runtime_fixture
+    kind: process.lua
+    source: file://actor_runtime_fixture.lua
+    imports:
+      actor: wippy.actor:actor
+    modules:
+      - time
+    method: run
+
+  - name: actor_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-runtime
+      timeout: 20s
+    source: file://actor_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      benchmark: wippy.test:benchmark
+    modules:
+      - time
+      - env
+    method: run
+
+  - name: actor_runtime_benchmark
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-benchmark
+      timeout: 120s
+    source: file://actor_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      benchmark: wippy.test:benchmark
+    modules:
+      - time
+      - env
+    method: benchmark
+
+  - name: runtime_env_storage
+    kind: env.storage.os
+
+  - name: runtime_bench_samples
+    kind: env.variable
+    variable: WIPPY_BENCH_SAMPLES
+    storage: app:runtime_env_storage
+
+  - name: runtime_bench_warmup
+    kind: env.variable
+    variable: WIPPY_BENCH_WARMUP
+    storage: app:runtime_env_storage
+
+  - name: runtime_bench_size
+    kind: env.variable
+    variable: WIPPY_BENCH_SIZE
+    storage: app:runtime_env_storage

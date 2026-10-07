@@ -64,3 +64,10 @@ entries:
     method: skipped_case
     imports:
       test: wippy.test:test
+  - name: empty_plan
+    kind: function.lua
+    meta: {type: test, suite: runner-results}
+    source: file://cases.lua
+    method: empty_plan
+    imports:
+      test: wippy.test:test

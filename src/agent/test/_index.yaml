@@ -393,3 +393,64 @@ entries:
       - time
       - ctx
     method: delayed_echo
+
+  - name: tools_controls_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: agent-runtime
+    source: file://tools/controls_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+    method: run_tests
+
+  - name: control_fixture
+    kind: function.lua
+    meta:
+      type: tool
+      input_schema: '{"type":"object"}'
+    source: file://tools/control_fixture.lua
+    modules: [ctx]
+    method: execute
+
+  - name: control_wrapper_apply
+    kind: function.lua
+    source: file://tools/control_fixture.lua
+    modules: [ctx]
+    method: apply
+
+  - name: control_wrapper_binding
+    kind: contract.binding
+    contracts:
+      - contract: wippy.agent:tool_wrapper
+        methods:
+          apply: app:control_wrapper_apply
+
+  - name: tools_controls_benchmark
+    kind: function.lua
+    meta:
+      type: test
+      suite: agent-benchmark
+    source: file://tools/controls_benchmark.lua
+    modules: [env, time, json]
+    imports:
+      benchmark: wippy.test:benchmark
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+    method: run_tests
+
+  - name: bench_samples
+    kind: env.variable
+    variable: WIPPY_BENCH_SAMPLES
+    storage: app:env_storage
+
+  - name: bench_warmup
+    kind: env.variable
+    variable: WIPPY_BENCH_WARMUP
+    storage: app:env_storage
+
+  - name: bench_size
+    kind: env.variable
+    variable: WIPPY_BENCH_SIZE
+    storage: app:env_storage

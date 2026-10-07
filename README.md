@@ -79,6 +79,21 @@ and configuration management — enabling developers to build sophisticated mult
 | **stream**       | Data streaming interface with chunked reading support                                                              |
 | **cloudstorage** | Cloud storage provider interface for S3-like operations                                                            |
 
+## Runtime tests and benchmarks
+
+`make test-runtime` runs Lua tests for actor messages, relay delivery, and tool controls through Wippy.
+It uses the local component and test-runner sources. Required suites fail if they execute no cases.
+
+`make bench` runs Lua workloads with five warmups and thirty samples at sizes 1, 8, and 32.
+Reports contain measured samples, median and p95 latency, throughput, and source/runtime metadata.
+Timing covers the operation inside Wippy, excluding CLI startup. Compare runs on the same system
+without other test workloads; investigate repeatable slowdowns before delivery.
+
+Set `WIPPY` to select the executable, `RUNTIME_WORK_DIR` to reuse an external dependency directory,
+and `BENCH_OUTPUT_DIR` to select the report directory. Reports default to `/tmp/wippy-framework-benchmarks`.
+Use `BENCH_WARMUP`, `BENCH_SAMPLES`, and the space-separated `BENCH_SIZES` to change the workload.
+Test data and benchmark reports must stay outside the repository.
+
 [module-actor]: https://github.com/wippyai/module-actor
 [module-agent]: https://github.com/wippyai/module-agent
 [module-bootloader]: https://github.com/wippyai/module-bootloader
