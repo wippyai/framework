@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.3] (2026-10-07)
+
+### Features
+
+* Add opt-in Attention traits and separate tools for semantic search, scoped CSS search, pointer, focus, selection and browser actions.
+* Scope browser authority to each permitted tool call. Bound read results and remove expired or superseded observations through existing stale metadata.
+* Support highlight, confirmation and approved capture. Capture prepares a removable draft for a later explicit Send.
+
+### Dependencies
+
+* Require LLM 0.5.5 for the validated Attention context renderer. Agents without Attention traits retain ordinary tool execution.
+
 ## [0.5.2](https://github.com/wippyai/framework/compare/agent-v0.5.1...agent-v0.5.2) (2026-10-02)
 
 
