@@ -290,6 +290,33 @@ local function define_tests()
                 test.eq(after.plugin_pid, plugin.pid)
             end)
         end)
+        test.it("routes commands beyond the route cache bound and keeps rejecting invalid commands", function()
+            with_hub("app:relay_runtime_plugin", function(_, _, join, send, response, errors, started)
+                join()
+                for index = 1, 80 do
+                    send({ type = "runtime_echo_" .. index, request_id = tostring(index) })
+                end
+                started()
+                local seen = {}
+                for _ = 1, 80 do
+                    local value = receive(response)
+                    local request_id = value.payload.request_id
+                    test.eq(value.topic, "echo_" .. request_id)
+                    test.is_nil(seen[request_id])
+                    seen[request_id] = true
+                end
+                send({ type = "runtime_echo_1", request_id = "cached" })
+                local cached = receive(response)
+                test.eq(cached.topic, "echo_1")
+                test.eq(cached.payload.request_id, "cached")
+                send({ type = 42 })
+                test.eq(receive(errors).error, consts.ERROR_CODES.UNKNOWN_COMMAND)
+                send({ type = "missing_echo" })
+                test.eq(receive(errors).error, consts.ERROR_CODES.PLUGIN_NOT_FOUND)
+                send({ type = "runtime_echo_80", request_id = "uncached" })
+                test.eq(receive(response).topic, "echo_80")
+            end)
+        end)
         test.it("rejects non-object JSON and non-string command types without stopping", function()
             with_hub("app:relay_runtime_plugin", function(pid, _, join, send, _, errors)
                 join()

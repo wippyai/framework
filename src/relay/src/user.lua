@@ -18,6 +18,12 @@ type PluginState = {
     status: string,
 }
 
+type Route = {
+    prefix: string,
+    config: PluginConfig,
+    topic: string,
+}
+
 type UserState = {
     user_id: string,
     user_metadata: any,
@@ -29,7 +35,11 @@ type UserState = {
     client_count: number,
     pg_scopes: {[string]: any},
     pg_groups: {[string]: string},
+    routes: {[any]: Route},
+    route_count: number,
 }
+
+local MAX_CACHED_ROUTES = 64
 
 type UserUpgradeState = {
     relay_user_upgrade: boolean,
@@ -347,7 +357,7 @@ local function handle_client_leave(state: UserState, payload_data: any)
 end
 
 local function handle_client_message(state: UserState, payload: any, from_pid: string)
-    local message_data, err = json.decode(string(payload:data()))
+    local message_data, err = json.decode(payload:data())
     if err then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.INVALID_JSON,
@@ -364,26 +374,34 @@ local function handle_client_message(state: UserState, payload: any, from_pid: s
         return
     end
 
-    local msg_type = message_data.type :: string?
-    if type(msg_type) ~= "string" or msg_type == "" then
-        process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
-            error = consts.ERROR_CODES.UNKNOWN_COMMAND,
-            message = "Message type is required"
-        })
-        return
+    local msg_type: any = message_data.type
+    local route = state.routes[msg_type]
+    if not route then
+        if type(msg_type) ~= "string" or msg_type == "" then
+            process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.UNKNOWN_COMMAND,
+                message = "Message type is required"
+            })
+            return
+        end
+
+        local plugin_prefix, plugin_config = find_plugin_for_command(state, msg_type)
+        if not plugin_prefix or not plugin_config then
+            process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.PLUGIN_NOT_FOUND,
+                message = "No plugin found for command: " .. msg_type
+            })
+            return
+        end
+
+        route = { prefix = plugin_prefix, config = plugin_config, topic = msg_type:sub(#plugin_prefix + 1) }
+        if state.route_count < MAX_CACHED_ROUTES then
+            state.routes[msg_type] = route
+            state.route_count = state.route_count + 1
+        end
     end
 
-    local plugin_prefix, plugin_config = find_plugin_for_command(state, msg_type)
-    if not plugin_prefix or not plugin_config then
-        process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
-            error = consts.ERROR_CODES.PLUGIN_NOT_FOUND,
-            message = "No plugin found for command: " .. msg_type
-        })
-        return
-    end
-
-    local stripped_topic = msg_type:sub(#plugin_prefix + 1)
-    local success, route_err = route_to_plugin(state, plugin_prefix!, plugin_config!, stripped_topic, message_data, from_pid)
+    local success, route_err = route_to_plugin(state, route.prefix, route.config, route.topic, message_data, from_pid)
     if not success then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.PLUGIN_FAILED,
@@ -479,7 +497,9 @@ local function run(args: any): any
         connected_clients = connected_clients,
         client_count = client_count,
         pg_scopes = {},
-        pg_groups = {}
+        pg_groups = {},
+        routes = {},
+        route_count = 0,
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
