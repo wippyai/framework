@@ -307,9 +307,11 @@ entries:
     modules:
       - env
       - time
+      - funcs
     imports:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
+      attention_guard: wippy.agent.traits:attention_guard
     method: run_tests
 
   # app:tools_delay_tool_test

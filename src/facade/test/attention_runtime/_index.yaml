@@ -1,0 +1,9 @@
+version: '1.0'
+namespace: app.facade_test
+
+entries:
+  - name: source
+    kind: fs.directory
+    meta:
+      comment: Source-only volume for full facade shell forwarding regression
+    directory: ../..

@@ -363,6 +363,18 @@ entries:
         path: .default
     default: "{}"
 
+  - name: attention
+    kind: ns.requirement
+    meta:
+      description: >-
+        Opt-in Wippy Attention Context configuration as JSON. Empty by default.
+        Set enabled plus messageContext, agentActions, visualCapture, sampling,
+        and privacy fields explicitly for the capabilities the application permits.
+    targets:
+      - entry: wippy.facade:attention
+        path: .default
+    default: "{}"
+
   - name: allow_additional_tags
     kind: ns.requirement
     meta:

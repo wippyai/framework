@@ -34,6 +34,7 @@ end
 
 local function define_tests()
     test.describe("relay central identity", function()
+        test.after_each(function() central._set_security_for_test(nil) end)
         test.it("uses the authenticated scope id when relay metadata carries it", function()
             local calls = {}
             central._set_security_for_test(fake_security(calls))

@@ -24,6 +24,18 @@ entries:
       server: gateway
     prefix: /api/public
 
+  - name: dep.wippy.facade
+    kind: ns.dependency
+    meta:
+      description: Facade module under test
+    component: wippy/facade
+    version: "*"
+    parameters:
+      - name: server
+        value: app:gateway
+      - name: router
+        value: app:api.public
+
   - name: security_policy_test
     kind: function.lua
     meta:
@@ -63,6 +75,7 @@ entries:
     imports:
       test: wippy.test:test
     modules:
+      - fs
       - json
       - registry
 

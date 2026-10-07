@@ -163,6 +163,7 @@
             // applies the same mode the early-apply script already painted.
             themeMode: (window.wippyThemePersist && window.wippyThemePersist.read()) || cfg.themeMode,
             apiRoutes: cfg.apiRoutes,
+            attention: cfg.attention,
             axiosDefaults: cfg.axiosDefaults,
             theming: cfg.theming,
             hostConfig: cfg.hostConfig,

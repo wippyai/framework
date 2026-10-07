@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.5] (2026-10-07)
+
+### Features
+
+* Render validated Attention context as bounded, untrusted model input. Support kind/version dispatch and authorized visual attachments.
+* Render bounded context without adding technical data to visible conversation text.
+
+### Bug fixes
+
+* Pass only the first search result to the context renderer test assertion, preserving compatibility with the current runtime's type checker.
+
 ## [0.5.4](https://github.com/wippyai/framework/compare/llm-v0.5.3...llm-v0.5.4) (2026-10-02)
 
 
