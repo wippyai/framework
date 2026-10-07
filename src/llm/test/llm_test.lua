@@ -1,4 +1,5 @@
 local llm = require("llm")
+local decisions_handler = require("decisions_handler")
 local json = require("json")
 local security = require("security")
 
@@ -1765,6 +1766,69 @@ local function define_tests()
                 test.eq(args.retry.attempts, 2)
                 test.is_nil(args.options.timeout)
                 test.is_nil(args.options.retry)
+            end)
+
+            it("should evaluate Decisions through the direct native provider and normalize input usage", function()
+                local original_client = decisions_handler._client
+                local seen_payload, seen_transport
+                decisions_handler._client = { request = function(path, payload, transport_options)
+                    test.eq(path, "/decisions")
+                    seen_payload, seen_transport = payload, transport_options
+                    return { model = "gpt-6-luna", answers = { { name = "q1", type = "predicate", probability = 0.9 } },
+                        usage = { input_tokens = 100, output_tokens = 0, total_tokens = 100,
+                            input_tokens_details = { cached_tokens = 20, cache_write_tokens = 10 } } }
+                end }
+                mock_providers.open = function(provider_id, context)
+                    test.eq(provider_id, "wippy.llm.openai:provider")
+                    return { evaluate = function(self, args) return decisions_handler.handler(args) end }
+                end
+                local ok, result, err = pcall(llm.evaluate, { text = "broken" }, {
+                    damaged = { type = "predicate", instructions = "Is it broken?" }
+                }, { model = "gpt-6-luna", provider_id = "wippy.llm.openai:provider", safety_identifier = "opaque-hash",
+                    timeout = 7, retry = { attempts = 2 }, metadata = { purpose = "usage" } })
+                decisions_handler._client = original_client
+                test.is_true(ok)
+                test.is_nil(err)
+                assert(result)
+                test.eq(result.result.damaged.probability, 0.9)
+                test.eq(result.tokens.context_tokens, 100)
+                test.eq(result.tokens.prompt_tokens, 70)
+                test.eq(result.tokens.cache_read_tokens, 20)
+                test.eq(result.tokens.cache_write_tokens, 10)
+                test.eq(result.tokens.completion_tokens, 0)
+                test.eq(result.metadata.usage.input_tokens, 100)
+                test.eq(seen_payload.safety_identifier, "opaque-hash")
+                test.is_nil(seen_payload.user)
+                test.eq(seen_transport.timeout, 7)
+                test.eq(seen_transport.retry.attempts, 2)
+                test.eq(mock_usage_tracker.last_model_id, "gpt-6-luna")
+            end)
+
+            it("should route a model card declaring evaluate to native OpenAI Decisions", function()
+                local seen_model, seen_options
+                mock_models.get_by_name = function(name)
+                    return { id = "app.models:luna-decisions", name = "luna-decisions", title = "Luna Decisions",
+                        capabilities = { "evaluate" }, classes = { "evaluate" }, priority = 100,
+                        providers = { { id = "wippy.llm.openai:provider", provider_model = "gpt-6-luna",
+                            options = { safety_identifier = "provider-default" } } } }
+                end
+                mock_providers.open = function(provider_id, context)
+                    test.eq(provider_id, "wippy.llm.openai:provider")
+                    test.eq(context.safety_identifier, "provider-default")
+                    return { evaluate = function(self, args)
+                        seen_model, seen_options = args.model, args.options
+                        return { success = true, result = { readings = { damaged = { type = "predicate", probability = 0.9 } } },
+                            tokens = { prompt_tokens = 42, completion_tokens = 0, total_tokens = 42 } }
+                    end }
+                end
+                local result, err = llm.evaluate("broken", { damaged = { type = "predicate", instructions = "Is it broken?" } },
+                    { model = "luna-decisions", safety_identifier = "caller-override" })
+                test.is_nil(err)
+                assert(result)
+                test.eq(seen_model, "gpt-6-luna")
+                test.eq(seen_options.safety_identifier, "caller-override")
+                test.eq(result.result.damaged.probability, 0.9)
+                test.eq(mock_usage_tracker.last_model_id, "luna-decisions")
             end)
         end)
 

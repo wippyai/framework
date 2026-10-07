@@ -332,6 +332,80 @@ entries:
 
 The module ships the `wippy.llm.typesafe:provider` entry bound to its driver and credential variables. Driver env vars: `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` (default `https://api.typesafe.ai/v1`), `TYPESAFE_TIMEOUT`.
 
+### OpenAI Decisions
+
+The native OpenAI provider also implements `evaluate` through
+[`POST /v1/decisions`](https://developers.openai.com/api/docs/guides/decisions).
+It uses the same questions and readings as the TypeSafe evaluator. A direct
+call uses your OpenAI credentials and skips model discovery:
+
+```lua
+local result, err = llm.evaluate("Export fails in Safari but works in Chrome.", {
+    severity = {
+        type = "score",
+        instructions = "How severe is this issue?",
+        domain = {
+            "Cosmetic: appearance only; no lost functionality",
+            "Workaround available: a task fails, but another way works",
+            "Fully blocked: a task fails with no workaround"
+        }
+    }
+}, {
+    model = "gpt-6-luna",
+    provider_id = "wippy.llm.openai:provider"
+})
+if err then
+    return nil, err
+end
+local severity = result.result.severity
+-- severity.score is the expected 1-based level index.
+-- severity.level is the highest-probability 1-based level index.
+-- severity.probabilities preserves the distribution over all three levels.
+```
+
+For model discovery, register a model with `class: [evaluate]`,
+`capabilities: [evaluate]`, and a provider mapping to
+`wippy.llm.openai:provider` with `provider_model: gpt-6-luna`, following the
+registration example above. Credentials and transport settings are shared with
+the native OpenAI provider: `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+`OPENAI_ORGANIZATION`, and `OPENAI_TIMEOUT`. The base URL defaults to
+`https://api.openai.com/v1`; evaluation sends a nonstreaming `/decisions` request.
+Per-call options support `timeout`, `retry`, and an explicitly supplied
+`safety_identifier` of at most 128 bytes. The actor ID used by Wippy's usage
+tracking is not automatically sent as a safety identifier. Generation options
+such as temperature, tools, and streaming are rejected for evaluation.
+
+The adapter sends a string state as text and serializes a table state as JSON
+text. Table instructions are also serialized as JSON text. Slot keys stay local;
+the request uses generated question names and maps answers back to your keys.
+Predicate `domain.yes` and `domain.no` descriptions are included in the question
+instructions. Choice domains support between 2 and 255 string options. Score
+domains retain their declaration order: OpenAI's zero-based expected score is
+shifted by one to match Wippy's existing reading contract. Confidence remains a
+provider-specific statistic; choose thresholds using labeled examples from your
+own application.
+
+Every declared question must receive a valid answer. A refusal fails the whole
+evaluation with a `content_filtered` provider error; malformed or incomplete
+answers fail with a `model_error`. The adapter never returns partial readings as
+a successful result. Independent questions can share one request; a question
+that depends on another answer needs a later call.
+
+This adapter supports the existing text/JSON evaluation contract. Images inside
+a JSON table are treated as text; image evaluation needs a separate typed input
+extension. The Decisions API is currently in public beta and the official guide
+lists `gpt-6-luna` as its supported model. OpenAI bills this endpoint for input
+tokens only; reported token usage is preserved for accounting. Availability,
+pricing, and limits should be checked in the official guide before rollout.
+Configure usage-tracker pricing for the Decisions endpoint when registering an
+evaluation model; generation prices for the same model name can differ. The raw
+provider usage remains in `result.metadata.usage`, while normalized token
+categories keep uncached input, cache reads, and cache writes disjoint.
+
+The optional live test runs only with `ENABLE_DECISIONS_INTEGRATION_TESTS=true`
+and valid OpenAI credentials. The regular suite uses fixtures and mocked HTTP;
+it does not require a paid API call.
+
 ## Streaming
 
 ```lua
@@ -537,7 +611,7 @@ entries:
 
 - `wippy.llm.claude` - Anthropic Claude (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock (Converse API for text generation, InvokeModel for embeddings)
-- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `xhigh`/`minimal` reasoning effort. Use this for `api.openai.com`.
+- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `xhigh`/`minimal` reasoning effort; also supports typed evaluation via `/v1/decisions`. Use this for `api.openai.com`.
 - `wippy.llm.openai_compat` - OpenAI-compatible Chat Completions (`/v1/chat/completions`) — Ollama, vLLM, llama.cpp, LM Studio, OpenRouter, Together, Groq, Fireworks, DeepInfra, Mistral, DeepSeek, etc. Use this for any non-OpenAI backend that exposes a `/chat/completions` endpoint.
 - `wippy.llm.google.vertex` - Google Vertex AI
 - `wippy.llm.google.generative_ai` - Google Generative AI (Gemini)
@@ -593,7 +667,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 - `wippy.llm.claude` - Claude provider (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock provider
-- `wippy.llm.openai` - OpenAI native (Responses API)
+- `wippy.llm.openai` - OpenAI native (Responses, embeddings, and Decisions evaluation)
 - `wippy.llm.openai_compat` - OpenAI-compatible (Chat Completions) for Ollama / vLLM / OpenRouter / Together / Groq / etc.
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
 - `wippy.llm.typesafe` - TypeSafe Jev evaluation provider
