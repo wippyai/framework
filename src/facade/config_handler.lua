@@ -145,11 +145,9 @@ local function handler()
         session = { type = non_empty_or_nil(get_req("session_type")) },
         history = non_empty_or_nil(get_req("history_mode")),
         showAdmin = get_req("show_admin") ~= "false",
-        allowSelectModel = get_req("allow_select_model") == "true",
         startNavOpen = get_req("start_nav_open") == "true",
         hideNavBar = get_req("hide_nav_bar") == "true",
         disableRightPanel = get_req("disable_right_panel") == "true",
-        hideSessionSelector = get_req("hide_session_selector") == "true",
         renderEngine = render_engine,
     }
 
@@ -168,8 +166,8 @@ local function handler()
     local attention = non_empty_map_or_nil(get_req_json_any("attention"))
 
     local additional_tags = non_empty_map_or_nil(get_req_json_any("allow_additional_tags"))
-    if additional_tags then
-        host_config.allowAdditionalTags = additional_tags
+    if not additional_tags then
+        additional_tags = table.create(0, 1)
     end
 
     local chat_config = non_empty_map_or_nil(get_req_json_any("chat"))
@@ -233,6 +231,9 @@ local function handler()
         themeStorageKey = theme_storage_key,
         apiRoutes = api_routes,
         attention = attention,
+        allowSelectModel = get_req("allow_select_model") == "true",
+        hideSessionSelector = get_req("hide_session_selector") == "true",
+        allowAdditionalTags = additional_tags,
         axiosDefaults = axios_defaults,
         tanstack = tanstack,
         extraScripts = extra_scripts,

@@ -78,7 +78,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.59` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.62` | CDN base URL for the Web Host frontend bundle |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 | `render_engine` | `iframe` | Global page render engine for packaged `view.page` micro-frontends: `iframe` (default — legacy srcdoc iframe) or `fragment` (Web Fragment / reframed realm reflected into a shadow root). `fragment` **requires** the `wippy/views` fragment gateway and a fragment-capable host bundle serving `/@wippy-fe/proxy-fragment.js`. Flows to the host as `hostConfig.renderEngine`; the child app is engine-agnostic (same package renders under either engine). |
@@ -124,7 +124,7 @@ These accept JSON strings for complex configuration:
 | `api_routes` | `{}` | `apiRoutes` | API route overrides — top-level, not under hostConfig (e.g. `{"agents":{"list":"/custom/agents"}}`) |
 | `additional_nav_items` | `[]` | `hostConfig.additionalNavItems` | Extra sidebar nav items as JSON array |
 | `state_cache` | `{}` | `hostConfig.stateCache` | Child state LRU config (e.g. `{"maxPages":50,"maxSizePerPage":1048576}`) |
-| `allow_additional_tags` | `{}` | `hostConfig.allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
+| `allow_additional_tags` | `{}` | `allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
 | `axios_defaults` | `{}` | `axiosDefaults` | HTTP client defaults (e.g. `{"timeout":30000}`) — top-level, not under hostConfig |
 | `tanstack` | `{}` | `tanstack` | TanStack Query defaults — top-level, not under hostConfig. `{ default?, content?, lists? }`: `default` applies to all queries, `content` to single-resource renders, `lists` to navigation/index queries. Host default is `refetchOnWindowFocus:false` (e.g. `{"lists":{"refetchOnWindowFocus":true}}`) |
@@ -365,7 +365,7 @@ Scripts are fetched in parallel and awaited before the Web Host bundle is import
 
 ### `GET /api/public/facade/config`
 
-Returns the full facade configuration as JSON (wippy-context-2.0 format). Used by `index.html` on load; see [Config Response](#config-response) below.
+Returns the full facade configuration as JSON (wippy-context-2.1 format). Used by `index.html` on load; see [Config Response](#config-response) below.
 
 ### `GET /api/public/facade/variables.css`
 
@@ -386,13 +386,13 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ## Config Response
 
-`GET /api/public/facade/config` returns (wippy-context-2.0 format):
+`GET /api/public/facade/config` returns (wippy-context-2.1 format):
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.59",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.62",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.59/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {
@@ -401,6 +401,9 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
     "APP_WEBSOCKET_URL": "ws://localhost:8085"
   },
   "routePrefix": "http://localhost:8085",
+  "allowSelectModel": false,
+  "hideSessionSelector": false,
+  "allowAdditionalTags": {},
   "theming": {
     "global": {
       "customCSS": "@import url('https://fonts.googleapis.com/css2?family=Poppins...');"
@@ -414,11 +417,9 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
     "session": { "type": "non-persistent" },
     "history": "hash",
     "showAdmin": true,
-    "allowSelectModel": false,
     "startNavOpen": false,
     "hideNavBar": false,
-    "disableRightPanel": false,
-    "hideSessionSelector": false
+    "disableRightPanel": false
   },
   "extraScripts": null
 }
@@ -434,9 +435,17 @@ fetch /api/public/facade/config
   → listen for 'authExpired' and 'error' events → redirect to login_path
 ```
 
-The backend returns config in wippy-context-2.0 shape. `index.html` only adds `$schema` (from `facade_url`), `auth` (from localStorage), and `context` (empty default). All other fields pass through from the backend unchanged.
+The backend returns config in wippy-context-2.1 shape. `index.html` only adds `$schema` (from `facade_url`), `auth` (from localStorage), and `context` (empty default). All other fields pass through from the backend unchanged.
 
 If any step fails (config fetch, CDN import, missing `initWippyApp`), the page shows a themed `<wippy-error>` screen with title and details. No external CSS is required — both `<wippy-loading>` and `<wippy-error>` are self-contained web components with Shadow DOM styles.
+
+## Shared chat policy
+
+The existing `allow_select_model`, `hide_session_selector`, and `allow_additional_tags` requirements produce top-level camelCase fields. The Jet shell and static shell both forward them to Web Host 1.0.62. Existing deployment requirement names stay valid. An empty allowlist is encoded as `{}`.
+
+`hostConfig` describes the Web Host wrapper. Child applications do not receive it. A custom parent may still supply these fields in `hostConfig` to override built-in host chat; the shared reader uses `hostConfig[key] ?? config[key] ?? default`. A child inherits the top-level policy and can replace it through `wippy.configOverrides`. Chat WC attributes override the policy for one instance. Managed layouts have no built-in chat by default, so shared application policy belongs at the root.
+
+Use the matching 1.0.62 frontend with this facade output. Older facade output remains supported by the new frontend, including its host-only fields.
 
 ## Publishing
 
