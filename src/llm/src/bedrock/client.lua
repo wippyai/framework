@@ -216,7 +216,14 @@ function bedrock_client.converse_stream(model_id, payload, options)
     return signed_request(path, payload, options)
 end
 
--- Parse eventstream headers from binary header block
+-- Byte length of each eventstream header value type; types 6 (bytes) and 7 (string)
+-- carry a 2-byte length prefix instead.
+local HEADER_VALUE_SIZES: {[integer]: integer} = {
+    [0] = 0, [1] = 0, [2] = 1, [3] = 2, [4] = 4, [5] = 8, [8] = 8, [9] = 16,
+}
+
+-- Parse eventstream headers from binary header block. Only string-valued headers
+-- are kept; other types are skipped by size so the headers after them survive.
 local function parse_eventstream_headers(buf: string, headers_length: integer): {[string]: string}
     local headers: {[string]: string} = {}
     local pos: integer = 1
@@ -228,12 +235,14 @@ local function parse_eventstream_headers(buf: string, headers_length: integer): 
         local header_type: integer = string.byte(buf, pos) :: integer
         pos = pos + 1
 
-        if header_type == 7 then
+        local fixed = HEADER_VALUE_SIZES[header_type]
+        if fixed then
+            pos = pos + fixed
+        elseif header_type == 6 or header_type == 7 then
             local val_len: integer = string.unpack(">I2", buf, pos) :: integer
             pos = pos + 2
-            local value = buf:sub(pos, pos + val_len - 1)
+            headers[name] = buf:sub(pos, pos + val_len - 1)
             pos = pos + val_len
-            headers[name] = value
         else
             break
         end
@@ -241,92 +250,146 @@ local function parse_eventstream_headers(buf: string, headers_length: integer): 
     return headers
 end
 
-local function parse_eventstream_message(buf: string): (string?, {[string]: string}?, integer)
-    if #buf < 12 then
-        return nil, nil, 0
+-- Parse one message starting at pos. Returns nil while the buffer does not yet hold
+-- the whole message; otherwise payload, headers and the position after the message.
+local function parse_eventstream_message(buf: string, pos: integer): (string?, {[string]: string}?, integer?, string?)
+    if #buf - pos + 1 < 12 then
+        return nil, nil, nil
     end
 
-    local total_length: integer = string.unpack(">I4", buf, 1) :: integer
-    local headers_length: integer = string.unpack(">I4", buf, 5) :: integer
+    local total_length: integer = string.unpack(">I4", buf, pos) :: integer
+    local headers_length: integer = string.unpack(">I4", buf, pos + 4) :: integer
 
-    if #buf < (total_length :: number) then
-        return nil, nil, 0
+    -- Every frame includes a 12-byte prelude and a 4-byte message CRC. Reject
+    -- impossible lengths before waiting for more bytes or advancing the cursor.
+    if total_length < 16 then
+        return nil, nil, nil, "Invalid eventstream: message length must be at least 16 bytes"
+    end
+    if headers_length > total_length - 16 then
+        return nil, nil, nil, "Invalid eventstream: headers exceed the message length"
     end
 
-    local headers_buf = buf:sub(13, 12 + headers_length)
-    local headers = parse_eventstream_headers(headers_buf, headers_length)
+    if #buf - pos + 1 < total_length then
+        return nil, nil, nil
+    end
 
-    local payload_offset: integer = 13 + headers_length
+    local headers = parse_eventstream_headers(buf:sub(pos + 12, pos + 11 + headers_length), headers_length)
+
+    local payload_offset: integer = pos + 12 + headers_length
     local payload_length: integer = total_length - 12 - headers_length - 4
-
-    if payload_length <= 0 then
-        return "", headers, total_length
+    local payload = ""
+    if payload_length > 0 then
+        payload = buf:sub(payload_offset, payload_offset + payload_length - 1)
     end
-
-    local payload = buf:sub(payload_offset, payload_offset + payload_length - 1)
-    return payload, headers, total_length
+    return payload, headers, pos + total_length
 end
 
--- Read all eventstream messages from a binary stream
+-- Turn one eventstream message into an event table, or nil if it carries nothing.
 -- For InvokeModel: events have {"bytes": "base64..."} payload wrapping inner JSON with "type" field
 -- For ConverseStream: events have event type in headers (:event-type) and payload is the body directly
-local function read_eventstream_events(stream)
-    local events = {}
+-- Exception/error messages are keyed by :exception-type / :error-code rather than :event-type;
+-- they become {_exception = {type, message}}.
+local function decode_eventstream_message(payload: string, headers: {[string]: string})
+    local message_type = headers[":message-type"]
+    local decoded = nil
+    if #payload > 0 then
+        local value, decode_err = json.decode(payload)
+        if not decode_err then
+            decoded = value
+        end
+    end
+
+    if message_type == "exception" or message_type == "error" then
+        local body = (type(decoded) == "table" and decoded or {}) :: any
+        local message = body.message or body.Message or headers[":error-message"]
+        if not message then
+            message = #payload > 0 and payload or "Stream error"
+        end
+        return {
+            _exception = {
+                type = headers[":exception-type"] or headers[":error-code"] or message_type,
+                message = tostring(message),
+            }
+        }
+    end
+
+    if type(decoded) ~= "table" then
+        return nil
+    end
+
+    if decoded.bytes then
+        local raw = base64.decode(tostring(decoded.bytes))
+        if raw then
+            local inner, inner_err = json.decode(raw)
+            if not inner_err and inner then
+                return inner
+            end
+        end
+        return nil
+    end
+
+    local event_type = headers[":event-type"]
+    if event_type then
+        local event = {}
+        event[event_type] = decoded
+        return event
+    end
+    return decoded
+end
+
+-- Read eventstream messages as they arrive and hand each decoded event to on_event
+-- right away. on_event returns an error string to stop reading.
+local function read_eventstream(stream, on_event: (any) -> string?): string?
     local buf = ""
 
     while true do
         local chunk, err = stream:read(0)
 
         if err then
-            return nil, err
+            return tostring(err)
         end
 
-        if not chunk or #chunk == 0 then
+        -- nil is end of stream; an empty read only means no bytes were ready yet.
+        if chunk == nil then
             break
         end
 
-        buf = buf .. chunk
+        if #chunk > 0 then
+            buf = buf .. chunk
+            local pos: integer = 1
 
-        while #buf >= 12 do
-            local payload, headers, consumed = parse_eventstream_message(buf)
-            if consumed == 0 then
-                break
-            end
+            while true do
+                local payload, headers, next_pos, parse_err = parse_eventstream_message(buf, pos)
+                if parse_err then
+                    return parse_err
+                end
+                if not next_pos then
+                    break
+                end
+                pos = next_pos :: integer
 
-            buf = buf:sub(consumed + 1)
-
-            if payload and #payload > 0 then
-                local decoded, decode_err = json.decode(payload)
-                if not decode_err and decoded then
-                    if decoded.bytes then
-                        -- InvokeModel format: inner JSON wrapped in base64
-                        local raw = base64.decode(tostring(decoded.bytes))
-                        if raw then
-                            local inner, inner_err = json.decode(raw)
-                            if not inner_err and inner then
-                                table.insert(events, inner)
-                            end
-                        end
-                    else
-                        -- ConverseStream format: payload is the body, event type in headers
-                        local event_type = headers and headers[":event-type"]
-                        if event_type then
-                            local event = {}
-                            event[event_type] = decoded
-                            table.insert(events, event)
-                        else
-                            table.insert(events, decoded)
-                        end
+                local event = decode_eventstream_message(payload :: string, headers :: {[string]: string})
+                if event then
+                    local stop_err = on_event(event)
+                    if stop_err then
+                        return stop_err
                     end
                 end
+            end
+
+            if pos > 1 then
+                buf = buf:sub(pos)
             end
         end
     end
 
-    return events
+    if #buf > 0 then
+        return "Truncated eventstream: " .. tostring(#buf) .. " trailing bytes"
+    end
+    return nil
 end
 
--- Process ConverseStream eventstream, dispatching to callbacks
+-- Process ConverseStream eventstream, dispatching to callbacks as each event arrives
 function bedrock_client.process_converse_stream(stream_response, callbacks)
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
@@ -345,16 +408,16 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     local finish_reason = nil
     local usage = {}
     local content_blocks = {}
+    local error_reported = false
 
-    local events, stream_err = read_eventstream_events(stream_response.stream)
-    if stream_err then
-        on_error({ message = stream_err })
-        return nil, stream_err
-    end
-
-    for _, event in ipairs(events) do
+    local function handle_event(event): string?
         -- Converse stream events use top-level keys instead of a "type" field
-        if event.messageStart then
+        if event._exception then
+            local exc = event._exception
+            error_reported = true
+            on_error({ message = exc.message, type = exc.type })
+            return tostring(exc.message)
+        elseif event.messageStart then
             -- Nothing to extract at message start for Converse
         elseif event.contentBlockStart then
             local data = event.contentBlockStart
@@ -407,7 +470,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             local index = (event.contentBlockStop.contentBlockIndex or 0)
 
             if tool_calls[index] and tool_calls[index].partial_json then
-                local json_str = tool_calls[index].partial_json
+                local json_str = tostring(tool_calls[index].partial_json)
                 local arguments = {}
                 if json_str ~= "" then
                     local parsed_args, parse_err = json.decode(json_str)
@@ -429,13 +492,16 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             if event.metadata.usage then
                 usage = event.metadata.usage
             end
-        elseif event.internalServerException or event.modelStreamErrorException
-            or event.validationException or event.throttlingException then
-            local exc = event.internalServerException or event.modelStreamErrorException
-                or event.validationException or event.throttlingException
-            on_error({ message = exc.message or "Stream error" })
-            return nil, exc.message or "Stream error"
         end
+        return nil
+    end
+
+    local stream_err = read_eventstream(stream_response.stream, handle_event)
+    if stream_err then
+        if not error_reported then
+            on_error({ message = stream_err })
+        end
+        return nil, stream_err
     end
 
     local final_tool_calls = {}
