@@ -1422,6 +1422,103 @@ local function define_tests()
                 tests.not_nil(err)
             end)
         end)
+
+        describe("Stream fallback signals", function()
+            local function answer_with(response_table)
+                generate._mapper = {
+                    map_messages = function()
+                        return { { role = "user", parts = { { text = "Hi" } } } }, {}
+                    end,
+                    map_options = function()
+                        return {}
+                    end,
+                    classify_error = function(http_err)
+                        local kind = http_err.status_code == 429 and "rate_limit_exceeded" or "server_error"
+                        return kind, http_err.message, { status_code = http_err.status_code }
+                    end
+                }
+                generate._ctx = {
+                    all = function() return {} end,
+                    get = function() return "test-client-id" end
+                }
+                local client_instance = {
+                    request = function()
+                        return response_table
+                    end
+                }
+                local client_contract = {
+                    with_context = function(self) return self end,
+                    open = function() return client_instance, nil end
+                }
+                generate._contract = {
+                    get = function() return client_contract, nil end
+                }
+            end
+
+            local function call(streaming: boolean)
+                local args: { [string]: any } = {
+                    model = "gemini-2.5-pro",
+                    messages = { { role = "user", content = { { type = "text", text = "Hi" } } } }
+                }
+                if streaming then
+                    args.stream = { reply_to = "test-process", topic = "test_stream" }
+                end
+                return generate.handler(args)
+            end
+
+            it("should mark a request error on a streaming call as not started", function()
+                answer_with({ status_code = 429, message = "quota", stream_started = false })
+                local response, err = call(true)
+                tests.is_nil(response)
+                local details = (err :: any):details()
+                tests.is_false(details.stream_started)
+                tests.eq(details.error_type, "rate_limit_exceeded")
+                tests.eq(details.status_code, 429)
+                tests.is_nil(details.deferred_error_type)
+            end)
+
+            it("should leave stream_started unset when the client reports no stream flag", function()
+                answer_with({ status_code = 500, message = "Failed to create streamer" })
+                local _, err = call(true)
+                local details = (err :: any):details()
+                tests.is_nil(details.stream_started)
+                tests.eq(details.error_type, "server_error")
+            end)
+
+            it("should carry the held-back error chunk of a stream that failed before sending", function()
+                answer_with({
+                    status_code = 500,
+                    message = "Stream processing failed: quota exceeded",
+                    stream_started = false,
+                    deferred_error_type = "server_error",
+                    deferred_error_message = "quota exceeded"
+                })
+                local _, err = call(true)
+                local details = (err :: any):details()
+                tests.is_false(details.stream_started)
+                tests.eq(details.deferred_error_type, "server_error")
+                tests.eq(details.deferred_error_message, "quota exceeded")
+            end)
+
+            it("should report a stream that already sent chunks as started", function()
+                answer_with({
+                    status_code = 500,
+                    message = "Stream processing failed: reset",
+                    stream_started = true
+                })
+                local _, err = call(true)
+                local details = (err :: any):details()
+                tests.is_true(details.stream_started)
+                tests.is_nil(details.deferred_error_type)
+            end)
+
+            it("should leave stream_started unset without streaming", function()
+                answer_with({ status_code = 503, message = "unavailable" })
+                local _, err = call(false)
+                tests.is_nil((err :: any):details().stream_started)
+                tests.eq((err :: any):details().error_type, "server_error")
+            end)
+        end)
     end)
 end
 

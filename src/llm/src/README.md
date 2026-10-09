@@ -112,6 +112,8 @@ llm.generate(builder, {
 
 A per-call `retry` replaces the provider policy, which is set in the provider entry's `driver.options.retry` or in a resolved provider's `context` and reaches the driver through its context. `attempts` is capped at 10 and `backoff_ms` at 60000.
 
+Retries stay on one route. Moving to other routes and models is [Fallback](#fallback); a call's `deadline_ms` also stops a retry whose backoff would end past the deadline.
+
 ### Response Format
 
 ```lua
@@ -432,15 +434,18 @@ llm.ERROR_TYPE = {
     RATE_LIMIT = "rate_limit_exceeded",
     SERVER_ERROR = "server_error",
     CONTEXT_LENGTH = "context_length_exceeded",
-    CONTENT_FILTER = "content_filter",
+    CONTENT_FILTER = "content_filtered",
     TIMEOUT = "timeout_error",
-    MODEL_ERROR = "model_error"
+    MODEL_ERROR = "model_error",
+    NETWORK_ERROR = "network_error"
 }
 ```
 
+These are the types drivers report (`output.ERROR_TYPE`). A driver error keeps its type in `details.error_type`, which fallback decisions use; the stdlib error kind alone cannot tell `context_length_exceeded`, `content_filtered` and `invalid_request` apart.
+
 ## Registering Models
 
-The entry keeps metadata, limits, pricing and a `providers` list. **Only the first route is used**; route fallback is not implemented. Put connection and transport settings (API keys, base URL, timeout, retry, headers) in `context`, and request defaults in `options`.
+The entry keeps metadata, limits, pricing and a `providers` list. Routes are tried by descending `priority` when a call fails (see [Fallback](#fallback)); a single route behaves as before. Put connection and transport settings (API keys, base URL, timeout, retry, headers) in `context`, and request defaults in `options`.
 
 ```yaml
 entries:
@@ -532,6 +537,67 @@ entries:
       title: Fast Models
       comment: Optimized for speed
 ```
+
+## Fallback
+
+When a call fails, it can move on to other routes and models. The candidates of a call are:
+
+1. The routes of the resolved card, by descending `priority`. A route without one counts as 0 and equal priorities keep list order. These serve the same model through other endpoints.
+2. The routes of each model in the card's `fallback` list, in order. A reference is a model name or `class:<name>` (the top model of that class). It is resolved only when the chain reaches it, through the bound model resolver if there is one. A card is tried once, and the `fallback` list of a fallback card is not followed. At most 4 candidates are tried per call.
+
+```yaml
+- name: claude-sonnet-4-6
+  kind: registry.entry
+  meta:
+    type: llm.model
+    name: claude-sonnet-4-6
+    class: [balanced]
+    capabilities: [generate, tool_use, vision, structured_output]
+    priority: 100
+  providers:
+    - id: wippy.llm.claude:provider
+      provider_model: claude-sonnet-4-6
+      priority: 100
+    - id: wippy.llm.bedrock:provider          # the same model through another endpoint
+      provider_model: us.anthropic.claude-sonnet-4-6
+      priority: 50
+  fallback: [gemini-pro, class:fast]          # other models, in order
+  fallback_on: [rate_limit_exceeded, server_error, timeout_error, network_error]
+```
+
+Whether a failure moves the call on depends on its error type and on the candidate:
+
+| Error type | First candidate | Later candidates |
+|---|---|---|
+| `rate_limit_exceeded`, `server_error`, `timeout_error`, `network_error` | next (the default `fallback_on`) | next |
+| `authentication_error`, `model_error`, `context_length_exceeded` | next only when listed in `fallback_on` | next |
+| `invalid_request`, `content_filtered` | next only when listed in `fallback_on` | stop |
+| an error without a type | stop | stop |
+
+`fallback_on` replaces the default set only when it names at least one type; an empty list counts as unset.
+
+A candidate's own transport retries run before the call moves on. A later candidate whose provider cannot be opened, or whose route facts reject the call, is skipped; on the first candidate these errors fail the call as before. Every candidate is called with its own route `context`, `provider_model`, route `options` under the caller's options, and route facts. Nothing carries over from a previous candidate. A `max_tokens` above the candidate card's `output_tokens` is lowered to that limit and reported in `metadata.adjusted.max_tokens` as `requested` and `sent`; with `strict = true` the candidate rejects the call instead, like any other adjustment. A card without `output_tokens` sets no limit.
+
+A streamed call moves on only while the client has received nothing, which the driver reports as `stream_started = false` in the error details. After the first chunk an error never moves the call on. While nothing has been sent, the framework drivers hold the stream's error chunk back; `llm` sends it if the whole call fails, so a call without fallback streams exactly as before. A driver that does not report `stream_started` never falls back while streaming. Drivers built on `output` use `output.send_or_defer_error` and `output.stream_error_details` for this.
+
+Embeddings move only between the routes of the resolved card, because vectors of different models are not compatible. Evaluation skips fallback models that do not declare the `evaluate` capability. `llm.status` and calls with an explicit `provider_id` do not fall back; `route` together with `provider_id` is rejected, because a direct call bypasses the catalog the pin refers to.
+
+Per-call options, never sent to the driver:
+
+```lua
+llm.generate(builder, {
+    model = "claude",
+    fallback = { "gpt-5" },   -- replaces the card's list; false disables fallback, other routes included
+    deadline_ms = 60000       -- budget for the whole call
+})
+
+-- Exactly one route and no chain, e.g. to stay on the model that answered an earlier step
+llm.generate(builder, { model = "claude", route = earlier_result.metadata.route })
+```
+
+`deadline_ms` caps each request timeout to the remaining budget, stops transport retries that would end past it, and does not start a fallback candidate with less than 5 seconds left.
+
+A successful resolved call reports the answering route in `metadata.route` (`model`, `provider_id`, `provider_model`). Earlier failures are listed in `metadata.fallbacks`: `model`, `provider_id`, `provider_model`, then `error_type` and `message`, or `skipped = true` and `message`. Usage is tracked under the model that answered. A failed chain returns the last error message followed by the candidates that were tried.
 
 ## Providers
 

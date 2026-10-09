@@ -4,6 +4,10 @@ local contract = require("contract")
 local security = require("security")
 local evaluation = require("evaluation")
 local route = require("route")
+local fallback = require("fallback")
+local output = require("output")
+local time = require("time")
+local logger = require("logger")
 
 type Message = {
     role: string,
@@ -121,7 +125,9 @@ type ModelCard = {
     output_tokens: number,
     pricing: table,
     providers: {ProviderRef},
-    dimensions: number?
+    dimensions: number?,
+    fallback: {string}?,
+    fallback_on: {string}?
 }
 
 type ModelClass = {
@@ -140,7 +146,10 @@ type GenerateOptions = {
     tool_choice: any?,
     stream: boolean?,
     temperature: number?,
-    max_tokens: number?
+    max_tokens: number?,
+    fallback: any?,
+    route: table?,
+    deadline_ms: number?
 }
 
 type EmbedOptions = {
@@ -169,6 +178,15 @@ type TrackingOptions = {
     metadata: table?
 }
 
+type FailureEntry = {
+    model: string,
+    provider_id?: string,
+    provider_model?: string,
+    error_type?: string,
+    message?: string,
+    skipped?: boolean
+}
+
 type PromptInput = string | {Message} | table
 
 
@@ -177,12 +195,14 @@ local llm = {}
 -- Contract constants
 local USAGE_TRACKER_CONTRACT = "wippy.llm:usage_tracker"
 local MODEL_RESOLVER_CONTRACT = "wippy.llm:model_resolver"
+local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms" })
 
 -- Dependency injection fields
 llm._models = nil
 llm._providers = nil
 llm._usage_tracker = nil
 llm._model_resolver = nil
+llm._clock = nil
 
 ---------------------------
 -- Internal Helper Functions
@@ -213,6 +233,15 @@ local function cached_input_tokens(tokens: TokenUsage): (number, number)
     local read = tokens.cache_read_input_tokens or tokens.cache_read_tokens or 0
     local write = tokens.cache_creation_input_tokens or tokens.cache_write_tokens or 0
     return read, write
+end
+
+local function current_ms(): number
+    local clock: any = llm._clock
+    if clock then
+        return clock()
+    end
+
+    return math.floor(time.now():unix_nano() / 1000000)
 end
 
 -- Smart model resolution: name → class → error, plus "class:abc" syntax.
@@ -410,7 +439,7 @@ local function merge_user_options(contract_args, user_options, exclude_keys)
     exclude_keys = exclude_keys or {}
 
     for k, v in pairs(user_options) do
-        local should_exclude = false
+        local should_exclude = CALL_OPTIONS[k] == true
         for _, exclude_key in ipairs(exclude_keys) do
             if k == exclude_key then
                 should_exclude = true
@@ -464,16 +493,7 @@ llm.CAPABILITY = {
     CACHING = "caching"
 }
 
-llm.ERROR_TYPE = {
-    INVALID_REQUEST = "invalid_request",
-    AUTHENTICATION = "authentication_error",
-    RATE_LIMIT = "rate_limit_exceeded",
-    SERVER_ERROR = "server_error",
-    CONTEXT_LENGTH = "context_length_exceeded",
-    CONTENT_FILTER = "content_filter",
-    TIMEOUT = "timeout_error",
-    MODEL_ERROR = "model_error"
-}
+llm.ERROR_TYPE = output.ERROR_TYPE
 
 llm.FINISH_REASON = {
     STOP = "stop",
@@ -487,18 +507,29 @@ llm.FINISH_REASON = {
 -- Public API Methods
 ---------------------------
 
-local function prepare_route(contract_args, provider_info: any, options, providers_module)
+local function output_limit(card: any): number?
+    if type(card) ~= "table" then
+        return nil
+    end
+    local limit = tonumber(card.output_tokens)
+    if limit ~= nil and limit > 0 then
+        return limit
+    end
+    return nil
+end
+
+local function prepare_route(contract_args, provider_info: any, options, providers_module, card: any?)
     local legacy_reasoning_flag, flag_err = providers_module.driver_declares_legacy_reasoning_flag(provider_info.id)
     if flag_err then return nil, flag_err end
     local accepts, err = route.accepts(provider_info :: table, options,
-        options.provider_id and "direct" or "resolved", legacy_reasoning_flag)
+        options.provider_id and "direct" or "resolved", legacy_reasoning_flag :: boolean?)
     if not accepts then return nil, err end
     contract_args.accepts = accepts
     contract_args.options = route.clean_options(contract_args.options)
     local strict = contract_args.options.strict == true
     contract_args.options.strict = nil
     contract_args._strict = strict
-    local adjusted = {}
+    local adjusted: { [string]: any } = {}
     local function remove(key)
         local value = contract_args.options[key]
         if value ~= nil then
@@ -514,8 +545,17 @@ local function prepare_route(contract_args, provider_info: any, options, provide
     if accepts.thinking == "none" and (contract_args.options.thinking_effort or 0) > 0 then
         remove("thinking_effort")
     end
+
+    local limit = output_limit(card)
+    local requested = tonumber(contract_args.options.max_tokens)
+    if limit ~= nil and requested ~= nil and requested > limit then
+        adjusted.max_tokens = { requested = requested, sent = limit }
+        contract_args.options.max_tokens = limit
+    end
+
     local strict_err = route.strict_error(tostring(provider_info.id), strict, adjusted)
     if strict_err then return nil, strict_err end
+
     return adjusted, nil
 end
 
@@ -562,147 +602,439 @@ local function merge_tool_choice(raw_result, tool_choice)
     raw_result.metadata.tool_choice = tool_choice
 end
 
+local function call_deadline(options): number?
+    local budget: number = tonumber(options.deadline_ms) or 0
+    if budget <= 0 then
+        return nil
+    end
+
+    return current_ms() + budget
+end
+
+local function stream_target(contract_args): any?
+    local stream = contract_args.stream
+    if type(stream) == "table" and stream.reply_to ~= nil then
+        return stream
+    end
+
+    return nil
+end
+
+local function emit_deferred_error(stream: any?, details: any?)
+    if stream == nil or details == nil or details.deferred_error_type == nil then
+        return
+    end
+
+    local streamer = output.streamer(tostring(stream.reply_to), tostring(stream.topic), stream.buffer_size or 10)
+    if streamer then
+        streamer:send_error(tostring(details.deferred_error_type), tostring(details.deferred_error_message or ""), nil)
+    end
+end
+
+local function log_failure(options, message: string)
+    logger:named("llm"):error("llm call failed", {
+        model = options.model,
+        provider = options.provider_id,
+        error = message
+    })
+end
+
+local function card_name(card: any): string
+    return tostring(card.name or card.id)
+end
+
+local function declares_capability(card: any, capability: string): boolean
+    if type(card.capabilities) ~= "table" then
+        return false
+    end
+
+    for _, declared in ipairs(card.capabilities) do
+        if declared == capability then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function execute(spec, candidate: any, options, deadline_at: number?, providers_module)
+    local route_info = candidate.route
+    local open_context = {}
+
+    if not candidate.direct then
+        open_context = provider_open_context(route_info)
+    end
+
+    if deadline_at ~= nil then
+        open_context.deadline_at = deadline_at
+    end
+
+    local provider_instance, open_err = providers_module.open(route_info.id, open_context)
+    if not provider_instance then
+        return nil, { preflight = true, message = "Failed to open provider: " .. (open_err or "unknown error") }
+    end
+
+    local wire_model = candidate.direct and options.model or route_info.provider_model
+    local contract_args = spec.build(wire_model, candidate.card)
+
+    if not candidate.direct then
+        -- Provider options first (from the model card), caller options on top.
+        merge_provider_options(contract_args, route_info)
+        apply_provider_transport(contract_args, route_info)
+    end
+
+    merge_user_options(contract_args, options, candidate.direct and spec.direct_exclude or spec.exclude)
+    hoist_transport_options(contract_args)
+
+    if candidate.direct then
+        contract_args._provider_id = route_info.id
+    end
+
+    if deadline_at ~= nil then
+        contract_args.timeout = fallback.capped_timeout(contract_args.timeout, deadline_at - current_ms())
+    end
+
+    local state = nil
+    if spec.prepare then
+        local prepared, prepare_err = spec.prepare(contract_args, route_info, options, providers_module, candidate.card)
+        if prepare_err ~= nil then
+            return nil, { preflight = true, message = tostring(prepare_err) }
+        end
+        state = prepared
+    end
+
+    -- Each candidate gets fresh contract arguments; the messages table is
+    -- shared, which is safe because a contract call hands the driver a copy.
+    local raw_result, err = (provider_instance as any)[spec.method](provider_instance, contract_args)
+    if spec.finish then
+        spec.finish(raw_result, state)
+    end
+    if err then
+        return nil, {
+            message = fallback.error_message(err),
+            details = fallback.error_details(err),
+            stream = stream_target(contract_args)
+        }
+    end
+
+    local normalized = normalize_response(raw_result)
+    if not normalized then
+        return nil, { message = "Failed to normalize provider response" }
+    end
+
+    if spec.complete then
+        spec.complete(normalized, raw_result, wire_model)
+    end
+
+    return normalized
+end
+
+-- Calls the caller's provider_id directly: no model resolution, no fallback.
+local function call_direct(spec, options)
+    if spec.before then
+        local before_err = spec.before()
+        if before_err then
+            return nil, before_err
+        end
+    end
+
+    local candidate = { route = { id = options.provider_id }, primary = true, direct = true }
+    local result, failure = execute(spec, candidate, options, call_deadline(options), llm._providers or providers)
+    if result then
+        local usage_id = llm.track_usage(result, options.model, options)
+        if usage_id then
+            result.usage_record = { usage_id = usage_id }
+        end
+        return result
+    end
+
+    emit_deferred_error(failure.stream, failure.details)
+    log_failure(options, failure.message)
+    return nil, failure.message
+end
+
+local function fallback_references(spec, options, model_card): {string}
+    if not spec.model_fallback or options.fallback == false or options.route ~= nil then
+        return {}
+    end
+
+    if type(options.fallback) == "table" then
+        return fallback.string_list(options.fallback) or {}
+    end
+
+    return fallback.string_list(model_card.fallback) or {}
+end
+
+local function plan(spec, model_card, first_routes: {any}, references: {string}, failures: {FailureEntry})
+    local seen: { [string]: boolean } = {}
+    seen[card_name(model_card)] = true
+    local card = model_card
+    local routes = first_routes
+    local route_index = 0
+    local reference_index = 0
+    local produced = 0
+
+    return function(): any?
+        while produced < fallback.MAX_CANDIDATES do
+            route_index = route_index + 1
+            local next_route = routes[route_index]
+            if next_route ~= nil then
+                produced = produced + 1
+                return { card = card, route = next_route, primary = produced == 1 }
+            end
+
+            reference_index = reference_index + 1
+            local reference = references[reference_index]
+            if reference == nil then
+                return nil
+            end
+
+            local resolved, resolve_err = llm.resolve_model(reference)
+            if not resolved then
+                local skipped: FailureEntry = { model = reference, skipped = true, message = tostring(resolve_err or "model not found") }
+                table.insert(failures, skipped)
+            elseif not seen[card_name(resolved)] then
+                seen[card_name(resolved)] = true
+                local eligible, reason = spec.eligible(resolved)
+                if not eligible then
+                    local skipped: FailureEntry = { model = card_name(resolved), skipped = true, message = tostring(reason) }
+                    table.insert(failures, skipped)
+                else
+                    card = resolved
+                    routes = fallback.ordered_routes(resolved)
+                    route_index = 0
+                    if #routes == 0 then
+                        local skipped: FailureEntry = { model = card_name(resolved), skipped = true, message = "no configured providers" }
+                        table.insert(failures, skipped)
+                    end
+                end
+            end
+        end
+        return nil
+    end
+end
+
+local function fail_chain(options, failures: {FailureEntry}, last: any?)
+    local message = "No usable route for model: " .. tostring(options.model)
+
+    if last ~= nil then
+        message = tostring(last.message)
+        emit_deferred_error(last.stream, last.details)
+    end
+
+    if #failures > 1 then
+        message = message .. " (fallback: " .. fallback.summary(failures) .. ")"
+    end
+
+    log_failure(options, message)
+    return nil, message
+end
+
+local function run_chain(spec, options, model_card, first_routes: {any})
+    local providers_module = llm._providers or providers
+    local deadline_at = call_deadline(options)
+    local fallback_on = fallback.switch_set(model_card.fallback_on)
+    local failures: {FailureEntry} = {}
+    local next_candidate = plan(spec, model_card, first_routes, fallback_references(spec, options, model_card), failures)
+    local last: any = nil
+
+    while true do
+        local candidate = next_candidate()
+        if candidate == nil then
+            break
+        end
+
+        local entry: FailureEntry = {
+            model = card_name(candidate.card),
+            provider_id = tostring(candidate.route.id)
+        }
+
+        if candidate.route.provider_model ~= nil then
+            entry.provider_model = tostring(candidate.route.provider_model)
+        end
+
+        if not candidate.primary and deadline_at ~= nil
+            and deadline_at - current_ms() < fallback.MIN_FALLBACK_BUDGET_MS then
+            entry.skipped = true
+            entry.message = "call budget exhausted"
+            table.insert(failures, entry)
+            break
+        end
+
+        local result, failure = execute(spec, candidate, options, deadline_at, providers_module)
+        if result then
+            result.metadata.route = {
+                model = entry.model,
+                provider_id = entry.provider_id,
+                provider_model = entry.provider_model
+            }
+            if #failures > 0 then
+                result.metadata.fallbacks = failures
+            end
+
+            local usage_id = llm.track_usage(result, entry.model, options)
+            if usage_id then
+                result.usage_record = { usage_id = usage_id }
+            end
+
+            return result
+        end
+
+        if failure.preflight then
+            if candidate.primary then
+                -- A primary route the call cannot use fails the call, as before fallback.
+                log_failure(options, failure.message)
+                return nil, failure.message
+            end
+            entry.skipped = true
+            entry.message = failure.message
+            table.insert(failures, entry)
+        else
+            local details = failure.details
+            entry.error_type = details and details.error_type or nil
+            entry.message = failure.message
+            table.insert(failures, entry)
+            last = failure
+            if not fallback.should_switch(details, candidate.primary, failure.stream ~= nil, fallback_on) then
+                break
+            end
+        end
+    end
+
+    return fail_chain(options, failures, last)
+end
+
+local function call_resolved(spec, options)
+    local model_card, first_routes
+    if options.route ~= nil then
+        local pin = options.route
+        if type(pin) ~= "table" or type(pin.model) ~= "string" or pin.model == ""
+            or type(pin.provider_id) ~= "string" or pin.provider_id == "" then
+            return nil, "options.route requires model and provider_id"
+        end
+
+        local resolve_err
+        model_card, resolve_err = llm.resolve_model(pin.model)
+        if not model_card then
+            return nil, resolve_err
+        end
+
+        local provider_model: string? = nil
+        if type(pin.provider_model) == "string" then
+            provider_model = tostring(pin.provider_model)
+        end
+
+        local pinned = fallback.find_route(model_card, tostring(pin.provider_id), provider_model)
+        if not pinned then
+            return nil, "Route not found: " .. pin.model .. " via " .. pin.provider_id
+        end
+        first_routes = { pinned }
+    else
+        local resolve_err
+        model_card, resolve_err = llm.resolve_model(options.model :: string)
+        if not model_card then
+            return nil, resolve_err
+        end
+    end
+
+    if spec.check then
+        local check_err = spec.check(model_card)
+        if check_err then
+            return nil, check_err
+        end
+    end
+
+    if not model_card.providers or #model_card.providers == 0 then
+        return nil, "Model has no configured providers: " .. options.model
+    end
+    if first_routes == nil then
+        first_routes = fallback.ordered_routes(model_card)
+        if options.fallback == false then
+            first_routes = { first_routes[1] }
+        end
+    end
+    if #first_routes == 0 then
+        return nil, "Model has no configured providers: " .. options.model
+    end
+
+    if spec.before then
+        local before_err = spec.before()
+        if before_err then
+            return nil, before_err
+        end
+    end
+
+    return run_chain(spec, options, model_card, first_routes)
+end
+
+local function always_eligible(_card): (boolean, string?)
+    return true, nil
+end
+
+local function prepare_route_facts(contract_args, provider_info, options, providers_module, card)
+    local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module, card)
+    if not adjusted then
+        return nil, route_err
+    end
+
+    return { adjusted = adjusted }, nil
+end
+
+local function call(spec, options)
+    if options.provider_id then
+        -- A direct call bypasses the catalog, so a pin on a catalog route is a caller bug.
+        if options.route ~= nil then
+            return nil, "options.route cannot be combined with provider_id"
+        end
+        return call_direct(spec, options)
+    end
+
+    return call_resolved(spec, options)
+end
+
 function llm.generate(prompt_input, options)
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, "Model is required in options"
     end
 
-    local model_card, provider_info
-
     options = options_for_actor(options)
 
-    -- Check if provider_id is specified for direct provider call
-    if options.provider_id then
-        -- Direct provider call - skip model resolution
-        provider_info = {
-            id = options.provider_id
-        }
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, {})
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
+    local messages = nil
+    local result, err = call({
+        method = "generate",
+        exclude = { "model", "model_profile" },
+        direct_exclude = { "model", "provider_id" },
+        model_fallback = true,
+        eligible = always_eligible,
+        before = function(): string?
+            local prepared, prepare_err = prepare_messages(prompt_input)
+            if not prepared then
+                return prepare_err
+            end
+            messages = prepared
+            return nil
+        end,
+        build = function(wire_model, _card)
+            return { messages = messages, model = wire_model, options = {} }
+        end,
+        prepare = function(contract_args, provider_info, call_options, providers_module, card)
+            local adjusted, route_err = prepare_route(contract_args, provider_info, call_options, providers_module, card)
+            if not adjusted then
+                return nil, route_err
+            end
+            local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
+            if tool_choice_err then
+                return nil, tool_choice_err
+            end
+            return { adjusted = adjusted, tool_choice = tool_choice }, nil
+        end,
+        finish = function(raw_result, state)
+            merge_adjustments(raw_result, state.adjusted)
+            merge_tool_choice(raw_result, state.tool_choice)
         end
+    }, options)
 
-        -- Prepare messages
-        local messages, err = prepare_messages(prompt_input)
-        if not messages then
-            return nil, err
-        end
-
-        -- Build standard contract arguments
-        local contract_args = {
-            messages = messages,
-            model = options.model,
-            options = {}
-        }
-
-        -- Copy user options to contract options (no provider options in direct mode)
-        merge_user_options(contract_args, options, {"model", "provider_id"})
-        hoist_transport_options(contract_args)
-        contract_args._provider_id = provider_info.id
-
-        -- Call provider contract directly with standard format
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
-        if not adjusted then return nil, route_err end
-        local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
-        if tool_choice_err then return nil, tool_choice_err end
-
-        local raw_result, err = (provider_instance as any):generate(contract_args)
-        merge_adjustments(raw_result, adjusted)
-        merge_tool_choice(raw_result, tool_choice)
-        if err then
-            return nil, err:message()
-        end
-
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        -- Track usage if available
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: GenerateResponse
-    else
-        -- Smart model resolution path
-        local err
-        model_card, err = llm.resolve_model(options.model :: string)
-        if not model_card then
-            return nil, err
-        end
-
-        -- Get first provider (highest priority)
-        if not model_card.providers or #model_card.providers == 0 then
-            return nil, "Model has no configured providers: " .. options.model
-        end
-        provider_info = model_card.providers[1] as any
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = open_provider(providers_module, provider_info)
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
-        end
-
-        -- Prepare messages
-        local messages, err = prepare_messages(prompt_input)
-        if not messages then
-            return nil, err
-        end
-
-        -- Build contract arguments
-        local contract_args = {
-            messages = messages,
-            model = provider_info.provider_model,
-            options = {}
-        }
-
-        -- Merge provider options first (from model YAML)
-        merge_provider_options(contract_args, provider_info)
-        apply_provider_transport(contract_args, provider_info)
-
-        -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "model_profile"})
-        hoist_transport_options(contract_args)
-
-        -- Call provider contract
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
-        if not adjusted then return nil, route_err end
-        local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
-        if tool_choice_err then return nil, tool_choice_err end
-
-        local raw_result, err = (provider_instance as any):generate(contract_args)
-        merge_adjustments(raw_result, adjusted)
-        merge_tool_choice(raw_result, tool_choice)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: GenerateResponse
-    end
+    return result :: GenerateResponse?, err
 end
 
 function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, string?)
@@ -714,138 +1046,33 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         return nil, "Schema is required"
     end
 
-    local model_card, provider_info
-
     options = options_for_actor(options)
 
-    -- Check if provider_id is specified for direct provider call
-    if options.provider_id then
-        -- Direct provider call - skip model resolution
-        provider_info = {
-            id = options.provider_id
-        }
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, {})
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
+    local messages = nil
+    local result, err = call({
+        method = "structured_output",
+        exclude = { "model", "schema", "model_profile" },
+        direct_exclude = { "model", "provider_id", "schema" },
+        model_fallback = true,
+        eligible = always_eligible,
+        before = function(): string?
+            local prepared, prepare_err = prepare_messages(prompt_input)
+            if not prepared then
+                return prepare_err
+            end
+            messages = prepared
+            return nil
+        end,
+        build = function(wire_model, _card)
+            return { messages = messages, model = wire_model, schema = schema, options = {} }
+        end,
+        prepare = prepare_route_facts,
+        finish = function(raw_result, state)
+            merge_adjustments(raw_result, state.adjusted)
         end
+    }, options)
 
-        -- Prepare messages
-        local messages, err = prepare_messages(prompt_input)
-        if not messages then
-            return nil, err
-        end
-
-        -- Build standard contract arguments
-        local contract_args = {
-            messages = messages,
-            model = options.model,
-            schema = schema,
-            options = {}
-        }
-
-        -- Copy user options to contract options (no provider options in direct mode)
-        merge_user_options(contract_args, options, {"model", "provider_id", "schema"})
-        hoist_transport_options(contract_args)
-        contract_args._provider_id = provider_info.id
-
-        -- Call provider contract directly with standard format
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
-        if not adjusted then return nil, route_err end
-
-        local raw_result, err = (provider_instance as any):structured_output(contract_args)
-        merge_adjustments(raw_result, adjusted)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        -- Track usage if available
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: GenerateResponse
-    else
-        -- Smart model resolution path
-        local err
-        model_card, err = llm.resolve_model(options.model :: string)
-        if not model_card then
-            return nil, err
-        end
-
-        -- Get first provider (highest priority)
-        if not model_card.providers or #model_card.providers == 0 then
-            return nil, "Model has no configured providers: " .. options.model
-        end
-        provider_info = model_card.providers[1] as any
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = open_provider(providers_module, provider_info)
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
-        end
-
-        -- Prepare messages
-        local messages, err = prepare_messages(prompt_input)
-        if not messages then
-            return nil, err
-        end
-
-        -- Build contract arguments
-        local contract_args = {
-            messages = messages,
-            model = provider_info.provider_model,
-            schema = schema,
-            options = {}
-        }
-
-        -- Merge provider options first (from model YAML)
-        merge_provider_options(contract_args, provider_info)
-        apply_provider_transport(contract_args, provider_info)
-
-        -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "schema", "model_profile"})
-        hoist_transport_options(contract_args)
-
-        local adjusted, route_err = prepare_route(contract_args, provider_info, options, providers_module)
-        if not adjusted then return nil, route_err end
-
-        local raw_result, err = (provider_instance as any):structured_output(contract_args)
-        merge_adjustments(raw_result, adjusted)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: GenerateResponse
-    end
+    return result :: GenerateResponse?, err
 end
 
 function llm.embed(text, options)
@@ -853,126 +1080,29 @@ function llm.embed(text, options)
         return nil, "Model is required in options"
     end
 
-    local model_card, provider_info
-
     options = options_for_actor(options)
 
-    -- Check if provider_id is specified for direct provider call
-    if options.provider_id then
-        -- Direct provider call - skip model resolution
-        provider_info = {
-            id = options.provider_id
-        }
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, {})
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
+    local result, err = call({
+        method = "embed",
+        exclude = { "model", "dimensions", "model_profile" },
+        direct_exclude = { "model", "provider_id" },
+        model_fallback = false,
+        eligible = always_eligible,
+        build = function(wire_model, card)
+            local contract_args = { input = text, model = wire_model, options = {} }
+            if options.dimensions then
+                contract_args.options.dimensions = options.dimensions
+            elseif card and card.dimensions then
+                contract_args.options.dimensions = card.dimensions
+            end
+            return contract_args
+        end,
+        complete = function(normalized, raw_result, wire_model)
+            normalized.model = raw_result.model or wire_model
         end
+    }, options)
 
-        -- Build standard contract arguments
-        local contract_args = {
-            input = text,
-            model = options.model,
-            options = {}
-        }
-
-        -- Copy user options to contract options (no provider options in direct mode)
-        merge_user_options(contract_args, options, {"model", "provider_id"})
-        hoist_transport_options(contract_args)
-        contract_args._provider_id = provider_info.id
-
-        local raw_result, err = (provider_instance as any):embed(contract_args)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        normalized.model = raw_result.model or options.model
-
-        -- Track usage if available
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: EmbedResponse
-    else
-        -- Smart model resolution path
-        local err
-        model_card, err = llm.resolve_model(options.model :: string)
-        if not model_card then
-            return nil, err
-        end
-
-        -- Get first provider (highest priority)
-        if not model_card.providers or #model_card.providers == 0 then
-            return nil, "Model has no configured providers: " .. options.model
-        end
-        provider_info = model_card.providers[1] as any
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = open_provider(providers_module, provider_info)
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
-        end
-
-        -- Build contract arguments
-        local contract_args = {
-            input = text,
-            model = provider_info.provider_model,
-            options = {}
-        }
-
-        -- Add dimensions from options or model card
-        if options.dimensions then
-            contract_args.options.dimensions = options.dimensions
-        elseif model_card.dimensions then
-            contract_args.options.dimensions = model_card.dimensions
-        end
-
-        -- Merge provider options first (from model YAML)
-        merge_provider_options(contract_args, provider_info)
-        apply_provider_transport(contract_args, provider_info)
-
-        -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "dimensions", "model_profile"})
-        hoist_transport_options(contract_args)
-
-        local raw_result, err = (provider_instance as any):embed(contract_args)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        normalized.model = raw_result.model or provider_info.provider_model
-
-        -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: EmbedResponse
-    end
+    return result :: EmbedResponse?, err
 end
 
 function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
@@ -985,128 +1115,31 @@ function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
         return nil, questions_err
     end
 
-    local model_card, provider_info
-
     options = options_for_actor(options)
 
-    -- Check if provider_id is specified for direct provider call
-    if options.provider_id then
-        -- Direct provider call - skip model resolution
-        provider_info = {
-            id = options.provider_id
-        }
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = providers_module.open(provider_info.id, {})
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
-        end
-
-        -- Build standard contract arguments
-        local contract_args = {
-            state = state,
-            questions = questions,
-            model = options.model,
-            options = {}
-        }
-
-        -- Copy user options to contract options (no provider options in direct mode)
-        merge_user_options(contract_args, options, {"model", "provider_id"})
-        hoist_transport_options(contract_args)
-        contract_args._provider_id = provider_info.id
-
-        local raw_result, err = (provider_instance as any):evaluate(contract_args)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        -- Track usage if available
-        local usage_id, usage_err = llm.track_usage(normalized, options.model, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: EvaluationResponse
-    else
-        -- Smart model resolution path
-        local err
-        model_card, err = llm.resolve_model(options.model :: string)
-        if not model_card then
-            return nil, err
-        end
-
-        local declared = false
-        for _, capability in ipairs(model_card.capabilities) do
-            if capability == llm.CAPABILITY.EVALUATE then
-                declared = true
-                break
+    local result, err = call({
+        method = "evaluate",
+        exclude = { "model", "model_profile" },
+        direct_exclude = { "model", "provider_id" },
+        model_fallback = true,
+        check = function(card): string?
+            if not declares_capability(card, llm.CAPABILITY.EVALUATE) then
+                return "Model does not declare the evaluate capability: " .. card_name(card)
             end
+            return nil
+        end,
+        eligible = function(card): (boolean, string?)
+            if declares_capability(card, llm.CAPABILITY.EVALUATE) then
+                return true, nil
+            end
+            return false, "does not declare the evaluate capability"
+        end,
+        build = function(wire_model, _card)
+            return { state = state, questions = questions, model = wire_model, options = {} }
         end
-        if not declared then
-            return nil, "Model does not declare the evaluate capability: " .. model_card.name
-        end
+    }, options)
 
-        -- Get first provider (highest priority)
-        if not model_card.providers or #model_card.providers == 0 then
-            return nil, "Model has no configured providers: " .. options.model
-        end
-        provider_info = model_card.providers[1] as any
-
-        -- Open provider instance
-        local providers_module = llm._providers or providers
-        local provider_instance, err = open_provider(providers_module, provider_info)
-        if not provider_instance then
-            return nil, "Failed to open provider: " .. (err or "unknown error")
-        end
-
-        -- Build contract arguments
-        local contract_args = {
-            state = state,
-            questions = questions,
-            model = provider_info.provider_model,
-            options = {}
-        }
-
-        -- Merge provider options first (from model YAML)
-        merge_provider_options(contract_args, provider_info)
-        apply_provider_transport(contract_args, provider_info)
-
-        -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "model_profile"})
-        hoist_transport_options(contract_args)
-
-        local raw_result, err = (provider_instance as any):evaluate(contract_args)
-        if err then
-            return nil, err:message()
-        end
-
-        -- Normalize response
-        local normalized, norm_err = normalize_response(raw_result)
-        if norm_err then
-            return nil, norm_err
-        end
-        if not normalized then
-            return nil, "Failed to normalize provider response"
-        end
-
-        -- Track usage
-        local usage_id, usage_err = llm.track_usage(normalized, model_card.name, options)
-        if usage_id then
-            normalized.usage_record = { usage_id = usage_id }
-        end
-
-        return normalized :: EvaluationResponse
-    end
+    return result :: EvaluationResponse?, err
 end
 
 function llm.status(options)

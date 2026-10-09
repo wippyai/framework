@@ -43,7 +43,8 @@ function generative_ai_client.request(contract_args)
     end
 
     local retry = transport.request_retry(contract_args.options.retry, generative_ai_client._config.get_retry())
-    local response, err = generative_ai_client._client.request(contract_args.options.method, base_url, options, retry)
+    local response, err = generative_ai_client._client.request(contract_args.options.method, base_url, options, retry,
+        generative_ai_client._config.get_deadline_at())
 
     if err then
         return err

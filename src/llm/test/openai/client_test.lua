@@ -881,6 +881,50 @@ local function define_tests()
                 test.eq(response.test, "success")
             end)
         end)
+
+        describe("Retry deadline", function()
+            local function use_context(context)
+                openai_client._ctx = { all = function() return context end }
+                openai_client._env = { get = function() return nil end }
+            end
+
+            local function flaky_http(statuses: {number})
+                local state = { calls = 0 }
+                openai_client._http_client = {
+                    post = function()
+                        state.calls = state.calls + 1
+                        local status = statuses[state.calls]
+                        if status == 200 then
+                            return { status_code = 200, body = '{"id":"ok"}', headers = {} }
+                        end
+                        return { status_code = status, body = '{"error":{"message":"Unavailable"}}', headers = {} }
+                    end
+                }
+                return state
+            end
+
+            it("should retry with the context policy while the deadline allows it", function()
+                use_context({ api_key = "test-key", retry = { attempts = 2, backoff_ms = 0 }, deadline_at = 32503680000000 })
+                local http = flaky_http({ 503, 200 })
+
+                local response, err = openai_client.request("/responses", {})
+
+                test.is_nil(err)
+                test.eq(response.id, "ok")
+                test.eq(http.calls, 2)
+            end)
+
+            it("should not retry past the call deadline from the context", function()
+                use_context({ api_key = "test-key", retry = { attempts = 3, backoff_ms = 0 }, deadline_at = 1 })
+                local http = flaky_http({ 503, 503, 200 })
+
+                local response, err = openai_client.request("/responses", {})
+
+                test.is_nil(response)
+                test.eq(err.status_code, 503)
+                test.eq(http.calls, 1)
+            end)
+        end)
     end)
 end
 
