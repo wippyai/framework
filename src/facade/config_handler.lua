@@ -31,6 +31,29 @@ local function non_empty_array_or_nil(a: any): {any}?
     return a :: {any}
 end
 
+local function needs_legacy_policy(facade_url: string, mode: string): (boolean?, string?)
+    if mode == "legacy" then
+        return true, nil
+    end
+    if mode == "shared" then
+        return false, nil
+    end
+    if mode ~= "auto" then
+        return nil, "invalid host_policy_mode: expected auto, legacy or shared"
+    end
+    local major, minor, patch = facade_url:match("^https://web%-host%.wippy%.ai/webcomponents%-(%d+)%.(%d+)%.(%d+)/?$")
+    if not major then
+        -- Private and unversioned hosts may still use the legacy policy shape.
+        return true, nil
+    end
+    local major_version = tonumber(major) or 0
+    local minor_version = tonumber(minor) or 0
+    local patch_version = tonumber(patch) or 0
+    local shared = major_version > 1
+        or (major_version == 1 and (minor_version > 0 or patch_version >= 62))
+    return not shared, nil
+end
+
 local function handler()
     local res = http.response()
     if not res then
@@ -76,6 +99,13 @@ local function handler()
     end
 
     local facade_url = get_req("fe_facade_url")
+    local legacy_policy, policy_err = needs_legacy_policy(facade_url, get_req("host_policy_mode"))
+    if policy_err then
+        res:set_status(http.STATUS.INTERNAL_SERVER_ERROR)
+        res:set_content_type(http.CONTENT.JSON)
+        res:write('{"error":"invalid host_policy_mode: expected auto, legacy or shared"}')
+        return nil, policy_err
+    end
     local entry_path = get_req("fe_entry_path")
     local fe_mode = get_req("fe_mode")
 
@@ -141,15 +171,15 @@ local function handler()
         },
     }
 
+    local allow_select_model = get_req("allow_select_model") == "true"
+    local hide_session_selector = get_req("hide_session_selector") == "true"
     local host_config: {[string]: any} = {
         session = { type = non_empty_or_nil(get_req("session_type")) },
         history = non_empty_or_nil(get_req("history_mode")),
         showAdmin = get_req("show_admin") ~= "false",
-        allowSelectModel = get_req("allow_select_model") == "true",
         startNavOpen = get_req("start_nav_open") == "true",
         hideNavBar = get_req("hide_nav_bar") == "true",
         disableRightPanel = get_req("disable_right_panel") == "true",
-        hideSessionSelector = get_req("hide_session_selector") == "true",
         renderEngine = render_engine,
     }
 
@@ -168,7 +198,14 @@ local function handler()
     local attention = non_empty_map_or_nil(get_req_json_any("attention"))
 
     local additional_tags = non_empty_map_or_nil(get_req_json_any("allow_additional_tags"))
-    if additional_tags then
+    if not additional_tags then
+        additional_tags = table.create(0, 1)
+    end
+    -- Legacy hosts read policy only from hostConfig. Shared mode keeps policy
+    -- at the root so later root updates are not shadowed by a legacy mirror.
+    if legacy_policy then
+        host_config.allowSelectModel = allow_select_model
+        host_config.hideSessionSelector = hide_session_selector
         host_config.allowAdditionalTags = additional_tags
     end
 
@@ -233,6 +270,9 @@ local function handler()
         themeStorageKey = theme_storage_key,
         apiRoutes = api_routes,
         attention = attention,
+        allowSelectModel = allow_select_model,
+        hideSessionSelector = hide_session_selector,
+        allowAdditionalTags = additional_tags,
         axiosDefaults = axios_defaults,
         tanstack = tanstack,
         extraScripts = extra_scripts,

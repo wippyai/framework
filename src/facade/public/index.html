@@ -74,11 +74,11 @@
         }
 
         var stored = localStorage.getItem(STORAGE_KEY);
-        if (!stored) { goToLogin(); throw new Error('no token'); }
+        if (!stored) { goToLogin(); return; }
 
         var token;
         try { token = JSON.parse(stored).token; }
-        catch (e) { goToLogin(); throw new Error('bad token'); }
+        catch (e) { goToLogin(); return; }
 
         if (Array.isArray(cfg.extraScripts) && cfg.extraScripts.length) {
             await Promise.all(cfg.extraScripts.map(function (entry) {
@@ -148,9 +148,9 @@
             throw new Error('initWippyApp not found');
         }
 
-        // Backend returns config in wippy-context-2.0 shape — just add auth + schema
+        // Backend returns config in wippy-context-2.1 shape — just add auth + schema
         var events = window.initWippyApp({
-            $schema: cfg.facade_url + '/schemas/wippy-context-2.0.xsd',
+            $schema: cfg.facade_url + '/schemas/wippy-context-2.1.json',
             auth: { token: token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
             env: cfg.env,
             routePrefix: cfg.routePrefix,
@@ -159,6 +159,9 @@
             themeMode: (window.wippyThemePersist && window.wippyThemePersist.read()) || cfg.themeMode,
             apiRoutes: cfg.apiRoutes,
             attention: cfg.attention,
+            allowSelectModel: cfg.allowSelectModel,
+            hideSessionSelector: cfg.hideSessionSelector,
+            allowAdditionalTags: cfg.allowAdditionalTags,
             axiosDefaults: cfg.axiosDefaults,
             theming: cfg.theming,
             hostConfig: cfg.hostConfig,

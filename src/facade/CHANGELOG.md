@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Target Web Host 1.0.62 and schema wippy-context-2.1.json.
+- Forward model selection, session selector visibility, and sanitizer tags as shared top-level policy. Existing requirement names stay unchanged.
+- Preserve older and private hosts with automatic legacy policy mirroring; add `host_policy_mode` for explicit legacy or shared policy.
+- Preserve Attention configuration and the existing transport and theming scopes.
+
 ## [0.6.42](https://github.com/wippyai/framework/compare/facade-v0.6.41...facade-v0.6.42) (2026-10-09)
 
 
