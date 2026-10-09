@@ -6,7 +6,7 @@ local fs = require("fs")
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "fe_mode", "render_engine", "session_type",
+    "fe_facade_url", "host_policy_mode", "fe_entry_path", "fe_mode", "render_engine", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel", "hide_session_selector",
     "custom_css", "css_variables", "icon_sets",
@@ -25,6 +25,7 @@ local REQ_NAMES: {string} = {
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
         fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+        host_policy_mode = "auto",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
         render_engine = "iframe",
@@ -448,9 +449,9 @@ local function define_tests()
 
             test.it("builds complete config object", function()
                 local config = {
-                    facade_url = "https://front.wippy.ai",
-                    iframe_origin = "https://front.wippy.ai",
-                    iframe_url = "https://front.wippy.ai/iframe.html?waitForCustomConfig",
+                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+                    iframe_origin = "https://web-host.wippy.ai",
+                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
                     login_path = "/login.html",
                     env = {
                         APP_API_URL = "http://localhost:8085",
@@ -500,7 +501,7 @@ local function define_tests()
 
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
-                test.eq(decoded.facade_url, "https://front.wippy.ai")
+                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.62")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
                 test.is_true(decoded.attention.enabled)
@@ -514,6 +515,7 @@ local function define_tests()
                 test.not_nil(decoded.allowAdditionalTags)
                 test.eq(next(decoded.allowAdditionalTags), nil)
                 test.is_nil(decoded.hostConfig.allowSelectModel)
+                test.is_nil(decoded.hostConfig.hideSessionSelector)
                 test.is_nil(decoded.hostConfig.allowAdditionalTags)
                 test.eq(decoded.theming.host.i18n.app.title, "Wippy")
                 test.eq(decoded.themeMode, "auto")

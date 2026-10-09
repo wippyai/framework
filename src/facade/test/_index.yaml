@@ -64,6 +64,21 @@ entries:
       - registry
 
   # Tests
+  - name: policy_compatibility_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Real config endpoint policy compatibility for older and newer hosts
+    source: file://policy_compatibility_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - http_client
+      - json
+      - registry
+
   - name: config_handler_test
     kind: function.lua
     meta:

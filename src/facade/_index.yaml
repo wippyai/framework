@@ -41,6 +41,19 @@ entries:
         path: .default
     default: https://web-host.wippy.ai/webcomponents-1.0.62
 
+  - name: host_policy_mode
+    kind: ns.requirement
+    meta:
+      description: |
+        Shared chat policy compatibility. auto uses root-only policy for
+        official CDN Host 1.0.62 and newer, and mirrors policy in hostConfig
+        for older or unknown hosts. shared opts custom modern hosts into
+        root-only policy; legacy forces the mirror. Invalid modes fail config.
+    targets:
+      - entry: wippy.facade:host_policy_mode
+        path: .default
+    default: auto
+
   - name: fe_entry_path
     kind: ns.requirement
     meta:

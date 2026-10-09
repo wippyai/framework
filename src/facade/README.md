@@ -79,6 +79,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 | Requirement | Default | Description |
 |---|---|---|
 | `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.62` | CDN base URL for the Web Host frontend bundle |
+| `host_policy_mode` | `auto` | `auto` detects official CDN versions and preserves legacy policy for unknown hosts; `legacy` mirrors policy into `hostConfig`; `shared` keeps root-only policy for custom modern hosts. Invalid values fail the config endpoint. |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
 | `render_engine` | `iframe` | Global page render engine for packaged `view.page` micro-frontends: `iframe` (default — legacy srcdoc iframe) or `fragment` (Web Fragment / reframed realm reflected into a shadow root). `fragment` **requires** the `wippy/views` fragment gateway and a fragment-capable host bundle serving `/@wippy-fe/proxy-fragment.js`. Flows to the host as `hostConfig.renderEngine`; the child app is engine-agnostic (same package renders under either engine). |
@@ -441,11 +442,13 @@ If any step fails (config fetch, CDN import, missing `initWippyApp`), the page s
 
 ## Shared chat policy
 
-The existing `allow_select_model`, `hide_session_selector`, and `allow_additional_tags` requirements produce top-level camelCase fields. The Jet shell and static shell both forward them to Web Host 1.0.62. Existing deployment requirement names stay valid. An empty allowlist is encoded as `{}`.
+The existing `allow_select_model`, `hide_session_selector`, and `allow_additional_tags` requirements produce top-level camelCase fields. With `host_policy_mode = auto`, official CDN Host versions before 1.0.62 also receive the same resolved values in `hostConfig`. Unknown and private URLs receive this legacy mirror too, preserving existing deployments. Official CDN Host 1.0.62 and newer keep the fields only at the root so live root policy updates remain effective. Both shells forward the supplied scopes. Existing deployment requirement names stay valid. An empty allowlist is encoded as `{}`.
+
+Set `host_policy_mode = shared` when a custom URL serves Host 1.0.62 or newer. Set `legacy` to force the mirror regardless of URL. The automatic detector accepts only the exact `https://web-host.wippy.ai/webcomponents-MAJOR.MINOR.PATCH` URL, with an optional trailing slash. Invalid modes return HTTP 500 with a config error naming the accepted values.
 
 `hostConfig` describes the Web Host wrapper. Child applications do not receive it. A custom parent may still supply these fields in `hostConfig` to override built-in host chat; the shared reader uses `hostConfig[key] ?? config[key] ?? default`. A child inherits the top-level policy and can replace it through `wippy.configOverrides`. Chat WC attributes override the policy for one instance. Managed layouts have no built-in chat by default, so shared application policy belongs at the root.
 
-Use the matching 1.0.62 frontend with this facade output. Older facade output remains supported by the new frontend, including its host-only fields.
+Web Host 1.0.62 uses the root policy for child chat components. Earlier hosts, including 1.0.61, use the mirrored `hostConfig` policy for built-in chat. Older facade output remains supported by the new frontend, including its host-only fields.
 
 ## Publishing
 
