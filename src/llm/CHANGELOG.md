@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/wippyai/framework/compare/llm-v0.5.5...llm-v0.5.6) (2026-10-09)
+
+
+### Bug Fixes
+
+* **llm:** stream Bedrock ConverseStream events as they arrive ([#167](https://github.com/wippyai/framework/issues/167)) ([d623e6e](https://github.com/wippyai/framework/commit/d623e6eb7e68e9f4f4c90dc7a338270983963944))
+
 ## [0.5.5] (2026-10-07)
 
 ### Features
