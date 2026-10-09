@@ -252,6 +252,7 @@ local function handler()
 
     local config = {
         facade_url = facade_url,
+        schema_url = facade_url .. (legacy_policy and "/schemas/wippy-context-2.0.xsd" or "/schemas/wippy-context-2.1.json"),
         iframe_origin = iframe_origin,
         iframe_url = iframe_url,
         login_path = get_req("login_path"),

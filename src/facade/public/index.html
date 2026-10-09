@@ -148,9 +148,10 @@
             throw new Error('initWippyApp not found');
         }
 
-        // Backend returns config in wippy-context-2.1 shape — just add auth + schema
+        // The backend selects the schema for the resolved host policy mode.
+        // Older backends omit schema_url and use the legacy 2.0 schema.
         var events = window.initWippyApp({
-            $schema: cfg.facade_url + '/schemas/wippy-context-2.1.json',
+            $schema: cfg.schema_url || (cfg.facade_url + '/schemas/wippy-context-2.0.xsd'),
             auth: { token: token, expiresAt: new Date(Date.now() + 86400000).toISOString() },
             env: cfg.env,
             routePrefix: cfg.routePrefix,

@@ -392,6 +392,7 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 ```json
 {
   "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.62",
+  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.62/schemas/wippy-context-2.1.json",
   "iframe_origin": "https://web-host.wippy.ai",
   "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
@@ -436,7 +437,7 @@ fetch /api/public/facade/config
   → listen for 'authExpired' and 'error' events → redirect to login_path
 ```
 
-The backend returns config in wippy-context-2.1 shape. `index.html` only adds `$schema` (from `facade_url`), `auth` (from localStorage), and `context` (empty default). All other fields pass through from the backend unchanged.
+The backend returns `schema_url` for the resolved host policy mode: legacy uses `wippy-context-2.0.xsd`, and shared uses `wippy-context-2.1.json`. Both shells use this URL for `$schema`; older backends that omit it retain the legacy 2.0 fallback. The shells add `auth` from localStorage and an empty default `context`. All other fields pass through from the backend unchanged.
 
 If any step fails (config fetch, CDN import, missing `initWippyApp`), the page shows a themed `<wippy-error>` screen with title and details. No external CSS is required — both `<wippy-loading>` and `<wippy-error>` are self-contained web components with Shadow DOM styles.
 
