@@ -262,6 +262,41 @@ local function define_tests()
                 test.contains(err, "Truncated eventstream")
                 test.eq(#seen.errors, 1)
             end)
+
+            it("should reject zero and undersized frame lengths without hanging", function()
+                for _, total in ipairs({ 0, 1, 12, 15 }) do
+                    local frame = string.pack(">I4I4I4I4", total, 0, 0, 0)
+                    local content, err, _, seen = run({ frame })
+
+                    test.is_nil(content)
+                    test.contains(err, "message length must be at least 16 bytes")
+                    test.eq(#seen.errors, 1)
+                end
+            end)
+
+            it("should reject headers outside the declared frame before reading further", function()
+                -- The prelude alone already proves this frame is impossible:
+                -- a 20-byte frame has only 4 bytes available for headers/payload.
+                local frame = string.pack(">I4I4I4", 20, 5, 0)
+                local content, err, _, seen, source = run({ frame, delta("unreachable") })
+
+                test.is_nil(content)
+                test.contains(err, "headers exceed the message length")
+                test.eq(#seen.errors, 1)
+                test.eq(#seen.content_reads, 0)
+                test.eq(source.reads, 1)
+            end)
+
+            it("should validate the next frame after delivering a valid event", function()
+                local frame = string.pack(">I4I4I4I4", 0, 0, 0, 0)
+                local content, err, _, seen = run({ delta("prefix") .. frame })
+
+                test.is_nil(content)
+                test.contains(err, "message length must be at least 16 bytes")
+                test.eq(#seen.errors, 1)
+                test.eq(#seen.content_reads, 1)
+                test.eq(seen.content_reads[1].chunk, "prefix")
+            end)
         end)
     end)
 end

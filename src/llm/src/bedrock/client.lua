@@ -252,13 +252,22 @@ end
 
 -- Parse one message starting at pos. Returns nil while the buffer does not yet hold
 -- the whole message; otherwise payload, headers and the position after the message.
-local function parse_eventstream_message(buf: string, pos: integer): (string?, {[string]: string}?, integer?)
+local function parse_eventstream_message(buf: string, pos: integer): (string?, {[string]: string}?, integer?, string?)
     if #buf - pos + 1 < 12 then
         return nil, nil, nil
     end
 
     local total_length: integer = string.unpack(">I4", buf, pos) :: integer
     local headers_length: integer = string.unpack(">I4", buf, pos + 4) :: integer
+
+    -- Every frame includes a 12-byte prelude and a 4-byte message CRC. Reject
+    -- impossible lengths before waiting for more bytes or advancing the cursor.
+    if total_length < 16 then
+        return nil, nil, nil, "Invalid eventstream: message length must be at least 16 bytes"
+    end
+    if headers_length > total_length - 16 then
+        return nil, nil, nil, "Invalid eventstream: headers exceed the message length"
+    end
 
     if #buf - pos + 1 < total_length then
         return nil, nil, nil
@@ -350,7 +359,10 @@ local function read_eventstream(stream, on_event: (any) -> string?): string?
             local pos: integer = 1
 
             while true do
-                local payload, headers, next_pos = parse_eventstream_message(buf, pos)
+                local payload, headers, next_pos, parse_err = parse_eventstream_message(buf, pos)
+                if parse_err then
+                    return parse_err
+                end
                 if not next_pos then
                     break
                 end
