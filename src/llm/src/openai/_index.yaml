@@ -58,6 +58,9 @@ entries:
       - contract: wippy.llm:structured_output
         methods:
           structured_output: wippy.llm.openai:structured_output
+      - contract: wippy.llm:evaluator
+        methods:
+          evaluate: wippy.llm.openai:evaluate
       - contract: wippy.llm:provider
         methods:
           status: wippy.llm.openai:status
@@ -97,6 +100,33 @@ entries:
     method: handler
     pool:
       max_size: 50
+
+  # wippy.llm.openai:evaluate
+  - name: evaluate
+    kind: function.lua
+    meta:
+      comment: Typed predicate, choice and score evaluation via the OpenAI Decisions API
+    source: file://evaluate.lua
+    imports:
+      openai_client: wippy.llm.openai:client
+      openai_mapper: wippy.llm.openai:mapper
+      decisions_mapper: wippy.llm.openai:decisions_mapper
+      output: wippy.llm:output
+    method: handler
+    pool:
+      max_size: 50
+
+  # wippy.llm.openai:decisions_mapper
+  - name: decisions_mapper
+    kind: library.lua
+    meta:
+      comment: Mapper between the evaluator contract and OpenAI Decisions questions, readings and usage
+    source: file://decisions_mapper.lua
+    modules:
+      - json
+    imports:
+      evaluation: wippy.llm:evaluation
+      output: wippy.llm:output
 
   # wippy.llm.openai:generate
   - name: generate
@@ -141,7 +171,7 @@ entries:
       name: openai
       type: llm.provider
       title: OpenAI
-      comment: OpenAI provider via /v1/responses for GPT/o-series models, plus embeddings
+      comment: OpenAI provider via /v1/responses for GPT/o-series models, embeddings, and typed evaluation via /v1/decisions
       tags:
         - llm
         - provider
