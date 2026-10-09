@@ -7,6 +7,13 @@
 - Preserve older and private hosts with automatic legacy policy mirroring; add `host_policy_mode` for explicit legacy or shared policy.
 - Preserve Attention configuration and the existing transport and theming scopes.
 
+## [0.6.43](https://github.com/wippyai/framework/compare/facade-v0.6.42...facade-v0.6.43) (2026-10-09)
+
+
+### Bug Fixes
+
+* **facade:** expose shared chat policy for Host 1.0.62 ([#168](https://github.com/wippyai/framework/issues/168)) ([6aa84fe](https://github.com/wippyai/framework/commit/6aa84fe9057b859e430910922c413dad98f91978))
+
 ## [0.6.42](https://github.com/wippyai/framework/compare/facade-v0.6.41...facade-v0.6.42) (2026-10-09)
 
 
