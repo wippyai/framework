@@ -62,9 +62,13 @@ local function define_tests()
                 client_count = 1,
                 pg_scopes = { ["app:scope"] = { opaque = true } },
                 pg_groups = { ["workspace.1"] = "app:scope" },
+                routes = { session_message = { prefix = "session_", config = { prefix = "session_",
+                    process_id = "app:session", auto_start = true }, topic = "message" } },
+                route_count = 1,
             })
 
             test.eq(snapshot.relay_user_upgrade, true)
+            test.is_nil((snapshot :: any).routes)
             test.eq(snapshot.active_plugins.session_.pid, "app:plugin:1")
             test.eq(snapshot.connected_clients["app:client:1"], true)
             test.eq(snapshot.pg_groups["workspace.1"], "app:scope")

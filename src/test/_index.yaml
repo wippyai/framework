@@ -14,6 +14,14 @@ entries:
     component: wippy/terminal
     version: "*"
 
+  - name: env_storage
+    kind: env.storage.os
+
+  - name: require_cases
+    kind: env.variable
+    variable: WIPPY_TEST_REQUIRE_CASES
+    storage: wippy.test:env_storage
+
   # wippy.test:terminal
   - name: terminal
     kind: library.lua
@@ -115,6 +123,7 @@ entries:
     method: main
     modules:
       - io
+      - env
       - time
       - channel
     imports:
@@ -134,4 +143,46 @@ entries:
     source: file://self_test.lua
     method: run
     imports:
+      test: wippy.test:test
+
+  - name: benchmark_output
+    kind: fs.directory
+    directory: /tmp/wippy-benchmarks
+    auto_init: true
+
+  - name: benchmark_revision
+    kind: env.variable
+    variable: WIPPY_BENCH_REVISION
+    storage: wippy.test:env_storage
+
+  - name: benchmark_runtime
+    kind: env.variable
+    variable: WIPPY_BENCH_RUNTIME
+    storage: wippy.test:env_storage
+
+  - name: benchmark_framework_revision
+    kind: env.variable
+    variable: WIPPY_BENCH_FRAMEWORK_REVISION
+    storage: wippy.test:env_storage
+
+  - name: benchmark_exact_allocations
+    kind: env.variable
+    variable: WIPPY_BENCH_EXACT_ALLOCATIONS
+    storage: wippy.test:env_storage
+
+  - name: benchmark
+    kind: library.lua
+    source: file://benchmark.lua
+    modules: [fs, json, env, io, system, http_client]
+
+  - name: benchmark_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: test-framework
+    source: file://benchmark_test.lua
+    method: run
+    modules: [fs, json, system, env]
+    imports:
+      benchmark: wippy.test:benchmark
       test: wippy.test:test

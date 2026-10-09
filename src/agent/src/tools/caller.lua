@@ -290,6 +290,14 @@ local function reset_wrapper_diagnostics(self: any)
     self.wrapper_controls = {}
 end
 
+local function discard_stale_round(self: any)
+    if next(self.wrapper_observations) ~= nil then self.wrapper_observations = {} end
+    if next(self.wrapper_metadata) ~= nil then self.wrapper_metadata = {} end
+    if next(self.wrapper_errors) ~= nil then self.wrapper_errors = {} end
+    if next(self.wrapper_controls) ~= nil then self.wrapper_controls = {} end
+    if next(self.last_tool_calls) ~= nil then self.last_tool_calls = {} end
+end
+
 function tool_caller:get_wrapper_controls(): {table}
     return behavior_controls.prepare(self.wrapper_controls or {}) or {}
 end
@@ -459,6 +467,7 @@ end
 function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     -- Check if there are any tool calls
     if not tool_calls or #tool_calls == 0 then
+        discard_stale_round(self)
         return {}, nil
     end
 

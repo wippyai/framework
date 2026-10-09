@@ -17,10 +17,27 @@ permissions:
   contents: read
 
 jobs:
+  runtime-contracts:
+    name: Lua runtime contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-wippy
+        id: wippy
+      - name: Test real runtime contracts
+        env:
+          WIPPY: ${{ steps.wippy.outputs.path }}
+          RUNTIME_WORK_DIR: ${{ runner.temp }}/framework-runtime
+        run: make test-runtime
   test-runner:
     name: Test runner regressions
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      WIPPY_FRAMEWORK_ROOT: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:

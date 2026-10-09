@@ -577,6 +577,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     --end
 
 
+    if runtime_options.stop_check and runtime_options.stop_check() then
+        return { stopped = true }, nil
+    end
+
     local result, err = llm_instance.generate(final_messages, options)
     if err then
         return nil, err

@@ -3,6 +3,32 @@ local verdict = require("verdict")
 
 local function define_tests()
     test.describe("runner result validation", function()
+        test.it("required suites reject a completed empty plan", function()
+            local err = verdict.check({require_cases = true, declared = 0, observed = 0,
+                cases = {passed = 0, failed = 0, skipped = 0},
+                completed = {total = 0, passed = 0, failed = 0, skipped = 0}})
+            test.not_nil(err)
+            test.contains(err.message, "required test suite executed no cases")
+        end)
+
+        test.it("required suites reject skipped-only plans", function()
+            local err = verdict.check({require_cases = true, declared = 1, observed = 1,
+                cases = {passed = 0, failed = 0, skipped = 1},
+                completed = {total = 1, passed = 0, failed = 0, skipped = 1}})
+            test.not_nil(err)
+            test.contains(err.message, "required test suite executed no cases")
+        end)
+
+        test.it("required suites accept an executed BDD case", function()
+            test.is_nil(verdict.check({require_cases = true, declared = 1, observed = 1,
+                cases = {passed = 1, failed = 0, skipped = 0},
+                completed = {total = 1, passed = 1, failed = 0, skipped = 0}}))
+        end)
+
+        test.it("required suites reject entries without a case plan", function()
+            test.not_nil(verdict.check({require_cases = true, observed = 0}))
+        end)
+
         test.it("rejects completion without a plan", function()
             local err = verdict.check({observed = 0,
                 completed = {total = 1, passed = 0, failed = 1, skipped = 0}})
@@ -59,6 +85,26 @@ local function define_tests()
             test.not_nil(err)
             test.eq(err.kind, "runner_failure")
             test.eq(err.message, "test process did not report completion")
+        end)
+
+        test.it("rejects a replaced plan even when the counts agree", function()
+            local err = verdict.check({ declared = -1, observed = 1,
+                completed = { total = 1, passed = 1, failed = 0, skipped = 0 } })
+            test.not_nil(err)
+            test.eq(err.message, "test process reported more than one plan")
+        end)
+
+        test.it("required suites count failed cases as executed", function()
+            test.is_nil(verdict.check({require_cases = true, declared = 1, observed = 1,
+                cases = {passed = 0, failed = 1, skipped = 0},
+                completed = {total = 1, passed = 0, failed = 1, skipped = 0}}))
+        end)
+
+        test.it("reports a replaced plan before a missing required case", function()
+            local err = verdict.check({ require_cases = true, declared = -1, observed = 0,
+                completed = { total = 0, passed = 0, failed = 0, skipped = 0 } })
+            test.not_nil(err)
+            test.eq(err.message, "test process reported more than one plan")
         end)
 
         test.it("accepts all declared cases with a successful completion", function()

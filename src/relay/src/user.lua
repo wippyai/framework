@@ -18,6 +18,12 @@ type PluginState = {
     status: string,
 }
 
+type Route = {
+    prefix: string,
+    config: PluginConfig,
+    topic: string,
+}
+
 type UserState = {
     user_id: string,
     user_metadata: any,
@@ -29,7 +35,11 @@ type UserState = {
     client_count: number,
     pg_scopes: {[string]: any},
     pg_groups: {[string]: string},
+    routes: {[any]: Route},
+    route_count: number,
 }
+
+local MAX_CACHED_ROUTES = 64
 
 type UserUpgradeState = {
     relay_user_upgrade: boolean,
@@ -273,7 +283,10 @@ local function route_to_plugin(state: UserState, prefix: string, plugin_config: 
                 context = message_data.context
             }
 
-            process.send(pid, topic, payload_data)
+            local sent, send_err = process.send(pid, topic, payload_data)
+            if not sent then
+                return false, "Failed to send message to plugin: " .. tostring(send_err)
+            end
             return true
         end
     end
@@ -284,21 +297,23 @@ end
 local function handle_client_join(state: UserState, payload_data: any)
     local client_pid = payload_data.client_pid :: string?
     if client_pid then
-        state.connected_clients[client_pid] = true
-        state.client_count = state.client_count + 1
+        if not state.connected_clients[client_pid] then
+            state.connected_clients[client_pid] = true
+            state.client_count = state.client_count + 1
 
-        logger:info("client connected", {
-            client_pid = client_pid,
-            client_count = state.client_count,
-            user_id = state.user_id
-        })
+            logger:info("client connected", {
+                client_pid = client_pid,
+                client_count = state.client_count,
+                user_id = state.user_id
+            })
 
-        if state.client_count == 1 then
-            local session_plugin = state.active_plugins["session_"]
-            if session_plugin then
-                local pid = session_plugin.pid
-                if pid then
-                    process.send(pid, "resume", {})
+            if state.client_count == 1 then
+                local session_plugin = state.active_plugins["session_"]
+                if session_plugin then
+                    local pid = session_plugin.pid
+                    if pid then
+                        process.send(pid, "resume", {})
+                    end
                 end
             end
         end
@@ -342,8 +357,8 @@ local function handle_client_leave(state: UserState, payload_data: any)
 end
 
 local function handle_client_message(state: UserState, payload: any, from_pid: string)
-    local message_data, err = json.decode(string(payload:data()))
-    if not message_data then
+    local message_data, err = json.decode(payload:data())
+    if err then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.INVALID_JSON,
             message = "Failed to decode JSON message"
@@ -351,26 +366,42 @@ local function handle_client_message(state: UserState, payload: any, from_pid: s
         return
     end
 
-    local msg_type = message_data.type :: string?
-    if not msg_type then
+    if type(message_data) ~= "table" then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.UNKNOWN_COMMAND,
-            message = "Message type is required"
+            message = "Message must be a JSON object"
         })
         return
     end
 
-    local plugin_prefix, plugin_config = find_plugin_for_command(state, msg_type)
-    if not plugin_prefix or not plugin_config then
-        process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
-            error = consts.ERROR_CODES.PLUGIN_NOT_FOUND,
-            message = "No plugin found for command: " .. msg_type
-        })
-        return
+    local msg_type: any = message_data.type
+    local route = state.routes[msg_type]
+    if not route then
+        if type(msg_type) ~= "string" or msg_type == "" then
+            process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.UNKNOWN_COMMAND,
+                message = "Message type is required"
+            })
+            return
+        end
+
+        local plugin_prefix, plugin_config = find_plugin_for_command(state, msg_type)
+        if not plugin_prefix or not plugin_config then
+            process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.PLUGIN_NOT_FOUND,
+                message = "No plugin found for command: " .. msg_type
+            })
+            return
+        end
+
+        route = { prefix = plugin_prefix, config = plugin_config, topic = msg_type:sub(#plugin_prefix + 1) }
+        if state.route_count < MAX_CACHED_ROUTES then
+            state.routes[msg_type] = route
+            state.route_count = state.route_count + 1
+        end
     end
 
-    local stripped_topic = msg_type:sub(#plugin_prefix + 1)
-    local success, route_err = route_to_plugin(state, plugin_prefix!, plugin_config!, stripped_topic, message_data, from_pid)
+    local success, route_err = route_to_plugin(state, route.prefix, route.config, route.topic, message_data, from_pid)
     if not success then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.PLUGIN_FAILED,
@@ -466,7 +497,9 @@ local function run(args: any): any
         connected_clients = connected_clients,
         client_count = client_count,
         pg_scopes = {},
-        pg_groups = {}
+        pg_groups = {},
+        routes = {},
+        route_count = 0,
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
@@ -495,12 +528,10 @@ local function run(args: any): any
 
     local inbox = process.inbox()
     local events = process.events()
+    local select_cases = { inbox:case_receive(), events:case_receive() }
 
     while true do
-        local result = channel.select({
-            inbox:case_receive(),
-            events:case_receive()
-        })
+        local result = channel.select(select_cases)
 
         if not result.ok then
             break
@@ -508,9 +539,9 @@ local function run(args: any): any
 
         if result.channel == inbox then
             local msg: any = result.value
-            local topic = string(msg:topic())
+            local topic: string = msg:topic()
             local payload: any = msg:payload()
-            local from_pid = string(msg:from())
+            local from_pid: string = msg:from()
 
             if topic == consts.WS_TOPICS.JOIN then
                 handle_client_join(state, payload:data())

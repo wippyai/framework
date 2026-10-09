@@ -614,6 +614,34 @@ local function define_tests()
                 test.eq(seen.temperature, 0.7)
             end)
 
+            it("should skip provider generation when stop_check reports a committed stop", function()
+                local test_agent = agent.new({
+                    id = "stop-check-agent",
+                    name = "Stop Check Agent",
+                    description = "Checks stop before generation",
+                    prompt = "You are stoppable."
+                })
+                local calls = { generate = 0, checks = 0 }
+                agent._llm = {
+                    generate = function()
+                        calls.generate = calls.generate + 1
+                        return { result = "done", tokens = {} }
+                    end
+                }
+                local result, err = test_agent:step(mock_prompt.new(), {
+                    stop_check = function() calls.checks = calls.checks + 1; return true end
+                })
+                test.is_nil(err)
+                test.is_true(result.stopped)
+                test.eq(calls.generate, 0)
+                test.eq(calls.checks, 1)
+
+                result, err = test_agent:step(mock_prompt.new(), { stop_check = function() return false end })
+                test.is_nil(err)
+                test.is_nil(result.stopped)
+                test.eq(calls.generate, 1)
+            end)
+
             it("should carry an explicit zero temperature rather than treating it as unset", function()
                 local spec = {
                     id = "zero-temp-agent",

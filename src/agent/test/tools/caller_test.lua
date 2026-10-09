@@ -756,6 +756,41 @@ local function define_tests()
                 test.eq(count_table_elements(validated_tools), 0)
             end)
 
+            it("should discard the previous round state when validating no tool calls", function()
+                for _, empty in ipairs({ {}, false }) do
+                    local caller = tool_caller.new()
+                    caller.wrapper_observations = { { tool = "old" } }
+                    caller.wrapper_metadata = { { tool = "old" } }
+                    caller.wrapper_errors = { { error = "old" } }
+                    caller.wrapper_controls = { { type = "stop" } }
+                    caller.last_tool_calls = { { id = "call-old", name = "old" } }
+
+                    local validated_tools, err = caller:validate(empty or nil)
+
+                    test.is_nil(err)
+                    test.eq(count_table_elements(validated_tools), 0)
+                    test.eq(#caller:get_wrapper_observations(), 0)
+                    test.eq(#caller:get_wrapper_metadata(), 0)
+                    test.eq(#caller:get_wrapper_errors(), 0)
+                    test.eq(#caller:get_wrapper_controls(), 0)
+                    test.eq(#caller:get_last_tool_calls(), 0)
+                end
+            end)
+
+            it("should keep empty round state tables when validating no tool calls", function()
+                local caller = tool_caller.new()
+                local observations, metadata = caller.wrapper_observations, caller.wrapper_metadata
+                local errors, controls, calls = caller.wrapper_errors, caller.wrapper_controls, caller.last_tool_calls
+
+                caller:validate({})
+
+                test.is_true(rawequal(caller.wrapper_observations, observations))
+                test.is_true(rawequal(caller.wrapper_metadata, metadata))
+                test.is_true(rawequal(caller.wrapper_errors, errors))
+                test.is_true(rawequal(caller.wrapper_controls, controls))
+                test.is_true(rawequal(caller.last_tool_calls, calls))
+            end)
+
             it("should handle tool schema errors", function()
                 local caller = tool_caller.new()
 
