@@ -19,6 +19,62 @@ entries:
     lifecycle:
       auto_start: true
 
+  - name: isolation_plugin_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: [app:isolation_plugin]
+      actions: [process.spawn, process.spawn.linked, process.spawn.monitored]
+      effect: allow
+
+  - name: isolation_host_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: [app:processes]
+      actions: [process.host]
+      effect: allow
+
+  - name: isolation_cleanup_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: '*'
+      actions: [process.cancel]
+      effect: allow
+
+  - name: isolation_client
+    kind: process.lua
+    source: file://isolation_fixture.lua
+    imports:
+      consts: wippy.relay:consts
+    modules: [security]
+    method: client
+
+  - name: isolation_plugin
+    kind: process.lua
+    meta:
+      type: relay.plugin
+      command_prefix: probe_
+      default_host: app:processes
+    source: file://isolation_fixture.lua
+    imports:
+      consts: wippy.relay:consts
+    modules: [security]
+    method: plugin
+
+  - name: isolation_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay
+    source: file://isolation_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules: [time, json]
+    method: run
+
   # app:consts_test
   - name: consts_test
     kind: function.lua
