@@ -5,6 +5,26 @@ local test = require("test")
 
 local function define_tests()
     describe("OpenAI Mapper", function()
+        it("keeps positional instructions in the Responses input stream", function()
+            for _, role in ipairs({ "system", "developer" }) do
+                local messages = {
+                    { role = "system", content = "Global guidance" },
+                    { role = "user", content = "Earlier request" },
+                    { role = role, content = "Boundary", metadata = { preserve_position = true } },
+                    { role = "user", content = "New request" },
+                }
+                local instructions, consumed = openai_mapper.extract_instructions(messages)
+                test.eq(instructions, "Global guidance")
+                test.is_nil(consumed[3])
+                local mapped = openai_mapper.map_messages(messages)
+                test.eq(#mapped, 3)
+                test.eq(mapped[1].role, "user")
+                test.eq(mapped[1].content[1].text, "Earlier request")
+                test.eq(mapped[2].role, role)
+                test.eq(mapped[2].content[1].text, "Boundary")
+                test.eq(mapped[3].content[1].text, "New request")
+            end
+        end)
         it("makes explicit tool failures unambiguous without changing successful output", function()
             for _, failed in ipairs({ false, true }) do
                 local mapped = openai_mapper.map_messages({{ role = "function_result", name = "lookup",
