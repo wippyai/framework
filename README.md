@@ -83,6 +83,8 @@ and configuration management — enabling developers to build sophisticated mult
 
 `make test-runtime` runs Lua tests for actor messages, relay delivery, and tool controls through Wippy.
 It uses the local component and test-runner sources. Required suites fail if they execute no cases.
+Ordinary tests do not register a benchmark filesystem. `make test-benchmarks` runs report and
+GC-setting checks in a separate harness; its filesystem opens an existing directory without creating one.
 
 `make bench` runs local Lua workloads with 100 warmups and 100 samples at sizes 1, 8, and 32.
 Reports include latency, throughput, heap use, exact allocation counts, and source/runtime metadata.
@@ -96,6 +98,8 @@ Use `BENCH_WARMUP`, `BENCH_SAMPLES`, and the space-separated `BENCH_SIZES` to ch
 Use `BENCH_MEMORY_OPERATIONS` to set the separate memory workload size. The native profiler uses
 the loopback interface on port 6060; keep that port free during local benchmarks.
 Test data and benchmark reports must stay outside the repository.
+Only `make bench` adds the benchmark output resource to its isolated workload sources and explicitly
+creates the requested report directory. The shared `wippy/test` module never creates that directory.
 
 [module-actor]: https://github.com/wippyai/module-actor
 [module-agent]: https://github.com/wippyai/module-agent

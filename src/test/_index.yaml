@@ -142,13 +142,9 @@ entries:
       comment: Self-test for the test framework
     source: file://self_test.lua
     method: run
+    modules: [registry]
     imports:
       test: wippy.test:test
-
-  - name: benchmark_output
-    kind: fs.directory
-    directory: /tmp/wippy-benchmarks
-    auto_init: true
 
   - name: benchmark_revision
     kind: env.variable
@@ -174,15 +170,3 @@ entries:
     kind: library.lua
     source: file://benchmark.lua
     modules: [fs, json, env, io, system, http_client]
-
-  - name: benchmark_test
-    kind: function.lua
-    meta:
-      type: test
-      suite: test-framework
-    source: file://benchmark_test.lua
-    method: run
-    modules: [fs, json, system, env]
-    imports:
-      benchmark: wippy.test:benchmark
-      test: wippy.test:test

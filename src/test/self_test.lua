@@ -1,7 +1,15 @@
 -- Self-test for the test framework
 local test = require("test")
+local registry = require("registry")
 
 local function define_tests()
+    test.describe("shared test resources", function()
+        test.it("does not register a benchmark filesystem for ordinary tests", function()
+            local output = registry.get("wippy.test:benchmark_output")
+            test.is_nil(output, "benchmark filesystems belong to the explicit benchmark harness")
+        end)
+    end)
+
     -- Hook bookkeeping for the "suite hooks" suites below: a suite's before_all
     -- and after_all run once around the suite and all of its descendants.
     local hooks = { outer_before = 0, outer_after = 0, grandchild_ran = false }

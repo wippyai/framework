@@ -1,0 +1,20 @@
+version: "1.0"
+namespace: app
+
+entries:
+  - name: test_dep
+    kind: ns.dependency
+    component: wippy/test
+    version: "*"
+
+  - name: benchmark_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: benchmark-reports
+    source: file://benchmark_test.lua
+    method: run
+    modules: [fs, json, system, env]
+    imports:
+      benchmark: wippy.test:benchmark
+      test: wippy.test:test

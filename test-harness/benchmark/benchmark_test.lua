@@ -1,3 +1,4 @@
+-- Filesystem and process-wide GC checks run only in this explicit harness.
 local test = require("test")
 local benchmark = require("benchmark")
 local fs = require("fs")

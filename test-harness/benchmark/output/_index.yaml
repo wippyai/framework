@@ -1,0 +1,8 @@
+version: "1.0"
+namespace: wippy.test
+
+entries:
+  - name: benchmark_output
+    kind: fs.directory
+    directory: .
+    auto_init: false
