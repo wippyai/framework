@@ -393,3 +393,18 @@ entries:
       - time
       - ctx
     method: delayed_echo
+
+  - name: tools_authority_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: live_authority
+    source: file://tools/authority_test.lua
+    modules: [security]
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+    security:
+      actor: {id: authority.contract}
+      policies: [app.agent_authority:test_policy]
+    method: run_tests

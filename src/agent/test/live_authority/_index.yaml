@@ -1,6 +1,20 @@
 version: "1.0"
 namespace: app.agent_authority
 entries:
+  - name: caller
+    kind: library.lua
+    source: file://../../src/tools/caller.lua
+    modules: [json, funcs, contract]
+    imports:
+      tools: wippy.agent.discovery:tools
+      behavior_controls: wippy.agent:behavior_controls
+      execution_authority: app.agent_authority:execution_authority
+  - name: execution_authority
+    kind: library.lua
+    source: file://../../src/tools/execution_authority.lua
+    modules: [security]
+    imports:
+      execution_identity_resolver: app.agent_authority:authority
   - name: test
     kind: function.lua
     meta:
@@ -21,14 +35,14 @@ entries:
     method: run
     modules: [sql, json, security, funcs]
     imports:
-      tool_caller: wippy.agent.tools:caller
+      tool_caller: app.agent_authority:caller
   - name: mutate
     kind: function.lua
     source: file://fixture.lua
     method: mutate
     modules: [sql, json, security, funcs]
     imports:
-      tool_caller: wippy.agent.tools:caller
+      tool_caller: app.agent_authority:caller
     security:
       actor: {id: authority.fixture}
       policies: [app.agent_authority:test_policy]
@@ -38,7 +52,7 @@ entries:
     method: lookup
     modules: [sql, json, security, funcs]
     imports:
-      tool_caller: wippy.agent.tools:caller
+      tool_caller: app.agent_authority:caller
     security:
       actor: {id: authority.lookup}
       policies: [app.agent_authority:test_policy]
@@ -48,7 +62,7 @@ entries:
     method: effect
     modules: [sql, json, security, funcs]
     imports:
-      tool_caller: wippy.agent.tools:caller
+      tool_caller: app.agent_authority:caller
   - name: db
     kind: db.sql.sqlite
     file: authority.sqlite

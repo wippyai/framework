@@ -614,3 +614,29 @@ Agent resolution contract. Applications provide a binding to handle custom agent
 | `wippy.agent.discovery` | `selector` | LLM-powered agent selector |
 | `wippy.agent.tools` | `caller` | Tool execution (sequential/parallel) |
 | `wippy.agent.traits` | `time_aware` | Built-in time-aware trait |
+
+## Live tool execution authority
+
+Hosts with mutable subject authority bind their native identity resolver through the Agent dependency:
+
+```yaml
+parameters:
+  - name: wippy.agent:execution_authority_imports
+    value:
+      execution_identity_resolver: app:execution_authority
+```
+
+The imported `library.lua` uses the same contract as Dataflow:
+
+```lua
+capture(actor, scope) -> authority_context, error
+resolve({subject_id, authority_only = true, actor_meta, authority_context}) -> actor, scope, error
+```
+
+`capture` receives the current native actor and scope when the tool caller is created. It returns a plain restriction descriptor that preserves every explicit narrowing ceiling, or an error when it cannot represent a restriction. Credentials remain in the host's stores. Agent keeps the descriptor in memory and never writes it to conversation context or stored tool arguments.
+
+Immediately before each sequential or parallel tool dispatch, `resolve` checks current subject status, memberships and credential restrictions through the host's existing authority mechanism. It returns a native Security actor with the original subject ID and a native scope containing every captured ceiling. Agent evaluates `funcs.call` on that scope before dispatch and passes the scope unchanged to the callee. The dispatch check is necessary because the native executor's explicit scope controls callee authority while its dispatch admission check uses the ambient frame.
+
+Provider failures and exceptions fail closed with a retryable `Unavailable` tool error. Explicit permission denials stay `PermissionDenied`; malformed results or changed subjects fail with `Invalid`. Later tool calls resolve again and never reuse a previous successful scope. A failed initial capture prevents dispatch for that caller; creating a new caller retries capture.
+
+The host library runs under the calling frame and uses its own protected authority boundary for provider reads. Agent adds no wildcard permission or permission intersection. The optional binding defaults to an empty import map; existing installations keep their current behavior when it is absent. No stored frame, registry ID, tool argument shape or schema migration changes. Hosts enable the binding to connect their live authority provider.

@@ -19,6 +19,12 @@ entries:
     imports:
       tools: wippy.agent.discovery:tools
       behavior_controls: wippy.agent:behavior_controls
+      execution_authority: wippy.agent.tools:execution_authority
+
+  - name: execution_authority
+    kind: library.lua
+    source: file://execution_authority.lua
+    modules: [security]
 
   - name: attention_read_test
     kind: function.lua
