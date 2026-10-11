@@ -95,7 +95,6 @@ entries:
     modules:
       - funcs
       - channel
-      - time
 
   # wippy.test:runner
   - name: runner
