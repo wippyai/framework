@@ -2,6 +2,7 @@ local test = require("test")
 local time = require("time")
 local json = require("json")
 local consts = require("consts")
+local sql = require("sql")
 
 local children = {}
 
@@ -23,6 +24,12 @@ local function define_tests()
         end)
 
         test.it("routes only connected clients under their own actor", function()
+            local db = assert(sql.get("app:db"))
+            local initialized, init_err = db:execute(
+                "CREATE TABLE isolation_actions (actor_id TEXT NOT NULL, request_id TEXT NOT NULL)")
+            db:release()
+            test.is_nil(init_err)
+            test.not_nil(initialized)
             local central_pid = process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME)
             test.not_nil(central_pid)
             local observations = process.listen("test.isolation")
@@ -115,8 +122,19 @@ local function define_tests()
                 end
             end
             table.sort(routed)
+            local actions_db = assert(sql.get("app:db"))
+            local actions, query_err = actions_db:query(
+                "SELECT actor_id, request_id FROM isolation_actions ORDER BY request_id")
+            actions_db:release()
+            test.is_nil(query_err)
+            print(assert(json.encode({ kind = "actions", rows = actions })))
             test.eq(table.concat(routed, ","), "alice-fence,alice-own,bob-fence,bob-own",
                 "unjoined, foreign and disconnected clients must not invoke plugins")
+            test.eq(#actions, 2)
+            test.eq(actions[1].actor_id, users[2])
+            test.eq(actions[1].request_id, "bob-fence")
+            test.eq(actions[2].actor_id, users[2])
+            test.eq(actions[2].request_id, "bob-own")
         end)
     end)
 end

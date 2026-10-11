@@ -1,5 +1,6 @@
 local consts = require("consts")
 local security = require("security")
+local sql = require("sql")
 
 local function send(pid, topic, payload)
     local ok, err = process.send(pid, topic, payload)
@@ -58,10 +59,21 @@ local function plugin(args)
         else
             local msg = result.value
             local payload = msg:payload():data()
+            local actor = assert(security.actor(), "plugin requires a user actor")
+            local actor_id = actor:id()
+            local privileged = security.can("relay.test.privileged", "relay.test:resource")
+            if privileged then
+                local db = assert(sql.get("app:db"))
+                local written, err = db:execute(
+                    "INSERT INTO isolation_actions (actor_id, request_id) VALUES ($1, $2)",
+                    { actor_id, payload.request_id })
+                db:release()
+                assert(written, tostring(err))
+            end
             send(args.user_metadata.observer_pid, "test.isolation", {
                 kind = "plugin", user_id = args.user_id,
-                actor_id = security.actor():id(),
-                privileged = security.can("relay.test.privileged", "relay.test:resource"),
+                actor_id = actor_id,
+                privileged = privileged,
                 topic = msg:topic(), payload = payload,
             })
         end

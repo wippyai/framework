@@ -2,3 +2,4 @@ version: "1.0"
 workspace:
   replacements:
     wippy/test: ../../test
+    wippy/terminal: ../../terminal
