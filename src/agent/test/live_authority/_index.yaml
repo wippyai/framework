@@ -1,0 +1,90 @@
+version: "1.0"
+namespace: app.agent_authority
+entries:
+  - name: test
+    kind: function.lua
+    meta:
+      type: test
+      suite: live_authority
+    source: file://test.lua
+    method: run_tests
+    modules: [sql, json, uuid, security, funcs]
+    imports:
+      test: wippy.test:test
+  - name: authority
+    kind: library.lua
+    source: file://authority.lua
+    modules: [sql, security]
+  - name: worker
+    kind: function.lua
+    source: file://fixture.lua
+    method: run
+    modules: [sql, json, security, funcs]
+    imports:
+      tool_caller: wippy.agent.tools:caller
+  - name: mutate
+    kind: function.lua
+    source: file://fixture.lua
+    method: mutate
+    modules: [sql, json, security, funcs]
+    imports:
+      tool_caller: wippy.agent.tools:caller
+    security:
+      actor: {id: authority.fixture}
+      policies: [app.agent_authority:test_policy]
+  - name: subject_lookup
+    kind: function.lua
+    source: file://fixture.lua
+    method: lookup
+    modules: [sql, json, security, funcs]
+    imports:
+      tool_caller: wippy.agent.tools:caller
+    security:
+      actor: {id: authority.lookup}
+      policies: [app.agent_authority:test_policy]
+  - name: protected_effect
+    kind: function.lua
+    source: file://fixture.lua
+    method: effect
+    modules: [sql, json, security, funcs]
+    imports:
+      tool_caller: wippy.agent.tools:caller
+  - name: db
+    kind: db.sql.sqlite
+    file: authority.sqlite
+  - name: tokens_storage
+    kind: store.memory
+    max_size: 1000
+    cleanup_interval: 1m
+    lifecycle: {auto_start: true}
+  - name: tokens
+    kind: security.token_store
+    store: app.agent_authority:tokens_storage
+    token_length: 32
+    default_expiration: 1h
+    subject_lookup: app.agent_authority:subject_lookup
+  - name: member
+    kind: registry.entry
+  - name: privileged
+    kind: registry.entry
+  - name: test_policy
+    kind: security.policy
+    policy: {resources: '*', actions: '*', effect: allow}
+  - name: member_policy
+    kind: security.policy
+    groups: [app.agent_authority:member]
+    policy:
+      resources: '*'
+      actions: '*'
+      conditions:
+        - field: resource
+          operator: ne
+          value: app.agent_authority:protected_effect
+      effect: allow
+  - name: privileged_policy
+    kind: security.policy
+    groups: [app.agent_authority:privileged]
+    policy:
+      resources: app.agent_authority:protected_effect
+      actions: funcs.call
+      effect: allow

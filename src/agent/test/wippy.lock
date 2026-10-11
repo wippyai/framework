@@ -16,3 +16,9 @@ modules:
 replacements:
     - from: wippy/llm
       to: ../../llm/src
+    - from: wippy/security
+      to: ../../security
+    - from: wippy/terminal
+      to: ../../terminal
+    - from: wippy/test
+      to: ../../test
