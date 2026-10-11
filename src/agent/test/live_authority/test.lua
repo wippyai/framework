@@ -14,7 +14,8 @@ local function run_tests()
             tokens = assert(security.token_store("app.agent_authority:tokens"))
             local _, err = db:execute([[CREATE TABLE agent_authority_subjects (
                 subject_id TEXT PRIMARY KEY, groups_json TEXT NOT NULL, active INTEGER NOT NULL,
-                effects INTEGER NOT NULL DEFAULT 0, credential_id TEXT UNIQUE, token TEXT)]])
+                effects INTEGER NOT NULL DEFAULT 0, credential_id TEXT UNIQUE, token TEXT,
+                provider_available INTEGER NOT NULL DEFAULT 1)]])
             test.is_nil(err)
         end)
         test.after_all(function() db:release() end)

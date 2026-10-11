@@ -26,8 +26,7 @@ function M.mutate(args)
     elseif args.mode == "disabled" then
         _, err = db:execute("UPDATE agent_authority_subjects SET active = 0 WHERE subject_id = $1", {args.subject_id})
     elseif args.mode == "unavailable" then
-        _, err = db:execute("UPDATE agent_authority_subjects SET groups_json = $1 WHERE subject_id = $2",
-            {assert(json.encode({"app.agent_authority:missing"})), args.subject_id})
+        _, err = db:execute("UPDATE agent_authority_subjects SET provider_available = 0 WHERE subject_id = $1", {args.subject_id})
     elseif args.mode == "revoked" then
         local tokens = assert(security.token_store("app.agent_authority:tokens"))
         local rows = assert(db:query("SELECT token FROM agent_authority_subjects WHERE subject_id = $1", {args.subject_id}))

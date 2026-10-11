@@ -1,16 +1,6 @@
 local security = require("security")
 local M = {}
 
-local function authority_error(err: any): any
-    local denied = errors.is(err, errors.PERMISSION_DENIED)
-    return errors.new({
-        message = "Tool execution authority resolution fails: " .. tostring(err),
-        kind = denied and errors.PERMISSION_DENIED or errors.UNAVAILABLE,
-        retryable = not denied,
-        details = {cause = tostring(err)},
-    })
-end
-
 local function capture_authority(resolver: any): any
     if type(resolver) ~= "table" or type(resolver.capture) ~= "function" or type(resolver.resolve) ~= "function" then
         return nil, errors.new({message = "Execution identity resolver must provide capture and resolve", kind = errors.INVALID, retryable = false})
@@ -23,39 +13,32 @@ local function capture_authority(resolver: any): any
         return nil, errors.new({message = "Current execution identity is unavailable", kind = errors.UNAVAILABLE, retryable = true})
     end
     local context, err = resolver.capture(actor, scope)
-    if err then return nil, authority_error(err) end
+    if err then return nil, err end
     if type(context) ~= "table" or getmetatable(context) ~= nil then
         return nil, errors.new({message = "Execution authority capture must return a plain table", kind = errors.INVALID, retryable = false})
     end
-    return {resolver = resolver, subject_id = actor:id(), actor_meta = actor:meta(), authority_context = context}, nil
+    return {resolver = resolver, subject_id = actor:id(), actor_meta = actor:meta(), authority_context = context,
+        actor_type = getmetatable(actor), scope_type = getmetatable(scope)}, nil
 end
 
 function M.executor(saved: any, executor: any, context: table, registry_id: string): any
     if saved ~= nil then
-        local ok, actor, scope, err = pcall(saved.resolver.resolve, {
+        local actor, scope, err = saved.resolver.resolve({
             subject_id = saved.subject_id,
             authority_only = true,
             actor_meta = saved.actor_meta,
             authority_context = saved.authority_context,
         })
-        if not ok then return nil, authority_error(actor) end
-        if err then return nil, authority_error(err) end
-        if type(actor) ~= "userdata" or type(scope) ~= "userdata" then
+        if err then return nil, err end
+        if type(actor) ~= "userdata" or type(scope) ~= "userdata"
+            or getmetatable(actor) ~= saved.actor_type or getmetatable(scope) ~= saved.scope_type then
             return nil, errors.new({message = "Execution identity resolver must return a native actor and scope", kind = errors.INVALID, retryable = false})
         end
-        local valid, validation_err = pcall(function()
-            if actor:id() ~= saved.subject_id then
-                error("Execution identity resolver returns a different subject")
-            end
-            (scope :: security.Scope):policies()
-        end)
-        if not valid then
-            return nil, errors.new({message = "Invalid execution identity: " .. tostring(validation_err), kind = errors.INVALID, retryable = false})
+        if actor:id() ~= saved.subject_id then
+            return nil, errors.new({message = "Execution identity resolver returns a different subject",
+                kind = errors.INVALID, retryable = false})
         end
-        local evaluated, decision = pcall(function()
-            return (scope :: security.Scope):evaluate(actor, "funcs.call", registry_id)
-        end)
-        if not evaluated then return nil, authority_error(decision) end
+        local decision = (scope :: security.Scope):evaluate(actor, "funcs.call", registry_id)
         if decision ~= "allow" then
             return nil, errors.new({message = "Tool execution is not allowed: " .. registry_id,
                 kind = errors.PERMISSION_DENIED, retryable = false})
@@ -73,9 +56,7 @@ end
 function M.capture(resolver: any): any
     resolver = resolver or execution_identity_resolver
     if resolver == nil then return nil, nil end
-    local ok, authority, err = pcall(capture_authority, resolver)
-    if not ok then return nil, authority_error(authority) end
-    return authority, err
+    return capture_authority(resolver)
 end
 
 return M

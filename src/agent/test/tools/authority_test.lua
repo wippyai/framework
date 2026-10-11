@@ -1,5 +1,6 @@
 local test = require("test")
 local security = require("security")
+local funcs = require("funcs")
 local tool_caller = require("tool_caller")
 
 local function run_tests()
@@ -69,6 +70,41 @@ local function run_tests()
         end
 
         for _, strategy in ipairs({"sequential", "parallel"}) do
+            for _, stage in ipairs({"capture", "resolve"}) do
+                for _, spec in ipairs({
+                    {kind = errors.INVALID, retryable = false},
+                    {kind = errors.UNAVAILABLE, retryable = true},
+                    {kind = errors.TIMEOUT, retryable = false},
+                    {kind = errors.PERMISSION_DENIED, retryable = true},
+                    {kind = errors.INTERNAL, retryable = false},
+                    {kind = errors.CONFLICT, retryable = true},
+                    {kind = errors.CANCELED, retryable = false},
+                }) do
+                    test.it(strategy .. " preserves native " .. stage .. " error " .. spec.kind, function()
+                        local cause = errors.new({message = "provider read fails", kind = spec.kind,
+                            retryable = spec.retryable, details = {operation = stage, subject_id = actor:id()}})
+                        local provider_error = errors.wrap(cause, "authority provider")
+                        if stage == "capture" then
+                            resolver.capture = function() return nil, provider_error end
+                        else
+                            resolver.resolve = function() return nil, nil, provider_error end
+                        end
+                        local results = execute(tool_caller.new():set_strategy(strategy), 1)
+                        local actual = results["1"].error
+                        test.eq(dispatched, 0)
+                        test.is_nil(results["1"].result)
+                        test.not_nil(actual)
+                        test.eq(actual:kind(), provider_error:kind())
+                        test.eq(actual:retryable(), provider_error:retryable())
+                        local actual_details, expected_details = actual:details(), provider_error:details()
+                        test.not_nil(actual_details)
+                        for key, value in pairs(expected_details) do test.eq(actual_details[key], value) end
+                        for key, value in pairs(actual_details) do test.eq(value, expected_details[key]) end
+                        test.eq(actual:message(), provider_error:message())
+                        test.is_true(actual == provider_error, "native error identity and cause remain intact")
+                    end)
+                end
+            end
             test.it(strategy .. " resolves each call in a batch and every subsequent batch", function()
                 local caller = tool_caller.new():set_strategy(strategy)
                 execute(caller, 2)
@@ -108,11 +144,14 @@ local function run_tests()
                             return nil, nil, errors.new({message = "subject is inactive", kind = errors.PERMISSION_DENIED, retryable = false})
                         end
                     elseif mode == "exception" then
-                        resolver.resolve = function() error("authority provider is offline") end
+                        resolver.resolve = function()
+                            local _, err = funcs.call("app:authority_provider_failure")
+                            return nil, nil, err
+                        end
                     elseif mode == "capture_error" then
-                        resolver.capture = function() return nil, "authority provider is offline" end
+                        resolver.capture = function() return nil, errors.new({message = "authority provider is offline", kind = errors.UNAVAILABLE, retryable = true}) end
                     elseif mode == "capture_exception" then
-                        resolver.capture = function() error("authority provider is offline") end
+                        resolver.capture = function() return funcs.call("app:authority_provider_failure") end
                     elseif mode == "invalid_contract" then
                         resolver.resolve = nil
                     elseif mode == "invalid_context" then
@@ -130,7 +169,7 @@ local function run_tests()
             test.it(strategy .. " retries live resolution without reusing a successful scope", function()
                 local caller = tool_caller.new():set_strategy(strategy)
                 execute(caller, 1)
-                resolver.resolve = function() return nil, nil, "authority provider is offline" end
+                resolver.resolve = function() return nil, nil, errors.new({message = "authority provider is offline", kind = errors.UNAVAILABLE, retryable = true}) end
                 local denied = execute(caller, 1)
                 test.is_true(errors.is(denied["1"].error, errors.UNAVAILABLE))
                 resolver.resolve = function() return actor, scope end
@@ -141,4 +180,9 @@ local function run_tests()
     end)
 end
 
-return {run_tests = test.run_cases(run_tests)}
+return {
+    run_tests = test.run_cases(run_tests),
+    provider_failure = function()
+        error(errors.new({message = "authority provider is offline", kind = errors.UNAVAILABLE, retryable = true}))
+    end,
+}

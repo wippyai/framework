@@ -400,7 +400,7 @@ entries:
       type: test
       suite: live_authority
     source: file://tools/authority_test.lua
-    modules: [security]
+    modules: [security, funcs]
     imports:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
@@ -408,3 +408,12 @@ entries:
       actor: {id: authority.contract}
       policies: [app.agent_authority:test_policy]
     method: run_tests
+
+  - name: authority_provider_failure
+    kind: function.lua
+    source: file://tools/authority_test.lua
+    modules: [security, funcs]
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+    method: provider_failure
