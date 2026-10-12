@@ -211,6 +211,15 @@ entries:
     # the app HTML with the fragment proxy + <base> injected (empty/document),
     # and asset proxying (everything else). Delivery-mode wrapper — render.lua
     # is untouched. Auth-agnostic: the injected proxy handshakes the host for config.
+    - name: fragment_bootstrap
+      kind: library.lua
+      meta:
+        comment: Safe iframe bootstrap for fragment-mode views
+        description: Builds and serves the Wippy Web Host fragment bootstrap
+      source: file://fragment_bootstrap.lua
+      modules:
+        - json
+
     - name: fragment_gateway
       kind: function.lua
       meta:
@@ -219,6 +228,7 @@ entries:
       source: file://fragment_gateway.lua
       imports:
         page_registry: wippy.views:page_registry
+        fragment_bootstrap: wippy.views.api:fragment_bootstrap
       method: handler
       modules:
         - http

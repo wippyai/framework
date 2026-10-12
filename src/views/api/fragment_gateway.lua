@@ -29,8 +29,7 @@ local http_client = require("http_client")
 local registry = require("registry")
 local json = require("json")
 local page_registry = require("page_registry")
-
-local REFRAMED_STUB = "<!doctype html><title>Web Fragments: reframed</title>"
+local fragment_bootstrap = require("fragment_bootstrap")
 
 -- fe_facade_url (Web Host bundle origin: :5173 dev / CDN prod). Read the facade
 -- requirement the same way the facade's own config handler does.
@@ -62,7 +61,7 @@ local function fetch_host_imports(fbase: string): {[string]: any}
         return {}
     end
     local decoded = json.decode(resp.body)
-    if type(decoded) == "table" and type(decoded.imports) == "table" then
+    if type(decoded) == "table" and fragment_bootstrap.has_host_imports(decoded.imports) then
         local imports = decoded.imports :: {[string]: any}
         _imports_cache[fbase] = imports
         return imports
@@ -91,23 +90,7 @@ end
 -- __WIPPY_APP_API__ before the app runs) live HERE, not in the streamed content.
 -- The host import map ({fe_facade_url}/import-map.json) already carries the
 -- shared vendors + @wippy-fe/* the apps externalize.
-local function build_stub(fbase: string): string
-    local imports = fetch_host_imports(fbase)
-    local map = json.encode({ imports = imports }) or '{"imports":{}}'
-    -- The canonical injector's `scripts` array is [loading.js, proxy.js, chat.js].
-    -- For a fragment the applicable subset is loading.js + the reframed-realm proxy:
-    --   * loading.js (classic) registers <wippy-loading>/<wippy-error> (used by the
-    --     app's initial shell + error states);
-    --   * proxy-fragment.js (module) is our realm adapter, replacing srcdoc proxy.js.
-    -- chat.js (registers <wippy-chat>) is DELIBERATELY omitted: app-main uses the
-    -- HOST's chat (right panel) via a host command, not an embedded <wippy-chat>, and
-    -- eagerly loading the heavy chat bundle into every realm destabilises boot. A
-    -- fragment that embeds chat directly would opt in per-page (future meta flag).
-    return REFRAMED_STUB
-        .. '<script type="importmap">' .. map .. '</script>'
-        .. '<script src="' .. fbase .. '/@wippy-fe/loading.js"></script>'
-        .. '<script type="module" src="' .. fbase .. '/@wippy-fe/proxy-fragment.js"></script>'
-end
+
 
 -- Fragment document (Sec-Fetch-Dest: empty) — streamed into the <web-fragment>
 -- shadow by reframeWithFetch; scripts run via writable-dom in the realm. Apply
@@ -166,11 +149,8 @@ local function handler()
     -- fbase + the deploy-stable host import map, so it is safe to cache in a
     -- SHARED cache.
     if sfd == "iframe" then
-        res:set_header("Vary", "sec-fetch-dest")
-        res:set_header("Cache-Control", "public, max-age=300")
-        res:set_content_type("text/html")
-        res:set_status(http.STATUS.OK)
-        res:write(build_stub(facade_base()))
+        local fbase = facade_base()
+        fragment_bootstrap.respond_iframe(res, fbase, fetch_host_imports(fbase))
         return
     end
 
