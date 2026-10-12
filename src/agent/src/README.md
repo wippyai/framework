@@ -394,9 +394,9 @@ control handlers and apply proposals only after the round's outcomes settle.
 persistence. Returned `context` without `_control` is not a host configuration
 change. Legacy bindings do not acquire behavior controls implicitly.
 
-Hosts collect these proposals from the lifecycle summary (`controls`) and from
-`caller:get_wrapper_controls()`. `wippy/session` does not consume them yet. A
-host that persists proposals with the round and replays them after recovery
+Hosts explicitly collect these proposals from the lifecycle summary (`controls`)
+and from `caller:get_wrapper_controls()`. A host that persists proposals with
+the round and replays them after recovery
 gives at-least-once delivery, not exactly-once external writes; providers must
 make writes and lifecycle hooks idempotent using stable host refs.
 `memory.compact = true` requests checkpointing without a token threshold, but
