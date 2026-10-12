@@ -1,5 +1,6 @@
 -- Test runner with real-time per-case TUI display
 local io = require("io")
+local env = require("env")
 local registry = require("registry")
 local time = require("time")
 local channel = require("channel")
@@ -25,15 +26,16 @@ type SuiteGroup = {
 }
 
 -- Wait for a value on a channel with timeout
-local function wait_for(ch: any, timeout: any): any
-    local result = channel.select {
-        ch:case_receive(),
-        time.after(timeout):case_receive(),
-    }
+local function wait_for(ch: any, timeout: any, deadline: any?): (any, boolean)
+    if not timeout and not deadline then return ch:receive(), false end
+    local cases = { ch:case_receive() }
+    if timeout then table.insert(cases, time.after(timeout):case_receive()) end
+    if deadline then table.insert(cases, deadline:case_receive()) end
+    local result = channel.select(cases)
     if result.channel == ch then
-        return result.value
+        return result.value, false
     end
-    return nil
+    return nil, result.channel == deadline
 end
 
 -- Record a failure into both per-test and global failure lists
@@ -59,6 +61,7 @@ end
 -- Main test runner logic
 local function run_tests(): number
     local args: {string}? = io.args()
+    local require_cases = env.get("WIPPY_TEST_REQUIRE_CASES") == "1"
 
     display.begin()
 
@@ -71,7 +74,7 @@ local function run_tests(): number
 
     if not raw_entries or #raw_entries == 0 then
         display.info("No tests found")
-        return 0
+        return require_cases and 1 or 0
     end
 
     local entries: {discovery.TestEntry} = raw_entries
@@ -81,7 +84,7 @@ local function run_tests(): number
         entries = discovery.filter_tests(entries, args)
         if #entries == 0 then
             display.info("No tests match filter: " .. table.concat(args, ", "))
-            return 0
+            return require_cases and 1 or 0
         end
         display.info("Filter: " .. table.concat(args, ", "))
     end
@@ -155,11 +158,15 @@ local function run_tests(): number
                     end
 
                     if msg_type == "test:plan" then
-                        local count = 0
-                        for _, planned_suite in ipairs(data.suites or {}) do
-                            count = count + #(planned_suite.tests or {})
+                        if declared_cases[ref_id] ~= nil then
+                            declared_cases[ref_id] = -1
+                        else
+                            local count = 0
+                            for _, planned_suite in ipairs(data.suites or {}) do
+                                count = count + #(planned_suite.tests or {})
+                            end
+                            declared_cases[ref_id] = count
                         end
-                        declared_cases[ref_id] = count
 
                     elseif msg_type == "test:case:pass" then
                         local cs = case_stats[ref_id]
@@ -205,6 +212,18 @@ local function run_tests(): number
     -- Execute each suite sequentially
     for _, suite in ipairs(ordered) do
         local suite_start = time.now()
+        local suite_timeout: any = nil
+        for _, entry in ipairs(suite.tests) do
+            local configured = ((entry :: any).meta or {}).suite_timeout
+            if configured then
+                if suite_timeout and configured ~= suite_timeout then
+                    error("conflicting suite_timeout for " .. suite.name)
+                end
+                suite_timeout = configured
+            end
+        end
+        local suite_deadline: any = suite_timeout and time.after(suite_timeout) or nil
+        local suite_expired = false
 
         for i, entry in ipairs(suite.tests) do
             local entry_id = tostring((entry :: any).id)
@@ -212,111 +231,128 @@ local function run_tests(): number
             display.test_progress(test_name, suite.name, i, #suite.tests, completed_tests, total_tests)
 
             local entry_meta: any = (entry :: any).meta or {}
-            local test_timeout = entry_meta.timeout or "30s"
+            local test_timeout = entry_meta.timeout
 
-            entry_status[entry_id] = "running"
-            current_running_entry_id = entry_id
-            completion_channels[entry_id] = channel.new(1)
-            control_channels[entry_id] = channel.new(2)
+            -- The suite budget may expire while an earlier entry tears down.
+            if suite_deadline and not suite_expired then
+                local pending = channel.select { suite_deadline:case_receive(), default = true }
+                suite_expired = pending.channel == suite_deadline
+            end
 
-            local entry_pid: string?, spawn_err: any = process.spawn("wippy.test:runner_entry", "wippy.test:runner_host", {
-                parent_pid = runner_pid, topic = "test:update", entry_id = entry_id,
-            })
-
-            if spawn_err or not entry_pid then
-                entry_status[entry_id] = "completed"
-                current_running_entry_id = nil
-                local error_msg = "test process failed to start: " .. tostring(spawn_err or "no PID")
-                record_failure(all_failures, case_stats, entry_id, suite.name, test_name, error_msg)
-                display.case_fail(suite.name, test_name, error_msg, 0)
+            if suite_expired then
+                record_failure(all_failures, case_stats, entry_id, suite.name, test_name, "suite deadline expired before test started")
+                display.case_fail(suite.name, test_name, "suite deadline expired before test started", 0)
             else
-                local response = wait_for(control_channels[entry_id], test_timeout)
-                local control: any = response and response:payload():data() or nil
-                local protocol_error: string? = nil
-                if control and (response:from() ~= entry_pid
-                    or control.ref_id ~= entry_id or control.kind ~= "result") then
-                    protocol_error = "test result attributed to " .. tostring(response:from())
-                        .. ", expected " .. entry_pid
-                    control = nil
-                end
+                entry_status[entry_id] = "running"
+                current_running_entry_id = entry_id
+                completion_channels[entry_id] = channel.new(1)
+                control_channels[entry_id] = channel.new(2)
 
-                if not control then
-                    -- Timed out! Mark status first so any arriving events are immediately dropped
-                    entry_status[entry_id] = "timed_out"
+                local entry_pid: string?, spawn_err: any = process.spawn("wippy.test:runner_entry", "wippy.test:runner_host", {
+                    parent_pid = runner_pid, topic = "test:update", entry_id = entry_id,
+                })
+
+                if spawn_err or not entry_pid then
+                    entry_status[entry_id] = "completed"
                     current_running_entry_id = nil
-
-                    local sent, send_err = process.send(entry_pid, "runner:cancel", true)
-                    local cancel_error: string? = nil
-                    if not sent then
-                        cancel_error = "test cancellation request failed: " .. tostring(send_err)
-                    else
-                        local ack = wait_for(control_channels[entry_id], "500ms")
-                        local ack_data: any = ack and ack:payload():data() or nil
-                        if not ack or ack:from() ~= entry_pid or not ack_data
-                            or ack_data.ref_id ~= entry_id or ack_data.kind ~= "canceled" then
-                            cancel_error = "test cancellation was not acknowledged"
-                        elseif not ack_data.cancel_ok then
-                            cancel_error = "test cancellation failed: " .. tostring(ack_data.cancel_error)
-                        end
-                    end
-                    local terminated, terminate_err = process.terminate(entry_pid)
-
-                    local lifecycle_error = not terminated and
-                        ("test process termination failed: " .. tostring(terminate_err))
-                        or cancel_error or protocol_error
-                    local problem = verdict.check({
-                        entry_id = entry_id,
-                        declared = declared_cases[entry_id],
-                        observed = case_stats[entry_id] and ((case_stats[entry_id].passed or 0) + (case_stats[entry_id].failed or 0) + (case_stats[entry_id].skipped or 0)) or 0,
-                        completed = nil,
-                        timed_out = true,
-                        lifecycle_error = lifecycle_error,
-                    })
-                    local error_msg = problem and problem.message or "test timed out"
-
+                    local error_msg = "test process failed to start: " .. tostring(spawn_err or "no PID")
                     record_failure(all_failures, case_stats, entry_id, suite.name, test_name, error_msg)
                     display.case_fail(suite.name, test_name, error_msg, 0)
                 else
-                    -- Function completed; a missing completion is itself a failure.
-                    local completion: any = wait_for(completion_channels[entry_id], "1s")
-                    entry_status[entry_id] = "completed"
-                    current_running_entry_id = nil
+                    local response, deadline_expired = wait_for(control_channels[entry_id], test_timeout, suite_deadline)
+                    suite_expired = deadline_expired
+                    local control: any = response and response:payload():data() or nil
+                    local protocol_error: string? = nil
+                    if control and (response:from() ~= entry_pid
+                        or control.ref_id ~= entry_id or control.kind ~= "result") then
+                        protocol_error = "test result attributed to " .. tostring(response:from())
+                            .. ", expected " .. entry_pid
+                        control = nil
+                    end
 
-                    local cs = case_stats[entry_id]
-                    local case_count = cs and ((cs.passed or 0) + (cs.failed or 0) + (cs.skipped or 0)) or 0
-                    local value: any = control.value
-                    local result_err: any = control.result_error
-                    local problem = verdict.check({
-                        entry_id = entry_id,
-                        declared = declared_cases[entry_id],
-                        observed = case_count,
-                        cases = cs,
-                        completed = completion and completion.data or nil,
-                        result_error = result_err,
-                        returned_false = value == false or (declared_cases[entry_id] == nil
-                            and type(value) == "table" and value.status == "error"),
-                    })
+                    if not control then
+                        -- Timed out! Mark status first so any arriving events are immediately dropped
+                        entry_status[entry_id] = "timed_out"
+                        current_running_entry_id = nil
 
-                    if problem then
-                        record_failure(all_failures, case_stats, entry_id, suite.name, test_name, problem.message)
-                        display.case_fail(suite.name, test_name, problem.message, 0)
-                    elseif declared_cases[entry_id] == nil then
-                        -- A simple test has no BDD plan or per-case events.
-                        if case_count == 0 then
-                            local pcs = case_stats[entry_id]
-                            if not pcs then
-                                pcs = { passed = 0, failed = 0, skipped = 0 }
-                                case_stats[entry_id] = pcs
+                        local sent, send_err = process.send(entry_pid, "runner:cancel", true)
+                        local cancel_error: string? = nil
+                        if not sent then
+                            cancel_error = "test cancellation request failed: " .. tostring(send_err)
+                        else
+                            local ack_channel: any = control_channels[entry_id]
+                            local ack = ack_channel:receive()
+                            local ack_data: any = ack and ack:payload():data() or nil
+                            if not ack or ack:from() ~= entry_pid or not ack_data
+                                or ack_data.ref_id ~= entry_id
+                                or (ack_data.kind ~= "canceled" and ack_data.kind ~= "result") then
+                                cancel_error = "test cancellation was not acknowledged"
+                            elseif ack_data.kind == "canceled" and not ack_data.cancel_ok then
+                                cancel_error = "test cancellation failed: " .. tostring(ack_data.cancel_error)
                             end
-                            pcs.passed = pcs.passed + 1
-                            display.case_pass(suite.name, test_name, 0)
+                        end
+                        local terminated, terminate_err = process.terminate(entry_pid)
+
+                        local lifecycle_error = not terminated and
+                            ("test process termination failed: " .. tostring(terminate_err))
+                            or cancel_error or protocol_error
+                        local problem = verdict.check({
+                            require_cases = require_cases,
+                            entry_id = entry_id,
+                            declared = declared_cases[entry_id],
+                            observed = case_stats[entry_id] and ((case_stats[entry_id].passed or 0) + (case_stats[entry_id].failed or 0) + (case_stats[entry_id].skipped or 0)) or 0,
+                            completed = nil,
+                            timed_out = true,
+                            lifecycle_error = lifecycle_error,
+                        })
+                        local error_msg = problem and problem.message or "test timed out"
+
+                        record_failure(all_failures, case_stats, entry_id, suite.name, test_name, error_msg)
+                        display.case_fail(suite.name, test_name, error_msg, 0)
+                        if cancel_error then error(cancel_error) end
+                    else
+                        -- Function completed; a missing completion is itself a failure.
+                        local completion: any = wait_for(completion_channels[entry_id], "1s")
+                        entry_status[entry_id] = "completed"
+                        current_running_entry_id = nil
+
+                        local cs = case_stats[entry_id]
+                        local case_count = cs and ((cs.passed or 0) + (cs.failed or 0) + (cs.skipped or 0)) or 0
+                        local value: any = control.value
+                        local result_err: any = control.result_error
+                        local problem = verdict.check({
+                            require_cases = require_cases,
+                            entry_id = entry_id,
+                            declared = declared_cases[entry_id],
+                            observed = case_count,
+                            cases = cs,
+                            completed = completion and completion.data or nil,
+                            result_error = result_err,
+                            returned_false = value == false or (type(value) == "table" and value.status == "error"
+                                and not (cs and cs.failed > 0)),
+                        })
+
+                        if problem then
+                            record_failure(all_failures, case_stats, entry_id, suite.name, test_name, problem.message)
+                            display.case_fail(suite.name, test_name, problem.message, 0)
+                        elseif declared_cases[entry_id] == nil then
+                            -- A simple test has no BDD plan or per-case events.
+                            if case_count == 0 then
+                                local pcs = case_stats[entry_id]
+                                if not pcs then
+                                    pcs = { passed = 0, failed = 0, skipped = 0 }
+                                    case_stats[entry_id] = pcs
+                                end
+                                pcs.passed = pcs.passed + 1
+                                display.case_pass(suite.name, test_name, 0)
+                            end
                         end
                     end
                 end
-            end
 
-            completion_channels[entry_id] = nil
-            control_channels[entry_id] = nil
+                completion_channels[entry_id] = nil
+                control_channels[entry_id] = nil
+            end
             completed_tests = completed_tests + 1
         end
 

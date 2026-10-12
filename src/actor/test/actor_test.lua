@@ -599,6 +599,69 @@ local function define_tests()
         end)
     end)
 
+    test.describe("select case maintenance", function()
+        local function run_with_select_counts(responses: {any}, init: (any) -> ()): any
+            local counts: any = { tables = {} }
+            local original_channel = _G.channel
+            local select_count = 0
+            _G.channel = {
+                new = function() return mock_channel() end,
+                select = function(cases)
+                    select_count = select_count + 1
+                    counts[select_count] = #cases
+                    counts.tables[select_count] = cases
+                    return responses[select_count] or { ok = false }
+                end
+            }
+            actor._process = mock_process(mock_channel(), mock_channel())
+            local ok, err = pcall(function()
+                actor.new({}, { __init = function(state) init(state) end }).run()
+            end)
+            _G.channel = original_channel
+            if not ok then error(err) end
+            return counts
+        end
+
+        test.it("adds and removes select cases as channels register and unregister", function()
+            local first, second = mock_channel(), mock_channel()
+            local counts = run_with_select_counts({}, function(state)
+                state.register_channel(first, function() end)
+                state.register_channel(second, function() end)
+                state.unregister_channel(first)
+            end)
+            test.eq(counts[1], 4)
+        end)
+
+        test.it("removes a closed registered channel from the next select", function()
+            local chan = mock_channel()
+            local counts = run_with_select_counts({
+                { ok = false, channel = chan },
+            }, function(state)
+                state.register_channel(chan, function() end)
+            end)
+            test.eq(counts[1], 4)
+            test.eq(counts[2], 3)
+            test.is_true(rawequal(counts.tables[1], counts.tables[2]))
+        end)
+
+        test.it("selects a channel registered after a caught error", function()
+            local chan = mock_channel()
+            local counts = run_with_select_counts({}, function(state)
+                pcall(error, "caught")
+                state.register_channel(chan, function() end)
+            end)
+            test.eq(counts[1], 4)
+        end)
+
+        test.it("does not report an unknown channel as unregistered", function()
+            local result
+            run_with_select_counts({}, function(state)
+                result = state.unregister_channel(mock_channel())
+            end)
+            test.is_false(result)
+        end)
+    end)
+
     test.describe("async execution", function()
         test.it("state.async passes function to coroutine.spawn", function()
             local spawn_called = false

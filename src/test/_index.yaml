@@ -14,6 +14,14 @@ entries:
     component: wippy/terminal
     version: "*"
 
+  - name: env_storage
+    kind: env.storage.os
+
+  - name: require_cases
+    kind: env.variable
+    variable: WIPPY_TEST_REQUIRE_CASES
+    storage: wippy.test:env_storage
+
   # wippy.test:terminal
   - name: terminal
     kind: library.lua
@@ -95,7 +103,6 @@ entries:
     modules:
       - funcs
       - channel
-      - time
 
   # wippy.test:runner
   - name: runner
@@ -115,6 +122,7 @@ entries:
     method: main
     modules:
       - io
+      - env
       - time
       - channel
     imports:
@@ -133,5 +141,6 @@ entries:
       comment: Self-test for the test framework
     source: file://self_test.lua
     method: run
+    modules: [registry]
     imports:
       test: wippy.test:test

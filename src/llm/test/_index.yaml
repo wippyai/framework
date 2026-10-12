@@ -123,6 +123,7 @@ entries:
       - security
     imports:
       llm: wippy.llm:llm
+      decisions_handler: wippy.llm.openai:evaluate
       test: wippy.test:test
     method: run_tests
 
@@ -936,6 +937,52 @@ entries:
       - hash
     imports:
       structured_output_handler: wippy.llm.openai:structured_output
+      test: wippy.test:test
+    method: run_tests
+
+  - name: openai_decisions_mapper_test
+    kind: function.lua
+    meta:
+      name: OpenAI Decisions Mapper Unit Tests
+      type: test
+      group: LLM / Drivers / OpenAI
+      tags: [unit-test, mapper, evaluate]
+    source: file://openai/decisions_mapper_test.lua
+    modules:
+      - json
+    imports:
+      decisions_mapper: wippy.llm.openai:decisions_mapper
+      output: wippy.llm:output
+      test: wippy.test:test
+    method: run_tests
+
+  - name: openai_evaluate_test
+    kind: function.lua
+    meta:
+      name: OpenAI Decisions Evaluation Handler Unit Tests
+      type: test
+      group: LLM / Drivers / OpenAI
+      tags: [unit-test, evaluate, contract]
+    source: file://openai/evaluate_test.lua
+    modules:
+      - json
+    imports:
+      evaluate_handler: wippy.llm.openai:evaluate
+      test: wippy.test:test
+    method: run_tests
+
+  - name: openai_decisions_integration_test
+    kind: function.lua
+    meta:
+      name: OpenAI Decisions Contract Integration Tests
+      type: test
+      group: LLM / Drivers / OpenAI
+      tags: [integration-test, evaluate, contract]
+    source: file://openai/decisions_integration_test.lua
+    modules:
+      - env
+      - contract
+    imports:
       test: wippy.test:test
     method: run_tests
 

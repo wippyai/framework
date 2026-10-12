@@ -9,7 +9,7 @@ local test = require("test")
 
 local function define_tests()
     -- Toggle to enable/disable real API integration tests
-    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS")
+    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS") == "true"
 
     describe("OpenAI Integration Tests", function()
         local actual_api_key = nil
