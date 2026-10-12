@@ -52,3 +52,8 @@ install:
 		echo "Installing $$mod..."; \
 		(cd src/$$mod/test && wippy install 2>&1 | tail -1); \
 	done
+
+.PHONY: test-runner-go
+test-runner-go:
+	go -C test-harness/go test -race ./...
+	go -C test-harness/go vet ./...

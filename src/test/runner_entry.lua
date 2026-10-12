@@ -2,7 +2,6 @@
 -- before the function can emit any test:update message (or hang without one).
 local funcs = require("funcs")
 local channel = require("channel")
-local time = require("time")
 
 local function run(args)
     local parent_pid: string = tostring(args.parent_pid)
@@ -28,15 +27,12 @@ local function run(args)
     }
     if result.channel == cancel_inbox then
         local canceled, cancel_err = cmd:cancel()
-        local settled = channel.select {
-            cmd:response():case_receive(),
-            time.after("400ms"):case_receive(),
-        }
+        -- The same future completes only after the call and its frame teardown.
+        if canceled then cmd:response():receive() end
         process.send(parent_pid, "runner:control", {
             kind = "canceled", ref_id = entry_id,
-            cancel_ok = canceled == true and settled.channel == cmd:response(),
-            cancel_error = cancel_err and tostring(cancel_err) or
-                (settled.channel ~= cmd:response() and "command did not settle" or nil),
+            cancel_ok = canceled == true,
+            cancel_error = cancel_err and tostring(cancel_err) or nil,
         })
         -- Remain alive until the runner explicitly terminates its owned process.
         process.listen("runner:stop"):receive()
