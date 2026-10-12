@@ -11,6 +11,7 @@ type ClaudeConfig = {
     beta_features: {string},
     timeout: number,
     retry: transport.Retry?,
+    deadline_at: number?,
     headers: {[string]: string}?
 }
 
@@ -44,6 +45,7 @@ local function resolve_config()
         beta_features = ctx_all.beta_features or {},
         timeout = tonumber(resolve_string("timeout", "ANTHROPIC_TIMEOUT")) or 600,
         retry = transport.normalize_retry(ctx_all.retry),
+        deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
     }
     return config
@@ -171,7 +173,7 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     end
 
     local retry = transport.request_retry(options.retry, config.retry)
-    local response, request_error = transport.send(send_once, parse_error_response, retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
         return nil, request_error
     end

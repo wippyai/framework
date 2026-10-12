@@ -9,6 +9,7 @@ type TypeSafeConfig = {
     base_url: string,
     timeout: number,
     retry: transport.Retry?,
+    deadline_at: number?,
     headers: any
 }
 
@@ -35,6 +36,7 @@ local function resolve_config(): TypeSafeConfig
         base_url = resolve_string("base_url", "TYPESAFE_BASE_URL") or "https://api.typesafe.ai/v1",
         timeout = tonumber(resolve_string("timeout", "TYPESAFE_TIMEOUT")) or 60,
         retry = transport.normalize_retry(ctx_all.retry),
+        deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
     }
     return config
@@ -186,7 +188,7 @@ function typesafe_client.request(endpoint_path, payload, options)
     end
 
     local retry = transport.request_retry(options.retry, config.retry)
-    local response, request_error = transport.send(send_once, parse_error_response, retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
         return nil, request_error
     end

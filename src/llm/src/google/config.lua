@@ -123,6 +123,10 @@ function config.get_retry(): transport.Retry?
     return transport.normalize_retry(safe_ctx_get("retry"))
 end
 
+function config.get_deadline_at(): number?
+    return tonumber(safe_ctx_get("deadline_at"))
+end
+
 function config.get_generative_ai_base_url()
     return get_value("base_url", "GEN_AI_API_BASE_URL")
 end

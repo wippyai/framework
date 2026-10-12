@@ -1288,6 +1288,106 @@ local function define_tests()
                 agent._llm = nil
             end)
 
+            it("should send the route the host pinned and hand it back", function()
+                local captured_options = nil
+                local pin = { model = "backup", provider_id = "p.b", provider_model = "b-1" }
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "Pinned response",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop",
+                            metadata = { route = { model = "backup", provider_id = "p.b", provider_model = "b-1" } }
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("Continue the turn")
+                local response = test_agent:step(prompt_builder, { route = pin })
+
+                test.eq((captured_options :: any).route, pin)
+                test.eq((response :: any).route_pin, pin)
+
+                agent._llm = nil
+            end)
+
+            it("should not pin a route while the first route answers", function()
+                local captured_options = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "Primary response",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop",
+                            metadata = { route = { model = "primary", provider_id = "p.a", provider_model = "a-1" } }
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("First step")
+                local response = test_agent:step(prompt_builder, {})
+
+                test.is_nil((captured_options :: any).route)
+                test.is_nil((response :: any).route_pin)
+
+                agent._llm = nil
+            end)
+
+            it("should hand the host a pin once the model fell back", function()
+                agent._llm = {
+                    generate = function(messages, options)
+                        return {
+                            result = "Fallback response",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop",
+                            metadata = {
+                                route = { model = "backup", provider_id = "p.b", provider_model = "b-1" },
+                                fallbacks = { { model = "primary", provider_id = "p.a", error_type = "server_error" } }
+                            }
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("First step")
+                local response = test_agent:step(prompt_builder, {})
+
+                local pin = (response :: any).route_pin
+                test.eq(pin.model, "backup")
+                test.eq(pin.provider_id, "p.b")
+                test.eq(pin.provider_model, "b-1")
+
+                agent._llm = nil
+            end)
+
+            it("should hand back no pin when the model reports no route", function()
+                agent._llm = {
+                    generate = function(messages, options)
+                        return {
+                            result = "Direct response",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+
+                local test_agent = agent.new(basic_compiled_spec)
+                local prompt_builder = mock_prompt.new()
+                prompt_builder:add_user("First step")
+                local response = test_agent:step(prompt_builder, {})
+
+                test.is_nil((response :: any).route_pin)
+
+                agent._llm = nil
+            end)
+
             it("should forward the tool choice fallback the caller permits", function()
                 local captured_options = nil
                 agent._llm = {

@@ -1,4 +1,5 @@
 local registry = require("registry")
+local fallback = require("fallback")
 
 -- Main module
 local models = {}
@@ -170,6 +171,13 @@ function models._build_model_card(entry)
         end
     end
 
+    local fallback_models: {string}? = nil
+    local fallback_on: {string}? = nil
+    if type(entry.data) == "table" then
+        fallback_models = fallback.string_list(entry.data.fallback)
+        fallback_on = fallback.string_list(entry.data.fallback_on)
+    end
+
     -- Build model card from registry entry structure
     local model_card = {
         id = entry.id or "",
@@ -183,7 +191,9 @@ function models._build_model_card(entry)
         output_tokens = entry.data and entry.data.output_tokens or 0,
         pricing = entry.data and entry.data.pricing or {},
         providers = entry.data and entry.data.providers or {},
-        dimensions = dimensions
+        dimensions = dimensions,
+        fallback = fallback_models,
+        fallback_on = fallback_on
     }
 
     return model_card

@@ -217,6 +217,7 @@ local function handle_stream_response(response, http_options)
     local finish_reason: string? = nil
     local usage_metadata: any = nil
     local response_metadata: table = {}
+    local deferred: any = nil
 
     local callbacks = {
         on_content = function(chunk: string)
@@ -240,7 +241,7 @@ local function handle_stream_response(response, http_options)
         end,
 
         on_error = function(error_info: any)
-            streamer:send_error("server_error", tostring(error_info.message), nil)
+            deferred = output.send_or_defer_error(streamer, "server_error", tostring(error_info.message))
         end,
 
         on_done = function(result: StreamResult)
@@ -259,7 +260,10 @@ local function handle_stream_response(response, http_options)
     if stream_err then
         return nil, {
             status_code = 500,
-            message = "Stream processing failed: " .. tostring(stream_err)
+            message = "Stream processing failed: " .. tostring(stream_err),
+            stream_started = streamer.sent_any,
+            deferred_error_type = deferred and deferred.type,
+            deferred_error_message = deferred and deferred.message
         }
     end
 
@@ -287,7 +291,7 @@ local function handle_stream_response(response, http_options)
     }
 end
 
-function client.request(method, url, http_options, retry: transport.Retry?)
+function client.request(method, url, http_options, retry: transport.Retry?, deadline_at: number?)
     http_options.headers["Accept"] = "application/json"
 
     if http_options.stream then
@@ -304,8 +308,12 @@ function client.request(method, url, http_options, retry: transport.Retry?)
         return transport.dispatch(client._http_client, method, url, http_options)
     end
 
-    local response, request_error = transport.send(send_once, parse_error_response, retry)
+    local response, request_error = transport.send(send_once, parse_error_response, retry, deadline_at)
     if not response then
+        if http_options.stream and request_error ~= nil then
+            local failure: any = request_error
+            failure.stream_started = false
+        end
         return nil, request_error
     end
 

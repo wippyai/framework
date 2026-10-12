@@ -418,6 +418,24 @@ local function has_tools_with_schemas(tools: any): boolean
     return false
 end
 
+local function route_pin(current: any, metadata: any): any?
+    if current ~= nil then
+        return current
+    end
+    if type(metadata) ~= "table" or type(metadata.route) ~= "table" then
+        return nil
+    end
+    local fallbacks = metadata.fallbacks
+    if type(fallbacks) ~= "table" or #fallbacks == 0 then
+        return nil
+    end
+    return {
+        model = metadata.route.model,
+        provider_id = metadata.route.provider_id,
+        provider_model = metadata.route.provider_model
+    }
+end
+
 function agent.new(compiled_spec: any): (any, string?)
     if not compiled_spec then
         return nil, "Compiled spec is required"
@@ -513,6 +531,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.tool_choice_fallback = runtime_options.tool_call_fallback
     end
 
+    if runtime_options.route ~= nil then
+        options.route = runtime_options.route
+    end
+
     -- Get ongoing conversation messages (no clone needed)
     local conversation_messages = prompt_builder:get_messages()
     local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
@@ -586,7 +608,8 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         result = result.content or result.result,
         tokens = result.tokens,
         finish_reason = result.finish_reason,
-        metadata = result.metadata
+        metadata = result.metadata,
+        route_pin = route_pin(runtime_options.route, result.metadata)
     }
 
     if output.detect_truncation(result) then
