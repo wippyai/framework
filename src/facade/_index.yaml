@@ -39,7 +39,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.62
+    default: https://web-host.wippy.ai/webcomponents-1.0.63
 
   - name: host_policy_mode
     kind: ns.requirement
@@ -120,6 +120,15 @@ entries:
       - entry: wippy.facade:app_icon
         path: .default
     default: "wippy:logo"
+
+  - name: iconify
+    kind: ns.requirement
+    meta:
+      description: Iconify provider configuration as JSON; an empty object keeps the Host defaults
+    targets:
+      - entry: wippy.facade:iconify
+        path: .default
+    default: "{}"
 
   # Feature flags
   - name: show_admin
@@ -436,6 +445,15 @@ entries:
       description: "TanStack Query default options as JSON: { default?, content?, lists? }. `default` applies to every query; `content` targets single-resource renders (page/artifact/session/entry/model/upload), `lists` targets navigation/index queries. Each is a JSON-safe subset of query options (refetchOnWindowFocus, refetchOnReconnect, refetchOnMount, staleTime, gcTime, retry, refetchInterval). Default behavior (no config) is refetchOnWindowFocus:false. e.g. {\"lists\":{\"refetchOnWindowFocus\":true}}"
     targets:
       - entry: wippy.facade:tanstack
+        path: .default
+    default: "{}"
+
+  - name: import_map
+    kind: ns.requirement
+    meta:
+      description: Import map overrides as JSON; empty or invalid JSON keeps the Web Host map
+    targets:
+      - entry: wippy.facade:import_map
         path: .default
     default: "{}"
 

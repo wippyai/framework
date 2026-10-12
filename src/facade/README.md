@@ -78,7 +78,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.62` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.63` | CDN base URL for the Web Host frontend bundle |
 | `host_policy_mode` | `auto` | `auto` detects official CDN versions and preserves legacy policy for unknown hosts; `legacy` mirrors policy into `hostConfig`; `shared` keeps root-only policy for custom modern hosts. Invalid values fail the config endpoint. |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
@@ -93,6 +93,7 @@ Passed to the Web Host as `theming.host.i18n.app` — controls branding in sideb
 | `app_title` | `Wippy` | `theming.host.i18n.app.title` | Short title shown in sidebar header |
 | `app_name` | `Wippy AI` | `theming.host.i18n.app.appName` | Full application name |
 | `app_icon` | `wippy:logo` | `theming.host.i18n.app.icon` | Iconify icon reference (e.g. `custom:logo`, `tabler:home`) |
+| `iconify` | `{}` | `iconify` | Iconify provider sources passed to the Host. Empty or invalid JSON keeps the Host defaults. Requires Web Host 1.0.63 or newer. |
 
 ### Host Config (hostConfig)
 
@@ -129,7 +130,10 @@ These accept JSON strings for complex configuration:
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
 | `axios_defaults` | `{}` | `axiosDefaults` | HTTP client defaults (e.g. `{"timeout":30000}`) — top-level, not under hostConfig |
 | `tanstack` | `{}` | `tanstack` | TanStack Query defaults — top-level, not under hostConfig. `{ default?, content?, lists? }`: `default` applies to all queries, `content` to single-resource renders, `lists` to navigation/index queries. Host default is `refetchOnWindowFocus:false` (e.g. `{"lists":{"refetchOnWindowFocus":true}}`) |
+| `import_map` | `{}` | `importMap` | Import-map overrides merged with the Web Host map before module loading. Empty or invalid JSON keeps the Host map unchanged. Requires Web Host 1.0.63 or newer. |
 | `extra_scripts` | `[]` | `extraScripts` | External `<script>` tags injected into `index.html` before the Web Host bundle loads. See [Extra scripts](#extra-scripts). |
+
+The Facade pins Web Host 1.0.63 by default. A custom older Host keeps its existing Iconify and import-map defaults; these new configuration options require Host 1.0.63 or newer. Import-map configuration accepts only `imports` and `scopes` with HTTP(S) or relative target URLs. An invalid map is rejected before module loading.
 
 ### Auth
 
@@ -391,10 +395,10 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.62",
-  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.62/schemas/wippy-context-2.1.json",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.63",
+  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.63/schemas/wippy-context-2.1.json",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.63/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {
