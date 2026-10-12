@@ -55,7 +55,7 @@ if scenario ~= "unbounded" then entry.meta.suite_timeout="2m"; table.insert(entr
 if scenario == "expired_during_teardown" then entry.meta.timeout="1ms" end
 if scenario == "conflicting" then entries[2].meta.suite_timeout="3m" end
 local modules={
- io={args=function() return nil end}, registry={find=function() return entries end},
+ io={args=function() return nil end}, env={get=function() return nil end}, registry={find=function() return entries end},
  time={now=function() return stamp end,sleep=function() end,MILLISECOND=1,after=function(duration) observe_timeout(duration); local ch=new_channel(); ch.duration=duration; return ch end},
  channel={new=new_channel,select=function(cases)
   if cases.default then

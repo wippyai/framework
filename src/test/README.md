@@ -99,7 +99,12 @@ by test code are not automatically terminated and remain the test's responsibili
 Simple tests may return `true` or `nil` for success; `false`, an execution error, or
 an error-status result fails the run. BDD entries must report their plan, every
 declared case, and completion with matching pass/fail/skip counts. An aborted hook,
-missing case, or inconsistent completion fails the run even if earlier cases passed.
+missing case, replaced plan, or inconsistent completion fails the run even if earlier cases passed.
+An error-status result also fails when a BDD entry reported otherwise successful cases.
+
+CI can set `WIPPY_TEST_REQUIRE_CASES=1` to reject empty discovery, filters with no matches,
+entries without a BDD plan, and skipped-only plans. Without that opt-in, simple tests,
+empty plans, and intentionally skipped suites retain their existing behavior.
 
 ### Deadlines and teardown
 

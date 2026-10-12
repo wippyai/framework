@@ -8,7 +8,7 @@ local function define_tests()
     -- Toggle to enable/disable real API integration tests
     -- A provider-specific opt-in exercises Jev without enabling unrelated
     -- integration suites that require other vendors' credentials.
-    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS") or env.get("TYPESAFE_INTEGRATION_TESTS")
+    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS") == "true" or env.get("TYPESAFE_INTEGRATION_TESTS") == "true"
 
     describe("TypeSafe Integration Tests", function()
         local actual_api_key = nil

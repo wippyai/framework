@@ -93,7 +93,7 @@ local function new_channel() return {receive=function() if current_id=="test:exp
  case_receive=function(self) return {channel=self,value=message("result")} end,close=function() end,send=function() end} end
 local entries={{id="test:expired",meta={timeout="1ms"}},{id="test:next",meta={}}}
 local modules={
- io={args=function() end},registry={find=function() return entries end},
+ io={args=function() end},env={get=function() return nil end},registry={find=function() return entries end},
  time={now=function() return stamp end,sleep=function() end,MILLISECOND=1,after=function(duration) local ch=new_channel();ch.duration=duration;return ch end},
  channel={new=new_channel,select=function(cases) if current_id=="test:expired" then for _,case in ipairs(cases) do if case.channel.duration then return case end end end;return cases[1] end},
  discovery={group_by_suite=function() return {suite=entries},{} end, sorted_keys=function() return {"suite"} end,short_name=function(id) return id end},

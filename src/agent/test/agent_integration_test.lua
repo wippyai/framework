@@ -10,11 +10,8 @@ local json = require("json")
 local env = require("env")
 
 local function define_integration_tests()
-    -- Skip all integration tests if not enabled
-    if not env.get("ENABLE_INTEGRATION_TESTS") then
-        print("WARNING: Integration tests skipped - set ENABLE_INTEGRATION_TESTS=true to run")
-        return
-    end
+    local enabled = env.get("ENABLE_INTEGRATION_TESTS") == "true"
+    local it = enabled and _G.it or _G.it_skip
 
     -- Test helpers for full chain testing
     local test_helpers = {}

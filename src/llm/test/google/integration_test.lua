@@ -5,7 +5,7 @@ local env = require("env")
 
 local function define_tests()
     -- Toggle to enable/disable real API integration tests
-    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS")
+    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS") == "true"
 
     describe("Google AI Integration Tests", function()
         local actual_gemini_api_key = nil

@@ -62,6 +62,7 @@ entries:
     modules:
       - time
       - security
+      - env
     method: run
 
   # app:central_test
@@ -84,3 +85,43 @@ entries:
     modules:
       - time
     method: run
+
+  - name: runtime_plugin_policy
+    kind: security.policy
+    groups:
+      - app:user
+    policy:
+      resources: '*'
+      actions:
+        - process.spawn
+        - process.spawn.linked
+        - process.spawn.monitored
+        - process.host
+        - process.cancel
+      effect: allow
+
+  - name: relay_runtime_plugin
+    kind: process.lua
+    source: file://relay_runtime_plugin.lua
+    method: run
+
+  - name: relay_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay-runtime
+      timeout: 25s
+    source: file://relay_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      consts: wippy.relay:consts
+    modules:
+      - time
+      - json
+      - security
+    method: run
+
+  - name: relay_runtime_finished_plugin
+    kind: process.lua
+    source: file://relay_runtime_plugin.lua
+    method: finish
