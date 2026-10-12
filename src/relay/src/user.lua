@@ -480,7 +480,11 @@ local function run(args: any): any
         local resume_state = args :: UserUpgradeState
         active_plugins = resume_state.active_plugins
         connected_clients = resume_state.connected_clients
-        client_count = resume_state.client_count
+        -- Older duplicate JOINs could inflate the saved counter. Memberships
+        -- are authoritative; rebuilding the derived count keeps final LEAVE valid.
+        for _ in pairs(connected_clients) do
+            client_count = client_count + 1
+        end
         upgrade_groups = resume_state.pg_groups
     end
     local user_id = string(args.user_id)

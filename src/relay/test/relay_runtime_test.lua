@@ -19,7 +19,7 @@ local function receive(ch: any): any
     return result.value
 end
 
-local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?): any
+local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?): any
     sequence = sequence + 1
     local user_id = "relay-runtime-" .. process.pid() .. "-" .. sequence
     local actor = security.new_actor(user_id, {})
@@ -50,6 +50,10 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
         end
         args.connected_clients = {}
         args.client_count = 0
+        if saved_client_count ~= nil then
+            args.connected_clients[process.pid()] = true
+            args.client_count = saved_client_count
+        end
         args.pg_groups = {}
         args = (json.encode(args))
     end
@@ -228,6 +232,18 @@ local function define_tests()
             process.unlisten(shutdown)
             if not ok then error(err) end
         end)
+        for _, saved_count in ipairs({0, 1, 3}) do
+            test.it("restores the membership count before the final LEAVE, saved count " .. saved_count, function()
+                local shutdown = process.listen("shutdown")
+                local ok, err = pcall(with_hub, "app:relay_runtime_plugin", function(pid, _, join)
+                    test.eq(join().client_count, 1, "Restored memberships are the source of the client count")
+                    assert(process.send(pid, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() }))
+                    receive(shutdown)
+                end, nil, process.pid(), saved_count)
+                process.unlisten(shutdown)
+                if not ok then error(err) end
+            end)
+        end
         test.it("reports a real plugin startup failure and keeps the hub responsive", function()
             with_hub("app:missing_runtime_plugin", function(_, _, join, send, _, errors)
                 join()
