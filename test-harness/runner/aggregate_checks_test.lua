@@ -33,7 +33,7 @@ local function run_check(target, message, exit_code)
     test.not_nil(executor, tostring(executor_err))
     local command = "make --no-print-directory -f " .. string.format("%q", root .. "/Makefile")
         .. " -C " .. string.format("%q", "/tmp/wippy-aggregate-checks/" .. directory)
-        .. " " .. target .. " TEST_MODULES=fixture BENCH_REVISION=fixture"
+        .. " " .. target .. " TEST_MODULES=fixture"
     local proc, create_err = executor:exec(command, {env = {MAKEFLAGS = ""}})
     test.not_nil(proc, tostring(create_err))
     local stdout, stdout_err = proc:stdout_stream()

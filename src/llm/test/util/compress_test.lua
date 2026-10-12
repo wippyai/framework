@@ -3,7 +3,7 @@ local env = require("env")
 local test = require("test")
 
 local function define_tests()
-    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS")
+    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS") == "true"
 
     describe("Compress Library", function()
 

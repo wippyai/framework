@@ -1,7 +1,5 @@
 local test = require("test")
 local time = require("time")
-local env = require("env")
-local benchmark = require("benchmark")
 
 local sequence = 0
 
@@ -105,42 +103,4 @@ local function define_tests()
     end)
 end
 
-local function benchmark_cases()
-    test.describe("actor_resident benchmark", function()
-        local samples = tonumber((env.get("WIPPY_BENCH_SAMPLES")))
-        if not samples then
-            test.it_skip("requires WIPPY_BENCH_SAMPLES", function() end)
-            return
-        end
-        test.it("measures dispatch and live memory with actors resident", function()
-            local size = tonumber((env.get("WIPPY_BENCH_SIZE"))) or 256
-            local warmup = tonumber((env.get("WIPPY_BENCH_WARMUP"))) or 5
-            local memory_operations = tonumber((env.get("WIPPY_BENCH_MEMORY_OPERATIONS")))
-            assert(size > 0 and samples > 0 and warmup >= 0, "invalid resident benchmark configuration")
-            local result = with_residents(size, function(dispatch)
-                local durations = {}
-                for iteration = 1, warmup + samples do
-                    local began = time.now()
-                    dispatch()
-                    local elapsed = time.now():sub(began):seconds() * 1000
-                    if iteration > warmup then durations[#durations + 1] = elapsed end
-                end
-                local memory
-                if memory_operations then
-                    local batches = math.ceil(memory_operations / size)
-                    local memory_err
-                    memory, memory_err = benchmark.measure_memory(function()
-                        for _ = 1, batches do dispatch() end
-                    end, batches * size)
-                    assert(memory, tostring(memory_err))
-                end
-                return { samples_ms = durations, memory = memory }
-            end)
-            local report, err = benchmark.report({ name = "actor_resident", size = size,
-                operations_per_sample = size, samples_ms = result.samples_ms, memory = result.memory })
-            test.not_nil(report, tostring(err))
-        end)
-    end)
-end
-
-return { run = test.run_cases(define_tests), benchmark = test.run_cases(benchmark_cases) }
+return { run = test.run_cases(define_tests) }

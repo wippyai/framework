@@ -61,8 +61,7 @@ jobs:
         run: |
           (cd src/test && wippy install && wippy lint --level error && wippy test)
           (cd test-harness/runner && wippy test)
-          bash scripts/run-wippy.sh test-harness/benchmark lint --level error
-          make test-benchmarks
+          make test-runner-go
           bash test-harness/runner-results/verify.sh
           bash test-harness/runner-hook-failure/verify.sh
           bash test-harness/runner-timeout/verify-timeouts.sh

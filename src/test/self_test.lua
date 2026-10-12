@@ -4,6 +4,13 @@ local registry = require("registry")
 
 local function define_tests()
     test.describe("shared test resources", function()
+        test.it("does not publish benchmarking libraries or environment settings", function()
+            for _, name in ipairs({"benchmark", "benchmark_revision", "benchmark_runtime",
+                "benchmark_framework_revision", "benchmark_exact_allocations"}) do
+                local entry = registry.get("wippy.test:" .. name)
+                test.is_nil(entry and entry.id, "benchmarking stays outside the shared test module")
+            end
+        end)
         test.it("does not register a benchmark filesystem for ordinary tests", function()
             local output = registry.get("wippy.test:benchmark_output")
             test.is_nil(output, "benchmark filesystems belong to the explicit benchmark harness")

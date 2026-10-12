@@ -6,7 +6,7 @@ local fs = require("fs")
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "fe_mode", "render_engine", "session_type",
+    "fe_facade_url", "host_policy_mode", "fe_entry_path", "fe_mode", "render_engine", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel", "hide_session_selector",
     "custom_css", "css_variables", "icon_sets",
@@ -24,7 +24,8 @@ local REQ_NAMES: {string} = {
 
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
-        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.59",
+        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+        host_policy_mode = "auto",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
         render_engine = "iframe",
@@ -186,7 +187,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.59"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -264,7 +265,7 @@ local function define_tests()
 
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
-                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.59")
+                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.62")
 
                 entry = registry.get(NS .. "fe_entry_path")
                 test.eq(entry.data.default, "/iframe.html")
@@ -427,7 +428,7 @@ local function define_tests()
             end)
         end)
 
-        test.describe("config JSON structure (wippy-context-2.0)", function()
+        test.describe("config JSON structure (wippy-context-2.1)", function()
             test.it("forwards global attention config through both facade shells", function()
                 local source_fs, fs_err = fs.get('app.facade_test:source')
                 test.is_nil(fs_err)
@@ -440,13 +441,17 @@ local function define_tests()
                 test.not_nil(static_shell)
                 test.not_nil((string.find(template, "attention: cfg.attention", 1, true)))
                 test.not_nil((string.find(static_shell, "attention: cfg.attention", 1, true)))
+                for _, field in ipairs({ "allowSelectModel", "hideSessionSelector", "allowAdditionalTags" }) do
+                    test.not_nil((string.find(template, field .. ": cfg." .. field, 1, true)))
+                    test.not_nil((string.find(static_shell, field .. ": cfg." .. field, 1, true)))
+                end
             end)
 
             test.it("builds complete config object", function()
                 local config = {
-                    facade_url = "https://front.wippy.ai",
-                    iframe_origin = "https://front.wippy.ai",
-                    iframe_url = "https://front.wippy.ai/iframe.html?waitForCustomConfig",
+                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+                    iframe_origin = "https://web-host.wippy.ai",
+                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
                     login_path = "/login.html",
                     env = {
                         APP_API_URL = "http://localhost:8085",
@@ -454,6 +459,9 @@ local function define_tests()
                         APP_WEBSOCKET_URL = "ws://localhost:8085",
                     },
                     routePrefix = "http://localhost:8085",
+                    allowSelectModel = false,
+                    hideSessionSelector = false,
+                    allowAdditionalTags = table.create(0, 1),
                     attention = {
                         enabled = true,
                         messageContext = { enabled = true, defaultInclude = false },
@@ -481,7 +489,6 @@ local function define_tests()
                         session = { type = "non-persistent" },
                         history = "hash",
                         showAdmin = true,
-                        allowSelectModel = false,
                         startNavOpen = false,
                         hideNavBar = false,
                         disableRightPanel = false,
@@ -494,7 +501,7 @@ local function define_tests()
 
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
-                test.eq(decoded.facade_url, "https://front.wippy.ai")
+                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.62")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
                 test.is_true(decoded.attention.enabled)
@@ -503,13 +510,20 @@ local function define_tests()
                 test.is_nil(decoded.hostConfig.attention)
                 test.eq(decoded.hostConfig.session.type, "non-persistent")
                 test.is_true(decoded.hostConfig.showAdmin)
-                test.is_false(decoded.hostConfig.allowSelectModel)
+                test.is_false(decoded.allowSelectModel)
+                test.is_false(decoded.hideSessionSelector)
+                test.not_nil(decoded.allowAdditionalTags)
+                test.eq(next(decoded.allowAdditionalTags), nil)
+                test.is_nil(decoded.hostConfig.allowSelectModel)
+                test.is_nil(decoded.hostConfig.hideSessionSelector)
+                test.is_nil(decoded.hostConfig.allowAdditionalTags)
                 test.eq(decoded.theming.host.i18n.app.title, "Wippy")
                 test.eq(decoded.themeMode, "auto")
                 test.eq(decoded.themePersist, "cookie")
                 test.eq(decoded.themeStorageKey, "@wippy-theme-mode")
                 test.eq(decoded.login_path, "/login.html")
             end)
+
         end)
     end)
 end

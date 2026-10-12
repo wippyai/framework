@@ -103,7 +103,6 @@ entries:
     modules:
       - funcs
       - channel
-      - time
 
   # wippy.test:runner
   - name: runner
@@ -145,28 +144,3 @@ entries:
     modules: [registry]
     imports:
       test: wippy.test:test
-
-  - name: benchmark_revision
-    kind: env.variable
-    variable: WIPPY_BENCH_REVISION
-    storage: wippy.test:env_storage
-
-  - name: benchmark_runtime
-    kind: env.variable
-    variable: WIPPY_BENCH_RUNTIME
-    storage: wippy.test:env_storage
-
-  - name: benchmark_framework_revision
-    kind: env.variable
-    variable: WIPPY_BENCH_FRAMEWORK_REVISION
-    storage: wippy.test:env_storage
-
-  - name: benchmark_exact_allocations
-    kind: env.variable
-    variable: WIPPY_BENCH_EXACT_ALLOCATIONS
-    storage: wippy.test:env_storage
-
-  - name: benchmark
-    kind: library.lua
-    source: file://benchmark.lua
-    modules: [fs, json, env, io, system, http_client]

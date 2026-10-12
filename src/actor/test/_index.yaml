@@ -57,46 +57,10 @@ entries:
     imports:
       actor: wippy.actor:actor
       test: wippy.test:test
-      benchmark: wippy.test:benchmark
     modules:
       - system
       - time
-      - env
     method: run
-
-  - name: actor_runtime_benchmark
-    kind: function.lua
-    meta:
-      type: test
-      suite: actor-benchmark
-      timeout: 120s
-    source: file://actor_runtime_test.lua
-    imports:
-      actor: wippy.actor:actor
-      test: wippy.test:test
-      benchmark: wippy.test:benchmark
-    modules:
-      - system
-      - time
-      - env
-    method: benchmark
-
-  - name: actor_lifecycle_benchmark
-    kind: function.lua
-    meta:
-      type: test
-      suite: actor-benchmark
-      timeout: 120s
-    source: file://actor_runtime_test.lua
-    imports:
-      actor: wippy.actor:actor
-      test: wippy.test:test
-      benchmark: wippy.test:benchmark
-    modules:
-      - system
-      - time
-      - env
-    method: lifecycle
 
   - name: actor_resident_fixture
     kind: process.lua
@@ -116,46 +80,6 @@ entries:
     source: file://actor_resident_test.lua
     imports:
       test: wippy.test:test
-      benchmark: wippy.test:benchmark
     modules:
       - time
-      - env
     method: run
-
-  - name: actor_resident_benchmark
-    kind: function.lua
-    meta:
-      type: test
-      suite: actor-benchmark
-      timeout: 120s
-    source: file://actor_resident_test.lua
-    imports:
-      test: wippy.test:test
-      benchmark: wippy.test:benchmark
-    modules:
-      - time
-      - env
-    method: benchmark
-
-  - name: runtime_env_storage
-    kind: env.storage.os
-
-  - name: runtime_bench_samples
-    kind: env.variable
-    variable: WIPPY_BENCH_SAMPLES
-    storage: app:runtime_env_storage
-
-  - name: runtime_bench_warmup
-    kind: env.variable
-    variable: WIPPY_BENCH_WARMUP
-    storage: app:runtime_env_storage
-
-  - name: runtime_bench_size
-    kind: env.variable
-    variable: WIPPY_BENCH_SIZE
-    storage: app:runtime_env_storage
-
-  - name: runtime_bench_memory_operations
-    kind: env.variable
-    variable: WIPPY_BENCH_MEMORY_OPERATIONS
-    storage: app:runtime_env_storage

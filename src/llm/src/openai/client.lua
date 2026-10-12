@@ -182,6 +182,14 @@ function openai_client.request(endpoint_path, payload, options)
         }
     end
 
+    if type(parsed) ~= "table" then
+        return nil, {
+            status_code = response.status_code,
+            message = "Invalid OpenAI response: expected a JSON object",
+            metadata = extract_response_metadata(response)
+        }
+    end
+
     parsed.metadata = extract_response_metadata(response)
     return parsed
 end

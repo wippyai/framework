@@ -2,12 +2,7 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/.." && pwd -P)
-source_root=$(cd "${FRAMEWORK_SOURCE_ROOT:-$repo}" && pwd -P)
-benchmark=false
-if [ "${1:-}" = --benchmark ]; then
-    benchmark=true
-    shift
-fi
+source_root=$repo
 app=$1
 shift
 wippy=$(command -v "${WIPPY:-wippy}")
@@ -24,13 +19,6 @@ work="$work_root/${app//\//-}"
 mkdir -p "$work"
 source_path=$(awk '$1 == "src:" {print $2; exit}' "$app_root/wippy.lock")
 source_path=$(cd "$app_root/${source_path:-.}" && pwd)
-if "$benchmark"; then
-    benchmark_source=$(mktemp -d "$work/benchmark-source.XXXXXX")
-    cp -R "$source_path/." "$benchmark_source/"
-    mkdir -p "$benchmark_source/benchmark-output"
-    cp "$source_root/test-harness/benchmark/output/_index.yaml" "$benchmark_source/benchmark-output/_index.yaml"
-    source_path=$benchmark_source
-fi
 {
     printf 'directories:\n    modules: %s\n    src: %s\n' \
         "$(jq -Rn --arg value "$work/modules" '$value')" \
