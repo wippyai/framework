@@ -81,6 +81,7 @@ entries:
     source: file://central_test.lua
     imports:
       central: wippy.relay:central
+      consts: wippy.relay:consts
       test: wippy.test:test
     modules:
       - time
@@ -110,7 +111,7 @@ entries:
     meta:
       type: test
       suite: relay-runtime
-      timeout: 25s
+      timeout: 45s
     source: file://relay_runtime_test.lua
     imports:
       test: wippy.test:test

@@ -19,6 +19,17 @@
 > This repository is read-only.
 > The code is generated from the [wippyai/framework][wippy-framework] repository.
 
+## Idle hub cleanup
+
+The last client leaving requests session-plugin shutdown. Sessions finish their
+accepted work before exiting. The central inactivity sweep asks the user hub to
+retire and waits for its monitored session plugin to exit before hub cleanup.
+Reconnect cancels pending retirement and resumes the same plugin. Empty hubs
+exit immediately; retirement adds no timers or background coroutines.
+
+Use this with a session release that drains lifecycle finishes. Explicit service
+cancellation remains a forced shutdown and follows the session recovery path.
+
 [wippy-documentation]: https://docs.wippy.ai
 [releases-page]: https://github.com/wippyai/module-relay/releases
 [wippy-framework]: https://github.com/wippyai/framework

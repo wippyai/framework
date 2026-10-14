@@ -33,6 +33,7 @@ type UserState = {
     active_plugins: {[string]: PluginState},
     connected_clients: {[string]: boolean},
     client_count: number,
+    retiring: boolean?,
     pg_scopes: {[string]: any},
     pg_groups: {[string]: string},
     routes: {[any]: Route},
@@ -51,6 +52,7 @@ type UserUpgradeState = {
     active_plugins: {[string]: PluginState},
     connected_clients: {[string]: boolean},
     client_count: number,
+    retiring: boolean?,
     pg_groups: {[string]: string},
 }
 
@@ -156,6 +158,7 @@ local function snapshot_state(state: UserState): UserUpgradeState
         active_plugins = state.active_plugins,
         connected_clients = state.connected_clients,
         client_count = state.client_count,
+        retiring = state.retiring,
         pg_groups = groups,
     }
 end
@@ -308,6 +311,7 @@ local function handle_client_join(state: UserState, payload_data: any)
             })
 
             if state.client_count == 1 then
+                state.retiring = false
                 local session_plugin = state.active_plugins["session_"]
                 if session_plugin then
                     local pid = session_plugin.pid
@@ -433,6 +437,13 @@ local function handle_process_event(state: UserState, event: any)
 
     plugin_state.pid = nil
 
+    -- A disconnected hub must not restart the session plugin it is waiting
+    -- to retire. Its normal crash recovery records any unfinished work.
+    if state.retiring and state.client_count == 0 and plugin_prefix == "session_" then
+        plugin_state.status = "stopped"
+        return
+    end
+
     local was_crash = false
     if event.kind == process.event.LINK_DOWN then
         was_crash = true
@@ -500,6 +511,7 @@ local function run(args: any): any
         active_plugins = active_plugins,
         connected_clients = connected_clients,
         client_count = client_count,
+        retiring = resumed and client_count == 0 and args.retiring == true,
         pg_scopes = {},
         pg_groups = {},
         routes = {},
@@ -556,6 +568,14 @@ local function run(args: any): any
             elseif topic == consts.WS_TOPICS.CANCEL then
                 logger:info("received cancel signal")
                 break
+            elseif topic == consts.HUB_CONTROL.RETIRE then
+                -- Only the owning central hub can request collection. JOIN
+                -- may already have overtaken an old inactivity observation.
+                if from_pid == state.central_hub_pid and state.client_count == 0 then
+                    state.retiring = true
+                    local session = state.active_plugins["session_"]
+                    if session and session.pid then process.send(session.pid, "shutdown", {}) end
+                end
             elseif topic == consts.HUB_CONTROL.PG_SUBSCRIBE then
                 handle_pg_subscribe(state, payload:data())
             elseif topic == consts.HUB_CONTROL.PG_UNSUBSCRIBE then
@@ -578,6 +598,10 @@ local function run(args: any): any
             else
                 handle_process_event(state, event)
             end
+        end
+        if state.retiring and state.client_count == 0 then
+            local session = state.active_plugins["session_"]
+            if not session or not session.pid then break end
         end
     end
 
