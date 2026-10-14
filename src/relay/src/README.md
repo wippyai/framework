@@ -41,6 +41,18 @@ parameters:
 - `ws.leave` - Client disconnection
 - `hub.activity_update` - Activity tracking
 
+Clients send application commands after receiving the `welcome` message from
+their user hub. The hub accepts `ws.message` only from its registered clients;
+commands before JOIN, after LEAVE, or from another user's connection are rejected.
+
+## Live updates
+
+The central and user hubs already enable
+`process.set_options({ trap_links = true, upgradable = true })`. User-hub upgrades
+restore connected client PIDs, plugin PIDs and group subscriptions before
+continuing command dispatch. The client ownership check uses these restored
+memberships, with the same process options and snapshot format.
+
 ## Plugins
 
 Register plugins via discovery:

@@ -361,6 +361,14 @@ local function handle_client_leave(state: UserState, payload_data: any)
 end
 
 local function handle_client_message(state: UserState, payload: any, from_pid: string)
+    if not state.connected_clients[from_pid] then
+        logger:warn("message from unconnected client rejected", {
+            user_id = state.user_id,
+            client_pid = from_pid,
+        })
+        return
+    end
+
     local message_data, err = json.decode(payload:data())
     if err then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
