@@ -13,6 +13,3 @@ modules:
     - name: wippy/test
       version: 0.4.18
       hash: 048d88d2748ec6901fba703ed1317c27f7027650735f653a51d38c07741e1b99
-replacements:
-    - from: wippy/llm
-      to: ../../llm/src

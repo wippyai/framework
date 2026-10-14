@@ -8,6 +8,29 @@ entries:
       title: Agent
       description: LLM agent framework with tool support and conversation management
 
+  - name: execution_authority_imports
+    kind: ns.requirement
+    meta:
+      description: "Optional host library binding: {execution_identity_resolver: host:library}. The library captures restrictions and resolves current native authority."
+    default: {}
+    targets:
+      - entry: wippy.agent.tools:execution_authority
+        path: .imports
+
+  - name: refresh_perms
+    kind: ns.requirement
+    meta:
+      description: "Refresh tool authority at execution boundaries when execution_authority_imports is bound. Disabled by default."
+    default: false
+    targets:
+      - entry: wippy.agent:execution_authority_settings
+        path: .meta.refresh_perms
+
+  - name: execution_authority_settings
+    kind: registry.entry
+    meta:
+      refresh_perms: false
+
   # Dependencies
   - name: dep.wippy.llm
     kind: "ns.dependency"

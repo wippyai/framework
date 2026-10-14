@@ -1,4 +1,9 @@
 version: "1.0"
 workspace:
   replacements:
+    wippy/llm: ../../llm/src
+    wippy/security: ../../security
     wippy/test: ../../test
+    wippy/terminal: ../../terminal
+override:
+  "wippy.agent:execution_authority_settings:meta.refresh_perms": true

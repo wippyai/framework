@@ -2,6 +2,7 @@ local json = require("json")
 local tools = require("tools")
 local funcs = require("funcs")
 local contract = require("contract")
+local execution_authority = require("execution_authority")
 local behavior_controls = require("behavior_controls")
 
 type ToolCall = {
@@ -192,6 +193,7 @@ tool_caller._json = nil
 tool_caller._tools = nil
 tool_caller._funcs = nil
 tool_caller._contract = nil
+tool_caller._identity_resolver = nil
 
 local function get_json(): any
     return tool_caller._json or json
@@ -212,6 +214,7 @@ end
 function tool_caller.new(): any
     local self = setmetatable({}, tool_caller)
     self.executor = get_funcs().new()
+    self.authority, self.authority_error = execution_authority.capture(tool_caller._identity_resolver)
     self.strategy = STRATEGY.SEQUENTIAL -- Default strategy
     self.tool_wrappers = {}
     self.wrapper_context = {}
@@ -600,6 +603,18 @@ local function resolve_runtime_context(self: any, call_id: string, tool_call: an
     return runtime_context, nil
 end
 
+local function execution_executor(self: any, context: table, registry_id: string, batch: any?): any
+    if self.authority_error then return nil, self.authority_error end
+    if batch and self.authority then
+        if not batch.checked then
+            batch.authority, batch.error = execution_authority.refresh(self.authority)
+            batch.checked = true
+        end
+        if batch.error then return nil, batch.error end
+    end
+    return execution_authority.executor(self.authority, self.executor, context, registry_id, batch and batch.authority)
+end
+
 local function execute_single_tool(self: any, call_id: string, tool_call: any, context: table?): any
     local registry_id = tool_call.registry_id
     local args = tool_call.args
@@ -632,7 +647,10 @@ local function execute_single_tool(self: any, call_id: string, tool_call: any, c
     end
 
     -- Execute the tool
-    local ctx_executor = self.executor:with_context(merged_context)
+    local ctx_executor, executor_err = execution_executor(self, merged_context, tostring(registry_id))
+    if not ctx_executor then
+        return {result = nil, error = executor_err, tool_call = tool_call}
+    end
     local result, err = ctx_executor:call(tostring(registry_id), args)
 
     return {
@@ -671,6 +689,9 @@ end
 local function execute_parallel(self: any, context: table?, validated_tools: any): any
     local results = {}
     local commands = {}
+    -- Parallel tools share one authority snapshot for this batch. The next
+    -- execute() refreshes again; no provider call serializes each launch.
+    local batch = {}
 
     -- Start all valid tools
     for call_id, tool_call in pairs(validated_tools) do
@@ -714,7 +735,11 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
         end
 
         -- Start async execution
-        local ctx_executor = self.executor:with_context(merged_context)
+        local ctx_executor, executor_err = execution_executor(self, merged_context, tostring(registry_id), batch)
+        if not ctx_executor then
+            results[call_id] = {result = nil, error = executor_err, tool_call = tool_call}
+            goto continue
+        end
         local command, start_err = ctx_executor:async(tostring(registry_id), args)
         if not command then
             results[call_id] = {

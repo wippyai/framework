@@ -621,3 +621,33 @@ Agent resolution contract. Applications provide a binding to handle custom agent
 | `wippy.agent.discovery` | `selector` | LLM-powered agent selector |
 | `wippy.agent.tools` | `caller` | Tool execution (sequential/parallel) |
 | `wippy.agent.traits` | `time_aware` | Built-in time-aware trait |
+
+## Live tool execution authority
+
+Hosts with mutable subject authority bind their native identity resolver through the Agent dependency:
+
+```yaml
+parameters:
+  - name: wippy.agent:execution_authority_imports
+    value:
+      execution_identity_resolver: app:execution_authority
+  - name: wippy.agent:refresh_perms
+    value: true
+```
+
+The imported `library.lua` uses the same contract as Dataflow:
+
+```lua
+capture(actor, scope) -> authority_context, error
+resolve({subject_id, authority_only = true, actor_meta, authority_context}) -> actor, scope, error
+```
+
+`capture` receives the current native actor and scope when the tool caller is created. It returns a plain restriction descriptor that preserves every explicit narrowing ceiling, or an error when it cannot represent a restriction. Credentials remain in the host's stores. Agent keeps the descriptor in memory and never writes it to conversation context or stored tool arguments.
+
+With both the binding and `refresh_perms: true`, `resolve` checks current subject status, memberships and credential restrictions at tool execution boundaries. Sequential tools refresh before each call. Parallel tools share one refresh per `caller:execute` batch, including a failed refresh; the next batch resolves again. Empty and invalid-only batches do not resolve. Permission changes during a parallel batch take effect at the next batch. Running tools are allowed to complete.
+
+The resolver returns a native Security actor with the original subject ID and a native scope containing every captured ceiling. Agent still evaluates `funcs.call` separately for every tool and passes that scope unchanged to the callee. This local check is necessary because the native executor's explicit scope controls callee authority while its dispatch admission check uses the ambient frame.
+
+Providers return errors through the contract result values. Agent fails closed and passes each native error unchanged, preserving its kind, retryability, details and cause. An unavailable provider returns retryable `Unavailable` from its owning boundary. Malformed results or changed subjects fail with `Invalid`. The next sequential call or parallel batch resolves again. A failed initial capture prevents dispatch for that caller; creating a new caller retries capture.
+
+The host library runs under the calling frame and uses its own protected authority boundary for provider reads. Calling scopes with a resolver binding allow `registry.get` for `wippy.agent:execution_authority_settings`. Agent adds no wildcard permission or permission intersection. The optional binding defaults to an empty import map and `refresh_perms` defaults to false. Capture and resolution make no provider calls unless both are enabled. No stored frame, tool argument shape or schema migration changes.
