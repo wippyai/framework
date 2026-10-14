@@ -5,6 +5,7 @@
 
 ### Bug Fixes
 
+* Browser disconnects now start a reconnect grace period, and reconnecting cancels pending retirement. Pair Relay 0.3.17 with Session 0.6.8 or newer so accepted model, tool, and handoff work drains before session exit.
 * harden Lua actor, relay, tool-round and runner behavior ([#165](https://github.com/wippyai/framework/issues/165)) ([d4607bb](https://github.com/wippyai/framework/commit/d4607bb274e09a1d0cc6bef533f45546846fb79b))
 * **relay:** drain sessions before idle hub cleanup ([#179](https://github.com/wippyai/framework/issues/179)) ([c6c8734](https://github.com/wippyai/framework/commit/c6c873448d73e3c8d16c943262b4461002e8f33f))
 * **relay:** enforce connected-client ownership before command dispatch ([#176](https://github.com/wippyai/framework/issues/176)) ([b2f1e92](https://github.com/wippyai/framework/commit/b2f1e924980722694856a70d2b46165b3dd71ec7))
