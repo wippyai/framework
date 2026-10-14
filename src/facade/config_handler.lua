@@ -230,6 +230,8 @@ local function handler()
     -- TanStack Query defaults: { default?, content?, lists? }. Passed through
     -- verbatim; the host validates/whitelists the option keys client-side.
     local tanstack = non_empty_map_or_nil(get_req_json_any("tanstack"))
+    local iconify = non_empty_map_or_nil(get_req_json_any("iconify"))
+    local import_map = non_empty_map_or_nil(get_req_json_any("import_map"))
 
     -- Clamp theme_mode to the valid enum; anything else (typo/misconfig) → auto,
     -- so a bad value can't ship a silently-ignored class to the client.
@@ -276,6 +278,8 @@ local function handler()
         allowAdditionalTags = additional_tags,
         axiosDefaults = axios_defaults,
         tanstack = tanstack,
+        iconify = iconify,
+        importMap = import_map,
         extraScripts = extra_scripts,
         theming = {
             global = global_scope,

@@ -6,10 +6,10 @@
 # Run `make sync` after every Wippy Web Host version bump to pull fresh copies.
 
 # Web Host CDN base — update version when Wippy Web Host releases
-WEB_HOST_CDN = https://web-host.wippy.ai/webcomponents-1.0.62
+WEB_HOST_CDN = https://web-host.wippy.ai/webcomponents-1.0.63
 
 # Files to sync from CDN into public/@wippy-fe/
-CDN_FILES = loading.js
+CDN_FILES = loading.js import-map-bootstrap.js
 
 .PHONY: sync help
 
