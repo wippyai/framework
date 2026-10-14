@@ -60,6 +60,7 @@ local function define_tests()
             end
             db:release()
             migration_registry._registry = {
+                find = function() return {} end,
                 get = function(id: string)
                     if id == "app:rollback_legacy" then return nil end
                     return { id = id, kind = "function.lua", meta = { timestamp = "2024-01-01" } }

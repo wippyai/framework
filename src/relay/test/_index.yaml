@@ -19,6 +19,66 @@ entries:
     lifecycle:
       auto_start: true
 
+  - name: db
+    kind: db.sql.sqlite
+    file: ":memory:"
+
+  - name: isolation_plugin_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: [app:isolation_plugin]
+      actions: [process.spawn, process.spawn.linked, process.spawn.monitored]
+      effect: allow
+
+  - name: isolation_host_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: [app:processes]
+      actions: [process.host]
+      effect: allow
+
+  - name: isolation_cleanup_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: '*'
+      actions: [process.cancel]
+      effect: allow
+
+  - name: isolation_client
+    kind: process.lua
+    source: file://isolation_fixture.lua
+    imports:
+      consts: wippy.relay:consts
+    modules: [security, sql]
+    method: client
+
+  - name: isolation_plugin
+    kind: process.lua
+    meta:
+      type: relay.plugin
+      command_prefix: probe_
+      default_host: app:processes
+    source: file://isolation_fixture.lua
+    imports:
+      consts: wippy.relay:consts
+    modules: [security, sql]
+    method: plugin
+
+  - name: isolation_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay
+    source: file://isolation_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules: [time, json, sql]
+    method: run
+
   # app:consts_test
   - name: consts_test
     kind: function.lua
@@ -62,6 +122,7 @@ entries:
     modules:
       - time
       - security
+      - env
     method: run
 
   # app:central_test
@@ -80,7 +141,67 @@ entries:
     source: file://central_test.lua
     imports:
       central: wippy.relay:central
+      consts: wippy.relay:consts
       test: wippy.test:test
     modules:
       - time
     method: run
+
+  - name: runtime_plugin_policy
+    kind: security.policy
+    groups:
+      - app:user
+    policy:
+      resources: '*'
+      actions:
+        - process.spawn
+        - process.spawn.linked
+        - process.spawn.monitored
+        - process.host
+        - process.cancel
+      effect: allow
+
+  - name: relay_runtime_plugin
+    kind: process.lua
+    source: file://relay_runtime_plugin.lua
+    method: run
+
+  - name: relay_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay-runtime
+      timeout: 45s
+    source: file://relay_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      consts: wippy.relay:consts
+    modules:
+      - time
+      - json
+      - security
+      - registry
+    method: run
+
+  - name: relay_upgrade_user
+    kind: process.lua
+    source: file://relay_upgrade_fixture.lua
+    imports:
+      user: wippy.relay:user
+      consts: wippy.relay:consts
+    modules: [json, security]
+    method: run
+
+  - name: relay_upgrade_foreign
+    kind: process.lua
+    source: file://relay_upgrade_fixture.lua
+    imports:
+      user: wippy.relay:user
+      consts: wippy.relay:consts
+    modules: [json, security]
+    method: foreign
+
+  - name: relay_runtime_finished_plugin
+    kind: process.lua
+    source: file://relay_runtime_plugin.lua
+    method: finish

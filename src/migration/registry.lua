@@ -40,6 +40,81 @@ function migrations.compare(a: any, b: any): boolean
     return tostring(a and a.id or "") < tostring(b and b.id or "")
 end
 
+function migrations.get_aliases(entry: any): {string}
+    local meta = entry and entry.meta
+    if type(meta) ~= "table" or meta.alias == nil then
+        return {}
+    end
+
+    local candidates: any
+    if type(meta.alias) == "string" then
+        candidates = { meta.alias }
+    elseif type(meta.alias) == "table" then
+        candidates = meta.alias
+    else
+        return {}
+    end
+
+    local own_id = tostring(entry and entry.id or "")
+    local seen = {}
+    local result = {}
+    for _, alias in ipairs(candidates) do
+        if type(alias) == "string" and alias ~= "" and alias ~= own_id and not seen[alias] then
+            seen[alias] = true
+            table.insert(result, alias)
+        end
+    end
+
+    return result
+end
+
+function migrations.validate_aliases(entries: {any}?): (boolean?, string?)
+    local by_id = {}
+    for _, entry in ipairs(entries or {}) do
+        by_id[tostring(entry.id)] = entry
+    end
+
+    local claimed_by = {}
+    for _, entry in ipairs(entries or {}) do
+        local raw = entry.meta and entry.meta.alias
+        if raw ~= nil then
+            local values: any = type(raw) == "string" and {raw} or raw
+            if type(values) ~= "table" then
+                return nil, "alias on migration '" .. tostring(entry.id) .. "' must be a string or an array of strings"
+            end
+            local count = 0
+            for index, alias in pairs(values) do
+                count = count + 1
+                if type(index) ~= "number" or index < 1 or index > #values or index % 1 ~= 0
+                    or type(alias) ~= "string" or #alias > 512
+                    or not alias:match("^[^:%s]+:[^:%s]+$") then
+                    return nil, "alias '" .. tostring(alias) .. "' on migration '" .. tostring(entry.id)
+                        .. "' must contain full ids in namespace:name form (at most 512 characters)"
+                end
+                if alias == entry.id then
+                    return nil, "alias '" .. alias .. "' collides with its own migration id"
+                end
+            end
+            if count ~= #values then
+                return nil, "alias on migration '" .. tostring(entry.id) .. "' must be a contiguous array"
+            end
+        end
+        for _, alias in ipairs(migrations.get_aliases(entry)) do
+            if by_id[alias] then
+                return nil, "alias '" .. alias .. "' on migration '" .. tostring(entry.id)
+                    .. "' collides with an existing migration id"
+            end
+            if claimed_by[alias] then
+                return nil, "alias '" .. alias .. "' is claimed by both '"
+                    .. tostring(claimed_by[alias].id) .. "' and '" .. tostring(entry.id) .. "'"
+            end
+            claimed_by[alias] = entry
+        end
+    end
+
+    return true
+end
+
 -- Find migrations in registry based on provided options
 function migrations.find(options: any?): ({MigrationEntry}?, string?)
     local opts = options or {}

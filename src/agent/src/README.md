@@ -219,9 +219,14 @@ local response, err = runner:step(builder, {
     stream_target = { reply_to = process.self(), topic = "stream" },
     tool_call = "auto",
     disable_memory_recall = false,
-    previous_memory_ids = { "mem_1", "mem_2" }
+    previous_memory_ids = { "mem_1", "mem_2" },
+    stop_check = function() return stop_requested end
 })
 ```
+
+`stop_check` runs after prompt functions and memory recall, immediately before
+provider generation. When it returns true, `step` returns `{ stopped = true }`
+without a provider request.
 
 ### Response Structure
 
@@ -389,9 +394,11 @@ control handlers and apply proposals only after the round's outcomes settle.
 persistence. Returned `context` without `_control` is not a host configuration
 change. Legacy bindings do not acquire behavior controls implicitly.
 
-Session and Dataflow persist proposals with the round and replay them after
-recovery. Replay is at-least-once, not exactly-once external writes; providers
-must make writes and lifecycle hooks idempotent using stable host refs.
+Hosts explicitly collect these proposals from the lifecycle summary (`controls`)
+and from `caller:get_wrapper_controls()`. A host that persists proposals with
+the round and replays them after recovery
+gives at-least-once delivery, not exactly-once external writes; providers must
+make writes and lifecycle hooks idempotent using stable host refs.
 `memory.compact = true` requests checkpointing without a token threshold, but
 does not bypass an explicit disable or supply a missing provider. False does
 not cancel an earlier request. There are no automatic evaluator calls, new
@@ -624,6 +631,8 @@ parameters:
   - name: wippy.agent:execution_authority_imports
     value:
       execution_identity_resolver: app:execution_authority
+  - name: wippy.agent:refresh_perms
+    value: true
 ```
 
 The imported `library.lua` uses the same contract as Dataflow:
@@ -635,8 +644,10 @@ resolve({subject_id, authority_only = true, actor_meta, authority_context}) -> a
 
 `capture` receives the current native actor and scope when the tool caller is created. It returns a plain restriction descriptor that preserves every explicit narrowing ceiling, or an error when it cannot represent a restriction. Credentials remain in the host's stores. Agent keeps the descriptor in memory and never writes it to conversation context or stored tool arguments.
 
-Immediately before each sequential or parallel tool dispatch, `resolve` checks current subject status, memberships and credential restrictions through the host's existing authority mechanism. It returns a native Security actor with the original subject ID and a native scope containing every captured ceiling. Agent evaluates `funcs.call` on that scope before dispatch and passes the scope unchanged to the callee. The dispatch check is necessary because the native executor's explicit scope controls callee authority while its dispatch admission check uses the ambient frame.
+With both the binding and `refresh_perms: true`, `resolve` checks current subject status, memberships and credential restrictions at tool execution boundaries. Sequential tools refresh before each call. Parallel tools share one refresh per `caller:execute` batch, including a failed refresh; the next batch resolves again. Empty and invalid-only batches do not resolve. Permission changes during a parallel batch take effect at the next batch. Running tools are allowed to complete.
 
-Providers return errors through the contract result values. Agent fails closed and passes each native error unchanged, preserving its kind, retryability, details and cause. An unavailable provider returns retryable `Unavailable` from its owning boundary. Malformed results or changed subjects fail with `Invalid`. Later tool calls resolve again and never reuse a previous successful scope. A failed initial capture prevents dispatch for that caller; creating a new caller retries capture.
+The resolver returns a native Security actor with the original subject ID and a native scope containing every captured ceiling. Agent still evaluates `funcs.call` separately for every tool and passes that scope unchanged to the callee. This local check is necessary because the native executor's explicit scope controls callee authority while its dispatch admission check uses the ambient frame.
 
-The host library runs under the calling frame and uses its own protected authority boundary for provider reads. Agent adds no wildcard permission or permission intersection. The optional binding defaults to an empty import map; existing installations keep their current behavior when it is absent. No stored frame, registry ID, tool argument shape or schema migration changes. Hosts enable the binding to connect their live authority provider.
+Providers return errors through the contract result values. Agent fails closed and passes each native error unchanged, preserving its kind, retryability, details and cause. An unavailable provider returns retryable `Unavailable` from its owning boundary. Malformed results or changed subjects fail with `Invalid`. The next sequential call or parallel batch resolves again. A failed initial capture prevents dispatch for that caller; creating a new caller retries capture.
+
+The host library runs under the calling frame and uses its own protected authority boundary for provider reads. Calling scopes with a resolver binding allow `registry.get` for `wippy.agent:execution_authority_settings`. Agent adds no wildcard permission or permission intersection. The optional binding defaults to an empty import map and `refresh_perms` defaults to false. Capture and resolution make no provider calls unless both are enabled. No stored frame, tool argument shape or schema migration changes.

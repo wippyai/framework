@@ -60,11 +60,16 @@ local function define_tests()
                 active_plugins = { session_ = { pid = "app:plugin:1", restart_count = 0, status = "running" } },
                 connected_clients = { ["app:client:1"] = true },
                 client_count = 1,
+                retiring = true,
                 pg_scopes = { ["app:scope"] = { opaque = true } },
                 pg_groups = { ["workspace.1"] = "app:scope" },
+                routes = { session_message = { prefix = "session_", config = { prefix = "session_",
+                    process_id = "app:session", auto_start = true }, topic = "message" } },
+                route_count = 1,
             })
 
             test.eq(snapshot.relay_user_upgrade, true)
+            test.is_nil((snapshot :: any).routes)
             test.eq(snapshot.active_plugins.session_.pid, "app:plugin:1")
             test.eq(snapshot.connected_clients["app:client:1"], true)
             test.eq(snapshot.pg_groups["workspace.1"], "app:scope")
@@ -74,6 +79,7 @@ local function define_tests()
             local decoded = user._decode_upgrade_state(encoded)
             test.eq(decoded.active_plugins.session_.pid, "app:plugin:1")
             test.eq(decoded.connected_clients["app:client:1"], true)
+            test.is_true(decoded.retiring)
         end)
     end)
 end

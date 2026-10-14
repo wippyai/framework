@@ -2,6 +2,8 @@ local test = require("test")
 local security = require("security")
 local funcs = require("funcs")
 local tool_caller = require("tool_caller")
+local execution_authority = require("execution_authority")
+local original_refresh_perms = execution_authority.refresh_perms
 
 local function run_tests()
     test.describe("UPSTREAM-AGENT-TOOL-LIVE-AUTHORITY resolver contract", function()
@@ -12,6 +14,7 @@ local function run_tests()
         local resolutions
         local resolver
         test.before_each(function()
+            execution_authority.refresh_perms = true
             actor = assert(security.actor())
             scope = assert(security.scope())
             dispatched, captures, resolutions = 0, 0, 0
@@ -58,6 +61,7 @@ local function run_tests()
             end}
         end)
         test.after_each(function()
+            execution_authority.refresh_perms = original_refresh_perms
             tool_caller._identity_resolver = nil
             tool_caller._funcs = nil
         end)
@@ -70,6 +74,42 @@ local function run_tests()
         end
 
         for _, strategy in ipairs({"sequential", "parallel"}) do
+            test.it(strategy .. " does not call the resolver unless refresh_perms is true", function()
+                for _, disabled in ipairs({false, "true"}) do
+                    execution_authority.refresh_perms = disabled
+                    local results = execute(tool_caller.new():set_strategy(strategy), 2)
+                    test.is_nil(results["1"].error)
+                    test.is_nil(results["2"].error)
+                end
+                test.eq(captures, 0)
+                test.eq(resolutions, 0)
+                test.eq(dispatched, 4)
+            end)
+            test.it(strategy .. " ignores a malformed binding while refresh is disabled", function()
+                execution_authority.refresh_perms = false
+                tool_caller._identity_resolver = {}
+                local results = execute(tool_caller.new():set_strategy(strategy), 1)
+                test.is_nil(results["1"].error)
+                test.eq(dispatched, 1)
+                test.eq(captures, 0)
+                test.eq(resolutions, 0)
+            end)
+            test.it(strategy .. " retains normal execution with no resolver binding", function()
+                tool_caller._identity_resolver = nil
+                local results = execute(tool_caller.new():set_strategy(strategy), 2)
+                test.is_nil(results["1"].error)
+                test.is_nil(results["2"].error)
+                test.eq(captures, 0)
+                test.eq(resolutions, 0)
+                test.eq(dispatched, 2)
+            end)
+            test.it(strategy .. " does not refresh empty or invalid-only batches", function()
+                local caller = tool_caller.new():set_strategy(strategy)
+                execute(caller, 0)
+                caller:execute({}, {invalid = {valid = false, error = "invalid tool"}})
+                test.eq(resolutions, 0)
+                test.eq(dispatched, 0)
+            end)
             for _, stage in ipairs({"capture", "resolve"}) do
                 for _, spec in ipairs({
                     {kind = errors.INVALID, retryable = false},
@@ -105,21 +145,33 @@ local function run_tests()
                     end)
                 end
             end
-            test.it(strategy .. " resolves each call in a batch and every subsequent batch", function()
+            test.it(strategy .. " refreshes at execution boundaries without reusing a previous batch", function()
                 local caller = tool_caller.new():set_strategy(strategy)
                 execute(caller, 2)
                 execute(caller, 1)
                 test.eq(captures, 1)
-                test.eq(resolutions, 3)
+                test.eq(resolutions, strategy == "parallel" and 2 or 3)
                 test.eq(dispatched, 3)
             end)
-            test.it(strategy .. " refuses the next call in a batch after native scope reduction", function()
+            test.it(strategy .. " observes native scope reduction at the next execution boundary", function()
                 resolver.resolve = function()
                     resolutions = resolutions + 1
-                    if resolutions == 2 then scope = assert(security.new_scope({})) end
+                    if resolutions >= 2 then scope = assert(security.new_scope({})) end
                     return actor, scope
                 end
-                local results = execute(tool_caller.new():set_strategy(strategy), 2)
+                local caller = tool_caller.new():set_strategy(strategy)
+                local results = execute(caller, 2)
+                if strategy == "parallel" then
+                    test.eq(resolutions, 1)
+                    test.eq(dispatched, 2)
+                    test.is_nil(results["1"].error)
+                    test.is_nil(results["2"].error)
+                    local denied = execute(caller, 1)
+                    test.is_true(errors.is(denied["1"].error, errors.PERMISSION_DENIED))
+                    test.eq(resolutions, 2)
+                    test.eq(dispatched, 2)
+                    return
+                end
                 test.eq(resolutions, 2)
                 test.eq(dispatched, 1)
                 local failures = 0
@@ -177,6 +229,23 @@ local function run_tests()
                 test.eq(dispatched, 2)
             end)
         end
+        test.it("shares a parallel refresh failure across the batch and retries at the next batch", function()
+            local failure = errors.new({kind = errors.UNAVAILABLE, message = "authority offline", retryable = true})
+            local original_resolve = resolver.resolve
+            resolver.resolve = function()
+                resolutions = resolutions + 1
+                return nil, nil, failure
+            end
+            local caller = tool_caller.new():set_strategy("parallel")
+            local results = execute(caller, 3)
+            test.eq(resolutions, 1)
+            test.eq(dispatched, 0)
+            for _, result in pairs(results) do test.eq(result.error, failure) end
+            resolver.resolve = original_resolve
+            execute(caller, 2)
+            test.eq(resolutions, 2)
+            test.eq(dispatched, 2)
+        end)
     end)
 end
 

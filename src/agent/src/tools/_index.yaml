@@ -24,7 +24,7 @@ entries:
   - name: execution_authority
     kind: library.lua
     source: file://execution_authority.lua
-    modules: [security]
+    modules: [security, registry]
 
   - name: attention_read_test
     kind: function.lua

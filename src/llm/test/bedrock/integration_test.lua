@@ -8,7 +8,7 @@ local json = require("json")
 local env = require("env")
 
 local function define_tests()
-    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS")
+    local RUN_INTEGRATION_TESTS = env.get("ENABLE_INTEGRATION_TESTS") == "true"
     local CLAUDE_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     local CLAUDE_THINKING_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     local LLAMA_MODEL = "us.meta.llama4-maverick-17b-instruct-v1:0"

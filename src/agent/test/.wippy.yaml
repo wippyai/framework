@@ -5,3 +5,5 @@ workspace:
     wippy/security: ../../security
     wippy/test: ../../test
     wippy/terminal: ../../terminal
+override:
+  "wippy.agent:execution_authority_settings:meta.refresh_perms": true

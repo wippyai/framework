@@ -1,5 +1,12 @@
 local security = require("security")
+local registry = require("registry")
 local M = {}
+
+local function refresh_enabled(): boolean
+    if M.refresh_perms ~= nil then return M.refresh_perms == true end
+    local settings = assert(registry.get("wippy.agent:execution_authority_settings"))
+    return settings.meta.refresh_perms == true
+end
 
 local function capture_authority(resolver: any): any
     if type(resolver) ~= "table" or type(resolver.capture) ~= "function" or type(resolver.resolve) ~= "function" then
@@ -21,23 +28,33 @@ local function capture_authority(resolver: any): any
         actor_type = getmetatable(actor), scope_type = getmetatable(scope)}, nil
 end
 
-function M.executor(saved: any, executor: any, context: table, registry_id: string): any
+function M.refresh(saved: any): any
+    local actor, scope, err = saved.resolver.resolve({
+        subject_id = saved.subject_id,
+        authority_only = true,
+        actor_meta = saved.actor_meta,
+        authority_context = saved.authority_context,
+    })
+    if err then return nil, err end
+    if type(actor) ~= "userdata" or type(scope) ~= "userdata"
+        or getmetatable(actor) ~= saved.actor_type or getmetatable(scope) ~= saved.scope_type then
+        return nil, errors.new({message = "Execution identity resolver must return a native actor and scope", kind = errors.INVALID, retryable = false})
+    end
+    if actor:id() ~= saved.subject_id then
+        return nil, errors.new({message = "Execution identity resolver returns a different subject",
+            kind = errors.INVALID, retryable = false})
+    end
+    return {actor = actor, scope = scope}, nil
+end
+
+function M.executor(saved: any, executor: any, context: table, registry_id: string, refreshed: any?): any
     if saved ~= nil then
-        local actor, scope, err = saved.resolver.resolve({
-            subject_id = saved.subject_id,
-            authority_only = true,
-            actor_meta = saved.actor_meta,
-            authority_context = saved.authority_context,
-        })
-        if err then return nil, err end
-        if type(actor) ~= "userdata" or type(scope) ~= "userdata"
-            or getmetatable(actor) ~= saved.actor_type or getmetatable(scope) ~= saved.scope_type then
-            return nil, errors.new({message = "Execution identity resolver must return a native actor and scope", kind = errors.INVALID, retryable = false})
+        if refreshed == nil then
+            local err
+            refreshed, err = M.refresh(saved)
+            if err then return nil, err end
         end
-        if actor:id() ~= saved.subject_id then
-            return nil, errors.new({message = "Execution identity resolver returns a different subject",
-                kind = errors.INVALID, retryable = false})
-        end
+        local actor, scope = refreshed.actor, refreshed.scope
         local decision = (scope :: security.Scope):evaluate(actor, "funcs.call", registry_id)
         if decision ~= "allow" then
             return nil, errors.new({message = "Tool execution is not allowed: " .. registry_id,
@@ -56,6 +73,7 @@ end
 function M.capture(resolver: any): any
     resolver = resolver or execution_identity_resolver
     if resolver == nil then return nil, nil end
+    if not refresh_enabled() then return nil, nil end
     return capture_authority(resolver)
 end
 

@@ -18,6 +18,12 @@ type PluginState = {
     status: string,
 }
 
+type Route = {
+    prefix: string,
+    config: PluginConfig,
+    topic: string,
+}
+
 type UserState = {
     user_id: string,
     user_metadata: any,
@@ -27,9 +33,15 @@ type UserState = {
     active_plugins: {[string]: PluginState},
     connected_clients: {[string]: boolean},
     client_count: number,
+    retiring: boolean?,
     pg_scopes: {[string]: any},
     pg_groups: {[string]: string},
+    routes: {[any]: Route},
+    route_count: number,
+    disconnect_started_at: string?,
 }
+
+local MAX_CACHED_ROUTES = 64
 
 type UserUpgradeState = {
     relay_user_upgrade: boolean,
@@ -41,7 +53,9 @@ type UserUpgradeState = {
     active_plugins: {[string]: PluginState},
     connected_clients: {[string]: boolean},
     client_count: number,
+    retiring: boolean?,
     pg_groups: {[string]: string},
+    disconnect_started_at: string?,
 }
 
 local function get_plugin_info(state: UserState): any
@@ -146,7 +160,9 @@ local function snapshot_state(state: UserState): UserUpgradeState
         active_plugins = state.active_plugins,
         connected_clients = state.connected_clients,
         client_count = state.client_count,
+        retiring = state.retiring,
         pg_groups = groups,
+        disconnect_started_at = state.disconnect_started_at,
     }
 end
 
@@ -273,7 +289,10 @@ local function route_to_plugin(state: UserState, prefix: string, plugin_config: 
                 context = message_data.context
             }
 
-            process.send(pid, topic, payload_data)
+            local sent, send_err = process.send(pid, topic, payload_data)
+            if not sent then
+                return false, "Failed to send message to plugin: " .. tostring(send_err)
+            end
             return true
         end
     end
@@ -284,21 +303,25 @@ end
 local function handle_client_join(state: UserState, payload_data: any)
     local client_pid = payload_data.client_pid :: string?
     if client_pid then
-        state.connected_clients[client_pid] = true
-        state.client_count = state.client_count + 1
+        if not state.connected_clients[client_pid] then
+            state.connected_clients[client_pid] = true
+            state.client_count = state.client_count + 1
 
-        logger:info("client connected", {
-            client_pid = client_pid,
-            client_count = state.client_count,
-            user_id = state.user_id
-        })
+            logger:info("client connected", {
+                client_pid = client_pid,
+                client_count = state.client_count,
+                user_id = state.user_id
+            })
 
-        if state.client_count == 1 then
-            local session_plugin = state.active_plugins["session_"]
-            if session_plugin then
-                local pid = session_plugin.pid
-                if pid then
-                    process.send(pid, "resume", {})
+            if state.client_count == 1 then
+                state.retiring = false
+                state.disconnect_started_at = nil
+                local session_plugin = state.active_plugins["session_"]
+                if session_plugin then
+                    local pid = session_plugin.pid
+                    if pid then
+                        process.send(pid, "resume", {})
+                    end
                 end
             end
         end
@@ -328,13 +351,7 @@ local function handle_client_leave(state: UserState, payload_data: any)
         })
 
         if state.client_count == 0 then
-            local session_plugin = state.active_plugins["session_"]
-            if session_plugin then
-                local pid = session_plugin.pid
-                if pid then
-                    process.send(pid, "shutdown", {})
-                end
-            end
+            state.disconnect_started_at = time.now():format(time.RFC3339NANO)
         end
 
         notify_central_hub_activity(state)
@@ -342,8 +359,16 @@ local function handle_client_leave(state: UserState, payload_data: any)
 end
 
 local function handle_client_message(state: UserState, payload: any, from_pid: string)
-    local message_data, err = json.decode(string(payload:data()))
-    if not message_data then
+    if not state.connected_clients[from_pid] then
+        logger:warn("message from unconnected client rejected", {
+            user_id = state.user_id,
+            client_pid = from_pid,
+        })
+        return
+    end
+
+    local message_data, err = json.decode(payload:data())
+    if err then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.INVALID_JSON,
             message = "Failed to decode JSON message"
@@ -351,26 +376,42 @@ local function handle_client_message(state: UserState, payload: any, from_pid: s
         return
     end
 
-    local msg_type = message_data.type :: string?
-    if not msg_type then
+    if type(message_data) ~= "table" then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.UNKNOWN_COMMAND,
-            message = "Message type is required"
+            message = "Message must be a JSON object"
         })
         return
     end
 
-    local plugin_prefix, plugin_config = find_plugin_for_command(state, msg_type)
-    if not plugin_prefix or not plugin_config then
-        process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
-            error = consts.ERROR_CODES.PLUGIN_NOT_FOUND,
-            message = "No plugin found for command: " .. msg_type
-        })
-        return
+    local msg_type: any = message_data.type
+    local route = state.routes[msg_type]
+    if not route then
+        if type(msg_type) ~= "string" or msg_type == "" then
+            process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.UNKNOWN_COMMAND,
+                message = "Message type is required"
+            })
+            return
+        end
+
+        local plugin_prefix, plugin_config = find_plugin_for_command(state, msg_type)
+        if not plugin_prefix or not plugin_config then
+            process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.PLUGIN_NOT_FOUND,
+                message = "No plugin found for command: " .. msg_type
+            })
+            return
+        end
+
+        route = { prefix = plugin_prefix, config = plugin_config, topic = msg_type:sub(#plugin_prefix + 1) }
+        if state.route_count < MAX_CACHED_ROUTES then
+            state.routes[msg_type] = route
+            state.route_count = state.route_count + 1
+        end
     end
 
-    local stripped_topic = msg_type:sub(#plugin_prefix + 1)
-    local success, route_err = route_to_plugin(state, plugin_prefix!, plugin_config!, stripped_topic, message_data, from_pid)
+    local success, route_err = route_to_plugin(state, route.prefix, route.config, route.topic, message_data, from_pid)
     if not success then
         process.send(from_pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.PLUGIN_FAILED,
@@ -401,6 +442,13 @@ local function handle_process_event(state: UserState, event: any)
     end
 
     plugin_state.pid = nil
+
+    -- A disconnected hub must not restart the session plugin it is waiting
+    -- to retire. Its normal crash recovery records any unfinished work.
+    if state.retiring and state.client_count == 0 and plugin_prefix == "session_" then
+        plugin_state.status = "stopped"
+        return
+    end
 
     local was_crash = false
     if event.kind == process.event.LINK_DOWN then
@@ -449,7 +497,11 @@ local function run(args: any): any
         local resume_state = args :: UserUpgradeState
         active_plugins = resume_state.active_plugins
         connected_clients = resume_state.connected_clients
-        client_count = resume_state.client_count
+        -- Older duplicate JOINs could inflate the saved counter. Memberships
+        -- are authoritative; rebuilding the derived count keeps final LEAVE valid.
+        for _ in pairs(connected_clients) do
+            client_count = client_count + 1
+        end
         upgrade_groups = resume_state.pg_groups
     end
     local user_id = string(args.user_id)
@@ -465,8 +517,12 @@ local function run(args: any): any
         active_plugins = active_plugins,
         connected_clients = connected_clients,
         client_count = client_count,
+        retiring = resumed and client_count == 0 and args.retiring == true,
         pg_scopes = {},
-        pg_groups = {}
+        pg_groups = {},
+        routes = {},
+        route_count = 0,
+        disconnect_started_at = resumed and args.disconnect_started_at or nil,
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
@@ -495,22 +551,51 @@ local function run(args: any): any
 
     local inbox = process.inbox()
     local events = process.events()
+    local select_cases = { inbox:case_receive(), events:case_receive() }
+    local disconnect_timer: any = nil
+    local timer_started_at: string? = nil
 
     while true do
-        local result = channel.select({
-            inbox:case_receive(),
-            events:case_receive()
-        })
+        if timer_started_at ~= state.disconnect_started_at then
+            if disconnect_timer then disconnect_timer:stop() end
+            disconnect_timer = nil
+            timer_started_at = state.disconnect_started_at
+            select_cases[3] = nil
+            if timer_started_at then
+                local started, parse_err = time.parse(time.RFC3339NANO, timer_started_at)
+                if not started then error("Invalid disconnect timestamp: " .. tostring(parse_err)) end
+                local grace, duration_err = time.parse_duration(consts.DISCONNECT_GRACE)
+                if not grace then error("Invalid disconnect grace: " .. tostring(duration_err)) end
+                local remaining = math.max(0, grace:milliseconds() - time.now():sub(started):milliseconds())
+                disconnect_timer = time.timer(remaining * time.MILLISECOND)
+                select_cases[3] = disconnect_timer:channel():case_receive()
+            end
+        end
+        local result = channel.select(select_cases)
 
         if not result.ok then
             break
         end
 
-        if result.channel == inbox then
+        if disconnect_timer and result.channel == disconnect_timer:channel() then
+            disconnect_timer:stop()
+            if state.client_count == 0 then
+                local session_plugin = state.active_plugins["session_"]
+                if session_plugin and session_plugin.pid then
+                    local sent, send_err = process.send(session_plugin.pid, "shutdown", {})
+                    if not sent then
+                        logger:error("disconnect shutdown delivery failed", {
+                            user_id = state.user_id, plugin_pid = session_plugin.pid, error = tostring(send_err),
+                        })
+                    end
+                end
+            end
+            state.disconnect_started_at = nil
+        elseif result.channel == inbox then
             local msg: any = result.value
-            local topic = string(msg:topic())
+            local topic: string = msg:topic()
             local payload: any = msg:payload()
-            local from_pid = string(msg:from())
+            local from_pid: string = msg:from()
 
             if topic == consts.WS_TOPICS.JOIN then
                 handle_client_join(state, payload:data())
@@ -521,6 +606,14 @@ local function run(args: any): any
             elseif topic == consts.WS_TOPICS.CANCEL then
                 logger:info("received cancel signal")
                 break
+            elseif topic == consts.HUB_CONTROL.RETIRE then
+                -- Only the owning central hub can request collection. JOIN
+                -- may already have overtaken an old inactivity observation.
+                if from_pid == state.central_hub_pid and state.client_count == 0 then
+                    state.retiring = true
+                    local session = state.active_plugins["session_"]
+                    if session and session.pid then process.send(session.pid, "shutdown", {}) end
+                end
             elseif topic == consts.HUB_CONTROL.PG_SUBSCRIBE then
                 handle_pg_subscribe(state, payload:data())
             elseif topic == consts.HUB_CONTROL.PG_UNSUBSCRIBE then
@@ -533,6 +626,7 @@ local function run(args: any): any
             if event.kind == process.event.CANCEL then
                 break
             elseif event.kind == process.event.OUTDATED then
+                if disconnect_timer then disconnect_timer:stop() end
                 local upgrade_state = encode_upgrade_state(snapshot_state(state))
                 release_pg(state)
                 logger:info("upgrading user hub", {
@@ -544,9 +638,14 @@ local function run(args: any): any
                 handle_process_event(state, event)
             end
         end
+        if state.retiring and state.client_count == 0 then
+            local session = state.active_plugins["session_"]
+            if not session or not session.pid then break end
+        end
     end
 
     release_pg(state)
+    if disconnect_timer then disconnect_timer:stop() end
 
     for prefix, plugin_state in pairs(state.active_plugins) do
         local pid = plugin_state.pid

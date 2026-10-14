@@ -35,6 +35,7 @@ Key features include:
 - Automatic migration tracking and duplicate detection
 - Forward and backward migration support with rollback capabilities
 - Registry integration for discovering migrations by target database and tags
+- Safe renames and namespace moves via `meta.alias` — ledger rows recorded under a former registry ID still count as applied
 - Isolated execution environment with proper error handling and cleanup
 
 The module is used by the bootloader during application startup and can be used programmatically for database schema management tasks.
