@@ -3,6 +3,7 @@ local time = require("time")
 local json = require("json")
 local security = require("security")
 local consts = require("consts")
+local registry = require("registry")
 
 local sequence = 0
 local PIPELINE_WINDOW = 32
@@ -19,7 +20,7 @@ local function receive(ch: any): any
     return result.value
 end
 
-local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?): any
+local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?, hub_source: string?): any
     sequence = sequence + 1
     local user_id = "relay-runtime-" .. process.pid() .. "-" .. sequence
     local actor = security.new_actor(user_id, {})
@@ -58,7 +59,7 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
         args = (json.encode(args))
     end
     local pid, err = process.with_context({}):with_actor(actor):with_scope(scope):spawn_monitored(
-        consts.USER_HUB_PROCESS_ID, assert(config.user_hub_host), args)
+        hub_source or consts.USER_HUB_PROCESS_ID, assert(config.user_hub_host), args)
     assert(pid, tostring(err))
     local function join()
         assert(process.send(pid, consts.WS_TOPICS.JOIN, { client_pid = process.pid() }))
@@ -86,7 +87,10 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
         local event = selected.value
         if event.kind == process.event.EXIT and children[event.from] then
             children[event.from] = nil
-            if event.result.error then ok, result = false, tostring(event.result.error) end
+            if event.result.error then
+                result = (not ok and tostring(result) .. "; " or "") .. "plugin exited: " .. tostring(event.result.error)
+                ok = false
+            end
         end
         if event.from == pid and event.kind == process.event.EXIT then
             stopped = true
@@ -163,6 +167,73 @@ local function define_tests()
                 test.eq(result.payload.request_id, "after")
                 test.eq(result.payload.session_id, "reconnected")
             end)
+        end)
+        test.it("keeps client ownership, options, actor and queued commands through a real live update", function()
+            local original = assert(registry.get("app:relay_upgrade_user"))
+            local function apply_entry(entry: any)
+                local snapshot = assert(registry.snapshot())
+                local changes = snapshot:changes()
+                changes:update(entry)
+                local version, err = changes:apply()
+                assert(version, tostring(err))
+            end
+            local loaded = process.listen("relay.runtime.upgrade_loaded")
+            local options = process.listen("relay.runtime.upgrade_options")
+            local fence = process.listen("relay.runtime.foreign_fence")
+            local ok, err = pcall(with_hub, "app:relay_runtime_plugin", function(pid, user_id, join, send, response, _, started)
+                join()
+                send({type = "runtime_echo", request_id = "before-upgrade"})
+                local plugin = started()
+                test.eq(receive(response).payload.request_id, "before-upgrade")
+                for index = 1, 16 do
+                    send({type = "runtime_echo", request_id = "queued-" .. index, data = {index = index}})
+                end
+                local updated = assert(registry.get("app:relay_upgrade_user"))
+                updated.data.method = "upgraded"
+                apply_entry(updated)
+                for index = 17, 32 do
+                    send({type = "runtime_echo", request_id = "queued-" .. index, data = {index = index}})
+                end
+                local incarnation = receive(loaded)
+                test.eq(incarnation.pid, pid)
+                test.eq(incarnation.plugin_pid, plugin.pid)
+                test.eq(incarnation.clients[process.pid()], true)
+                local seen = {}
+                for _ = 1, 32 do
+                    local delivered = receive(response)
+                    local index = delivered.payload.data.index
+                    local slot = pipeline_slot(index, 1, 32)
+                    test.not_nil(slot)
+                    test.is_nil(seen[slot])
+                    seen[slot] = true
+                    test.eq(delivered.payload.request_id, "queued-" .. index)
+                    test.eq(delivered.plugin_pid, plugin.pid)
+                    test.eq(delivered.payload.conn_pid, (process.pid()))
+                end
+                assert(process.send(pid, "relay.runtime.upgrade_probe", "options-after-upgrade"))
+                local live = receive(options)
+                test.eq(live.token, "options-after-upgrade")
+                test.eq(live.pid, pid)
+                test.eq(live.actor_id, user_id)
+                test.eq(live.options.upgradable, true)
+                test.eq(live.options.trap_links, true)
+                local foreign_pid, foreign_err = process.spawn_monitored("app:relay_upgrade_foreign", "app:processes", {hub_pid = pid})
+                assert(foreign_pid, tostring(foreign_err))
+                local isolated, isolation_err = pcall(function()
+                    test.eq(receive(fence).pid, foreign_pid)
+                    send({type = "runtime_echo", request_id = "owned-after-upgrade"})
+                    local owned = receive(response)
+                    test.eq(owned.payload.request_id, "owned-after-upgrade", "the foreign sender must not dispatch after live update")
+                    test.eq(owned.plugin_pid, plugin.pid)
+                end)
+                local canceled, cancel_err = process.cancel(foreign_pid, "2s")
+                assert(canceled, tostring(cancel_err))
+                if not isolated then error(isolation_err) end
+            end, nil, nil, nil, "app:relay_upgrade_user")
+            local restored, restore_err = pcall(apply_entry, original)
+            for _, listener in ipairs({loaded, options, fence}) do process.unlisten(listener) end
+            if not ok then error(err) end
+            assert(restored, tostring(restore_err))
         end)
         test.it("routes repeated commands and stops on a process cancellation event", function()
             with_hub("app:relay_runtime_plugin", function(pid, _, join, send, response, _, started)
