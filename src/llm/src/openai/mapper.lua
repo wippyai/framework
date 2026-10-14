@@ -159,16 +159,16 @@ local function encode_arguments(arguments)
     return tostring(arguments or "")
 end
 
--- Pull all system / developer messages out of the contract message stream
--- into a single instructions string. Returns instructions plus a set of
--- consumed indices so map_messages can skip them.
+-- Collect non-positional system and developer messages as instructions.
+-- Return consumed indices so map_messages keeps positional messages in input.
 function openai_mapper.extract_instructions(contract_messages)
     if not contract_messages then return nil, {} end
 
     local parts = {}
     local consumed = {}
     for i, msg in ipairs(contract_messages) do
-        if msg.role == "system" or msg.role == "developer" then
+        if (msg.role == "system" or msg.role == "developer")
+            and not (msg.metadata and msg.metadata.preserve_position == true) then
             local text = extract_text(msg.content)
             if text and text ~= "" then
                 table.insert(parts, text)
@@ -182,7 +182,7 @@ function openai_mapper.extract_instructions(contract_messages)
 end
 
 -- Map contract messages into the Responses API input[] array.
--- system / developer messages are pulled out via extract_instructions().
+-- Non-positional instructions are pulled out via extract_instructions().
 function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
     if not contract_messages then return {} end
@@ -192,10 +192,10 @@ function openai_mapper.map_messages(contract_messages, options)
 
     for i, msg in ipairs(contract_messages) do
         if not consumed[i] and msg.role ~= "cache_marker" then
-            if msg.role == "user" then
+            if msg.role == "user" or msg.role == "system" or msg.role == "developer" then
                 table.insert(items, {
                     type = "message",
-                    role = "user",
+                    role = msg.role,
                     content = normalize_input_content(msg.content)
                 })
             elseif msg.role == "assistant" then

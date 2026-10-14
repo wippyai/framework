@@ -3,6 +3,21 @@ local json = require("json")
 
 local function define_tests()
     describe("Prompt Library", function()
+        it("preserves positional messages on both sides of consolidation", function()
+            for _, role in ipairs({ "system", "developer", "user", "assistant" }) do
+                local builder = prompt.new()
+                builder:add_message(role, { prompt.text("before") })
+                builder:add_message(role, { prompt.text("boundary") }, nil, { preserve_position = true })
+                builder:add_message(role, { prompt.text("after") })
+                for _, messages in ipairs({ builder:get_messages(), builder:clone():get_messages() }) do
+                    test.eq(#messages, 3)
+                    test.eq(messages[1].content[1].text, "before")
+                    test.eq(messages[2].content[1].text, "boundary")
+                    test.is_true(messages[2].metadata.preserve_position)
+                    test.eq(messages[3].content[1].text, "after")
+                end
+            end
+        end)
         it("preserves explicit result failures through build and clone without inspecting success payloads", function()
             local builder = prompt.new()
             builder:add_function_result("lookup", "denied", "failed", { is_error = true })

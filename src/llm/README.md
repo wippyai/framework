@@ -59,3 +59,9 @@ See [LICENSE](LICENSE) for details.
 
 [wippy-documentation]: https://docs.wippy.ai
 [wippy-framework]: https://github.com/wippyai/framework
+
+Message metadata can set `preserve_position = true` to retain a message at its
+conversation position. Prompt consolidation keeps it separate from adjacent
+messages of the same role. OpenAI Responses sends positional system and developer
+messages in `input` alongside the conversation; ordinary system and developer
+messages retain their existing top-level `instructions` behavior.
