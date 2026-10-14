@@ -12,6 +12,7 @@ type RunOptions = {
     direction: string?,
     force: boolean?,
     id: string?,
+    aliases: {string}?,
 }
 
 type RunResult = {
@@ -116,6 +117,26 @@ local function execute_migration(migration_item: any, options: any): any
             }
         end
 
+        if not is_applied and type(options.aliases) == "table" then
+            for _, alias in ipairs(options.aliases) do
+                local alias_applied, alias_err = repository.is_applied(tx, tostring(alias))
+                if alias_err then
+                    tx:rollback()
+                    return {
+                        status = "error",
+                        description = migration_item.description,
+                        error = "Failed to check migration status: " .. tostring(alias_err),
+                        name = migration_item.description
+                    }
+                end
+
+                if alias_applied then
+                    is_applied = true
+                    break
+                end
+            end
+        end
+
         if is_applied and not options.force then
             tx:rollback()
             return {
@@ -136,15 +157,24 @@ local function execute_migration(migration_item: any, options: any): any
         success, err = pcall(impl.down, tx)
 
         if success then
-            local remove_ok, remove_err = repository.remove_migration(tx, migration_id)
-            if not remove_ok then
-                tx:rollback()
-                return {
-                    status = "error",
-                    description = migration_item.description,
-                    error = "Failed to remove migration record: " .. tostring(remove_err),
-                    name = migration_item.description
-                }
+            local ids_to_remove = { migration_id }
+            if type(options.aliases) == "table" then
+                for _, alias in ipairs(options.aliases) do
+                    table.insert(ids_to_remove, tostring(alias))
+                end
+            end
+
+            for _, remove_id in ipairs(ids_to_remove) do
+                local remove_ok, remove_err = repository.remove_migration(tx, remove_id)
+                if not remove_ok then
+                    tx:rollback()
+                    return {
+                        status = "error",
+                        description = migration_item.description,
+                        error = "Failed to remove migration record: " .. tostring(remove_err),
+                        name = migration_item.description
+                    }
+                end
             end
         end
     end
@@ -315,6 +345,7 @@ function migration.run(fn: () -> (), options: RunOptions?): any
                 direction = opts.direction,
                 force = opts.force,
                 id = opts.id,
+                aliases = opts.aliases,
             })
 
             table.insert(results.migrations, result)

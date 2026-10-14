@@ -1,5 +1,12 @@
 # Migration tests
 
+The alias suite applies, skips, reports and rolls back registered fixture migrations
+against SQLite. With `MIGRATION_TEST_POSTGRES=true`, it repeats the same cases
+against `app:concurrent_pg_a`, using the same registered functions with PostgreSQL
+implementations. It also checks tag-hidden collisions, malformed declarations and
+rollback of an injected alias lookup failure. Each case clears its ledger rows
+and fixture tables, including after an assertion fails.
+
 `make test` runs the SQLite concurrency regression and the existing suites.
 The concurrency test uses two independent database resource pools pointed at
 one file, so runtime serialization within a single pool cannot hide the race.
