@@ -571,7 +571,11 @@ local function run(args: any): any
                 local session_plugin = state.active_plugins["session_"]
                 if session_plugin and session_plugin.pid then
                     local sent, send_err = process.send(session_plugin.pid, "shutdown", {})
-                    if not sent then error("Failed to shut down disconnected session plugin: " .. tostring(send_err)) end
+                    if not sent then
+                        logger:error("disconnect shutdown delivery failed", {
+                            user_id = state.user_id, plugin_pid = session_plugin.pid, error = tostring(send_err),
+                        })
+                    end
                 end
             end
             state.disconnect_started_at = nil
