@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/wippyai/framework/compare/actor-v0.4.4...actor-v0.4.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* harden Lua actor, relay, tool-round and runner behavior ([#165](https://github.com/wippyai/framework/issues/165)) ([d4607bb](https://github.com/wippyai/framework/commit/d4607bb274e09a1d0cc6bef533f45546846fb79b))
+
 ## [0.4.4](https://github.com/wippyai/framework/compare/actor-v0.4.3...actor-v0.4.4) (2026-10-09)
 
 

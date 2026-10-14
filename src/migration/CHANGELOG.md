@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.23](https://github.com/wippyai/framework/compare/migration-v0.3.22...migration-v0.3.23) (2026-10-14)
+
+
+### Features
+
+* **migration:** preserve history across migration renames ([#94](https://github.com/wippyai/framework/issues/94)) ([7a485e9](https://github.com/wippyai/framework/commit/7a485e9b59fc4d59720104bf55157adb3a01a386))
+
 ## [0.3.22](https://github.com/wippyai/framework/compare/migration-v0.3.21...migration-v0.3.22) (2026-10-09)
 
 

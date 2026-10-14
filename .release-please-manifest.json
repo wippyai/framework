@@ -1,16 +1,16 @@
 {
-  "src/actor": "0.4.4",
-  "src/agent": "0.5.3",
+  "src/actor": "0.4.5",
+  "src/agent": "0.5.4",
   "src/bootloader": "0.3.18",
   "src/docs": "0.3.11",
   "src/embeddings": "0.3.17",
   "src/facade": "0.6.43",
-  "src/llm": "0.5.6",
-  "src/migration": "0.3.22",
-  "src/relay": "0.3.16",
+  "src/llm": "0.5.7",
+  "src/migration": "0.3.23",
+  "src/relay": "0.3.17",
   "src/security": "0.4.3",
   "src/terminal": "0.4.6",
-  "src/test": "0.4.21",
+  "src/test": "0.4.22",
   "src/usage": "0.3.26",
   "src/views": "0.5.12"
 }

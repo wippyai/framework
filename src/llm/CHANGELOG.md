@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.7](https://github.com/wippyai/framework/compare/llm-v0.5.6...llm-v0.5.7) (2026-10-14)
+
+
+### Features
+
+* **llm:** support OpenAI Decisions evaluation ([#166](https://github.com/wippyai/framework/issues/166)) ([a7baba6](https://github.com/wippyai/framework/commit/a7baba6b5f7e718aec42c1a66783791868d477c6))
+
+
+### Bug Fixes
+
+* harden Lua actor, relay, tool-round and runner behavior ([#165](https://github.com/wippyai/framework/issues/165)) ([d4607bb](https://github.com/wippyai/framework/commit/d4607bb274e09a1d0cc6bef533f45546846fb79b))
+* **llm:** preserve positional messages through prompt mapping ([#177](https://github.com/wippyai/framework/issues/177)) ([199516b](https://github.com/wippyai/framework/commit/199516b9fe963541c1cad46ae5db728b948a7b0b))
+
 ## [0.5.6](https://github.com/wippyai/framework/compare/llm-v0.5.5...llm-v0.5.6) (2026-10-09)
 
 
