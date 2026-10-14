@@ -20,7 +20,7 @@ local function receive(ch: any): any
     return result.value
 end
 
-local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?, hub_source: string?): any
+local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?, hub_source: string?, drain_fixture: boolean?): any
     sequence = sequence + 1
     local user_id = "relay-runtime-" .. process.pid() .. "-" .. sequence
     local actor = security.new_actor(user_id, {})
@@ -40,6 +40,13 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
                     host = config.user_hub_host, auto_start = false },
             },
         }
+    if drain_fixture then
+        args.central_hub_pid = process.pid()
+        config.runtime_drain_fixture = true
+        args.plugins.session_ = args.plugins.runtime_
+        args.plugins.session_.prefix = "session_"
+        args.plugins.runtime_ = nil
+    end
     if active_pid or session_pid then
         args.relay_user_upgrade = true
         args.active_plugins = {}
@@ -71,15 +78,28 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
         assert(process.send(pid, consts.WS_TOPICS.MESSAGE, encoded))
     end
     local children = {}
+    local stopped = false
+    local function record_exit(event)
+        if event.kind ~= process.event.EXIT then return end
+        if event.from == pid then stopped = true end
+        children[event.from] = nil
+        assert(not event.result.error, tostring(event.result.error))
+    end
+    local function await_exit(expected_pid)
+        while true do
+            local event = receive(events)
+            record_exit(event)
+            if event.kind == process.event.EXIT and event.from == expected_pid then return event end
+        end
+    end
     local function startup()
         local plugin = receive(started)
         assert(process.monitor(plugin.pid))
         children[plugin.pid] = true
         return plugin
     end
-    local ok: boolean, result: any = pcall(body, pid, user_id, join, send, response, errors, startup)
-    process.send(pid, consts.WS_TOPICS.CANCEL, {})
-    local stopped = false
+    local ok: boolean, result: any = pcall(body, pid, user_id, join, send, response, errors, startup, await_exit)
+    if not stopped then process.send(pid, consts.WS_TOPICS.CANCEL, {}) end
     local timer = time.timer(3 * time.SECOND)
     while not stopped or next(children) do
         local selected = channel.select({ events:case_receive(), timer:channel():case_receive() })
@@ -126,6 +146,114 @@ end
 
 local function define_tests()
     test.describe("relay runtime", function()
+        local function drain_case(body)
+            local lifecycle = process.listen("relay.runtime.lifecycle")
+            local function control(topic, shutdowns)
+                while true do
+                    local value = receive(lifecycle)
+                    if value.topic == topic and (not shutdowns or value.shutdowns == shutdowns) then return value end
+                end
+            end
+            local ok, err = pcall(with_hub, "app:relay_runtime_plugin", function(...)
+                return body(control, ...)
+            end, nil, nil, nil, nil, true)
+            process.unlisten(lifecycle)
+            if not ok then error(err) end
+        end
+        test.it("waits for accepted session work before retiring the hub and both processes exit", function()
+            drain_case(function(control, pid, _, join, send, response, _, started, await_exit)
+                join()
+                send({type = "session_hold"})
+                local plugin = started()
+                receive(response)
+                assert(process.send(pid, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() }))
+                test.is_true(control("shutdown", 1).busy)
+                assert(process.send(pid, consts.HUB_CONTROL.RETIRE, {}))
+                test.is_true(control("shutdown", 2).busy, "GC must not cancel accepted work")
+                assert(process.send(plugin.pid, "release", {}))
+                test.is_false(control("release").busy)
+                await_exit(plugin.pid)
+                await_exit(pid)
+            end)
+        end)
+        test.it("cancels retirement on reconnect and continues using the same session plugin", function()
+            drain_case(function(control, pid, _, join, send, response, _, started, await_exit)
+                join()
+                send({type = "session_hold"})
+                local plugin = started()
+                receive(response)
+                assert(process.send(pid, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() }))
+                control("shutdown", 1)
+                assert(process.send(pid, consts.HUB_CONTROL.RETIRE, {}))
+                control("shutdown", 2)
+                test.eq(join().client_count, 1)
+                control("resume")
+                receive(response) -- resume is echoed by the fixture
+                send({type = "session_release"})
+                test.eq(receive(response).plugin_pid, plugin.pid)
+                send({type = "session_echo", data = "after reconnect"})
+                test.eq(receive(response).payload.data, "after reconnect")
+                -- An old GC observation arriving after JOIN must also be ignored.
+                assert(process.send(pid, consts.HUB_CONTROL.RETIRE, {}))
+                send({type = "session_echo", data = "after stale retirement"})
+                test.eq(receive(response).payload.data, "after stale retirement")
+                assert(process.send(pid, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() }))
+                control("shutdown", 3)
+                await_exit(plugin.pid)
+                assert(process.send(pid, consts.HUB_CONTROL.RETIRE, {}))
+                await_exit(pid)
+            end)
+        end)
+        test.it("does not let a plugin request collection of its disconnected hub", function()
+            drain_case(function(control, pid, _, join, send, response, _, started, await_exit)
+                join()
+                send({type = "session_hold"})
+                local plugin = started()
+                receive(response)
+                assert(process.send(pid, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() }))
+                control("shutdown", 1)
+                assert(process.send(plugin.pid, "forge_retire", {}))
+                control("forge_retire")
+                assert(process.send(plugin.pid, "release", {}))
+                control("release")
+                await_exit(plugin.pid)
+                test.eq(join().client_count, 1, "foreign retirement must not have collected the hub")
+            end)
+        end)
+        test.it("collects a disconnected hub with no session plugin", function()
+            with_hub("app:relay_runtime_plugin", function(pid, _, join, _, _, _, _, await_exit)
+                join()
+                assert(process.send(pid, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() }))
+                assert(process.send(pid, consts.HUB_CONTROL.RETIRE, {}))
+                await_exit(pid)
+            end, nil, nil, nil, nil, true)
+        end)
+        test.it("does not forward incoming retirement through the central hub", function()
+            local central = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME))
+            sequence = sequence + 1
+            local user_id = "central-retire-" .. process.pid() .. "-" .. sequence
+            local control = process.listen(consts.WS_TOPICS.CONTROL)
+            local welcome = process.listen(consts.CLIENT_TOPICS.WELCOME)
+            local hub
+            local ok, err = pcall(function()
+                local request = {client_pid = process.pid(), metadata = {user_id = user_id, scope_id = "app:user"}}
+                assert(process.send(central, consts.WS_TOPICS.JOIN, request))
+                hub = receive(control).target_pid
+                assert(process.send(hub, consts.WS_TOPICS.JOIN, {client_pid = process.pid()}))
+                receive(welcome)
+                assert(process.send(hub, consts.WS_TOPICS.LEAVE, {client_pid = process.pid()}))
+                assert(process.send(central, consts.HUB_CONTROL.RETIRE, {}))
+                -- The second connection response is a barrier through central.
+                assert(process.send(central, consts.WS_TOPICS.JOIN, request))
+                test.eq(receive(control).target_pid, hub)
+                assert(process.send(hub, consts.WS_TOPICS.JOIN, {client_pid = process.pid()}))
+                test.eq(receive(welcome).user_id, user_id)
+            end)
+            if hub then process.cancel(hub, "2s") end
+            process.unlisten(control)
+            process.unlisten(welcome)
+            if not ok then error(err) end
+        end)
         test.it("starts plugins lazily and preserves command routing and payload fields", function()
             with_hub("app:relay_runtime_plugin", function(pid, user_id, join, send, response, _, started)
                 local welcome = join()
@@ -235,6 +363,60 @@ local function define_tests()
             if not ok then error(err) end
             assert(restored, tostring(restore_err))
         end)
+        for _, reconnect in ipairs({false, true}) do
+            test.it("preserves pending disconnect through live upgrade, reconnect " .. tostring(reconnect), function()
+                local original = assert(registry.get("app:relay_upgrade_user"))
+                local function apply_entry(entry)
+                    local snapshot = assert(registry.snapshot())
+                    local changes = snapshot:changes()
+                    changes:update(entry)
+                    assert(changes:apply())
+                end
+                local loaded = process.listen("relay.runtime.upgrade_loaded")
+                local options = process.listen("relay.runtime.upgrade_options")
+                local resumed = process.listen("resume")
+                local shutdown = process.listen("shutdown")
+                local ok, err = pcall(with_hub, "app:relay_runtime_plugin", function(pid, _, join, send, response, _, started)
+                    join()
+                    receive(resumed)
+                    send({type = "runtime_echo"})
+                    started()
+                    receive(response)
+                    assert(process.send(pid, consts.WS_TOPICS.LEAVE, {client_pid = process.pid()}))
+                    local early = time.timer(200 * time.MILLISECOND)
+                    local selected = channel.select({shutdown:case_receive(), early:channel():case_receive()})
+                    early:stop()
+                    test.eq(selected.channel, early:channel())
+                    local updated = assert(registry.get("app:relay_upgrade_user"))
+                    updated.data.method = "upgraded"
+                    apply_entry(updated)
+                    local snapshot = receive(loaded)
+                    test.not_nil(snapshot.disconnect_started_at)
+                    test.is_nil(snapshot.clients[process.pid()])
+                    assert(process.send(pid, "relay.runtime.upgrade_probe", "disconnect-upgrade"))
+                    receive(options)
+                    if reconnect then
+                        join()
+                        receive(resumed)
+                        local deadline = time.timer(1500 * time.MILLISECOND)
+                        selected = channel.select({shutdown:case_receive(), deadline:channel():case_receive()})
+                        deadline:stop()
+                        test.eq(selected.channel, deadline:channel(), "restored timer must cancel on JOIN")
+                    else
+                        receive(shutdown)
+                        join()
+                        receive(resumed)
+                    end
+                    send({type = "runtime_echo", request_id = "still-usable"})
+                    test.eq(receive(response).payload.request_id, "still-usable")
+                end, nil, process.pid(), nil, "app:relay_upgrade_user")
+                local restored, restore_err = pcall(apply_entry, original)
+                for _, listener in ipairs({loaded, options, resumed, shutdown}) do process.unlisten(listener) end
+                if not ok then error(err) end
+                assert(restored, tostring(restore_err))
+            end)
+        end
+
         test.it("routes repeated commands and stops on a process cancellation event", function()
             with_hub("app:relay_runtime_plugin", function(pid, _, join, send, response, _, started)
                 join()
