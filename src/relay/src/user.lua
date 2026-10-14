@@ -37,6 +37,7 @@ type UserState = {
     pg_groups: {[string]: string},
     routes: {[any]: Route},
     route_count: number,
+    disconnect_started_at: string?,
 }
 
 local MAX_CACHED_ROUTES = 64
@@ -52,6 +53,7 @@ type UserUpgradeState = {
     connected_clients: {[string]: boolean},
     client_count: number,
     pg_groups: {[string]: string},
+    disconnect_started_at: string?,
 }
 
 local function get_plugin_info(state: UserState): any
@@ -157,6 +159,7 @@ local function snapshot_state(state: UserState): UserUpgradeState
         connected_clients = state.connected_clients,
         client_count = state.client_count,
         pg_groups = groups,
+        disconnect_started_at = state.disconnect_started_at,
     }
 end
 
@@ -308,6 +311,7 @@ local function handle_client_join(state: UserState, payload_data: any)
             })
 
             if state.client_count == 1 then
+                state.disconnect_started_at = nil
                 local session_plugin = state.active_plugins["session_"]
                 if session_plugin then
                     local pid = session_plugin.pid
@@ -343,13 +347,7 @@ local function handle_client_leave(state: UserState, payload_data: any)
         })
 
         if state.client_count == 0 then
-            local session_plugin = state.active_plugins["session_"]
-            if session_plugin then
-                local pid = session_plugin.pid
-                if pid then
-                    process.send(pid, "shutdown", {})
-                end
-            end
+            state.disconnect_started_at = time.now():format(time.RFC3339NANO)
         end
 
         notify_central_hub_activity(state)
@@ -512,6 +510,7 @@ local function run(args: any): any
         pg_groups = {},
         routes = {},
         route_count = 0,
+        disconnect_started_at = resumed and args.disconnect_started_at or nil,
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
@@ -541,15 +540,42 @@ local function run(args: any): any
     local inbox = process.inbox()
     local events = process.events()
     local select_cases = { inbox:case_receive(), events:case_receive() }
+    local disconnect_timer: any = nil
+    local timer_started_at: string? = nil
 
     while true do
+        if timer_started_at ~= state.disconnect_started_at then
+            if disconnect_timer then disconnect_timer:stop() end
+            disconnect_timer = nil
+            timer_started_at = state.disconnect_started_at
+            select_cases[3] = nil
+            if timer_started_at then
+                local started, parse_err = time.parse(time.RFC3339NANO, timer_started_at)
+                if not started then error("Invalid disconnect timestamp: " .. tostring(parse_err)) end
+                local grace, duration_err = time.parse_duration(consts.DISCONNECT_GRACE)
+                if not grace then error("Invalid disconnect grace: " .. tostring(duration_err)) end
+                local remaining = math.max(0, grace:milliseconds() - time.now():sub(started):milliseconds())
+                disconnect_timer = time.timer(remaining * time.MILLISECOND)
+                select_cases[3] = disconnect_timer:channel():case_receive()
+            end
+        end
         local result = channel.select(select_cases)
 
         if not result.ok then
             break
         end
 
-        if result.channel == inbox then
+        if disconnect_timer and result.channel == disconnect_timer:channel() then
+            disconnect_timer:stop()
+            if state.client_count == 0 then
+                local session_plugin = state.active_plugins["session_"]
+                if session_plugin and session_plugin.pid then
+                    local sent, send_err = process.send(session_plugin.pid, "shutdown", {})
+                    if not sent then error("Failed to shut down disconnected session plugin: " .. tostring(send_err)) end
+                end
+            end
+            state.disconnect_started_at = nil
+        elseif result.channel == inbox then
             local msg: any = result.value
             local topic: string = msg:topic()
             local payload: any = msg:payload()
@@ -576,6 +602,7 @@ local function run(args: any): any
             if event.kind == process.event.CANCEL then
                 break
             elseif event.kind == process.event.OUTDATED then
+                if disconnect_timer then disconnect_timer:stop() end
                 local upgrade_state = encode_upgrade_state(snapshot_state(state))
                 release_pg(state)
                 logger:info("upgrading user hub", {
@@ -590,6 +617,7 @@ local function run(args: any): any
     end
 
     release_pg(state)
+    if disconnect_timer then disconnect_timer:stop() end
 
     for prefix, plugin_state in pairs(state.active_plugins) do
         local pid = plugin_state.pid

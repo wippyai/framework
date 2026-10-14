@@ -83,7 +83,8 @@ local consts = {
     },
 
     -- Fixed timeouts
-    CANCEL_TIMEOUT = "10s"
+    CANCEL_TIMEOUT = "10s",
+    DISCONNECT_GRACE = "1s"
 }
 
 function consts.get_config(): RelayConfig
