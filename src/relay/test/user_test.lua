@@ -60,6 +60,7 @@ local function define_tests()
                 active_plugins = { session_ = { pid = "app:plugin:1", restart_count = 0, status = "running" } },
                 connected_clients = { ["app:client:1"] = true },
                 client_count = 1,
+                retiring = true,
                 pg_scopes = { ["app:scope"] = { opaque = true } },
                 pg_groups = { ["workspace.1"] = "app:scope" },
                 routes = { session_message = { prefix = "session_", config = { prefix = "session_",
@@ -78,6 +79,7 @@ local function define_tests()
             local decoded = user._decode_upgrade_state(encoded)
             test.eq(decoded.active_plugins.session_.pid, "app:plugin:1")
             test.eq(decoded.connected_clients["app:client:1"], true)
+            test.is_true(decoded.retiring)
         end)
     end)
 end
