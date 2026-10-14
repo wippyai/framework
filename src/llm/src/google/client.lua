@@ -2,6 +2,7 @@ local json = require("json")
 local http_client = require("http_client")
 local output = require("output")
 local transport = require("transport")
+local mapper = require("google_mapper")
 
 type StreamInput = {
     stream: any,
@@ -87,82 +88,103 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
     local usage: any = nil
     local metadata = stream_response.metadata or {}
 
-    while true do
-        local chunk, err = stream_response.stream:read()
-
-        if err then
-            on_error({ message = err })
-            return nil, err
+    -- Transport reads are arbitrary byte chunks, not SSE events. Keep partial lines
+    -- and dispatch only a complete event (including multi-line data fields).
+    local pending = ""
+    local data_lines = {}
+    local done = false
+    local stream_error_info = nil
+    local function dispatch_event(): string?
+        if #data_lines == 0 then return nil end
+        local data_line = table.concat(data_lines, "\n")
+        data_lines = {}
+        if data_line == "[DONE]" then done = true; return nil end
+        local parsed, parse_err = json.decode(data_line)
+        if parse_err or type(parsed) ~= "table" then
+            return "Invalid Google stream event: " .. tostring(parse_err or "expected object")
         end
 
-        if not chunk then
-            break
+        if parsed.error then
+            stream_error_info = {
+                message = parsed.error.message or "Google stream error",
+                code = parsed.error.code,
+                status = parsed.error.status
+            }
+            return tostring(stream_error_info.message)
         end
 
-        if chunk == "" then
-            goto continue
-        end
+        if parsed.modelVersion then metadata.model_version = parsed.modelVersion end
+        if parsed.responseId then metadata.response_id = parsed.responseId end
 
-        for data_line in chunk:gmatch('data:%s*(.-)%s*\n') do
-            if data_line == "" then
-                goto continue_line
-            end
-
-            local parsed, parse_err = json.decode(data_line)
-            if parse_err then
-                goto continue_line
-            end
-
-            if parsed.error then
-                local error_info = {
-                    message = parsed.error.message,
-                    code = parsed.error.code,
-                    status = parsed.error.status
-                }
-                on_error(error_info)
-                return nil, tostring(error_info.message)
-            end
-
-            if parsed.modelVersion then
-                metadata.model_version = parsed.modelVersion
-            end
-            if parsed.responseId then
-                metadata.response_id = parsed.responseId
-            end
-
-            if parsed.candidates and parsed.candidates[1] then
-                local candidate = parsed.candidates[1]
-
-                if candidate.content and candidate.content.parts then
-                    for _, part in ipairs(candidate.content.parts) do
-                        if part.functionCall then
-                            table.insert(tool_calls, part)
-                            on_tool_call(part)
-                        elseif part.text then
-                            local text = tostring(part.text)
-                            if part.thought == true then
-                                on_thinking(text)
-                            else
-                                full_content = full_content .. text
-                                on_content(text)
-                            end
+        if parsed.candidates and parsed.candidates[1] then
+            local candidate = parsed.candidates[1]
+            if candidate.content and candidate.content.parts then
+                for _, part in ipairs(candidate.content.parts) do
+                    if part.functionCall then
+                        mapper.map_tool_calls({ part })
+                        table.insert(tool_calls, part)
+                        on_tool_call(part)
+                    elseif part.text then
+                        local text = tostring(part.text)
+                        if part.thought == true then
+                            on_thinking(text)
+                        else
+                            full_content = full_content .. text
+                            on_content(text)
                         end
                     end
                 end
-
-                if candidate.finishReason then
-                    finish_reason = tostring(candidate.finishReason)
-                end
             end
-
-            if parsed.usageMetadata then
-                usage = parsed.usageMetadata
+            if candidate.finishReason then
+                finish_reason = tostring(candidate.finishReason)
             end
-
-            ::continue_line::
         end
 
-        ::continue::
+        if parsed.usageMetadata then usage = parsed.usageMetadata end
+        return nil
+    end
+
+    local function consume_line(line: string): string?
+        line = line:gsub("\r$", "")
+        if line == "" then return dispatch_event() end
+        if line:sub(1, 1) == ":" then return nil end
+        local field, value = line:match("^([^:]+):(.*)$")
+        if field == "data" then
+            if value:sub(1, 1) == " " then value = value:sub(2) end
+            data_lines[#data_lines + 1] = value
+        end
+        return nil
+    end
+
+    while not done do
+        local chunk, err = stream_response.stream:read()
+        if err then on_error({ message = err }); return nil, err end
+        if not chunk then
+            -- Some gateways omit the final blank line. Do not discard a final event,
+            -- but reject a torn/malformed JSON payload rather than silently losing it.
+            if pending ~= "" then
+                err = consume_line(pending)
+                pending = ""
+            end
+            if not err and not done then err = dispatch_event() end
+            if err then on_error(stream_error_info or { message = err }); return nil, err end
+            break
+        end
+        pending = pending .. chunk
+        while not done do
+            local newline = pending:find("[\r\n]")
+            if not newline then break end
+            local width = 1
+            if pending:sub(newline, newline) == "\r" then
+                -- Wait for a possibly split CRLF; a lone CR is also an SSE delimiter.
+                if newline == #pending then break end
+                if pending:sub(newline + 1, newline + 1) == "\n" then width = 2 end
+            end
+            local line = pending:sub(1, newline - 1)
+            pending = pending:sub(newline + width)
+            err = consume_line(line)
+            if err then on_error(stream_error_info or { message = err }); return nil, err end
+        end
     end
 
     local result: StreamResult = {
@@ -207,8 +229,8 @@ local function handle_stream_response(response, http_options)
             if tool_part.functionCall then
                 streamer:send_tool_call(
                     tostring(tool_part.functionCall.name),
-                    tostring(tool_part.functionCall.args or "{}"),
-                    tostring(tool_part.functionCall.name)
+                    json.encode(tool_part.functionCall.args or {}),
+                    tool_part._call_id
                 )
             end
         end,

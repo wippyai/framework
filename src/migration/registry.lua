@@ -76,11 +76,30 @@ function migrations.validate_aliases(entries: {any}?): (boolean?, string?)
 
     local claimed_by = {}
     for _, entry in ipairs(entries or {}) do
-        for _, alias in ipairs(migrations.get_aliases(entry)) do
-            if not alias:match("^[^:]+:[^:]+$") then
-                return nil, "alias '" .. alias .. "' on migration '" .. tostring(entry.id)
-                    .. "' must be a full id in namespace:name form"
+        local raw = entry.meta and entry.meta.alias
+        if raw ~= nil then
+            local values: any = type(raw) == "string" and {raw} or raw
+            if type(values) ~= "table" then
+                return nil, "alias on migration '" .. tostring(entry.id) .. "' must be a string or an array of strings"
             end
+            local count = 0
+            for index, alias in pairs(values) do
+                count = count + 1
+                if type(index) ~= "number" or index < 1 or index > #values or index % 1 ~= 0
+                    or type(alias) ~= "string" or #alias > 512
+                    or not alias:match("^[^:%s]+:[^:%s]+$") then
+                    return nil, "alias '" .. tostring(alias) .. "' on migration '" .. tostring(entry.id)
+                        .. "' must contain full ids in namespace:name form (at most 512 characters)"
+                end
+                if alias == entry.id then
+                    return nil, "alias '" .. alias .. "' collides with its own migration id"
+                end
+            end
+            if count ~= #values then
+                return nil, "alias on migration '" .. tostring(entry.id) .. "' must be a contiguous array"
+            end
+        end
+        for _, alias in ipairs(migrations.get_aliases(entry)) do
             if by_id[alias] then
                 return nil, "alias '" .. alias .. "' on migration '" .. tostring(entry.id)
                     .. "' collides with an existing migration id"
@@ -158,15 +177,16 @@ function migrations.get_target_dbs(): ({string}?, string?)
     end
 
     -- Extract unique target databases
-    local target_dbs = {}
+    local target_dbs: {[string]: boolean} = {}
     for _, entry in ipairs(entries) do
-        if entry.meta and entry.meta.target_db then
-            target_dbs[entry.meta.target_db] = true
+        local target_db = entry.meta and entry.meta.target_db
+        if type(target_db) == "string" then
+            target_dbs[target_db] = true
         end
     end
 
     -- Convert to sorted array
-    local result = {}
+    local result: {string} = {}
     for db in pairs(target_dbs) do
         table.insert(result, db)
     end
@@ -189,17 +209,19 @@ function migrations.get_tags(): ({string}?, string?)
     end
 
     -- Extract unique tags
-    local tags_map = {}
+    local tags_map: {[string]: boolean} = {}
     for _, entry in ipairs(entries) do
         if entry.meta and entry.meta.tags then
             for _, tag in ipairs(entry.meta.tags) do
-                tags_map[tag] = true
+                if type(tag) == "string" then
+                    tags_map[tag] = true
+                end
             end
         end
     end
 
     -- Convert to sorted array
-    local result = {}
+    local result: {string} = {}
     for tag in pairs(tags_map) do
         table.insert(result, tag)
     end

@@ -2,6 +2,12 @@
 
 Application initialization orchestrator that discovers and runs bootloaders in dependency order.
 
+Requires Wippy runtime **v0.3.44a or newer**. The auto-start service uses
+`lifecycle.startup: complete`: application readiness waits for initialization to
+finish successfully. A discovery or bootloader failure prevents `wippy test`
+and `wippy run <command>` from running their entrypoint. Other services may
+start concurrently; the gate does not serialize service startup.
+
 ## Installation
 
 ```yaml
@@ -74,6 +80,13 @@ Bootloaders must return a table with:
     details = { ... }  -- optional
 }
 ```
+
+## Calling the Orchestrator
+
+The orchestrator's `run(options)` returns `stats, nil` on success, including when
+no bootloaders are discovered, or `nil, error` on discovery or execution failure.
+This differs from an individual bootloader's status-table return value above.
+`run_chain(entries, options, satisfied)` retains its `success, stats` contract.
 
 ## Built-in Bootloaders
 

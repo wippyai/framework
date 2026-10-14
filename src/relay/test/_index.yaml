@@ -2,6 +2,13 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.2.0"
+
   - name: user
     kind: registry.entry
     meta:
@@ -11,3 +18,190 @@ entries:
     kind: process.host
     lifecycle:
       auto_start: true
+
+  - name: db
+    kind: db.sql.sqlite
+    file: ":memory:"
+
+  - name: isolation_plugin_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: [app:isolation_plugin]
+      actions: [process.spawn, process.spawn.linked, process.spawn.monitored]
+      effect: allow
+
+  - name: isolation_host_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: [app:processes]
+      actions: [process.host]
+      effect: allow
+
+  - name: isolation_cleanup_policy
+    kind: security.policy
+    groups: [app:user]
+    policy:
+      resources: '*'
+      actions: [process.cancel]
+      effect: allow
+
+  - name: isolation_client
+    kind: process.lua
+    source: file://isolation_fixture.lua
+    imports:
+      consts: wippy.relay:consts
+    modules: [security, sql]
+    method: client
+
+  - name: isolation_plugin
+    kind: process.lua
+    meta:
+      type: relay.plugin
+      command_prefix: probe_
+      default_host: app:processes
+    source: file://isolation_fixture.lua
+    imports:
+      consts: wippy.relay:consts
+    modules: [security, sql]
+    method: plugin
+
+  - name: isolation_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay
+    source: file://isolation_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules: [time, json, sql]
+    method: run
+
+  # app:consts_test
+  - name: consts_test
+    kind: function.lua
+    meta:
+      name: Relay Constants Test
+      type: test
+      suite: relay
+      comment: Tests relay configuration constants and derived values
+      group: Relay
+      tags:
+        - relay
+        - constants
+        - tests
+    source: file://consts_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules:
+      - env
+      - time
+    method: run
+
+  # app:user_test
+  - name: user_test
+    kind: function.lua
+    meta:
+      name: Relay User Hub Test
+      type: test
+      suite: relay
+      comment: Tests user-hub websocket payload compatibility.
+      group: Relay
+      tags:
+        - relay
+        - user
+        - tests
+    source: file://user_test.lua
+    imports:
+      consts: wippy.relay:consts
+      test: wippy.test:test
+      user: wippy.relay:user
+    modules:
+      - time
+      - security
+      - env
+    method: run
+
+  # app:central_test
+  - name: central_test
+    kind: function.lua
+    meta:
+      name: Relay Central Identity Test
+      type: test
+      suite: relay
+      comment: Tests user identity and scope propagation from websocket metadata.
+      group: Relay
+      tags:
+        - relay
+        - identity
+        - tests
+    source: file://central_test.lua
+    imports:
+      central: wippy.relay:central
+      consts: wippy.relay:consts
+      test: wippy.test:test
+    modules:
+      - time
+    method: run
+
+  - name: runtime_plugin_policy
+    kind: security.policy
+    groups:
+      - app:user
+    policy:
+      resources: '*'
+      actions:
+        - process.spawn
+        - process.spawn.linked
+        - process.spawn.monitored
+        - process.host
+        - process.cancel
+      effect: allow
+
+  - name: relay_runtime_plugin
+    kind: process.lua
+    source: file://relay_runtime_plugin.lua
+    method: run
+
+  - name: relay_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: relay-runtime
+      timeout: 45s
+    source: file://relay_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      consts: wippy.relay:consts
+    modules:
+      - time
+      - json
+      - security
+      - registry
+    method: run
+
+  - name: relay_upgrade_user
+    kind: process.lua
+    source: file://relay_upgrade_fixture.lua
+    imports:
+      user: wippy.relay:user
+      consts: wippy.relay:consts
+    modules: [json, security]
+    method: run
+
+  - name: relay_upgrade_foreign
+    kind: process.lua
+    source: file://relay_upgrade_fixture.lua
+    imports:
+      user: wippy.relay:user
+      consts: wippy.relay:consts
+    modules: [json, security]
+    method: foreign
+
+  - name: relay_runtime_finished_plugin
+    kind: process.lua
+    source: file://relay_runtime_plugin.lua
+    method: finish

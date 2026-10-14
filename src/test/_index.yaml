@@ -14,6 +14,14 @@ entries:
     component: wippy/terminal
     version: "*"
 
+  - name: env_storage
+    kind: env.storage.os
+
+  - name: require_cases
+    kind: env.variable
+    variable: WIPPY_TEST_REQUIRE_CASES
+    storage: wippy.test:env_storage
+
   # wippy.test:terminal
   - name: terminal
     kind: library.lua
@@ -61,6 +69,13 @@ entries:
       - json
       - ctx
 
+  - name: runner_host
+    kind: process.host
+    meta:
+      comment: Isolated host for runner-owned test commands
+    lifecycle:
+      auto_start: true
+
   # wippy.test:runner_policy
   - name: runner_policy
     kind: security.policy
@@ -70,6 +85,24 @@ entries:
       resources: '*'
       actions: '*'
       effect: allow
+
+  # wippy.test:runner
+  - name: runner_verdict
+    kind: library.lua
+    meta:
+      comment: Fail closed when a test process drops declared BDD cases or aborts a hook.
+    source: file://runner_verdict.lua
+
+  # wippy.test:runner
+  - name: runner_entry
+    kind: process.lua
+    meta:
+      comment: Runner-owned test execution process
+    source: file://runner_entry.lua
+    method: run
+    modules:
+      - funcs
+      - channel
 
   # wippy.test:runner
   - name: runner
@@ -89,7 +122,7 @@ entries:
     method: main
     modules:
       - io
-      - funcs
+      - env
       - time
       - channel
     imports:
@@ -97,6 +130,7 @@ entries:
       registry: wippy.test:registry
       discovery: wippy.test:discovery
       display: wippy.test:display
+      verdict: wippy.test:runner_verdict
 
   # wippy.test:self_test
   - name: self_test
@@ -107,5 +141,6 @@ entries:
       comment: Self-test for the test framework
     source: file://self_test.lua
     method: run
+    modules: [registry]
     imports:
       test: wippy.test:test

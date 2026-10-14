@@ -49,24 +49,55 @@ local result = llm.generate(builder, {
 })
 ```
 
-### Model Profile
+### Route facts
 
-A model entry declares what its provider accepts on the wire in `providers[].options.model_profile`. Missing fields keep the default behaviour; callers of a resolved model cannot override the profile.
+Each provider route declares what the model accepts on the wire. These optional facts use a fixed vocabulary:
 
-```yaml
-providers:
-  - id: wippy.llm.claude:provider
-    provider_model: claude-opus-5-5
-    options:
-      model_profile:
-        forced_tool_choice: false        # rejects tool_choice "any" and named tools
-        thinking_mode: adaptive_only     # thinking always on; thinking_effort maps to low..max
-        structured_output_mode: native   # structured output via output_config.format
+| Fact | Values | Meaning |
+|---|---|---|
+| `thinking` | `adaptive`, `budget`, `none` | How thinking effort is encoded |
+| `sampling` | `true`, `false` | Whether temperature, top_p and top_k are accepted |
+| `forced_tool_choice` | `true`, `false` | Whether `tool_choice = "any"` or a named tool is accepted |
+| `structured_output` | `native`, `tool` | Native JSON schema output or a structured-output tool |
+
+Missing facts preserve each driver's defaults. Claude and Bedrock default to budget thinking, sampling and forced tool choice enabled, and tool-based structured output. OpenAI, OpenAI-compatible and Google default to no thinking. Invalid fact values (outside the fixed vocabulary above) produce an `invalid_request` error naming the route, key and allowed values. A value inside that vocabulary but outside what a specific driver can honor is also `invalid_request`, naming the fact, the value and that driver's supported values: Bedrock only supports tool-based structured output, OpenAI and OpenAI-compatible only support `adaptive` or `none` thinking, and Google only supports `none` thinking.
+
+Facts are normalized when building generation and structured-output requests. Discovery cards, `llm.available_models`, `llm.resolve_model`, and resolver results retain their original shape. Canonical route facts win over legacy forms and caller options. Resolved calls ignore caller `model_profile` and reject caller `accepts`. Direct calls can declare facts:
+
+```lua
+local response, err = llm.generate("Explain the result", {
+    provider_id = "wippy.llm.claude:provider",
+    model = "claude-sonnet-5",
+    accepts = { thinking = "adaptive", sampling = false },
+    thinking_effort = 50,
+    temperature = 0.7
+})
+-- response.metadata.adjusted.temperature = { requested = 0.7 }
 ```
 
-A forced `tool_choice` to such a model fails with `invalid_request` unless the caller permits `tool_choice_fallback = "auto"`, which a caller gives only when it enforces tool use itself (a dataflow agent that ends through its finish tool). The response then reports `metadata.tool_choice = { requested = "any", sent = "auto" }`.
+When `sampling = false`, the request removes temperature, top_p and top_k. When `thinking = "none"`, it removes a positive thinking_effort. Each removal appears in `metadata.adjusted[param] = { requested = value, sent = nil }` (Lua omits the nil field). With caller `strict = true`, adjustments fail with `invalid_request` naming the parameters before the provider HTTP request. The strict flag and fact/legacy options are not sent as driver request options.
 
-Native structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path, never rewritten.
+Claude and Bedrock budget thinking never injects a temperature; the provider default is already 1. A caller temperature of 1 is sent unchanged with no adjustment. Any other caller temperature is dropped, never sent, and reported as `metadata.adjusted.temperature = { requested = value }` (no `sent`); with `sampling = false`, `metadata.adjusted` reports exactly this one entry, since sampling removal already stripped the option before the driver saw it.
+
+Adaptive Claude and Bedrock requests with positive thinking_effort send `thinking.type = "adaptive"` and an effort level in `output_config`; they do not calculate a budget or touch temperature. An absent or zero effort sends no thinking fields.
+
+The forced tool choice rule is provider-agnostic: a route with `forced_tool_choice = false` rejects a `tool_choice` of `"any"` or a tool name, for every driver, unless the caller permits `tool_choice_fallback = "auto"`. The caller must enforce tool use itself when accepting that fallback. The response reports `metadata.tool_choice = { requested = "any", sent = "auto" }` independently of `metadata.adjusted`. A route that can only produce structured output by forcing a tool (`structured_output = "tool"`, Bedrock's only mode) rejects `forced_tool_choice = false` the same way. Native Claude structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path.
+
+Legacy forms remain supported through the normalizer:
+
+| Legacy form | Canonical form / behavior |
+|---|---|
+| Route `options.reasoning_model_request = true` | Only on a route whose driver declares it owns this flag (OpenAI, OpenAI-compatible): `thinking: adaptive`, `sampling: false`; false, absent, or a driver that does not declare it derives nothing |
+| Route `options.model_profile.thinking_mode = adaptive_only` | `thinking: adaptive` only |
+| Route `options.model_profile.forced_tool_choice` | `forced_tool_choice`, preserving both true and false |
+| Route `options.model_profile.structured_output_mode = native` | `structured_output: native` |
+| Caller `reasoning_model_request = true` | Same driver-declares-it rule as the route form; when it applies, derives adaptive thinking and no sampling unless canonically declared on the route |
+| Direct caller `model_profile` | Same legacy mappings; direct caller `accepts` wins |
+| Connection keys in route `options` | Still supported; use route `context` for new configuration |
+
+`reasoning_model_request` is a legacy flag owned by the driver that historically read it: a driver's `contract.binding` entry declares `meta.legacy_reasoning_flag: true` (OpenAI, OpenAI-compatible) to opt in. A route or provider entry bound to any other driver (Claude, Bedrock, Google, or a custom driver that never declared it) ignores the flag entirely; the request behaves exactly as if it were absent.
+
+Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
 
 ### Retry
 
@@ -301,6 +332,80 @@ entries:
 
 The module ships the `wippy.llm.typesafe:provider` entry bound to its driver and credential variables. Driver env vars: `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` (default `https://api.typesafe.ai/v1`), `TYPESAFE_TIMEOUT`.
 
+### OpenAI Decisions
+
+The native OpenAI provider also implements `evaluate` through
+[`POST /v1/decisions`](https://developers.openai.com/api/docs/guides/decisions).
+It uses the same questions and readings as the TypeSafe evaluator. A direct
+call uses your OpenAI credentials and skips model discovery:
+
+```lua
+local result, err = llm.evaluate("Export fails in Safari but works in Chrome.", {
+    severity = {
+        type = "score",
+        instructions = "How severe is this issue?",
+        domain = {
+            "Cosmetic: appearance only; no lost functionality",
+            "Workaround available: a task fails, but another way works",
+            "Fully blocked: a task fails with no workaround"
+        }
+    }
+}, {
+    model = "gpt-6-luna",
+    provider_id = "wippy.llm.openai:provider"
+})
+if err then
+    return nil, err
+end
+local severity = result.result.severity
+-- severity.score is the expected 1-based level index.
+-- severity.level is the highest-probability 1-based level index.
+-- severity.probabilities preserves the distribution over all three levels.
+```
+
+For model discovery, register a model with `class: [evaluate]`,
+`capabilities: [evaluate]`, and a provider mapping to
+`wippy.llm.openai:provider` with `provider_model: gpt-6-luna`, following the
+registration example above. Credentials and transport settings are shared with
+the native OpenAI provider: `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+`OPENAI_ORGANIZATION`, and `OPENAI_TIMEOUT`. The base URL defaults to
+`https://api.openai.com/v1`; evaluation sends a nonstreaming `/decisions` request.
+Per-call options support `timeout`, `retry`, and an explicitly supplied
+`safety_identifier` of at most 128 bytes. The actor ID used by Wippy's usage
+tracking is not automatically sent as a safety identifier. Generation options
+such as temperature, tools, and streaming are rejected for evaluation.
+
+The adapter sends a string state as text and serializes a table state as JSON
+text. Table instructions are also serialized as JSON text. Slot keys stay local;
+the request uses generated question names and maps answers back to your keys.
+Predicate `domain.yes` and `domain.no` descriptions are included in the question
+instructions. Choice domains support between 2 and 255 string options. Score
+domains retain their declaration order: OpenAI's zero-based expected score is
+shifted by one to match Wippy's existing reading contract. Confidence remains a
+provider-specific statistic; choose thresholds using labeled examples from your
+own application.
+
+Every declared question must receive a valid answer. A refusal fails the whole
+evaluation with a `content_filtered` provider error; malformed or incomplete
+answers fail with a `model_error`. The adapter never returns partial readings as
+a successful result. Independent questions can share one request; a question
+that depends on another answer needs a later call.
+
+This adapter supports the existing text/JSON evaluation contract. Images inside
+a JSON table are treated as text; image evaluation needs a separate typed input
+extension. The Decisions API is currently in public beta and the official guide
+lists `gpt-6-luna` as its supported model. OpenAI bills this endpoint for input
+tokens only; reported token usage is preserved for accounting. Availability,
+pricing, and limits should be checked in the official guide before rollout.
+Configure usage-tracker pricing for the Decisions endpoint when registering an
+evaluation model; generation prices for the same model name can differ. The raw
+provider usage remains in `result.metadata.usage`, while normalized token
+categories keep uncached input, cache reads, and cache writes disjoint.
+
+The optional live test runs only with `ENABLE_DECISIONS_INTEGRATION_TESTS=true`
+and valid OpenAI credentials. The regular suite uses fixtures and mocked HTTP;
+it does not require a paid API call.
+
 ## Streaming
 
 ```lua
@@ -409,6 +514,8 @@ llm.ERROR_TYPE = {
 
 ## Registering Models
 
+The entry keeps metadata, limits, pricing and a `providers` list. **Only the first route is used**; route fallback is not implemented. Put connection and transport settings (API keys, base URL, timeout, retry, headers) in `context`, and request defaults in `options`.
+
 ```yaml
 entries:
   - name: claude-sonnet
@@ -416,43 +523,76 @@ entries:
     meta:
       type: llm.model
       name: claude-sonnet
-      title: Claude Sonnet
+      title: Claude Sonnet 5
       class: [fast, chat]
       capabilities: [generate, tool_use, vision, thinking, caching]
       priority: 100
     providers:
       - id: wippy.llm.claude:provider
-        provider_model: claude-sonnet-4-20250514
+        provider_model: claude-sonnet-5
+        thinking: adaptive
+        sampling: false
+        forced_tool_choice: true
+        structured_output: native
+        context:
+          timeout: 120
         options:
-          temperature: 0.7
-    max_tokens: 200000
-    output_tokens: 8192
-    pricing:
-      input: 3
-      output: 15
+          thinking_effort: 40
+    max_tokens: 1000000
+    output_tokens: 128000
+    pricing: { input: 2, output: 10 }
 ```
 
-#### Bedrock Model Registration
-
-Use `wippy.llm.bedrock:provider` and the Bedrock model ID (inference profile format for newer models):
+Additional model entries can use these routes with the same top-level structure. Limits and pricing should reflect your provider's current offering.
 
 ```yaml
-entries:
-  - name: claude-haiku-bedrock
-    kind: registry.entry
-    meta:
-      type: llm.model
-      name: claude-haiku-bedrock
-      title: Claude Haiku 4.5 (Bedrock)
-      class: [fast]
-      capabilities: [generate, tool_use, structured_output]
-      priority: 100
-    providers:
-      - id: wippy.llm.bedrock:provider
-        provider_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
-    max_tokens: 200000
-    output_tokens: 8192
+# Claude Opus 5.5
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-opus-5-5
+    thinking: adaptive
+    sampling: false
+    forced_tool_choice: false
+    structured_output: native
+    options:
+      thinking_effort: 60
 ```
+
+```yaml
+# Claude Haiku 4.5: absent facts retain the driver's budget-thinking defaults
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-haiku-4-5-20251001
+    options:
+      temperature: 0.7
+```
+
+```yaml
+# OpenAI reasoning model
+providers:
+  - id: wippy.llm.openai:provider
+    provider_model: gpt-5-mini
+    thinking: adaptive
+    sampling: false
+    options:
+      thinking_effort: 50
+```
+
+```yaml
+# Claude via Bedrock, using an inference profile
+providers:
+  - id: wippy.llm.bedrock:provider
+    provider_model: us.anthropic.claude-sonnet-4-6
+    thinking: adaptive
+    sampling: true
+    context:
+      timeout: 120
+      retry: { attempts: 3 }
+    options:
+      thinking_effort: 50
+```
+
+The reserved route keys are `id`, `provider_model`, `context`, `options`, `priority`, and the four facts above. Custom model resolvers return the same card and route structure.
 
 ### Model Classes
 
@@ -471,7 +611,7 @@ entries:
 
 - `wippy.llm.claude` - Anthropic Claude (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock (Converse API for text generation, InvokeModel for embeddings)
-- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `xhigh`/`minimal` reasoning effort. Use this for `api.openai.com`.
+- `wippy.llm.openai` - OpenAI native via the Responses API (`/v1/responses`) — GPT-5.x, o-series, encrypted reasoning persistence, `xhigh`/`minimal` reasoning effort; also supports typed evaluation via `/v1/decisions`. Use this for `api.openai.com`.
 - `wippy.llm.openai_compat` - OpenAI-compatible Chat Completions (`/v1/chat/completions`) — Ollama, vLLM, llama.cpp, LM Studio, OpenRouter, Together, Groq, Fireworks, DeepInfra, Mistral, DeepSeek, etc. Use this for any non-OpenAI backend that exposes a `/chat/completions` endpoint.
 - `wippy.llm.google.vertex` - Google Vertex AI
 - `wippy.llm.google.generative_ai` - Google Generative AI (Gemini)
@@ -527,7 +667,7 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 - `wippy.llm.claude` - Claude provider (direct API)
 - `wippy.llm.bedrock` - AWS Bedrock provider
-- `wippy.llm.openai` - OpenAI native (Responses API)
+- `wippy.llm.openai` - OpenAI native (Responses, embeddings, and Decisions evaluation)
 - `wippy.llm.openai_compat` - OpenAI-compatible (Chat Completions) for Ollama / vLLM / OpenRouter / Together / Groq / etc.
 - `wippy.llm.google` - Google providers (Vertex AI, Generative AI)
 - `wippy.llm.typesafe` - TypeSafe Jev evaluation provider

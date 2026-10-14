@@ -79,6 +79,15 @@ and configuration management — enabling developers to build sophisticated mult
 | **stream**       | Data streaming interface with chunked reading support                                                              |
 | **cloudstorage** | Cloud storage provider interface for S3-like operations                                                            |
 
+## Runtime regression tests
+
+`make test-runtime` exercises actor messages, relay delivery, tool controls, and aggregate
+runner checks through Wippy using the local component and test-runner sources. Required
+suites fail if they execute no cases.
+
+Set `WIPPY` to select the executable and `RUNTIME_WORK_DIR` to reuse an external dependency
+directory. Test data stays outside the repository.
+
 [module-actor]: https://github.com/wippyai/module-actor
 [module-agent]: https://github.com/wippyai/module-agent
 [module-bootloader]: https://github.com/wippyai/module-bootloader

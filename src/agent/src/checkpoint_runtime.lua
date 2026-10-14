@@ -67,6 +67,36 @@ local function copy_payload(payload: CheckpointPayload?): CheckpointPayload
     return out :: CheckpointPayload
 end
 
+local function copy_options(value: any): any
+    if type(value) ~= "table" then
+        return value
+    end
+    local copied = {}
+    for key, item in pairs(value) do
+        copied[key] = copy_options(item)
+    end
+    return copied
+end
+
+-- Compiled agent options already include trait defaults. Hosts overlay their
+-- checkpoint configuration last; nil means absent, not an implicit enable.
+function checkpoint_runtime.resolve_options(agent_options: any, host_options: any): table?
+    if type(agent_options) ~= "table" and type(host_options) ~= "table" then
+        return nil
+    end
+    local merged = copy_options(type(agent_options) == "table" and agent_options or {})
+    for key, value in pairs(type(host_options) == "table" and host_options or {}) do
+        local base = merged[key]
+        if type(base) == "table" and base[1] == nil
+            and type(value) == "table" and value[1] == nil then
+            merged[key] = checkpoint_runtime.resolve_options(base, value)
+        else
+            merged[key] = copy_options(value)
+        end
+    end
+    return merged
+end
+
 local function checkpoint_text(result: any): string?
     if type(result) ~= "table" then
         return nil
@@ -146,7 +176,7 @@ function checkpoint_runtime.create(bindings: any, payload: any): (table, string?
 
     for _, binding in ipairs(normalized) do
         local current_payload: CheckpointPayload = copy_payload(base_payload)
-        current_payload.options = binding.options or {}
+        current_payload.options = checkpoint_runtime.resolve_options(binding.options, base_payload.options) or {}
         current_payload.context = binding.context or {}
 
         local result, err = call_binding(binding, current_payload :: CheckpointPayload)

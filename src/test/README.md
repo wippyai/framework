@@ -86,7 +86,37 @@ Mocks are automatically restored after each test.
 
 ```
 wippy test
-wippy test <filter>
+wippy test test -- <filter>
 ```
 
 Discovers tests via `meta.type = "test"` in the registry, groups by `meta.suite`, sorts by `meta.order`.
+
+Each test entry executes in a runner-owned process. A timeout cancels its function
+command, waits for cancellation to settle, and terminates the wrapper; late events
+from that entry cannot count toward a subsequent test. Processes spawned independently
+by test code are not automatically terminated and remain the test's responsibility.
+
+Simple tests may return `true` or `nil` for success; `false`, an execution error, or
+an error-status result fails the run. BDD entries must report their plan, every
+declared case, and completion with matching pass/fail/skip counts. An aborted hook,
+missing case, replaced plan, or inconsistent completion fails the run even if earlier cases passed.
+An error-status result also fails when a BDD entry reported otherwise successful cases.
+
+CI can set `WIPPY_TEST_REQUIRE_CASES=1` to reject empty discovery, filters with no matches,
+entries without a BDD plan, and skipped-only plans. Without that opt-in, simple tests,
+empty plans, and intentionally skipped suites retain their existing behavior.
+
+### Deadlines and teardown
+
+There is no implicit suite or entry deadline. Set `meta.suite_timeout: 2m` on
+any entry in a `meta.suite` group to set one shared elapsed-time budget for the
+whole group. Conflicting values are rejected. Existing `meta.timeout` remains an
+explicit per-entry budget. Expiry calls `cancel()` and receives on the same
+future before starting another entry or suite; remaining entries in an expired group
+fail without starting. Cancellation failure aborts the run.
+
+This requires the runtime completion semantics in
+[wippyai/runtime#961](https://github.com/wippyai/runtime/pull/961): `cancel()`
+requests cancellation without waiting, and the future completes only after the
+function and its execution frame finish teardown. The runner uses the existing
+`cancel()` and `response():receive()` methods, with no teardown deadline.

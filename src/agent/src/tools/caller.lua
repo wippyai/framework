@@ -2,6 +2,7 @@ local json = require("json")
 local tools = require("tools")
 local funcs = require("funcs")
 local contract = require("contract")
+local behavior_controls = require("behavior_controls")
 
 type ToolCall = {
     id: string,
@@ -41,6 +42,7 @@ type ToolWrapperSpec = {
     priority: number?,
     strict: boolean?,
     order: number?,
+    source: string?,
 }
 
 type ToolWrapperHostRef = {
@@ -92,6 +94,7 @@ type ToolWrapperApplyResponse = {
     tool_calls: {ToolCall}?,
     observations: {ToolWrapperObservation}?,
     metadata: table?,
+    _control: table?,
 }
 
 type ToolWrapperError = {
@@ -146,6 +149,42 @@ local OUTCOME_REASON = {
     HOST_FAILED = "host_failed"
 }
 
+local RUNTIME_CONTEXT_TOOL_IDS = {
+    ["wippy.agent.tools:attention_find_semantic"] = true,
+    ["wippy.agent.tools:attention_find_css"] = true,
+    ["wippy.agent.tools:attention_get_node"] = true,
+    ["wippy.agent.tools:attention_get_tree"] = true,
+    ["wippy.agent.tools:attention_get_geometry"] = true,
+    ["wippy.agent.tools:attention_get_cursor"] = true,
+    ["wippy.agent.tools:attention_get_focus"] = true,
+    ["wippy.agent.tools:attention_get_selection"] = true,
+    ["wippy.agent.tools:attention_hit_test"] = true,
+    ["wippy.agent.tools:attention_context_set"] = true,
+    ["wippy.agent.tools:ui_action_highlight"] = true,
+    ["wippy.agent.tools:ui_action_confirm"] = true,
+    ["wippy.agent.tools:ui_action_capture_visual"] = true,
+    ["wippy.agent.tools:ui_action_select"] = true,
+}
+
+local RUNTIME_CONTEXT_FIELDS = {
+    attention_inspection_runtime = true,
+    attention_context_runtime = true,
+    ui_action_runtime = true,
+}
+
+local function merge_execution_context(tool_context: table?, session_context: table?, call_id: string): table
+    local merged = {}
+    for k, v in pairs(tool_context or {}) do
+        if not RUNTIME_CONTEXT_FIELDS[k] then merged[k] = v end
+    end
+    for k, v in pairs(session_context or {}) do
+        if not RUNTIME_CONTEXT_FIELDS[k] then merged[k] = v end
+    end
+    -- Private authority is supplied only by the current call's resolver.
+    merged.call_id = call_id
+    return merged
+end
+
 local tool_caller = {}
 tool_caller.__index = tool_caller
 
@@ -179,7 +218,9 @@ function tool_caller.new(): any
     self.wrapper_observations = {}
     self.wrapper_metadata = {}
     self.wrapper_errors = {}
+    self.wrapper_controls = {}
     self.last_tool_calls = {}
+    self.runtime_context_resolver = nil
     return self
 end
 
@@ -218,6 +259,14 @@ function tool_caller:set_wrapper_context(context: ToolWrapperExecutionContext?):
     return self
 end
 
+function tool_caller:set_runtime_context_resolver(resolver: any?): any
+    if resolver ~= nil and type(resolver) ~= "function" then
+        error("runtime context resolver must be a function or nil")
+    end
+    self.runtime_context_resolver = resolver
+    return self
+end
+
 function tool_caller:get_wrapper_observations(): {ToolWrapperObservation}
     return self.wrapper_observations or {}
 end
@@ -238,6 +287,19 @@ local function reset_wrapper_diagnostics(self: any)
     self.wrapper_observations = {}
     self.wrapper_metadata = {}
     self.wrapper_errors = {}
+    self.wrapper_controls = {}
+end
+
+local function discard_stale_round(self: any)
+    if next(self.wrapper_observations) ~= nil then self.wrapper_observations = {} end
+    if next(self.wrapper_metadata) ~= nil then self.wrapper_metadata = {} end
+    if next(self.wrapper_errors) ~= nil then self.wrapper_errors = {} end
+    if next(self.wrapper_controls) ~= nil then self.wrapper_controls = {} end
+    if next(self.last_tool_calls) ~= nil then self.last_tool_calls = {} end
+end
+
+function tool_caller:get_wrapper_controls(): {table}
+    return behavior_controls.prepare(self.wrapper_controls or {}) or {}
 end
 
 local function wrapper_supports_phase(wrapper: ToolWrapperSpec, phase: ToolWrapperPhase): boolean
@@ -298,6 +360,12 @@ local function call_contract_wrapper(wrapper: ToolWrapperSpec, payload: ToolWrap
     if apply_err then
         return nil, tostring(apply_err)
     end
+    if wrapper.source == "behavior" and payload.phase == PHASE.AFTER_EXECUTE and
+        type(result) == "table" and result._control ~= nil then
+        local controls, err = behavior_controls.prepare({ result._control })
+        if not controls then return nil, err end
+        result._control = controls[1]
+    end
     return (type(result) == "table" and result or {}) :: ToolWrapperApplyResponse, nil
 end
 
@@ -308,6 +376,10 @@ end
 local function record_wrapper_result(self: any, wrapper: ToolWrapperSpec, phase: ToolWrapperPhase, result: ToolWrapperApplyResponse?)
     if type(result) ~= "table" then
         return
+    end
+
+    if wrapper.source == "behavior" and phase == PHASE.AFTER_EXECUTE and type(result._control) == "table" then
+        self.wrapper_controls[#self.wrapper_controls + 1] = result._control
     end
 
     for _, observation in ipairs(result.observations or {}) do
@@ -381,13 +453,34 @@ function tool_caller:apply_tool_wrappers(phase: ToolWrapperPhase, payload: ToolW
     return current_payload :: ToolWrapperApplyRequest, nil
 end
 
+local function validate_call_ids(tool_calls: {ToolCall}): string?
+    local seen = {}
+    for _, call in ipairs(tool_calls) do
+        if type(call) ~= "table" then return "Tool call must be a table" end
+        if type(call.id) ~= "string" or not call.id:match("%S") then return "Tool call ID is required" end
+        if seen[call.id] then return "Duplicate tool call ID: " .. call.id end
+        seen[call.id] = true
+    end
+    return nil
+end
+
 function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     -- Check if there are any tool calls
     if not tool_calls or #tool_calls == 0 then
+        discard_stale_round(self)
         return {}, nil
     end
 
     reset_wrapper_diagnostics(self)
+    local identity_err = validate_call_ids(tool_calls)
+    if identity_err then return nil, identity_err end
+
+    -- Providers pair results by the original call IDs, even if a wrapper redirects a tool.
+    local original_ids: {[string]: boolean} = {}
+    local original_count = #tool_calls
+    for _, tool_call in ipairs(tool_calls) do
+        original_ids[tool_call.id] = true
+    end
 
     local before_payload: ToolWrapperApplyRequest = {
         phase = BEFORE_EXECUTE :: ToolWrapperPhase,
@@ -402,6 +495,22 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     end
 
     tool_calls = wrapped_payload.tool_calls or tool_calls
+    identity_err = validate_call_ids(tool_calls)
+    if identity_err then
+        return nil, "Tool wrapper must preserve every tool call ID exactly once: " .. identity_err
+    end
+    local seen_ids: {[string]: boolean} = {}
+    local seen_count = 0
+    for _, tool_call in ipairs(tool_calls) do
+        if type(tool_call) ~= "table" or not original_ids[tool_call.id] or seen_ids[tool_call.id] then
+            return nil, "Tool wrapper must preserve every tool call ID exactly once"
+        end
+        seen_ids[tool_call.id] = true
+        seen_count = seen_count + 1
+    end
+    if seen_count ~= original_count then
+        return nil, "Tool wrapper must preserve every tool call ID exactly once"
+    end
     self.last_tool_calls = tool_calls
 
     local validated_tools: {[string]: any} = {}
@@ -473,7 +582,25 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
     return validated_tools, nil
 end
 
-local function execute_single_tool(executor: any, call_id: string, tool_call: any, context: table?): any
+local function resolve_runtime_context(self: any, call_id: string, tool_call: any): (table?, string?)
+    if not RUNTIME_CONTEXT_TOOL_IDS[tostring(tool_call.registry_id)] then
+        return nil, nil
+    end
+    if type(self.runtime_context_resolver) ~= "function" then
+        return nil, nil
+    end
+
+    local runtime_context, err = self.runtime_context_resolver(tostring(call_id), tool_call)
+    if err then
+        return nil, tostring(err)
+    end
+    if runtime_context ~= nil and type(runtime_context) ~= "table" then
+        return nil, "runtime context resolver must return a table or nil"
+    end
+    return runtime_context, nil
+end
+
+local function execute_single_tool(self: any, call_id: string, tool_call: any, context: table?): any
     local registry_id = tool_call.registry_id
     local args = tool_call.args
     local tool_context = tool_call.context or {}
@@ -490,20 +617,22 @@ local function execute_single_tool(executor: any, call_id: string, tool_call: an
         args = parsed_args
     end
 
-    -- Merge tool context with session context (session context has priority)
-    local merged_context = {}
-    for k, v in pairs(tool_context) do
-        merged_context[k] = v
-    end
-    for k, v in pairs(context or {}) do
-        merged_context[k] = v
-    end
+    local merged_context = merge_execution_context(tool_context as table?, context, call_id)
 
-    -- Set call_id in context for tool execution
-    merged_context.call_id = call_id
+    local runtime_context, runtime_err = resolve_runtime_context(self, call_id, tool_call)
+    if runtime_err then
+        return {
+            result = nil,
+            error = runtime_err,
+            tool_call = tool_call
+        }
+    end
+    for k, v in pairs(runtime_context or {}) do
+        merged_context[k] = v
+    end
 
     -- Execute the tool
-    local ctx_executor = executor:with_context(merged_context)
+    local ctx_executor = self.executor:with_context(merged_context)
     local result, err = ctx_executor:call(tostring(registry_id), args)
 
     return {
@@ -530,7 +659,7 @@ local function execute_sequential(self: any, context: any, validated_tools: any)
             goto continue
         end
 
-        local exec_result = execute_single_tool(self.executor, tostring(call_id), tool_call, context as {}?)
+        local exec_result = execute_single_tool(self, tostring(call_id), tool_call, context as {}?)
         results[call_id] = exec_result
 
         ::continue::
@@ -569,15 +698,20 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
             args = parsed_args
         end
 
-        -- Merge contexts (session has priority)
-        local merged_context = {}
-        for k, v in pairs(tool_context) do
+        local merged_context = merge_execution_context(tool_context as table?, context, tostring(call_id))
+
+        local runtime_context, runtime_err = resolve_runtime_context(self, tostring(call_id), tool_call)
+        if runtime_err then
+            results[call_id] = {
+                result = nil,
+                error = runtime_err,
+                tool_call = tool_call
+            }
+            goto continue
+        end
+        for k, v in pairs(runtime_context or {}) do
             merged_context[k] = v
         end
-        for k, v in pairs(context or {}) do
-            merged_context[k] = v
-        end
-        merged_context.call_id = call_id
 
         -- Start async execution
         local ctx_executor = self.executor:with_context(merged_context)
@@ -638,6 +772,7 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
 end
 
 function tool_caller:execute(context: any, validated_tools: any): any
+    self.wrapper_controls = {}
     -- Handle nil validated_tools
     if not validated_tools then
         validated_tools = {}
@@ -648,6 +783,17 @@ function tool_caller:execute(context: any, validated_tools: any): any
         results = execute_parallel(self :: any, context as table?, validated_tools)
     else
         results = execute_sequential(self :: any, context, validated_tools)
+    end
+
+    -- Some tools return an explicit failure as data rather than the executor's
+    -- second return value. Preserve that data, but expose its error through the
+    -- same canonical channel used by hosts and after-execute wrappers.
+    for _, entry in pairs(results) do
+        local result = entry.result
+        if not entry.error and type(result) == "table" and result.success == false
+            and type(result.error) == "string" and result.error ~= "" then
+            entry.error = result.error
+        end
     end
 
     local after_payload: ToolWrapperApplyRequest = {
@@ -670,5 +816,6 @@ tool_caller.STRATEGY = STRATEGY
 tool_caller.PHASE = PHASE
 tool_caller.OUTCOME_STATE = OUTCOME_STATE
 tool_caller.OUTCOME_REASON = OUTCOME_REASON
+tool_caller.RUNTIME_CONTEXT_TOOL_IDS = RUNTIME_CONTEXT_TOOL_IDS
 
 return tool_caller

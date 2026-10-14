@@ -2,6 +2,7 @@ local claude_client = require("claude_client")
 local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
+local route = require("route")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -93,12 +94,18 @@ function generate_handler.handler(contract_args)
     local context = {
         model = contract_args.model,
         has_tools = (contract_args.tools and #contract_args.tools > 0),
-        name_to_id_map = {},
-        tool_choice = nil
+        name_to_id_map = {}
     }
 
     local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
-    local mapped_options = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.model)
+    local mapped_options, adjusted, options_err = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
+    local strict_err = route.strict_error(tostring(contract_args._provider_id or contract_args.model), contract_args._strict, adjusted)
+    if strict_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(strict_err):build()
+    end
 
     local claude_payload = {
         model = contract_args.model,
@@ -120,8 +127,7 @@ function generate_handler.handler(contract_args)
         local claude_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
         local tool_choice, tool_choice_error = generate_handler._mapper.map_tool_choice(
             contract_args.tool_choice,
-            claude_tools,
-            contract_args.options
+            claude_tools
         )
 
         if tool_choice_error then
@@ -132,12 +138,6 @@ function generate_handler.handler(contract_args)
             claude_payload.tools = claude_tools
             if tool_choice then
                 claude_payload.tool_choice = tool_choice
-                -- A forced choice sent as "auto" under the caller's fallback is
-                -- reported, so the caller can see what the model was asked.
-                local requested = contract_args.tool_choice
-                if tool_choice.type == "auto" and requested ~= nil and requested ~= "auto" then
-                    context.tool_choice = { requested = requested, sent = "auto" }
-                end
             end
         end
 
@@ -173,11 +173,7 @@ function generate_handler.handler(contract_args)
         result = generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
     end
 
-    if result and context.tool_choice then
-        result.metadata = result.metadata or {}
-        result.metadata.tool_choice = context.tool_choice
-    end
-
+    route.attach_adjusted(result, adjusted)
     return result, result_err
 end
 

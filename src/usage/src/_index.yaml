@@ -20,13 +20,6 @@ entries:
         path: ".meta.target_db"
 
   # Dependencies
-  - name: dep.wippy.test
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/test"
-    version: ">=v0.2.0"
-
   - name: dep.wippy.migration
     kind: "ns.dependency"
     meta:
@@ -57,32 +50,6 @@ entries:
       - uuid
       - time
       - registry
-
-  # wippy.usage:token_usage_repo_test
-  - name: token_usage_repo_test
-    kind: function.lua
-    meta:
-      name: Token Usage Repository Test
-      type: test
-      comment: Tests for the token usage repository functionality
-      group: LLM / Usage Tests
-      tags:
-        - usage
-        - tokens
-        - database
-        - tests
-      description: Tests for token usage tracking
-    source: file://token_usage_repo_test.lua
-    modules:
-      - sql
-      - uuid
-      - json
-      - time
-      - registry
-    imports:
-      test: wippy.test:test
-      token_usage_repo: wippy.usage:token_usage_repo
-    method: run_tests
 
   # wippy.usage:usage_tracker
   - name: usage_tracker

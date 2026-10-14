@@ -20,6 +20,13 @@ type RunnerOptions = {
     count: number?,
 }
 
+type RollbackMigration = {
+    id: string,
+    applied_at: string,
+    description: string?,
+    registry_entry: table?,
+}
+
 local runner = {}
 
 local function create_error(message: string): any
@@ -60,7 +67,7 @@ local function compare_applied(a: any, b: any): boolean
     return registry_finder.compare(a, b)
 end
 
-local function compare_rollback(a: any, b: any): boolean
+local function compare_rollback(a: RollbackMigration, b: RollbackMigration): boolean
     local a_applied_at = tostring(a.applied_at or "")
     local b_applied_at = tostring(b.applied_at or "")
     if a_applied_at ~= b_applied_at then
@@ -116,7 +123,6 @@ function Runner:find_migrations(options: RunnerOptions?): ({any}?, string?)
 
     local find_options: any = {
         target_db = tostring(self.database_id),
-        tags = options.tags
     }
 
     local migrations, find_err = registry_finder.find(find_options)
@@ -130,6 +136,16 @@ function Runner:find_migrations(options: RunnerOptions?): ({any}?, string?)
     local aliases_ok, alias_err = registry_finder.validate_aliases(migrations)
     if not aliases_ok then
         return nil, "Invalid migration aliases: " .. tostring(alias_err)
+    end
+
+    -- Alias ownership belongs to the whole database, regardless of the
+    -- execution filter. Let the registry retain its existing tag semantics.
+    if options.tags and #options.tags > 0 then
+        find_options.tags = options.tags
+        migrations, find_err = registry_finder.find(find_options)
+        if find_err then
+            return nil, "Failed to find migrations: " .. tostring(find_err)
+        end
     end
 
     local applied = {}
@@ -334,14 +350,7 @@ function Runner:run_next(options: RunnerOptions?): any
 
     local migrations, err = self:find_migrations(options)
     if err then
-        return {
-            status = "complete",
-            message = err,
-            migrations_found = 0,
-            migrations_applied = 0,
-            migrations_skipped = 0,
-            migrations_failed = 0
-        }
+        return create_error(err)
     end
 
     if not migrations or #migrations == 0 then
@@ -493,7 +502,7 @@ function Runner:rollback(options: RunnerOptions?): any
         return create_error("Failed to initialize migration tracking table: " .. tostring(init_err))
     end
 
-    local applied_migrations, query_err = repository.get_migrations(db)
+    local rows, query_err = repository.get_migrations(db)
     if query_err then
         db:release()
         return create_error("Failed to get applied migrations: " .. tostring(query_err))
@@ -501,7 +510,7 @@ function Runner:rollback(options: RunnerOptions?): any
 
     db:release()
 
-    if not applied_migrations or #applied_migrations == 0 then
+    if not rows or #rows == 0 then
         return {
             status = "complete",
             message = "No migrations to roll back",
@@ -522,32 +531,39 @@ function Runner:rollback(options: RunnerOptions?): any
         return create_error("Invalid migration aliases: " .. tostring(alias_err))
     end
 
-    local applied_map = {}
-    for _, row in ipairs(applied_migrations) do
-        applied_map[tostring(row.id)] = row
+    local applied_migrations: {RollbackMigration} = {}
+    local applied_map: {[string]: RollbackMigration} = {}
+    for _, row in ipairs(rows) do
+        if type(row) ~= "table" or type(row.id) ~= "string" then
+            return create_error("Invalid applied migration record")
+        end
+        local description: string? = nil
+        if type(row.description) == "string" then
+            description = row.description
+        end
+        local record: RollbackMigration = {
+            id = row.id,
+            applied_at = tostring(row.applied_at or ""),
+            description = description,
+        }
+        applied_map[row.id] = record
+        table.insert(applied_migrations, record)
     end
 
-    local candidates = {}
-    local claimed = {}
-
+    local candidates: {RollbackMigration} = {}
+    local claimed: {[string]: boolean} = {}
     for _, entry in ipairs(registry_entries) do
         local aliases = registry_finder.get_aliases(entry)
-
         claimed[tostring(entry.id)] = true
-        for _, alias in ipairs(aliases) do
-            claimed[alias] = true
-        end
+        for _, alias in ipairs(aliases) do claimed[alias] = true end
 
         local row = applied_map[tostring(entry.id)]
         if not row then
             for _, alias in ipairs(aliases) do
                 row = applied_map[alias]
-                if row then
-                    break
-                end
+                if row then break end
             end
         end
-
         if row then
             row.registry_entry = entry
             table.insert(candidates, row)
@@ -556,6 +572,8 @@ function Runner:rollback(options: RunnerOptions?): any
 
     for _, row in ipairs(applied_migrations) do
         if not claimed[tostring(row.id)] then
+            local entry = registry_finder.get(row.id)
+            if type(entry) == "table" then row.registry_entry = entry end
             table.insert(candidates, row)
         end
     end
@@ -565,7 +583,7 @@ function Runner:rollback(options: RunnerOptions?): any
     local allowed_ids = options.allowed_ids or {}
 
     if #allowed_ids > 0 then
-        local filtered = {}
+        local filtered: {RollbackMigration} = {}
         for _, migration in ipairs(candidates) do
             for _, allowed_id in ipairs(allowed_ids) do
                 if migration.id == allowed_id
@@ -595,7 +613,7 @@ function Runner:rollback(options: RunnerOptions?): any
         count = #candidates
     end
 
-    local to_rollback = {}
+    local to_rollback: {RollbackMigration} = {}
     for i = 1, count do
         table.insert(to_rollback, candidates[i])
     end

@@ -2,20 +2,22 @@
 -- the bootloader auto-applies it on test app boot and tests reset the ledger.
 return require("migration").define(function()
     migration("Create alias_one table", function()
-        database("sqlite", function()
-            up(function(db)
-                local _, err = db:execute("CREATE TABLE IF NOT EXISTS alias_one (id INTEGER PRIMARY KEY)")
-                if err then
-                    error(err)
-                end
-            end)
+        for _, dialect in ipairs({"sqlite", "postgres"}) do
+            database(dialect, function()
+                up(function(db)
+                    local _, err = db:execute("CREATE TABLE IF NOT EXISTS alias_one (id INTEGER PRIMARY KEY)")
+                    if err then
+                        error(err)
+                    end
+                end)
 
-            down(function(db)
-                local _, err = db:execute("DROP TABLE IF EXISTS alias_one")
-                if err then
-                    error(err)
-                end
+                down(function(db)
+                    local _, err = db:execute("DROP TABLE IF EXISTS alias_one")
+                    if err then
+                        error(err)
+                    end
+                end)
             end)
-        end)
+        end
     end)
 end)

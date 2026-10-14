@@ -88,13 +88,6 @@ entries:
     default: "wippy.terminal:host"
 
   # Dependencies
-  - name: dep.wippy.test
-    kind: "ns.dependency"
-    meta:
-      description: "Testing component"
-    component: "wippy/test"
-    version: ">=v0.4.0"
-
   - name: dep.wippy.security
     kind: "ns.dependency"
     meta:
@@ -257,7 +250,17 @@ entries:
                       {"type": "string", "enum": ["auto", "none", "any"]},
                       {"type": "string", "description": "Specific tool name to force"}
                     ],
-                    "description": "How the model should use tools. 'any' and a tool name force a tool call; a model whose options.model_profile sets forced_tool_choice = false rejects them unless options.tool_choice_fallback = 'auto'"
+                    "description": "How the model should use tools. 'any' and a tool name force a tool call; a route declaring forced_tool_choice = false rejects them unless options.tool_choice_fallback = 'auto'"
+                  },
+                  "accepts": {
+                    "type": "object",
+                    "properties": {
+                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                      "sampling": {"type": "boolean"},
+                      "forced_tool_choice": {"type": "boolean"},
+                      "structured_output": {"type": "string", "enum": ["native", "tool"]}
+                    },
+                    "additionalProperties": false
                   },
                   "options": {
                     "type": "object",
@@ -269,7 +272,8 @@ entries:
                       "tool_choice_fallback": {"type": "string", "enum": ["auto"], "description": "Permits sending a forced tool_choice as 'auto' to a model that cannot be forced; for callers that enforce tool use themselves. The response metadata.tool_choice reports the substitution"},
                       "model_profile": {
                         "type": "object",
-                        "description": "What the configured model accepts on the wire, set in the model's provider options; callers of resolved models cannot override it",
+                        "deprecated": true,
+                        "description": "Deprecated legacy route facts; normalized into top-level accepts by llm",
                         "properties": {
                           "forced_tool_choice": {"type": "boolean", "description": "false: the model rejects forced tool choice ('any' or a tool name)"},
                           "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: thinking is always on and thinking_effort maps to an effort level, not a budget"},
@@ -324,39 +328,13 @@ entries:
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
       evaluation: wippy.llm:evaluation
+      route: wippy.llm.util:route
 
   - name: evaluation
     kind: library.lua
     meta:
       comment: Shared provider-independent validation for typed evaluation requests
     source: file://evaluation.lua
-
-  # wippy.llm:llm_test
-  - name: llm_test
-    kind: function.lua
-    meta:
-      name: LLM Library Test
-      type: test
-      comment: Tests the modern LLM library with smart model resolution and contract-based providers
-      group: LLM / General
-      tags:
-        - llm
-        - generation
-        - structured_output
-        - embeddings
-        - evaluate
-        - contracts
-        - providers
-        - tests
-    source: file://llm_test.lua
-    modules:
-      - json
-      - uuid
-      - security
-    imports:
-      llm: wippy.llm:llm
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm:output
   - name: output
@@ -368,81 +346,102 @@ entries:
     modules:
       - logger
 
-  # wippy.llm:output_test
-  - name: output_test
-    kind: function.lua
-    meta:
-      name: Output Library Test
-      type: test
-      comment: Tests the output library functionality for formatting LLM responses
-      group: LLM / General
-      tags:
-        - llm
-        - output
-        - formatting
-        - tests
-      depends_on:
-        - ns:wippy.test
-    source: file://output_test.lua
-    modules:
-      - json
-      - time
-    imports:
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm:prompt
   - name: prompt
     kind: library.lua
     meta:
       type: library
       comment: Universal abstract prompt builder for LLM messages with multi-modal support
-      depends_on:
-        - ns:wippy.test
     source: file://prompt.lua
     modules:
       - json
 
-  # wippy.llm:prompt_test
-  - name: prompt_test
+  # Internal Attention codecs. Split from the registry so each unit is independently type-checked.
+  - name: context_attention_codec_v2
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validates and expands Attention v2 payloads
+    source: file://context_attention_codec_v2.lua
+    modules:
+      - json
+      - time
+      - hash
+
+  - name: context_attention_codec_v34
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validates and expands Attention v3 and v4 payloads
+    source: file://context_attention_codec_v34.lua
+    modules:
+      - json
+      - time
+    imports:
+      codec_v2: wippy.llm:context_attention_codec_v2
+
+  - name: context_attention_codec
+    kind: library.lua
+    meta:
+      type: library
+      comment: Validates and expands versioned compact Attention payloads
+    source: file://context_attention_codec.lua
+    imports:
+      codec_v2: wippy.llm:context_attention_codec_v2
+      codec_v34: wippy.llm:context_attention_codec_v34
+
+  - name: context_attention_renderer
+    kind: library.lua
+    meta:
+      type: library
+      comment: Projects expanded Attention payloads into bounded model context
+    source: file://context_attention_renderer.lua
+    modules:
+      - json
+      - time
+    imports:
+      prompt: wippy.llm:prompt
+      codec: wippy.llm:context_attention_codec
+
+  # wippy.llm:context_attachments
+  - name: context_attachments
+    kind: library.lua
+    meta:
+      type: library
+      comment: Versioned registry for rendering untrusted message context attachments into model content parts
+    source: file://context_attachments.lua
+    modules:
+      - json
+      - hash
+      - time
+      - base64
+    imports:
+      prompt: wippy.llm:prompt
+      codec: wippy.llm:context_attention_codec
+      attention_renderer: wippy.llm:context_attention_renderer
+
+  # wippy.llm:context_attachments_test
+  - name: context_attachments_test
     kind: function.lua
     meta:
-      name: Prompt Library Test
+      name: Context Attachment Rendering Test
       type: test
-      comment: Tests the prompt library functionality for building LLM messages
+      comment: Tests version dispatch, prompt trust boundaries, and render budgets
       group: LLM / General
       tags:
         - llm
         - prompts
-        - messages
+        - context
         - tests
       depends_on:
         - ns:wippy.test
-    source: file://prompt_test.lua
+    source: file://context_attachments_test.lua
     modules:
       - json
+      - hash
+      - time
     imports:
-      prompt: wippy.llm:prompt
-      test: wippy.test:test
-    method: run_tests
-
-  - name: process_security_test
-    kind: function.lua
-    meta:
-      name: LLM Process Security Test
-      type: test
-      comment: Ensures auto-start LLM background services run under the platform process scope.
-      group: LLM / General
-      tags:
-        - llm
-        - security
-        - process
-        - tests
-    source: file://process_security_test.lua
-    modules:
-      - registry
-    imports:
+      context_attachments: wippy.llm:context_attachments
       test: wippy.test:test
     method: run_tests
 
@@ -537,13 +536,34 @@ entries:
                     "description": "Driver-specific model identifier"
                   },
                   "schema": {"type": "object"},
+                  "accepts": {
+                    "type": "object",
+                    "properties": {
+                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                      "sampling": {"type": "boolean"},
+                      "forced_tool_choice": {"type": "boolean"},
+                      "structured_output": {"type": "string", "enum": ["native", "tool"]}
+                    },
+                    "additionalProperties": false
+                  },
                   "options": {
                     "type": "object",
                     "description": "Generation parameters - core options plus driver-specific extensions",
                     "properties": {
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
-                      "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100}
+                      "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "model_profile": {
+                        "type": "object",
+                        "deprecated": true,
+                        "description": "Deprecated legacy route facts; normalized into top-level accepts by llm",
+                        "properties": {
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"]},
+                          "forced_tool_choice": {"type": "boolean"},
+                          "structured_output_mode": {"type": "string", "enum": ["native"]}
+                        },
+                        "additionalProperties": false
+                      }
                     },
                     "additionalProperties": true
                   }
@@ -766,6 +786,40 @@ entries:
           - definition: |
               {
                 "type": "object",
-                "description": "Model card including name, providers[] (with provider id and options), and limits"
+                "description": "Resolved model card; route facts are normalized only when building a request",
+                "properties": {
+                  "id": {"type": "string"},
+                  "name": {"type": "string"},
+                  "title": {"type": "string"},
+                  "description": {"type": "string"},
+                  "capabilities": {"type": "array", "items": {"type": "string"}},
+                  "class": {"type": "array", "items": {"type": "string"}},
+                  "priority": {"type": "number"},
+                  "max_tokens": {"type": "number"},
+                  "output_tokens": {"type": "number"},
+                  "dimensions": {"type": "number"},
+                  "pricing": {"type": "object", "additionalProperties": true},
+                  "providers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {"type": "string"},
+                        "provider_model": {"type": "string"},
+                        "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                        "sampling": {"type": "boolean"},
+                        "forced_tool_choice": {"type": "boolean"},
+                        "structured_output": {"type": "string", "enum": ["native", "tool"]},
+                        "context": {"type": "object", "additionalProperties": true},
+                        "options": {"type": "object", "additionalProperties": true},
+                        "priority": {"type": "number"}
+                      },
+                      "required": ["id", "provider_model"],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": ["name", "providers"],
+                "additionalProperties": true
               }
             format: application/schema+json

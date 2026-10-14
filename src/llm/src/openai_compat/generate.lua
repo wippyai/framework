@@ -128,7 +128,10 @@ function generate_handler.handler(contract_args)
         messages = messages
     }
 
-    local mapped_options = generate_handler._mapper.map_options(contract_args.options)
+    local mapped_options, options_err = generate_handler._mapper.map_options(contract_args.options, contract_args.accepts)
+    if options_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
+    end
     for key, value in pairs(mapped_options) do
         openai_payload[key] = value
     end

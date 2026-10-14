@@ -398,14 +398,18 @@ Semantics:
 - New applications are always recorded under the **current** ID; aliases are read-only matching keys.
 - Rollback executes the **current** entry's `down` once per migration and deletes every ledger row of that entry —
   the current ID and all aliases.
-- `allowed_ids` options of the runner accept old IDs as well as current ones.
+- The `allowed_ids` options of `run_next()` and `rollback()` accept old IDs as well as current ones.
 - The `status()` report exposes `applied_id` — the ledger row ID that matched (differs from `id` for alias matches).
 
 Rules and edge cases:
 
-- Aliases must be full IDs in `namespace:name` form.
+- Aliases must be full IDs in `namespace:name` form, without whitespace and at most 512 characters long.
+  The declaration must be a string or a contiguous array of strings; malformed values fail validation.
 - An alias must not equal the ID of a live migration, and one alias cannot be claimed by two entries — both are
   configuration errors that abort the run (and application boot) with an explicit message.
+- Alias ownership is checked across every migration targeting the same database before applying tag filters.
+  Filtering by tags cannot hide a collision. Different target databases have independent ledgers.
+- Alias lookups use the same locked transaction as the current-ID check, migration body and ledger update.
 - If the ledger somehow contains rows for both the old and the new ID, they count as one applied migration: the
   entry's own ID wins for matching (and `applied_id`), and a rollback runs `down` once and removes both rows.
 - Keep the alias for as long as any deployment's ledger may still hold the old ID; it is safe to keep it indefinitely.

@@ -237,7 +237,7 @@ local function should_recall_memory(messages: any, options: any, runtime_options
         return false
     end
 
-    if not (options.enabled or AGENT_CONFIG.memory.defaults.enabled) then
+    if options.enabled == false then
         return false
     end
 
@@ -577,6 +577,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     --end
 
 
+    if runtime_options.stop_check and runtime_options.stop_check() then
+        return { stopped = true }, nil
+    end
+
     local result, err = llm_instance.generate(final_messages, options)
     if err then
         return nil, err
@@ -591,6 +595,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
     if output.detect_truncation(result) then
         response.truncated = true
+        -- Incomplete calls remain non-executable. Hosts need the cause, however,
+        -- to distinguish a tool retry from an empty no-tool response.
+        response.truncation_reason = result.tool_calls and #result.tool_calls > 0
+            and "tool_calls" or "empty_output"
         return response
     end
 

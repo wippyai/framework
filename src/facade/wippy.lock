@@ -5,9 +5,3 @@ modules:
     - name: wippy/facade
       version: 0.5.25
       hash: e6d38b49b392e4af8c518589ed2dde99191642fde57313f73e8fe9841d2c2fa7
-    - name: wippy/terminal
-      version: 0.4.2
-      hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
-    - name: wippy/test
-      version: 0.4.11
-      hash: 235f2f1d222dabeec1a83f6f9f48a7f75abf2143860b833437c1d96da3cd3e95

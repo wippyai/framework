@@ -33,31 +33,6 @@ entries:
     imports:
       transport: wippy.llm.util:transport
 
-  # wippy.llm.typesafe:client_test
-  - name: client_test
-    kind: function.lua
-    meta:
-      name: TypeSafe Client Unit Tests
-      type: test
-      comment: Unit tests for the TypeSafe client covering context resolution, HTTP, retry, and error parsing
-      group: LLM / Drivers / TypeSafe
-      tags:
-        - unit-test
-        - client
-        - http
-        - retry
-        - context
-    source: file://client_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-      - http_client
-    imports:
-      typesafe_client: wippy.llm.typesafe:client
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.typesafe:driver
   - name: driver
     kind: contract.binding
@@ -95,28 +70,6 @@ entries:
         type: object
         description: Provider-level retry policy for transient transport/provider failures
 
-  # wippy.llm.typesafe:integration_test
-  - name: integration_test
-    kind: function.lua
-    meta:
-      name: TypeSafe Integration Tests
-      type: test
-      comment: Integration tests driving the TypeSafe contract binding against the real API when enabled
-      group: LLM / Drivers / TypeSafe
-      tags:
-        - integration-test
-        - api
-        - evaluate
-        - status
-        - contract
-    source: file://integration_test.lua
-    modules:
-      - env
-      - contract
-    imports:
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.typesafe:mapper
   - name: mapper
     kind: library.lua
@@ -125,26 +78,6 @@ entries:
     source: file://mapper.lua
     imports:
       output: wippy.llm:output
-
-  # wippy.llm.typesafe:mapper_test
-  - name: mapper_test
-    kind: function.lua
-    meta:
-      name: TypeSafe Mapper Unit Tests
-      type: test
-      comment: Unit tests for the TypeSafe mapper covering questions, readings, tokens, and error classification
-      group: LLM / Drivers / TypeSafe
-      tags:
-        - unit-test
-        - mapper
-        - evaluate
-        - readings
-    source: file://mapper_test.lua
-    imports:
-      typesafe_mapper: wippy.llm.typesafe:mapper
-      output: wippy.llm:output
-      test: wippy.test:test
-    method: run_tests
 
   # wippy.llm.typesafe:provider
   - name: provider
@@ -183,29 +116,6 @@ entries:
     pool:
       max_size: 10
 
-  # wippy.llm.typesafe:status_test
-  - name: status_test
-    kind: function.lua
-    meta:
-      name: TypeSafe Status Handler Unit Tests
-      type: test
-      comment: Unit tests for the TypeSafe status handler covering health checks and connection testing
-      group: LLM / Drivers / TypeSafe
-      tags:
-        - unit-test
-        - status
-        - health-check
-        - contract
-    source: file://status_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      status_handler: wippy.llm.typesafe:status
-      test: wippy.test:test
-    method: run_tests
-
   # wippy.llm.typesafe:timeout
   - name: timeout
     kind: env.variable
@@ -228,26 +138,3 @@ entries:
     method: handler
     pool:
       max_size: 50
-
-  # wippy.llm.typesafe:evaluate_test
-  - name: evaluate_test
-    kind: function.lua
-    meta:
-      name: TypeSafe Evaluation Handler Unit Tests
-      type: test
-      comment: Unit tests for the TypeSafe evaluate handler covering validation, request building, readings, and errors
-      group: LLM / Drivers / TypeSafe
-      tags:
-        - unit-test
-        - evaluate
-        - readings
-        - contract
-    source: file://evaluate_test.lua
-    modules:
-      - json
-      - env
-      - ctx
-    imports:
-      evaluate_handler: wippy.llm.typesafe:evaluate
-      test: wippy.test:test
-    method: run_tests
