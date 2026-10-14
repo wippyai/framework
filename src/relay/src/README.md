@@ -66,3 +66,8 @@ entries:
       name: my_plugin
     handler: my_namespace:plugin_handler
 ```
+
+The last client LEAVE starts a one-second grace period before session-plugin
+shutdown. A JOIN cancels that pending shutdown and resumes a pending session
+finish. Live updates retain the disconnect start time, so they preserve the
+remaining grace period.

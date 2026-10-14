@@ -23,6 +23,7 @@ local function upgraded(args: any): any
     assert(process.send(snapshot.config.runtime_observer, "relay.runtime.upgrade_loaded", {
         pid = process.pid(), clients = snapshot.connected_clients,
         plugin_pid = snapshot.active_plugins.runtime_.pid,
+        disconnect_started_at = snapshot.disconnect_started_at,
     }))
     return user.run(args)
 end
