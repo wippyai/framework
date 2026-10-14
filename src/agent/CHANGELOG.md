@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.4](https://github.com/wippyai/framework/compare/agent-v0.5.3...agent-v0.5.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* **agent:** opt in to authority refresh at tool boundaries ([#173](https://github.com/wippyai/framework/issues/173)) ([3b92e76](https://github.com/wippyai/framework/commit/3b92e76d8f8d51343d3a1b5d94483ddf5d8285c9))
+* harden Lua actor, relay, tool-round and runner behavior ([#165](https://github.com/wippyai/framework/issues/165)) ([d4607bb](https://github.com/wippyai/framework/commit/d4607bb274e09a1d0cc6bef533f45546846fb79b))
+
 ## [0.5.3] (2026-10-07)
 
 ### Features
