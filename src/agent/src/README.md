@@ -2,6 +2,10 @@
 
 LLM agent framework with compilation, tool execution, traits, delegation, and memory recall.
 
+Per-step memory recall is labeled as background context, separate from user
+messages and new requests. It supports the current task without replacing it;
+the conversation and its tool results remain in their original order.
+
 ## Installation
 
 ```yaml

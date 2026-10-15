@@ -805,6 +805,36 @@ local function define_tests()
         end)
 
         describe("Memory Prompt Formatting and Injection", function()
+            it("labels per-step recall as background without replacing the active request", function()
+                mock_contract._current_instance = create_mock_memory_contract({
+                    memories = { { id = "background", content = "A remembered document preference.", metadata = {} } },
+                })
+                local instance = agent.new({
+                    id = "memory-task", name = "Memory task", prompt = "Work on the user's request.", tools = {},
+                    memory_contract = { implementation_id = "test:memory", options = { min_conversation_length = 2 } },
+                })
+                local builder = mock_prompt.new()
+                builder:add_user("Rebuild the Word handout and finish every edit.")
+                builder:add_assistant("The first edit is complete.")
+                builder:add_function_result("edit_document", "Second edit stored", "edit-2")
+                assert(instance:step(builder))
+
+                local recall = test_messages[#test_messages]
+                test.eq(recall.role, "developer")
+                test.contains(recall.content[1].text, "Background context from memory")
+                test.contains(recall.content[1].text, "not a user message or a new request")
+                test.contains(recall.content[1].text, "does not replace")
+                local requests = 0
+                for _, message in ipairs(test_messages) do
+                    if message.role == "user" then
+                        requests = requests + 1
+                        test.eq(message.content[1].text, "Rebuild the Word handout and finish every edit.")
+                    end
+                end
+                test.eq(requests, 1)
+                test.eq(#builder:get_messages(), 3, "recall must not mutate stored conversation history")
+            end)
+
             it("should format memory content correctly", function()
                 local memory_contract = create_mock_memory_contract({
                     memories = {
@@ -841,7 +871,7 @@ local function define_tests()
                 local memory_prompt = result.memory_prompt
                 test.eq(memory_prompt.role, "developer")
                 local memory_text = memory_prompt.content[1].text
-                test.contains(memory_text, "Relevant context from your memory:")
+                test.contains(memory_text, "Background context from memory")
                 test.contains(memory_text, "- First memory")
                 test.contains(memory_text, "- Second memory")
                 test.contains(memory_text, "- Third memory")
@@ -914,7 +944,7 @@ local function define_tests()
                 -- Find developer message with memory
                 local memory_message = nil
                 for _, msg in ipairs(llm_messages) do
-                    if msg.role == "developer" and msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text and msg.content[1].text:find("Relevant context") then
+                    if msg.role == "developer" and msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text and msg.content[1].text:find("Background context from memory", 1, true) then
                         memory_message = msg
                         break
                     end
@@ -1231,7 +1261,7 @@ local function define_tests()
                 local memory_position = 0
 
                 for i, msg in ipairs(llm_messages) do
-                    if msg.role == "developer" and msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text and msg.content[1].text:find("Relevant context") then
+                    if msg.role == "developer" and msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text and msg.content[1].text:find("Background context from memory", 1, true) then
                         memory_found = true
                         memory_position = i
                         break
@@ -1280,7 +1310,7 @@ local function define_tests()
                 local original_messages = prompt_builder:get_messages()
                 for _, msg in ipairs(original_messages) do
                     if msg.content and type(msg.content) == "table" and msg.content[1] and msg.content[1].text then
-                        test.is_nil(msg.content[1].text:find("Relevant context"))
+                        test.is_nil(msg.content[1].text:find("Background context from memory", 1, true))
                     end
                 end
             end)
