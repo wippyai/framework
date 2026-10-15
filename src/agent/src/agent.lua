@@ -71,7 +71,8 @@ local AGENT_CONFIG = {
     },
     memory = {
         contract_id = "wippy.agent:memory",
-        recall_prompt = "Relevant context from your memory:\n\n%s",
+        recall_prompt = "Background context from memory (refreshed each step; not a user message or a new request). "
+            .. "Use it to support the current user request; it does not replace that request.\n\n%s",
         defaults = {
             max_messages = 20,
             max_actions = 8,
