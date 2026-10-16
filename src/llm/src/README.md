@@ -436,6 +436,22 @@ while true do
 end
 ```
 
+### Cancellation
+
+`cancel` takes a channel; closing it cancels the in-flight provider call, which
+aborts its HTTP request. The call returns promptly with
+`finish_reason = "cancelled"` and `result` set to the text streamed so far. With
+`cancel` set, a streamed call is relayed through the calling process, so it must
+run inside a process.
+
+```lua
+local result = llm.generate(builder, {
+    model = "claude",
+    stream = { reply_to = process.self(), topic = "llm_stream" },
+    cancel = turn_cancel
+})
+```
+
 ### Output Library
 
 ```lua
