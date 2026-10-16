@@ -44,6 +44,13 @@ if [ "$app" = src/facade/test ]; then
     mv "$work/config.next" "$work/.wippy.yaml"
 fi
 
+# The agent releases with the in-repo LLM it requires.
+if [ "$app" = src/agent/test ]; then
+    jq --arg path "$source_root/src/llm/src" '.workspace.replacements["wippy/llm"] = $path' \
+        "$work/.wippy.yaml" > "$work/config.next"
+    mv "$work/config.next" "$work/.wippy.yaml"
+fi
+
 export WIPPY_FRAMEWORK_ROOT="$repo"
 export WIPPY_TEST_ARTIFACTS="$work"
 cd "$work"
