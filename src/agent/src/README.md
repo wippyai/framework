@@ -220,13 +220,20 @@ local response, err = runner:step(builder, {
     tool_call = "auto",
     disable_memory_recall = false,
     previous_memory_ids = { "mem_1", "mem_2" },
-    stop_check = function() return stop_requested end
+    stop_check = function() return stop_requested end,
+    cancel = turn_cancel
 })
 ```
 
 `stop_check` runs after prompt functions and memory recall, immediately before
 provider generation. When it returns true, `step` returns `{ stopped = true }`
 without a provider request.
+
+`cancel` is a channel the host closes to cancel the in-flight provider call (see
+`llm.generate`). The step then returns `{ stopped = true, result = <text streamed
+before cancellation>, finish_reason = "cancelled" }`. The same channel passed as
+the third argument of `tool_caller:execute(context, validated_tools, cancel)`
+cancels in-flight tool calls; each reports `cancelled = true`.
 
 ### Response Structure
 

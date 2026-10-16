@@ -261,6 +261,7 @@ output.FINISH_REASON = {
     LENGTH = "length",           -- Reached max tokens
     CONTENT_FILTER = "filtered", -- Content filtered
     TOOL_CALL = "tool_call",     -- Tool/function call
+    CANCELLED = "cancelled",     -- Caller cancelled the in-flight call
     ERROR = "error"              -- Other error
 }
 

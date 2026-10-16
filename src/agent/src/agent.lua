@@ -551,6 +551,11 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.stream = runtime_options.stream_target
     end
 
+    -- Closing this channel cancels the in-flight model call.
+    if runtime_options.cancel then
+        options.cancel = runtime_options.cancel
+    end
+
     --if has_tools_with_schemas(self.tools) then
     --    options.tools = extract_tool_schemas_for_llm(self.tools)
     --
@@ -584,6 +589,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     local result, err = llm_instance.generate(final_messages, options)
     if err then
         return nil, err
+    end
+
+    if result.finish_reason == output.FINISH_REASON.CANCELLED then
+        return { stopped = true, result = result.result, finish_reason = result.finish_reason }, nil
     end
 
     local response = {

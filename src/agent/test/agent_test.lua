@@ -4,6 +4,7 @@ local llm = require("llm")
 local json = require("json")
 local env = require("env")
 local time = require("time")
+local output = require("output")
 
 local function define_tests()
     describe("Agent Runner with Tool Context Support and Memory Contracts", function()
@@ -640,6 +641,61 @@ local function define_tests()
                 test.is_nil(err)
                 test.is_nil(result.stopped)
                 test.eq(calls.generate, 1)
+            end)
+
+            it("should cancel the in-flight model call through the host cancel channel", function()
+                local test_agent = agent.new({
+                    id = "cancel-agent",
+                    name = "Cancel Agent",
+                    description = "Cancels its model call",
+                    prompt = "You are cancellable."
+                })
+                local cancel = channel.new()
+                local seen
+                agent._llm = {
+                    generate = function(_, options)
+                        seen = options
+                        return {
+                            result = "Partial answer",
+                            tool_calls = {},
+                            finish_reason = output.FINISH_REASON.CANCELLED,
+                            metadata = {}
+                        }
+                    end
+                }
+
+                local result, err = test_agent:step(mock_prompt.new(), { cancel = cancel })
+
+                test.is_nil(err)
+                test.eq(seen.cancel, cancel)
+                test.is_true(result.stopped)
+                test.eq(result.result, "Partial answer")
+                test.eq(result.finish_reason, output.FINISH_REASON.CANCELLED)
+                test.is_nil(result.tool_calls)
+                test.eq(test_agent.total_tokens.total, 0)
+            end)
+
+            it("should call the model without cancellation when the host gives no cancel channel", function()
+                local test_agent = agent.new({
+                    id = "plain-agent",
+                    name = "Plain Agent",
+                    description = "Runs without cancellation",
+                    prompt = "You are plain."
+                })
+                local seen
+                agent._llm = {
+                    generate = function(_, options)
+                        seen = options
+                        return { result = "done", tokens = {}, finish_reason = "stop" }
+                    end
+                }
+
+                local result, err = test_agent:step(mock_prompt.new())
+
+                test.is_nil(err)
+                test.is_nil(seen.cancel)
+                test.is_nil(result.stopped)
+                test.eq(result.result, "done")
             end)
 
             it("should carry an explicit zero temperature rather than treating it as unset", function()

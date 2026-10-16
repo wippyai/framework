@@ -1,7 +1,9 @@
 local ctx = require("ctx")
+local time = require("time")
 
 local function execute(args)
     if args.raise then error("runtime fixture failure") end
+    if args.hold_ms then time.sleep(tostring(args.hold_ms) .. "ms") end
     local control = args.control
     return {
         success = args.fail ~= true,

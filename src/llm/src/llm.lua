@@ -4,6 +4,8 @@ local contract = require("contract")
 local security = require("security")
 local evaluation = require("evaluation")
 local route = require("route")
+local output = require("output")
+local uuid = require("uuid")
 
 type Message = {
     role: string,
@@ -562,6 +564,89 @@ local function merge_tool_choice(raw_result, tool_choice)
     raw_result.metadata.tool_choice = tool_choice
 end
 
+-- Forwards every relayed stream chunk to the caller's target and keeps the text.
+local function forward_chunk(target, chunk, partial)
+    process.send(target.reply_to, target.topic, chunk)
+    if type(chunk) == "table" and chunk.type == output.TYPE.CONTENT and type(chunk.content) == "string" then
+        table.insert(partial, chunk.content)
+    end
+end
+
+-- Calls the provider with an interruptible in-flight request: closing (or sending on)
+-- `cancel` cancels the provider call, which aborts its HTTP request. A streamed call
+-- is relayed through this process so the text produced before cancellation is known.
+-- Returns raw_result, err, or nil, nil, partial_text when cancelled.
+local function generate_cancellable(provider_instance, contract_args, cancel)
+    local target = contract_args.stream
+    local relay = nil
+    if type(target) == "table" and target.reply_to then
+        local topic, id_err = uuid.v7()
+        if not topic then
+            return nil, errors.new({ message = "Failed to create stream relay topic: " .. tostring(id_err),
+                kind = errors.INTERNAL })
+        end
+        relay = process.listen("llm.stream." .. topic)
+        local relayed = {}
+        for key, value in pairs(target) do relayed[key] = value end
+        relayed.reply_to = process.pid()
+        relayed.topic = "llm.stream." .. topic
+        contract_args.stream = relayed
+    end
+
+    local future, start_err = provider_instance:generate_async(contract_args)
+    if not future then
+        if relay then process.unlisten(relay) end
+        return nil, start_err
+    end
+
+    local partial = {}
+    local response = future:response()
+    local cases = { response:case_receive(), cancel:case_receive() }
+    if relay then table.insert(cases, relay:case_receive()) end
+    while true do
+        local selected = channel.select(cases)
+        if relay and selected.channel == relay then
+            forward_chunk(target, selected.value, partial)
+        elseif selected.channel == cancel then
+            future:cancel()
+            if relay then process.unlisten(relay) end
+            return nil, nil, table.concat(partial)
+        else
+            break
+        end
+    end
+
+    if relay then
+        -- The provider sends its chunks before it returns; take the ones queued behind the result.
+        while true do
+            local queued = channel.select({ relay:case_receive(), default = true })
+            if queued.default then break end
+            forward_chunk(target, queued.value, partial)
+        end
+        process.unlisten(relay)
+    end
+
+    local payload, err = future:result()
+    if err then return nil, err end
+    return payload and payload:data() or nil
+end
+
+local function invoke_generate(provider_instance, contract_args, cancel)
+    if cancel then
+        return generate_cancellable(provider_instance, contract_args, cancel)
+    end
+    return (provider_instance as any):generate(contract_args)
+end
+
+local function cancelled_response(partial: string): GenerateResponse
+    return {
+        result = partial,
+        tool_calls = {},
+        finish_reason = output.FINISH_REASON.CANCELLED,
+        metadata = {}
+    } :: GenerateResponse
+end
+
 function llm.generate(prompt_input, options)
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, "Model is required in options"
@@ -599,7 +684,7 @@ function llm.generate(prompt_input, options)
         }
 
         -- Copy user options to contract options (no provider options in direct mode)
-        merge_user_options(contract_args, options, {"model", "provider_id"})
+        merge_user_options(contract_args, options, {"model", "provider_id", "cancel"})
         hoist_transport_options(contract_args)
         contract_args._provider_id = provider_info.id
 
@@ -609,7 +694,8 @@ function llm.generate(prompt_input, options)
         local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
         if tool_choice_err then return nil, tool_choice_err end
 
-        local raw_result, err = (provider_instance as any):generate(contract_args)
+        local raw_result, err, cancelled = invoke_generate(provider_instance, contract_args, options.cancel)
+        if cancelled then return cancelled_response(cancelled) end
         merge_adjustments(raw_result, adjusted)
         merge_tool_choice(raw_result, tool_choice)
         if err then
@@ -670,7 +756,7 @@ function llm.generate(prompt_input, options)
         apply_provider_transport(contract_args, provider_info)
 
         -- Merge user options (can override provider defaults)
-        merge_user_options(contract_args, options, {"model", "model_profile"})
+        merge_user_options(contract_args, options, {"model", "model_profile", "cancel"})
         hoist_transport_options(contract_args)
 
         -- Call provider contract
@@ -679,7 +765,8 @@ function llm.generate(prompt_input, options)
         local tool_choice, tool_choice_err = apply_forced_tool_choice(contract_args)
         if tool_choice_err then return nil, tool_choice_err end
 
-        local raw_result, err = (provider_instance as any):generate(contract_args)
+        local raw_result, err, cancelled = invoke_generate(provider_instance, contract_args, options.cancel)
+        if cancelled then return cancelled_response(cancelled) end
         merge_adjustments(raw_result, adjusted)
         merge_tool_choice(raw_result, tool_choice)
         if err then

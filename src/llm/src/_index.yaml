@@ -323,8 +323,10 @@ entries:
     source: file://llm.lua
     modules:
       - security
+      - uuid
     imports:
       contract: contract
+      output: wippy.llm:output
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
       evaluation: wippy.llm:evaluation
