@@ -85,6 +85,55 @@ entries:
       id: app:permanent_fail_driver
       options: {}
 
+  # Streaming generate: streams configured chunks, optionally holding the call in flight
+  - name: streaming_generate
+    kind: function.lua
+    source: file://streaming_generate.lua
+    method: handler
+    modules:
+      - store
+      - time
+    imports:
+      output: wippy.llm:output
+
+  - name: streaming_driver
+    kind: contract.binding
+    meta:
+      comment: Streaming LLM driver for in-flight cancellation tests
+    contracts:
+      - contract: wippy.llm:generator
+        methods:
+          generate: app:streaming_generate
+      - contract: wippy.llm:provider
+        methods:
+          status: app:streaming_generate
+
+  - name: streaming_provider
+    kind: registry.entry
+    meta:
+      type: llm.provider
+      name: streaming
+      title: Streaming Test Provider
+    driver:
+      id: app:streaming_driver
+      options: {}
+
+  - name: cancel_generate_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: llm.cancel
+      timeout: 30s
+    source: file://cancel_generate_test.lua
+    method: run
+    modules:
+      - store
+      - time
+    imports:
+      test: wippy.test:test
+      llm: wippy.llm:llm
+      output: wippy.llm:output
+
   # Retry integration test
   - name: retry_integration_test
     kind: function.lua
