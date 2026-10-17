@@ -22,6 +22,7 @@ local function define_tests()
                 test.eq(mapped[1].content[1].text, "Earlier request")
                 test.eq(mapped[2].role, role)
                 test.eq(mapped[2].content[1].text, "Boundary")
+                test.eq(mapped[3].role, "user")
                 test.eq(mapped[3].content[1].text, "New request")
             end
         end)
