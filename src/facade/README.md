@@ -2,6 +2,8 @@
 
 Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loads the Wippy frontend bundle from a CDN via iframe, with all configuration driven through `ns.requirement` entries.
 
+This README describes the private Facade 0.6.45 release candidate. It is intended for Web Host 1.0.64 (npm 0.0.64) and the private CDN module family 0.0.2. These candidates are not published. The npm engine change and Views fragment fix are outside this candidate.
+
 ## How it works
 
 1. `index.html` is served as a static file via `http.static`
@@ -78,7 +80,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.63` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.64` | CDN base URL for the Web Host frontend bundle |
 | `host_policy_mode` | `auto` | `auto` detects official CDN versions and preserves legacy policy for unknown hosts; `legacy` mirrors policy into `hostConfig`; `shared` keeps root-only policy for custom modern hosts. Invalid values fail the config endpoint. |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
@@ -133,7 +135,21 @@ These accept JSON strings for complex configuration:
 | `import_map` | `{}` | `importMap` | Import-map overrides merged with the Web Host map before module loading. Empty or invalid JSON keeps the Host map unchanged. Requires Web Host 1.0.63 or newer. |
 | `extra_scripts` | `[]` | `extraScripts` | External `<script>` tags injected into `index.html` before the Web Host bundle loads. See [Extra scripts](#extra-scripts). |
 
-The Facade pins Web Host 1.0.63 by default. A custom older Host keeps its existing Iconify and import-map defaults; these new configuration options require Host 1.0.63 or newer. Import-map configuration accepts only `imports` and `scopes` with HTTP(S) or relative target URLs. An invalid map is rejected before module loading.
+The Facade pins Web Host 1.0.64 by default. A custom older Host keeps its existing Iconify and import-map defaults; these configuration options require Host 1.0.63 or newer. Import-map configuration accepts only `imports` and `scopes` with HTTP(S) or relative target URLs. An invalid map is rejected before module loading.
+
+### Local CDN source preferences
+
+The Facade can discover local-source functions declared by installed CDN adapters and save optional source choices. The choices default to Internet, so installing a CDN module does not change the existing Iconify defaults or application styling. Applications do not need an app-owned source contract or resolver shim.
+
+Bind `cdn_database` to `app:db`, `cdn_management_router` to `app:api`, and `cdn_management_security_scope` to `app.security:admin` to enable the source preferences. The Facade serves `GET /cdn-config/sources` and `PUT /cdn-config/sources` on `cdn_management_router`. The PUT request replaces the complete source form. It does not accept a partial set of module choices.
+
+The standard `wippy-cdn-admin` element uses the AppConfig proxy and needs no API-base or public-base attributes. It reads and saves source choices at `/api/v1/cdn-config/sources`. The `source-settings-api` attribute remains an optional relative compatibility override.
+
+When a user selects This server for Icons, Facade calls the installed Iconify adapter's declared local-source function using the application's public URL. Facade adds the local default provider while preserving named providers and explicit application overrides. Internet remains selected by default.
+
+The Fonts adapter does not provide a source selector or automatic CSS configuration. The Fonts Inspector offers a copyable import for the stable active-family stylesheet and a separate `font-family` declaration with the exact family name. Add the import before other CSS rules, then add the family declaration to the selectors you choose. Updates and rollbacks follow the stable import URL, while previews stay tied to their selected revision.
+
+If a later CDN integration adds import-map defaults, keep application `imports` and `scopes` at higher priority. The 0.6.45 candidate does not change the npm engine or add an npm-based font path.
 
 ### Auth
 
@@ -395,10 +411,10 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.63",
-  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.63/schemas/wippy-context-2.1.json",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.64",
+  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.64/schemas/wippy-context-2.1.json",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.63/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.64/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {

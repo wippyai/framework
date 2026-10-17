@@ -18,7 +18,7 @@ local function decision(policy_id: string, action: string, resource: string): st
     return "undefined"
 end
 
-local function run()
+local function define_tests()
     test.describe("wippy.facade security policies", function()
         test.it("grants facade config registry and public API env reads only", function()
             test.eq(decision("wippy.facade:config_read_runtime", "registry.get", "wippy.facade:fe_facade_url"), "allow")
@@ -33,7 +33,29 @@ local function run()
             test.eq(decision("wippy.facade:content_fs_runtime", "fs.get", "app:app_fs"), "allow")
             test.eq(decision("wippy.facade:content_fs_runtime", "db.get", "app:db"), "undefined")
         end)
+
+        for _, policy_id in ipairs({
+            "wippy.facade:cdn_source_resolver_runtime",
+            "wippy.facade:cdn_source_public_resolver_runtime",
+        }) do
+            test.it("restricts " .. policy_id .. " to discovery and local-source functions", function()
+                test.eq(decision(policy_id, "funcs.call", "wippy.cdn:discover_local_sources"), "allow")
+                test.eq(decision(policy_id, "funcs.call", "wippy.cdn.iconify:local_source"), "allow")
+                test.eq(decision(policy_id, "funcs.call", "wippy.cdn.npm:local_source"), "allow")
+                for _, resource in ipairs({
+                    "wippy.cdn:writer",
+                    "wippy.cdn.iconify:download",
+                    "wippy.cdnEvil:local_source",
+                    "wippy.cdn.iconify:local_source_extra",
+                    "app:local_source",
+                }) do
+                    test.eq(decision(policy_id, "funcs.call", resource), "undefined")
+                end
+                test.eq(decision(policy_id, "registry.apply", "wippy.cdn.iconify:local_source"), "undefined")
+                test.eq(decision(policy_id, "env.get", "ENCRYPTION_KEY"), "undefined")
+            end)
+        end
     end)
 end
 
-return { run = run }
+return { run = test.run_cases(define_tests) }
