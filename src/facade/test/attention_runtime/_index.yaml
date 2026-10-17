@@ -5,5 +5,6 @@ entries:
   - name: source
     kind: fs.directory
     meta:
+      scope: dev
       comment: Source-only volume for full facade shell forwarding regression
     directory: ../..

@@ -2,6 +2,7 @@ local http = require("http")
 local json = require("json")
 local env = require("env")
 local theming = require("theming_helpers")
+local sources = require("source_helpers")
 
 local function derive_ws_url(api_url: string): string
     if api_url == "" then
@@ -64,6 +65,15 @@ local function handler()
     -- binds one, its overrides replace matching requirement values below; with no
     -- binding this is {} and every read falls back to the static ns.requirement.
     local overrides = theming.resolve_overrides()
+    -- Source composition is part of the full config response only. The CSS
+    -- variables endpoint continues to use the application resolver directly.
+    local source_diagnostics
+    overrides, source_diagnostics = sources.compose_requirements(overrides)
+    for _, diagnostic in ipairs(source_diagnostics) do
+        require("logger"):named("facade.sources"):warn("local CDN source was skipped", {
+            diagnostic = diagnostic,
+        })
+    end
 
     local function get_req(name: string): string
         return theming.requirement(name, overrides)

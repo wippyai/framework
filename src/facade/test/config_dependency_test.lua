@@ -3,13 +3,13 @@ local registry = require("registry")
 
 local NS = "wippy.facade:"
 
-local function run()
+local function define_tests()
     test.describe("wippy.facade dependency wiring", function()
         test.it("materializes requirement values into data.default", function()
             local entry = registry.get(NS .. "fe_facade_url")
             test.not_nil(entry)
             test.not_nil(entry.data)
-            test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.63")
+            test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.64")
 
             entry = registry.get(NS .. "app_title")
             test.not_nil(entry)
@@ -19,4 +19,4 @@ local function run()
     end)
 end
 
-return { run = run }
+return { run = test.run_cases(define_tests) }
