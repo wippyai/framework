@@ -49,6 +49,22 @@ entries:
     modules:
       - security
 
+  - name: config_contributors_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: Tests module configuration contributor validation and composition
+    source: file://config_contributors_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      config_contributors_core: wippy.facade:config_contributors_core
+    modules:
+      - fs
+      - json
+
+
   - name: config_dependency_test
     kind: function.lua
     meta:

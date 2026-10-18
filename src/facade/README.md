@@ -137,19 +137,15 @@ These accept JSON strings for complex configuration:
 
 The Facade pins Web Host 1.0.64 by default. A custom older Host keeps its existing Iconify and import-map defaults; these configuration options require Host 1.0.63 or newer. Import-map configuration accepts only `imports` and `scopes` with HTTP(S) or relative target URLs. An invalid map is rejected before module loading.
 
-### Local CDN source preferences
+### Module configuration contributors
 
-The Facade can discover local-source functions declared by installed CDN adapters and save optional source choices. The choices default to Internet, so installing a CDN module does not change the existing Iconify defaults or application styling. Applications do not need an app-owned source contract or resolver shim.
+Modules can add configuration values to the full `/facade/config` response by declaring a `function.lua` entry with `meta.type: wippy.facade.config_contributor`. Its entry ID must end in `:facade_config_contribute`, and its namespace must use lowercase letters, digits, dots, underscores, or hyphens.
 
-Bind `cdn_database` to `app:db`, `cdn_management_router` to `app:api`, and `cdn_management_security_scope` to `app.security:admin` to enable the source preferences. The Facade serves `GET /cdn-config/sources` and `PUT /cdn-config/sources` on `cdn_management_router`. The PUT request replaces the complete source form. It does not accept a partial set of module choices.
+Declare the requirement names the function reads and writes in `meta.config_inputs` and `meta.config_outputs`. Each list accepts up to 32 names that match `^[a-z][a-z0-9_]*$`. The Facade passes only declared inputs as `{ defaults = {...}, overrides = {...} }`. Defaults come from Facade requirements. Overrides contain only matching values returned by the application's `wippy.facade:resolver`.
 
-The standard `wippy-cdn-admin` element uses the AppConfig proxy and needs no API-base or public-base attributes. It reads and saves source choices at `/api/v1/cdn-config/sources`. The `source-settings-api` attribute remains an optional relative compatibility override.
+The function returns `{ overrides = {...}, diagnostics = {...} }`. It may write only names in `meta.config_outputs`, and all output values must be strings. The Facade checks the complete result before applying any value. Missing output keys keep their original values. The application's resolver remains authoritative unless a valid module contributor supplies a declared output. Contributors that claim the same output key are all skipped, and Facade logs bounded diagnostics.
 
-When a user selects This server for Icons, Facade calls the installed Iconify adapter's declared local-source function using the application's public URL. Facade adds the local default provider while preserving named providers and explicit application overrides. Internet remains selected by default.
-
-The Fonts adapter does not provide a source selector or automatic CSS configuration. The Fonts Inspector offers a copyable import for the stable active-family stylesheet and a separate `font-family` declaration with the exact family name. Add the import before other CSS rules, then add the family declaration to the selectors you choose. Updates and rollbacks follow the stable import URL, while previews stay tied to their selected revision.
-
-If a later CDN integration adds import-map defaults, keep application `imports` and `scopes` at higher priority. The 0.6.45 candidate does not change the npm engine or add an npm-based font path.
+The Facade limits discovery to 32 functions, checks no more than 32 input and output names, and caps serialized inputs and outputs at 256 KiB. A contributor should read through its own fixed actor and return only the configuration values it owns. The Facade grants calls only to entries ending in `:facade_config_contribute`.
 
 ### Auth
 
