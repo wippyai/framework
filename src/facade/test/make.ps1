@@ -6,9 +6,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Set-Location $PSScriptRoot
+Push-Location $PSScriptRoot
 
-$wippy = if ($env:WIPPY) { $env:WIPPY } else { 'wippy' }
+$wippy = if ($env:WIPPY) { $env:WIPPY } elseif ($env:WIPPY_EXE) { $env:WIPPY_EXE } else { 'wippy' }
 $testConfig = if ($env:TEST_CONFIG) { $env:TEST_CONFIG } else { '.wippy.yaml' }
 
 try {
@@ -28,4 +28,6 @@ try {
 } catch {
     Write-Error $_
     exit 1
+} finally {
+    Pop-Location
 }
