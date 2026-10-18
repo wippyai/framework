@@ -34,27 +34,31 @@ local function define_tests()
             test.eq(decision("wippy.facade:content_fs_runtime", "db.get", "app:db"), "undefined")
         end)
 
-        for _, policy_id in ipairs({
-            "wippy.facade:cdn_source_resolver_runtime",
-            "wippy.facade:cdn_source_public_resolver_runtime",
-        }) do
-            test.it("restricts " .. policy_id .. " to discovery and local-source functions", function()
-                test.eq(decision(policy_id, "funcs.call", "wippy.cdn:discover_local_sources"), "allow")
-                test.eq(decision(policy_id, "funcs.call", "wippy.cdn.iconify:local_source"), "allow")
-                test.eq(decision(policy_id, "funcs.call", "wippy.cdn.npm:local_source"), "allow")
-                for _, resource in ipairs({
-                    "wippy.cdn:writer",
-                    "wippy.cdn.iconify:download",
-                    "wippy.cdnEvil:local_source",
-                    "wippy.cdn.iconify:local_source_extra",
-                    "app:local_source",
-                }) do
-                    test.eq(decision(policy_id, "funcs.call", resource), "undefined")
-                end
-                test.eq(decision(policy_id, "registry.apply", "wippy.cdn.iconify:local_source"), "undefined")
-                test.eq(decision(policy_id, "env.get", "ENCRYPTION_KEY"), "undefined")
-            end)
-        end
+        test.it("calls only module-owned configuration contributors", function()
+            local policy_id = "wippy.facade:config_contributor_call_runtime"
+            test.eq(decision(policy_id, "funcs.call", "app.adapter:facade_config_contribute"), "allow")
+            test.eq(decision(policy_id, "funcs.call", "app.branding:facade_config_contribute"), "allow")
+            for _, resource in ipairs({
+                "app:writer",
+                "app.branding:facade_config_contribute_extra",
+                "app.bad namespace:facade_config_contribute",
+            }) do
+                test.eq(decision(policy_id, "funcs.call", resource), "undefined")
+            end
+            test.eq(decision(policy_id, "registry.apply", "app.branding:facade_config_contribute"), "undefined")
+            test.eq(decision(policy_id, "db.get", "app:db"), "undefined")
+        end)
+
+        test.it("reads only module-owned configuration contributor entries", function()
+            local policy_id = "wippy.facade:config_contributor_read_runtime"
+            test.eq(decision(policy_id, "registry.get", "app.branding:facade_config_contribute"), "allow")
+            test.eq(decision(policy_id, "registry.get", "app.branding:private_settings"), "undefined")
+        end)
+
+        test.it("allows read-only discovery of declared configuration contributors", function()
+            test.eq(decision("wippy.facade:config_contributor_discovery_runtime", "registry.find", "*"), "allow")
+            test.eq(decision("wippy.facade:config_contributor_discovery_runtime", "registry.apply", "*"), "undefined")
+        end)
     end)
 end
 

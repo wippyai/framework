@@ -32,53 +32,6 @@ entries:
       - entry: wippy.facade:theme_persist_endpoint
         path: .meta.router
 
-  - name: cdn_management_router
-    kind: ns.requirement
-    meta:
-      description: Protected router for CDN source preferences; defaults to the Facade web router and can be overridden by applications
-    default: wippy.facade:web_router
-    targets:
-      - entry: wippy.facade:source_preferences_get_endpoint
-        path: .meta.router
-      - entry: wippy.facade:source_preferences_put_endpoint
-        path: .meta.router
-
-  - name: cdn_database
-    kind: ns.requirement
-    meta:
-      description: Optional database containing app_cdn_source_preferences
-    default: ""
-    targets:
-      - entry: wippy.facade:cdn_database
-        path: .default
-      - entry: wippy.facade:cdn_source_read_runtime
-        path: .policy.resources +=
-      - entry: wippy.facade:cdn_source_public_read_runtime
-        path: .policy.resources +=
-      - entry: wippy.facade:cdn_source_manage_runtime
-        path: .policy.resources +=
-
-  - name: cdn_management_security_scope
-    kind: ns.requirement
-    meta:
-      description: Optional authorization group allowed to manage source preferences
-    default: ""
-    targets:
-      - entry: wippy.facade:cdn_source_management_access
-        path: .groups +=
-      - entry: wippy.facade:cdn_source_read_runtime
-        path: .groups +=
-      - entry: wippy.facade:cdn_source_manage_runtime
-        path: .groups +=
-      - entry: wippy.facade:cdn_source_resolver_runtime
-        path: .groups +=
-      - entry: wippy.facade:cdn_source_effective_runtime
-        path: .groups +=
-      - entry: wippy.facade:cdn_source_security_runtime
-        path: .groups +=
-      - entry: wippy.facade:cdn_management_security_scope
-        path: .default
-
   - name: fe_facade_url
     kind: ns.requirement
     meta:
@@ -651,7 +604,7 @@ entries:
     method: handler
     imports:
       theming_helpers: wippy.facade:theming_helpers
-      source_helpers: wippy.facade:source_helpers
+      config_contributors: wippy.facade:config_contributors
     modules:
       - http
       - registry
@@ -667,74 +620,28 @@ entries:
       policies:
         - wippy.facade:config_read_runtime
         - wippy.facade:content_fs_runtime
-        - wippy.facade:cdn_source_public_read_runtime
-        - wippy.facade:cdn_source_public_resolver_runtime
+        - wippy.facade:config_contributor_discovery_runtime
+        - wippy.facade:config_contributor_read_runtime
+        - wippy.facade:config_contributor_call_runtime
 
-  - name: source_helpers
+  - name: config_contributors
     kind: library.lua
     meta:
-      comment: Composes optional local CDN source facts and manages source preferences
-    source: file://sources.lua
+      comment: Composes declared module configuration contributions
+    source: file://config_contributors.lua
     imports:
       theming_helpers: wippy.facade:theming_helpers
+      config_contributors_core: wippy.facade:config_contributors_core
     modules:
-      - http
       - json
-      - sql
-      - security
-      - env
+      - registry
       - funcs
-      - logger
 
-  - name: source_preferences_get_handler
-    kind: function.lua
+  - name: config_contributors_core
+    kind: library.lua
     meta:
-      comment: Reads saved CDN source preferences and effective source status
-    source: file://sources.lua
-    method: get_sources
-    imports:
-      theming_helpers: wippy.facade:theming_helpers
-    modules:
-      - http
-      - json
-      - sql
-      - security
-      - funcs
-      - logger
-      - env
-
-  - name: source_preferences_put_handler
-    kind: function.lua
-    meta:
-      comment: Saves the complete CDN source preference form
-    source: file://sources.lua
-    method: put_sources
-    imports:
-      theming_helpers: wippy.facade:theming_helpers
-    modules:
-      - http
-      - json
-      - sql
-      - security
-      - funcs
-      - logger
-      - env
-
-  - name: source_preferences_get_endpoint
-    kind: http.endpoint
-    meta:
-      router: cdn_management_router
-    method: GET
-    path: /cdn-config/sources
-    func: source_preferences_get_handler
-
-  - name: source_preferences_put_endpoint
-    kind: http.endpoint
-    meta:
-      router: cdn_management_router
-    method: PUT
-    path: /cdn-config/sources
-    func: source_preferences_put_handler
+      comment: Validates and composes configuration contributor inputs and results
+    source: file://config_contributors_core.lua
 
   - name: config_endpoint
     kind: http.endpoint
@@ -821,108 +728,40 @@ entries:
         - fs.get
       effect: allow
 
-  - name: cdn_source_read_runtime
+  - name: config_contributor_call_runtime
     kind: security.policy
     meta:
-      comment: Reads saved CDN source preferences from the configured database
-    policy:
-      resources:
-        - wippy.facade:cdn_database
-      actions:
-        - db.get
-      effect: allow
-
-  - name: cdn_source_public_read_runtime
-    kind: security.policy
-    meta:
-      comment: Allows the Facade public config handler to read saved source preferences
-    policy:
-      resources:
-        - wippy.facade:cdn_database
-      actions:
-        - db.get
-      effect: allow
-
-  - name: cdn_source_manage_runtime
-    kind: security.policy
-    meta:
-      comment: Opens the configured database for authorized CDN source preference updates
-    policy:
-      resources:
-        - wippy.facade:cdn_database
-      actions:
-        - db.get
-      effect: allow
-
-  - name: cdn_source_resolver_runtime
-    kind: security.policy
-    meta:
-      comment: Calls only the bounded discovery function and module-owned local-source functions
-    policy:
-      resources:
-        - wippy.cdn:discover_local_sources
-        - wippy.cdn.*
-      actions:
-        - funcs.call
-      conditions:
-        - field: resource
-          operator: matches
-          value: '^(wippy[.]cdn:discover_local_sources|wippy[.]cdn[.][a-z][a-z0-9._-]*:local_source)$'
-      effect: allow
-
-  - name: cdn_source_public_resolver_runtime
-    kind: security.policy
-    meta:
-      comment: Allows the Facade public config handler to call bounded source discovery and module resolvers
-    policy:
-      resources:
-        - wippy.cdn:discover_local_sources
-        - wippy.cdn.*
-      actions:
-        - funcs.call
-      conditions:
-        - field: resource
-          operator: matches
-          value: '^(wippy[.]cdn:discover_local_sources|wippy[.]cdn[.][a-z][a-z0-9._-]*:local_source)$'
-      effect: allow
-
-  - name: cdn_source_effective_runtime
-    kind: security.policy
-    meta:
-      comment: Reads only Facade resolver inputs needed to report effective source settings
-    policy:
-      resources:
-        - wippy.facade:resolver
-        - wippy.facade:iconify
-        - wippy.facade:import_map
-        - wippy.facade:cdn_management_security_scope
-        - wippy.facade:cdn_database
-        - PUBLIC_API_URL
-      actions:
-        - registry.get
-        - env.get
-      effect: allow
-
-  - name: cdn_source_security_runtime
-    kind: security.policy
-    meta:
-      comment: Reads the authenticated actor and active security scope for protected source settings
+      comment: Calls only module-owned Facade configuration contributor functions
     policy:
       resources: '*'
       actions:
-        - security.actor
-        - security.scope
+        - funcs.call
+      conditions:
+        - field: resource
+          operator: matches
+          value: '^[a-z][a-z0-9._-]*:facade_config_contribute$'
       effect: allow
 
-  - name: cdn_source_management_access
+  - name: config_contributor_read_runtime
     kind: security.policy
     meta:
-      comment: Exact source-settings admission marker evaluated in the active request scope
-    groups: []
+      comment: Reads only module-owned Facade configuration contributor entries
     policy:
-      resources:
-        - wippy.facade:source_preferences_get_endpoint
-        - wippy.facade:source_preferences_put_endpoint
+      resources: '*'
       actions:
-        - access
+        - registry.get
+      conditions:
+        - field: resource
+          operator: matches
+          value: '^[a-z][a-z0-9._-]*:facade_config_contribute$'
+      effect: allow
+
+  - name: config_contributor_discovery_runtime
+    kind: security.policy
+    meta:
+      comment: Discovers declared Facade configuration contributor functions
+    policy:
+      resources: '*'
+      actions:
+        - registry.find
       effect: allow
