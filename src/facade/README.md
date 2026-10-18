@@ -2,7 +2,7 @@
 
 Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loads the Wippy frontend bundle from a CDN via iframe, with all configuration driven through `ns.requirement` entries.
 
-This README describes the private Facade 0.6.45 release candidate. It is intended for Web Host 1.0.64 (npm 0.0.64) and the private CDN module family 0.0.2. These candidates are not published. The npm engine change and Views fragment fix are outside this candidate.
+This README describes the unpublished Facade 0.6.45 release candidate. Web Host 1.0.64 and its public npm packages at 0.0.64 are published. The private CDN module family 0.0.2 remains unpublished. Facade does not depend on those modules. The npm engine change and Views fragment fix are outside this candidate.
 
 ## How it works
 

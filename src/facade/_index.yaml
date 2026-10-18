@@ -611,7 +611,6 @@ entries:
       - json
       - env
       - fs
-      - sql
       - funcs
       - logger
     security:
