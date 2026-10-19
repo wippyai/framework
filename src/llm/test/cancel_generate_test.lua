@@ -76,6 +76,30 @@ local function define_tests()
             test.is_false((s:get("streaming_started")))
         end)
 
+        it("cancels a real class fallback without starting the next class member", function()
+            local s = scenario("hold", { "Class backup partial" })
+            s:set("streaming_scenario", { mode = "hold", chunks = { "Class backup partial" }, fallback = true })
+            for _, name in ipairs({ "primary", "backup", "third" }) do s:set("streaming_" .. name, false) end
+            llm._model_resolver = nil
+            local stream = process.listen("cancel_test.class_fallback")
+            local cancel = channel.new()
+            local done = start_generate({ model = "class:cancel-test-premium", cancel = cancel, deadline_ms = 10000,
+                stream = { reply_to = process.pid(), topic = "cancel_test.class_fallback" } })
+
+            test.eq(receive_within(stream, "5s", "class fallback chunk").content, "Class backup partial")
+            cancel:close()
+            local outcome = receive_within(done, "2s", "cancelled class fallback")
+            process.unlisten(stream)
+
+            test.is_nil(outcome.err)
+            test.eq(outcome.result.finish_reason, output.FINISH_REASON.CANCELLED)
+            test.eq(outcome.result.result, "Class backup partial")
+            test.is_true((s:get("streaming_primary")))
+            test.is_true((s:get("streaming_backup")))
+            test.is_false((s:get("streaming_third")))
+            test.is_false((s:get("streaming_resumed")))
+        end)
+
         it("cancels an in-flight streaming call and returns the streamed text", function()
             local s = scenario("hold", { "Partial ", "answer" })
             local stream = process.listen("cancel_test.stream")
