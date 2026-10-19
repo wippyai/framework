@@ -42,6 +42,12 @@ local MAX_BACKOFF_MS = 60000
 
 local transport = {}
 
+transport._time = time
+
+function transport.now_ms(): number
+    return math.floor(transport._time.now():unix_nano() / 1000000)
+end
+
 -- Resolves a string setting from a literal context value, then from the env
 -- variable named by `<key>_env` in the context, then from the provider's
 -- default env variable. Empty env values count as unset.
@@ -98,27 +104,46 @@ local VERBS = {
     DELETE = "delete"
 }
 
-function transport.dispatch(http: any, method: string, url: string, options: {[string]: any}): (HttpResponse?, string?)
+function transport.dispatch(http: any, method: string, url: string, options: {[string]: any}, deadline_at: number?): (HttpResponse?, string?)
     local verb = VERBS[method]
     if not verb then
         error("Unsupported HTTP method: " .. tostring(method))
+    end
+    if deadline_at ~= nil then
+        local remaining_ms = deadline_at - transport.now_ms()
+        if remaining_ms <= 0 then return nil, "Request deadline exceeded" end
+        -- Do not mutate the shared options: every retry starts with the original
+        -- timeout and caps it against the remaining call budget.
+        local capped = {}
+        for key, value in pairs(options) do capped[key] = value end
+        local timeout = tonumber(options.timeout)
+        if timeout and timeout > 0 then remaining_ms = math.min(remaining_ms, timeout * 1000) end
+        capped.timeout = tostring(remaining_ms) .. "ms"
+        options = capped
     end
     local response, err = http[verb](url, options)
     return response :: HttpResponse?, err and tostring(err) or nil
 end
 
-local function backoff(retry: Retry, attempt: number)
+-- Backoff before the given retry (1-based), doubling from backoff_ms and capped.
+local function backoff_delay_ms(retry: Retry, attempt: number): number
     local delay_ms = retry.backoff_ms * (2 ^ (attempt - 1))
-    if delay_ms <= 0 then return end
-    time.sleep(tostring(math.floor(math.min(delay_ms, MAX_BACKOFF_MS))) .. "ms")
+    if delay_ms <= 0 then return 0 end
+    return math.floor(math.min(delay_ms, MAX_BACKOFF_MS))
 end
 
 -- Sends a request with bounded exponential backoff. `send_once` performs one
 -- attempt and returns (response, err); `parse_error` maps a non-2xx response
--- to the provider's error shape. Without a retry policy the request is sent once.
-function transport.send(send_once: () -> (HttpResponse?, string?), parse_error: (HttpResponse) -> RequestError, retry: Retry?): (HttpResponse?, RequestError?)
+-- to the provider's error shape. Without a retry policy the request is sent
+-- once. `deadline_at` (Unix milliseconds) prevents dispatch after expiry. A retry whose
+-- backoff would end at or after it is not attempted, and the last error is
+-- returned instead.
+function transport.send(send_once: () -> (HttpResponse?, string?), parse_error: (HttpResponse) -> RequestError, retry: Retry?, deadline_at: number?): (HttpResponse?, RequestError?)
     local retries = 0
     while true do
+        if deadline_at ~= nil and transport.now_ms() >= deadline_at then
+            return nil, { status_code = 0, message = "Request deadline exceeded" }
+        end
         local response, err = send_once()
 
         local request_error: RequestError
@@ -138,7 +163,13 @@ function transport.send(send_once: () -> (HttpResponse?, string?), parse_error: 
         end
 
         retries = retries + 1
-        backoff(retry, retries)
+        local delay_ms = backoff_delay_ms(retry, retries)
+        if deadline_at ~= nil and transport.now_ms() + delay_ms >= deadline_at then
+            return nil, request_error
+        end
+        if delay_ms > 0 then
+            transport._time.sleep(tostring(delay_ms) .. "ms")
+        end
     end
 end
 

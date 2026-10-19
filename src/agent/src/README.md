@@ -224,13 +224,18 @@ local response, err = runner:step(builder, {
     tool_call = "auto",
     disable_memory_recall = false,
     previous_memory_ids = { "mem_1", "mem_2" },
-    stop_check = function() return stop_requested end
+    stop_check = function() return stop_requested end,
+    route = earlier_response.route_pin  -- later steps of a turn: stay on the model that answered
 })
 ```
 
 `stop_check` runs after prompt functions and memory recall, immediately before
 provider generation. When it returns true, `step` returns `{ stopped = true }`
 without a provider request.
+
+### Route Pinning
+
+When the model's first route fails and `llm` answers from a fallback model, the rest of the turn has to stay on that model: the vendor that produced a tool call must receive its result. Each response carries `route_pin`: the route the host passed in, or the route that answered when this step fell back, otherwise `nil`. A host that drives a multi-step turn passes `route_pin` back as `route` in the runtime options of the next step and drops it when a new turn starts. While the first route answers nothing is pinned, so every step keeps its fallback chain. An agent runner lives for one step or one run, so the host keeps the pin, not the runner.
 
 ### Response Structure
 
@@ -257,6 +262,7 @@ without a provider request.
     },
     tokens = { prompt_tokens = 100, completion_tokens = 50, thinking_tokens = 0 },
     finish_reason = "stop",
+    route_pin = { model = "...", provider_id = "...", provider_model = "..." },  -- nil until a step fell back
     memory_recall = { memory_ids = { "mem_3" }, count = 1 },
     memory_prompt = { ... }
 }

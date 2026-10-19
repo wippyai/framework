@@ -1479,6 +1479,117 @@ local function define_tests()
                 test.eq(response.finish_reason, "stop")
             end)
         end)
+
+        describe("Stream fallback signals", function()
+            local streamed_args = {
+                model = "claude-3-5-sonnet-20241022",
+                messages = { { role = "user", content = { { type = "text", text = "Hi" } } } },
+                stream = { reply_to = "test-process", topic = "test_stream" }
+            }
+
+            local function stream_with(streamer, process_stream)
+                generate_handler._output = {
+                    streamer = function() return streamer end,
+                    FINISH_REASON = { TOOL_CALL = "tool_call" }
+                }
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function() return { stream = {}, metadata = {} } end,
+                    process_stream = process_stream
+                }
+            end
+
+            local function recording_streamer(sent_any: boolean): any
+                local errors_sent: {any} = {}
+                return {
+                    sent_any = sent_any,
+                    errors_sent = errors_sent,
+                    buffer_content = function() end,
+                    send_thinking = function() end,
+                    flush = function() end,
+                    send_error = function(_, err_type, message)
+                        table.insert(errors_sent, { type = err_type, message = message })
+                    end
+                }
+            end
+
+            it("marks a request error on a streaming call as not started", function()
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        return nil, { status_code = 429, error = { type = "rate_limit_error", message = "slow down" } }
+                    end
+                }
+                local response, err = generate_handler.handler(streamed_args)
+                test.is_nil(response)
+                local details = (err :: any):details()
+                test.is_false(details.stream_started)
+                test.eq(details.error_type, "rate_limit_exceeded")
+            end)
+
+            it("leaves stream_started unset on a request error without streaming", function()
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        return nil, { status_code = 503, message = "unavailable" }
+                    end
+                }
+                local _, err = generate_handler.handler({
+                    model = "claude-3-5-sonnet-20241022",
+                    messages = { { role = "user", content = { { type = "text", text = "Hi" } } } }
+                })
+                local details = (err :: any):details()
+                test.is_nil(details.stream_started)
+                test.eq(details.error_type, "server_error")
+            end)
+
+            it("holds the error chunk back when the stream fails before anything was sent", function()
+                local streamer = recording_streamer(false)
+                stream_with(streamer, function(_, callbacks)
+                    callbacks.on_content("Hel")
+                    callbacks.on_error({ type = "overloaded_error", message = "Overloaded" })
+                    return nil, "Overloaded"
+                end)
+                local response, err = generate_handler.handler(streamed_args)
+                test.is_nil(response)
+                test.eq(#streamer.errors_sent, 0)
+                local details = (err :: any):details()
+                test.is_false(details.stream_started)
+                test.eq(details.error_type, "server_error")
+                test.eq(details.deferred_error_message, "Overloaded")
+                test.not_nil(details.deferred_error_type)
+            end)
+
+            it("sends the error chunk once part of the answer reached the client", function()
+                local streamer = recording_streamer(true)
+                stream_with(streamer, function(_, callbacks)
+                    callbacks.on_thinking("thought")
+                    callbacks.on_error({ message = "connection reset" })
+                    return nil, "connection reset"
+                end)
+                local _, err = generate_handler.handler(streamed_args)
+                test.eq(#streamer.errors_sent, 1)
+                test.eq(streamer.errors_sent[1].message, "connection reset")
+                local details = (err :: any):details()
+                test.is_true(details.stream_started)
+                test.is_nil(details.deferred_error_type)
+            end)
+
+            it("reports a streamer failure as a server error that does not allow fallback", function()
+                generate_handler._output = {
+                    streamer = function() return nil, "PID is required for streamer" end
+                }
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function() return { stream = {}, metadata = {} } end
+                }
+                local _, err = generate_handler.handler(streamed_args)
+                local details = (err :: any):details()
+                test.eq(details.error_type, "server_error")
+                test.is_nil(details.stream_started)
+                test.eq(err:message(), "PID is required for streamer")
+            end)
+        end)
     end)
 end
 
