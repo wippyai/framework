@@ -123,6 +123,7 @@ entries:
       - security
     imports:
       llm: wippy.llm:llm
+      models: wippy.llm.discovery:models
       decisions_handler: wippy.llm.openai:evaluate
       test: wippy.test:test
     method: run_tests

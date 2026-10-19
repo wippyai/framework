@@ -33,7 +33,7 @@ It supports text generation, tool calling, structured output, embeddings, and st
 
 ## Features
 
-**Smart model resolution** - Reference models by exact name (`gpt-4o`), class (`fast`), or explicit class syntax (`class:reasoning`). The system finds the right model automatically.
+**Smart model resolution** - Reference models by exact name (`gpt-4o`), class (`fast`), or explicit class syntax (`class:reasoning`). Generation, structured output, and evaluation can move to the next model in the requested class by priority when a model cannot serve the call, before streaming output starts. Existing class membership and provider configuration are sufficient.
 
 **Tool calling** - Models can call external functions. Define tools with JSON schemas, and the module handles the conversation flow.
 
