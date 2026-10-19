@@ -49,6 +49,7 @@ function M.effect()
 end
 
 function M.run(args)
+    require("execution_authority").refresh_perms = true
     local caller = tool_caller.new():set_strategy(args.strategy)
     local actor = assert(security.actor())
     local changed, err = funcs.call("app.agent_authority:mutate", {subject_id = actor:id(), mode = args.mode})
