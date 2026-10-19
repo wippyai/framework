@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.8](https://github.com/wippyai/framework/compare/llm-v0.5.7...llm-v0.5.8) (2026-10-19)
+
+
+### Features
+
+* **agent:** cancel in-flight model and tool calls ([c89e9e3](https://github.com/wippyai/framework/commit/c89e9e33719cec85707c62f04977d08e13e0ca49))
+* **llm:** cancel in-flight generation through a caller channel ([a6029e0](https://github.com/wippyai/framework/commit/a6029e046532a98df15d7a0da52ec5a70e8fa567))
+* **llm:** fail over provider routes and ranked model classes ([b520d29](https://github.com/wippyai/framework/commit/b520d297323648637389a14ecffd9effd53efa4b))
+* **llm:** fall back through requested model classes by priority ([1f3760a](https://github.com/wippyai/framework/commit/1f3760a5b4cbd28b6297936bc46ae2c79c449746))
+
+
+### Bug Fixes
+
+* **llm:** cap every provider request by remaining call budget ([d93d588](https://github.com/wippyai/framework/commit/d93d58888eea05bdebbb2c19db3c2f518da48832))
+* **llm:** give the first usable class route its initial call budget ([ee9c23d](https://github.com/wippyai/framework/commit/ee9c23da16476407f5db826608cde85de3811c2f))
+* preserve completed calls and avoid dispatch after cancellation ([d348802](https://github.com/wippyai/framework/commit/d348802fe34d7e96b725286bfad0ea2de9fc30ca))
+
 ## [0.5.7](https://github.com/wippyai/framework/compare/llm-v0.5.6...llm-v0.5.7) (2026-10-14)
 
 

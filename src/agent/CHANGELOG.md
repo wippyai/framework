@@ -6,6 +6,22 @@
 
 * Label per-step recalled memory as background rather than a user message or new request. It supports the current user task without replacing it. After installing the release containing this fix, users can remove their local memory-label override; the companion Session fix preserves the task across mid-turn checkpoints. This change is not included in Agent 0.5.4.
 
+## [0.5.5](https://github.com/wippyai/framework/compare/agent-v0.5.4...agent-v0.5.5) (2026-10-19)
+
+
+### Features
+
+* **agent:** cancel in-flight model and tool calls ([c89e9e3](https://github.com/wippyai/framework/commit/c89e9e33719cec85707c62f04977d08e13e0ca49))
+* **agent:** cancel in-flight model and tool calls through the host channel ([f6b2d9f](https://github.com/wippyai/framework/commit/f6b2d9f3734fafe20887bdfd3c52ff6a534d8a7d))
+* **llm:** fail over provider routes and ranked model classes ([b520d29](https://github.com/wippyai/framework/commit/b520d297323648637389a14ecffd9effd53efa4b))
+
+
+### Bug Fixes
+
+* **agent:** identify recalled memory as background context ([5505567](https://github.com/wippyai/framework/commit/55055671683ae3c401066a0c890241366f141a6d))
+* **agent:** label memory recall as background context ([61c596a](https://github.com/wippyai/framework/commit/61c596a0e4aa2475117f64b23f9b729d2a19621a))
+* preserve completed calls and avoid dispatch after cancellation ([d348802](https://github.com/wippyai/framework/commit/d348802fe34d7e96b725286bfad0ea2de9fc30ca))
+
 ## [0.5.4](https://github.com/wippyai/framework/compare/agent-v0.5.3...agent-v0.5.4) (2026-10-14)
 
 

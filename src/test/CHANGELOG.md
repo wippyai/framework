@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.23](https://github.com/wippyai/framework/compare/test-v0.4.22...test-v0.4.23) (2026-10-19)
+
+
+### Bug Fixes
+
+* **test:** format cyclic assertion values ([#189](https://github.com/wippyai/framework/issues/189)) ([b35c170](https://github.com/wippyai/framework/commit/b35c17088dc69b45bfeb35b4286093326f2917a7))
+
 ## [0.4.22](https://github.com/wippyai/framework/compare/test-v0.4.21...test-v0.4.22) (2026-10-14)
 
 
