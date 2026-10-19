@@ -193,6 +193,149 @@ local function define_tests()
             end)
         end)
 
+        describe("send with backoff and a deadline", function()
+            local real_time
+            local clock_ms
+            local sleeps
+
+            local function parse_error(response)
+                return { status_code = response.status_code, message = "HTTP " .. response.status_code }
+            end
+
+            -- Answers with the given status codes in order, then keeps repeating the last one.
+            local function statuses(codes: {number}): Sender
+                local index = 0
+                return {
+                    count = function(): number
+                        return index
+                    end,
+                    send = function(): (transport.HttpResponse?, string?)
+                        index = index + 1
+                        local code = codes[math.min(index, #codes)]
+                        return { status_code = code, body = "body " .. tostring(index) } :: transport.HttpResponse, nil
+                    end
+                }
+            end
+
+            before_each(function()
+                real_time = transport._time
+                clock_ms = 1000000
+                sleeps = {}
+                transport._time = {
+                    now = function()
+                        return { unix_nano = function() return clock_ms * 1000000 end }
+                    end,
+                    sleep = function(duration)
+                        table.insert(sleeps, duration)
+                        clock_ms = clock_ms + (tonumber(tostring(duration):match("^(%d+)ms$")) or 0)
+                    end
+                }
+            end)
+
+            after_each(function()
+                transport._time = real_time
+            end)
+
+            it("should read the clock in milliseconds", function()
+                test.eq(transport.now_ms(), 1000000)
+            end)
+
+            it("should double the backoff before each retry", function()
+                local sender = statuses({ 503, 503, 503, 200 })
+                local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 100 })
+                test.is_nil(err)
+                test.eq(response.body, "body 4")
+                test.eq(table.concat(sleeps, ","), "100ms,200ms,400ms")
+            end)
+
+            it("should cap the backoff", function()
+                local sender = statuses({ 503 })
+                transport.send(sender.send, parse_error, { attempts = 2, backoff_ms = 40000 })
+                test.eq(table.concat(sleeps, ","), "40000ms,60000ms")
+                test.eq(sender.count(), 3)
+            end)
+
+            it("should retry without sleeping when the backoff is zero", function()
+                local sender = statuses({ 503, 200 })
+                local response, err = transport.send(sender.send, parse_error, { attempts = 2, backoff_ms = 0 }, clock_ms + 1)
+                test.is_nil(err)
+                test.not_nil(response)
+                test.eq(#sleeps, 0)
+                test.eq(sender.count(), 2)
+            end)
+
+            it("should not retry when the backoff would end past the deadline", function()
+                local sender = statuses({ 503 })
+                local response, err = transport.send(sender.send, parse_error, { attempts = 5, backoff_ms = 100 }, clock_ms + 150)
+                test.is_nil(response)
+                test.eq(err.status_code, 503)
+                test.eq(sender.count(), 2)
+                test.eq(table.concat(sleeps, ","), "100ms")
+            end)
+
+            it("should not retry when the backoff would end exactly at the deadline", function()
+                local sender = statuses({ 429 })
+                local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 100 }, clock_ms + 100)
+                test.is_nil(response)
+                test.eq(err.status_code, 429)
+                test.eq(sender.count(), 1)
+                test.eq(#sleeps, 0)
+            end)
+
+            it("should not dispatch once the deadline has passed", function()
+                local sender = statuses({ 500 })
+                local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 0 }, clock_ms - 1)
+                test.is_nil(response)
+                test.eq(err.status_code, 0)
+                test.contains(err.message, "deadline")
+                test.eq(sender.count(), 0)
+            end)
+
+            it("should return a success that arrives before the deadline", function()
+                local sender = statuses({ 200 })
+                local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 100 }, clock_ms + 1)
+                test.is_nil(err)
+                test.eq(response.body, "body 1")
+            end)
+
+            it("should keep retrying as configured without a deadline", function()
+                local sender = statuses({ 503 })
+                transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 10 })
+                test.eq(sender.count(), 4)
+                test.eq(table.concat(sleeps, ","), "10ms,20ms,40ms")
+            end)
+        end)
+
+        describe("request deadline dispatch", function()
+            local original_now = transport.now_ms
+            after_each(function() transport.now_ms = original_now end)
+
+            it("uses subsecond budgets without widening or mutating request options", function()
+                transport.now_ms = function() return 1000 end
+                local options = { timeout = 10 }
+                local seen
+                local http = { post = function(_, request)
+                    seen = request.timeout
+                    return { status_code = 200 }
+                end }
+                transport.dispatch(http, "POST", "fixture", options, 1250)
+                test.eq(seen, "250ms")
+                test.eq(options.timeout, 10)
+            end)
+
+            it("does not start HTTP after expiry even without a retry policy", function()
+                transport.now_ms = function() return 1000 end
+                local calls = 0
+                local response, err = transport.dispatch({ get = function()
+                    calls = calls + 1
+                    return { status_code = 200 }
+                end }, "GET", "fixture", {}, 1000)
+                test.is_nil(response)
+                test.contains(err, "deadline")
+                test.eq(calls, 0)
+            end)
+        end)
+
         describe("health_failure", function()
             it("should mark connection failures unhealthy", function()
                 local result = transport.health_failure({ status_code = 0, message = "dial tcp" })

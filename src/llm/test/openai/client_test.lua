@@ -5,6 +5,33 @@ local test = require("test")
 local function define_tests()
     describe("OpenAI Client", function()
 
+        it("bounds every retry by the remaining deadline", function()
+            local transport = require("transport")
+            local original_now = transport.now_ms
+            local now, timeouts = 0, {}
+            transport.now_ms = function() return now end
+            openai_client._ctx = { all = function()
+                return { api_key = "test-key", timeout = 10, deadline_at = 10000,
+                    retry = { attempts = 1, backoff_ms = 0 } }
+            end }
+            openai_client._env = { get = function() return nil end }
+            openai_client._http_client = { post = function(_, options)
+                timeouts[#timeouts + 1] = options.timeout
+                if #timeouts == 1 then
+                    now = 6000
+                    return { status_code = 503, body = '{}', headers = {} }
+                end
+                return { status_code = 200, body = '{}', headers = {} }
+            end }
+            local result, err = openai_client.request("/test", {})
+            transport.now_ms = original_now
+            test.is_nil(err)
+            test.not_nil(result)
+            test.eq(#timeouts, 2)
+            test.eq(timeouts[1], "10000ms")
+            test.eq(timeouts[2], "4000ms", "the second request only has four seconds of budget left")
+        end)
+
         after_each(function()
             -- Clean up injected dependencies
             openai_client._ctx = nil
@@ -896,6 +923,51 @@ local function define_tests()
                 local response, err = openai_client.request("/responses", { model = "gpt-5.4" })
                 test.is_nil(err)
                 test.eq(response.test, "success")
+            end)
+        end)
+
+        describe("Retry deadline", function()
+            local function use_context(context)
+                openai_client._ctx = { all = function() return context end }
+                openai_client._env = { get = function() return nil end }
+            end
+
+            local function flaky_http(statuses: {number})
+                local state = { calls = 0 }
+                openai_client._http_client = {
+                    post = function()
+                        state.calls = state.calls + 1
+                        local status = statuses[state.calls]
+                        if status == 200 then
+                            return { status_code = 200, body = '{"id":"ok"}', headers = {} }
+                        end
+                        return { status_code = status, body = '{"error":{"message":"Unavailable"}}', headers = {} }
+                    end
+                }
+                return state
+            end
+
+            it("should retry with the context policy while the deadline allows it", function()
+                use_context({ api_key = "test-key", retry = { attempts = 2, backoff_ms = 0 }, deadline_at = 32503680000000 })
+                local http = flaky_http({ 503, 200 })
+
+                local response, err = openai_client.request("/responses", {})
+
+                test.is_nil(err)
+                test.eq(response.id, "ok")
+                test.eq(http.calls, 2)
+            end)
+
+            it("should not dispatch past the call deadline from the context", function()
+                use_context({ api_key = "test-key", retry = { attempts = 3, backoff_ms = 0 }, deadline_at = 1 })
+                local http = flaky_http({ 503, 503, 200 })
+
+                local response, err = openai_client.request("/responses", {})
+
+                test.is_nil(response)
+                test.eq(err.status_code, 0)
+                test.contains(err.message, "deadline")
+                test.eq(http.calls, 0)
             end)
         end)
     end)

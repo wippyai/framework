@@ -13,6 +13,7 @@ local function define_tests()
         describe("OAuth2 Token Handling", function()
             it("should return 401 error when OAuth2 token is missing", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_oauth2_token = function()
                         return nil
                     end
@@ -26,6 +27,7 @@ local function define_tests()
 
             it("should use OAuth2 token from config", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -63,11 +65,40 @@ local function define_tests()
                     endpoint_path = "generateContent"
                 })
             end)
+
+            it("should pass the call deadline to the transport", function()
+                client._config = {
+                    get_deadline_at = function() return 1767225600000 end,
+                    get_retry = function() return { attempts = 2, backoff_ms = 10 } end,
+                    get_oauth2_token = function() return { access_token = "test-oauth2-token" } end,
+                    get_vertex_base_url = function()
+                        return "https://us-central1-aiplatform.googleapis.com/v1", nil
+                    end,
+                    get_vertex_timeout = function() return 60 end,
+                    get_project_id = function() return "test-project" end,
+                    get_vertex_location = function() return "us-central1" end
+                }
+
+                local seen_retry, seen_deadline
+                client._client = {
+                    request = function(method, url, options, retry, deadline_at)
+                        seen_retry = retry
+                        seen_deadline = deadline_at
+                        return { status_code = 200 }
+                    end
+                }
+
+                client.request({ model = "gemini-2.5-flash", endpoint_path = "generateContent" })
+
+                tests.eq(seen_deadline, 1767225600000)
+                tests.eq(seen_retry.attempts, 2)
+            end)
         end)
 
         describe("HTTP Method Support", function()
             it("should default to POST method", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -108,6 +139,7 @@ local function define_tests()
 
             it("should support GET method", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -161,6 +193,7 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -206,6 +239,7 @@ local function define_tests()
 
             it("should encode empty payload as empty object for POST", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -248,6 +282,7 @@ local function define_tests()
 
             it("should not include body for GET requests", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -291,6 +326,7 @@ local function define_tests()
         describe("URL Construction", function()
             it("should construct URL with project, location, model and endpoint_path", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -331,6 +367,7 @@ local function define_tests()
 
             it("should construct URL with only model when endpoint_path is missing", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -370,6 +407,7 @@ local function define_tests()
 
             it("should use base URL without model when model is empty", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -407,6 +445,7 @@ local function define_tests()
 
             it("should use custom project and location from options", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -451,6 +490,7 @@ local function define_tests()
 
             it("should use custom base URL from options", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -490,6 +530,7 @@ local function define_tests()
 
             it("should not include project and location for non-required endpoints", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -532,6 +573,7 @@ local function define_tests()
         describe("Timeout Handling", function()
             it("should use default timeout from config", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -572,6 +614,7 @@ local function define_tests()
 
             it("should use custom timeout from options", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -617,6 +660,7 @@ local function define_tests()
         describe("Error Handling", function()
             it("should return error when base URL config returns error", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,
@@ -649,6 +693,7 @@ local function define_tests()
 
             it("should return error from HTTP client", function()
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -709,6 +754,7 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -761,6 +807,7 @@ local function define_tests()
                 }
 
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_retry = function()
                         return nil
                     end,
@@ -807,6 +854,7 @@ local function define_tests()
         describe("Retry", function()
             local function use_config(context_retry)
                 client._config = {
+                    get_deadline_at = function() return nil end,
                     get_oauth2_token = function()
                         return { access_token = "test-oauth2-token" }
                     end,

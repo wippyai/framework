@@ -495,6 +495,54 @@ local function define_tests()
                 test.not_nil(model_card)
                 test.eq(model_card.dimensions, 1536)
             end)
+
+            it("should carry the fallback models and fallback_on of the entry", function()
+                local model_card = models._build_model_card({
+                    id = "test:with-fallback",
+                    meta = { name = "with-fallback" },
+                    data = {
+                        fallback = { "gemini-pro", "", 7, "class:fast" },
+                        fallback_on = { "server_error", "authentication_error" }
+                    }
+                }) :: any
+
+                test.eq(#model_card.fallback, 2)
+                test.eq(model_card.fallback[1], "gemini-pro")
+                test.eq(model_card.fallback[2], "class:fast")
+                test.eq(#model_card.fallback_on, 2)
+                test.eq(model_card.fallback_on[2], "authentication_error")
+            end)
+
+            it("should leave fallback unset when the entry declares none or not a list", function()
+                local plain = models._build_model_card({ id = "test:plain", meta = { name = "plain" }, data = {} }) :: any
+                test.is_nil(plain.fallback)
+                test.is_nil(plain.fallback_on)
+
+                local odd = models._build_model_card({
+                    id = "test:odd", meta = { name = "odd" }, data = { fallback = "gemini-pro", fallback_on = true }
+                }) :: any
+                test.is_nil(odd.fallback)
+                test.is_nil(odd.fallback_on)
+
+                local bare = models._build_model_card({ id = "test:bare", meta = { name = "bare" } }) :: any
+                test.is_nil(bare.fallback)
+            end)
+
+            it("should carry fallback through get_by_name", function()
+                models._registry = {
+                    find = function(query)
+                        return { {
+                            id = "app.models:primary",
+                            meta = { type = "llm.model", name = "primary" },
+                            data = { providers = { { id = "p.a", provider_model = "a-1" } }, fallback = { "backup" } }
+                        } }
+                    end
+                }
+
+                local card = models.get_by_name("primary") :: any
+
+                test.eq(card.fallback[1], "backup")
+            end)
         end)
     end)
 end
