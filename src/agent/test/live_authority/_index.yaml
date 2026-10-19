@@ -36,6 +36,7 @@ entries:
     modules: [sql, json, security, funcs]
     imports:
       tool_caller: app.agent_authority:caller
+      execution_authority: app.agent_authority:execution_authority
   - name: mutate
     kind: function.lua
     source: file://fixture.lua
@@ -43,6 +44,7 @@ entries:
     modules: [sql, json, security, funcs]
     imports:
       tool_caller: app.agent_authority:caller
+      execution_authority: app.agent_authority:execution_authority
     security:
       actor: {id: authority.fixture}
       policies: [app.agent_authority:test_policy]
@@ -53,6 +55,7 @@ entries:
     modules: [sql, json, security, funcs]
     imports:
       tool_caller: app.agent_authority:caller
+      execution_authority: app.agent_authority:execution_authority
     security:
       actor: {id: authority.lookup}
       policies: [app.agent_authority:test_policy]
@@ -63,6 +66,7 @@ entries:
     modules: [sql, json, security, funcs]
     imports:
       tool_caller: app.agent_authority:caller
+      execution_authority: app.agent_authority:execution_authority
   - name: db
     kind: db.sql.sqlite
     file: authority.sqlite
