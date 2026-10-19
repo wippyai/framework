@@ -6,6 +6,7 @@ local output = require("output")
 local function handler(contract_args)
     local s, serr = store.get("app:test_store")
     if serr then return nil, errors.new({ message = "store error: " .. tostring(serr), kind = "Internal" }) end
+    s:set("streaming_started", true)
     local scenario = s:get("streaming_scenario")
     local content = table.concat(scenario.chunks)
     if contract_args.stream and contract_args.stream.reply_to then

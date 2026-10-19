@@ -9,6 +9,7 @@ local PROVIDER = "app:streaming_provider"
 local function scenario(mode, chunks)
     local s = store.get("app:test_store")
     s:set("streaming_scenario", { mode = mode, chunks = chunks })
+    s:set("streaming_started", false)
     s:set("streaming_held", false)
     s:set("streaming_resumed", false)
     return s
@@ -34,6 +35,19 @@ end
 
 local function define_tests()
     describe("Cancellable generation", function()
+        it("does not dispatch a provider when cancellation is already signaled", function()
+            local s = scenario("complete", { "must not run" })
+            local cancel = channel.new()
+            cancel:close()
+            local result, err = llm.generate("Say something.", {
+                model = "fixture", provider_id = PROVIDER, cancel = cancel,
+            })
+            test.is_nil(err)
+            test.eq(result.finish_reason, output.FINISH_REASON.CANCELLED)
+            test.eq(result.result, "")
+            test.is_false((s:get("streaming_started")))
+        end)
+
         it("cancels an in-flight streaming call and returns the streamed text", function()
             local s = scenario("hold", { "Partial ", "answer" })
             local stream = process.listen("cancel_test.stream")

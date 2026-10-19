@@ -622,17 +622,36 @@ local function cancelled_result(tool_call: any): any
     return { result = nil, error = CANCELLED_ERROR, cancelled = true, tool_call = tool_call }
 end
 
+local function cancellation_requested(cancel: any?): boolean
+    if not cancel then return false end
+    return not channel.select({ cancel:case_receive(), default = true }).default
+end
+
 -- Waits for an async tool call; when `cancel` is ready first the call is cancelled.
-local function await_command(command: any, tool_call: any, cancel: any?): any
+local function await_command(command: any, tool_call: any, cancel: any?, stopped: boolean?): (any, boolean)
     local response = command:response()
     local ok
-    if cancel then
+    local observed_stop = stopped == true
+    if observed_stop then
+        local completed = channel.select({ response:case_receive(), default = true })
+        if completed.default then
+            command:cancel()
+            return cancelled_result(tool_call), true
+        end
+        ok = completed.ok
+    elseif cancel then
         local selected = channel.select({ response:case_receive(), cancel:case_receive() })
         if selected.channel == cancel then
-            command:cancel()
-            return cancelled_result(tool_call)
+            observed_stop = true
+            local completed = channel.select({ response:case_receive(), default = true })
+            if completed.default then
+                command:cancel()
+                return cancelled_result(tool_call), true
+            end
+            ok = completed.ok
+        else
+            ok = selected.ok
         end
-        ok = selected.ok
     else
         local _, received = response:receive()
         ok = received
@@ -641,19 +660,20 @@ local function await_command(command: any, tool_call: any, cancel: any?): any
     if ok and not command:is_canceled() then
         local payload, err = command:result()
         if err then
-            return { result = nil, error = err, tool_call = tool_call }
+            return { result = nil, error = err, tool_call = tool_call }, observed_stop
         end
-        return { result = payload and payload:data() or nil, error = nil, tool_call = tool_call }
+        return { result = payload and payload:data() or nil, error = nil, tool_call = tool_call }, observed_stop
     end
     local _, err = command:result()
     return {
         result = nil,
         error = "Tool execution failed or was canceled: " .. tostring(err),
         tool_call = tool_call
-    }
+    }, observed_stop
 end
 
-local function execute_single_tool(self: any, call_id: string, tool_call: any, context: table?, cancel: any?): any
+local function execute_single_tool(self: any, call_id: string, tool_call: any, context: table?, cancel: any?): (any, boolean?)
+    if cancellation_requested(cancel) then return cancelled_result(tool_call), true end
     local registry_id = tool_call.registry_id
     local args = tool_call.args
     local tool_context = tool_call.context or {}
@@ -690,6 +710,7 @@ local function execute_single_tool(self: any, call_id: string, tool_call: any, c
         return {result = nil, error = executor_err, tool_call = tool_call}
     end
     if cancel then
+        if cancellation_requested(cancel) then return cancelled_result(tool_call), true end
         local command, start_err = ctx_executor:async(tostring(registry_id), args)
         if not command then
             return { result = nil, error = start_err, tool_call = tool_call }
@@ -728,9 +749,9 @@ local function execute_sequential(self: any, context: any, validated_tools: any,
             goto continue
         end
 
-        local exec_result = execute_single_tool(self, tostring(call_id), tool_call, context as {}?, cancel)
+        local exec_result, observed_stop = execute_single_tool(self, tostring(call_id), tool_call, context as {}?, cancel)
         results[call_id] = exec_result
-        cancelled = exec_result.cancelled == true
+        cancelled = observed_stop == true
 
         ::continue::
     end
@@ -741,6 +762,7 @@ end
 local function execute_parallel(self: any, context: table?, validated_tools: any, cancel: any?): any
     local results = {}
     local commands = {}
+    local cancelled = false
     -- Parallel tools share one authority snapshot for this batch. The next
     -- execute() refreshes again; no provider call serializes each launch.
     local batch = {}
@@ -752,6 +774,12 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
                 error = tool_call.error,
                 tool_call = tool_call
             }
+            goto continue
+        end
+
+        if cancelled or cancellation_requested(cancel) then
+            cancelled = true
+            results[call_id] = cancelled_result(tool_call)
             goto continue
         end
 
@@ -792,6 +820,11 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
             results[call_id] = {result = nil, error = executor_err, tool_call = tool_call}
             goto continue
         end
+        if cancellation_requested(cancel) then
+            cancelled = true
+            results[call_id] = cancelled_result(tool_call)
+            goto continue
+        end
         local command, start_err = ctx_executor:async(tostring(registry_id), args)
         if not command then
             results[call_id] = {
@@ -810,16 +843,11 @@ local function execute_parallel(self: any, context: table?, validated_tools: any
         ::continue::
     end
 
-    -- Wait for all commands; after a cancellation the remaining calls are cancelled too.
-    local cancelled = false
+    -- Preserve completed outcomes even after Stop; cancel only pending peers.
     for call_id, cmd_info in pairs(commands) do
-        if cancelled then
-            cmd_info.command:cancel()
-            results[call_id] = cancelled_result(cmd_info.tool_call)
-        else
-            results[call_id] = await_command(cmd_info.command, cmd_info.tool_call, cancel)
-            cancelled = results[call_id].cancelled == true
-        end
+        local result, observed_stop = await_command(cmd_info.command, cmd_info.tool_call, cancel, cancelled)
+        results[call_id] = result
+        cancelled = cancelled or observed_stop == true
     end
 
     return results

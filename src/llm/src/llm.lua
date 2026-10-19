@@ -577,6 +577,9 @@ end
 -- is relayed through this process so the text produced before cancellation is known.
 -- Returns raw_result, err, or nil, nil, partial_text when cancelled.
 local function generate_cancellable(provider_instance, contract_args, cancel)
+    if not channel.select({ cancel:case_receive(), default = true }).default then
+        return nil, nil, ""
+    end
     local target = contract_args.stream
     local relay = nil
     if type(target) == "table" and target.reply_to then
