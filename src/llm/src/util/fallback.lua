@@ -102,7 +102,7 @@ function fallback.find_route(card: any, provider_id: string, provider_model: str
     return nil
 end
 
-function fallback.should_switch(details: Details?, primary: boolean, streaming: boolean, fallback_on: { [string]: boolean }): boolean
+function fallback.should_switch(details: Details?, primary: boolean, streaming: boolean, fallback_on: { [string]: boolean }, class_request: boolean?): boolean
     if details == nil then
         return false
     end
@@ -117,7 +117,7 @@ function fallback.should_switch(details: Details?, primary: boolean, streaming: 
     end
 
     if primary then
-        return fallback_on[error_type] == true
+        return fallback_on[error_type] == true or (class_request == true and CANDIDATE_UNUSABLE[error_type] == true)
     end
 
     return TRANSIENT[error_type] == true or CANDIDATE_UNUSABLE[error_type] == true

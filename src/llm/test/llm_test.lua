@@ -1,4 +1,5 @@
 local llm = require("llm")
+local discovery_models = require("models")
 local decisions_handler = require("decisions_handler")
 local json = require("json")
 local security = require("security")
@@ -2359,6 +2360,312 @@ local function define_tests()
                     test.eq(called_models(), "a-1,c-1")
                     test.is_true(result.metadata.fallbacks[2].skipped)
                     test.contains(result.metadata.fallbacks[2].message, "temperature")
+                end)
+            end)
+
+            describe("class fallback", function()
+                local original_registry
+
+                local function premium()
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { priority = 100 })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } }, { priority = 80 })
+                    cards.third = card("third", { { id = "p.c", provider_model = "c-1" } }, { priority = 60 })
+                    llm._model_resolver = nil
+                    llm._models = discovery_models
+                    discovery_models._registry = { find = function(query)
+                        local entries = {}
+                        -- Deliberately not in priority order: exercise real registry discovery.
+                        for _, name in ipairs({ "backup", "third", "primary", "premium", "outside" }) do
+                            local model = cards[name]
+                            if model and (query["meta.name"] == nil or query["meta.name"] == name) then
+                                table.insert(entries, { id = model.id,
+                                    meta = { name = name, class = { name == "outside" and "other" or "premium" },
+                                        priority = model.priority, capabilities = model.capabilities },
+                                    data = { providers = model.providers, fallback = model.fallback,
+                                        fallback_on = model.fallback_on } })
+                            end
+                        end
+                        return entries
+                    end }
+                end
+
+                before_each(function()
+                    original_registry = discovery_models._registry
+                    premium()
+                end)
+
+                after_each(function()
+                    discovery_models._registry = original_registry
+                end)
+
+                it("tries class members by priority without an explicit fallback list", function()
+                    behaviour["a-1"] = fail_with("rate_limit_exceeded")
+                    behaviour["b-1"] = fail_with("server_error")
+                    local options = { model = "class:premium", temperature = 0.2 }
+
+                    local result, err = llm.generate("Hi", options)
+
+                    test.is_nil(err)
+                    assert(result)
+                    test.eq(called_models(), "a-1,b-1,c-1")
+                    test.eq(result.metadata.route.model, "third")
+                    test.eq(result.metadata.route.provider_id, "p.c")
+                    test.eq(result.metadata.route.provider_model, "c-1")
+                    test.eq(#result.metadata.fallbacks, 2)
+                    test.eq(mock_usage_tracker.last_model_id, "third")
+                    test.eq(options.model, "class:premium")
+                    test.is_nil(options.fallback)
+                end)
+
+                it("tries a class member's provider routes before the next model", function()
+                    cards.primary.providers = {
+                        { id = "p.a", provider_model = "a-low", priority = 1 },
+                        { id = "p.a", provider_model = "a-1", priority = 10 }
+                    }
+                    behaviour["a-1"] = fail_with("server_error")
+                    behaviour["a-low"] = fail_with("server_error")
+
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,a-low,b-1")
+                    test.eq(result.metadata.route.model, "backup")
+                end)
+
+                it("returns immediately when the highest priority model answers", function()
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1")
+                    test.is_nil(result.metadata.fallbacks)
+                end)
+
+                it("also walks a bare class name when no model has that name", function()
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "premium" })
+                    test.is_nil(err)
+                    test.eq(result.metadata.route.model, "backup")
+                end)
+
+                it("does not infer fallback from an exact model's class membership", function()
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "primary" })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("keeps exact model names ahead of bare class names", function()
+                    cards.premium = card("premium", { { id = "p.a", provider_model = "named-premium" } })
+                    behaviour["named-premium"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "premium" })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "named-premium")
+                end)
+
+                it("skips class members with no providers", function()
+                    cards.primary.providers = {}
+                    cards.backup.providers = {}
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(err)
+                    assert(result)
+                    test.eq(called_models(), "c-1")
+                    test.eq(#result.metadata.fallbacks, 2)
+                    test.is_true(result.metadata.fallbacks[1].skipped)
+                    test.eq(result.metadata.fallbacks[1].model, "primary")
+                end)
+
+                it("skips a class member whose provider cannot be opened", function()
+                    cards.primary.providers[1].id = "p.closed"
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(called_models(), "b-1")
+                    test.is_true(result.metadata.fallbacks[1].skipped)
+                end)
+
+                it("records a skipped class member when none of its route entries are usable", function()
+                    cards.primary.providers = { false }
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(called_models(), "b-1")
+                    test.is_true(result.metadata.fallbacks[1].skipped)
+                    test.eq(result.metadata.fallbacks[1].model, "primary")
+                end)
+
+                it("fails without dispatch when no class member has a provider", function()
+                    for _, model in pairs(cards) do model.providers = {} end
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(result)
+                    test.eq(#calls, 0)
+                    test.contains(err, "primary: skipped")
+                    test.contains(err, "backup: skipped")
+                    test.contains(err, "third: skipped")
+                end)
+
+                it("tries the first card's explicit fallback list after the class is exhausted", function()
+                    cards.primary.fallback = { "backup", "outside" }
+                    cards.outside = card("outside", { { id = "p.d", provider_model = "d-1" } })
+                    for _, name in ipairs({ "a-1", "b-1", "c-1" }) do behaviour[name] = fail_with("server_error") end
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,b-1,c-1,d-1")
+                    test.eq(result.metadata.route.model, "outside")
+                end)
+
+                it("keeps the provider candidate cap across class members", function()
+                    cards.primary.providers = {
+                        { id = "p.a", provider_model = "a-1" }, { id = "p.a", provider_model = "a-2" },
+                        { id = "p.a", provider_model = "a-3" }
+                    }
+                    for _, name in ipairs({ "a-1", "a-2", "a-3", "b-1", "c-1" }) do
+                        behaviour[name] = fail_with("server_error")
+                    end
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1,a-2,a-3,b-1")
+                end)
+
+                it("honors the first card's configured transient error policy", function()
+                    cards.primary.fallback_on = { "rate_limit_exceeded" }
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("moves on when the top class member cannot serve the model or context", function()
+                    for _, kind in ipairs({ "authentication_error", "model_error", "context_length_exceeded" }) do
+                        calls = {}
+                        behaviour["a-1"] = fail_with(kind)
+                        local result, err = llm.generate("Hi", { model = "class:premium" })
+                        test.is_nil(err, kind)
+                        test.eq(result.metadata.route.model, "backup", kind)
+                        test.eq(called_models(), "a-1,b-1", kind)
+                    end
+                end)
+
+                it("does not hide invalid requests, content filtering or untyped failures", function()
+                    for _, kind in ipairs({ "invalid_request", "content_filtered", "untyped" }) do
+                        calls = {}
+                        local error_type = kind
+                        if kind == "untyped" then error_type = nil end
+                        behaviour["a-1"] = fail_with(error_type)
+                        local result, err = llm.generate("Hi", { model = "class:premium" })
+                        test.is_nil(result, kind)
+                        test.not_nil(err, kind)
+                        test.eq(called_models(), "a-1", kind)
+                    end
+                end)
+
+                it("does not switch after streaming has started", function()
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = true })
+                    local result, err = llm.generate("Hi", { model = "class:premium",
+                        stream = { reply_to = "pid-1", topic = "chat" } })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("can switch before the first streamed output", function()
+                    behaviour["a-1"] = fail_with("server_error", { stream_started = false })
+                    local result, err = llm.generate("Hi", { model = "class:premium",
+                        stream = { reply_to = "pid-1", topic = "chat" } })
+                    test.is_nil(err)
+                    test.eq(result.metadata.route.model, "backup")
+                end)
+
+                it("honors fallback=false for a class request", function()
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "class:premium", fallback = false })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("lets an explicit call fallback list replace automatic class fallback", function()
+                    cards.outside = card("outside", { { id = "p.d", provider_model = "d-1" } })
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "class:premium", fallback = { "outside" } })
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,d-1")
+                    test.eq(result.metadata.route.model, "outside")
+                end)
+
+                it("pins a successful class fallback to its concrete model and provider", function()
+                    behaviour["a-1"] = fail_with("server_error")
+                    local first, first_err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(first_err)
+                    assert(first)
+                    calls = {}
+                    behaviour["a-1"] = nil
+                    local next_result, next_err = llm.generate("Continue", { model = "class:premium", route = first.metadata.route })
+                    test.is_nil(next_err)
+                    test.eq(called_models(), "b-1")
+                    test.eq(next_result.metadata.route.model, "backup")
+                end)
+
+                it("does not give later class members a fresh deadline", function()
+                    local now = 1000
+                    llm._clock = function() return now end
+                    behaviour["a-1"] = function()
+                        now = 17000
+                        return nil, failure("server_error")
+                    end
+                    local result, err = llm.generate("Hi", { model = "class:premium", deadline_ms = 20000 })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                    test.contains(err, "call budget exhausted")
+                end)
+
+                it("reports exhaustion after trying each class member once", function()
+                    for _, name in ipairs({ "a-1", "b-1", "c-1" }) do
+                        behaviour[name] = fail_with("server_error")
+                    end
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(result)
+                    test.eq(called_models(), "a-1,b-1,c-1")
+                    test.contains(err, "third via p.c")
+                end)
+
+                it("preserves the schema across class fallback", function()
+                    local schema = { type = "object", properties = { answer = { type = "string" } } }
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.structured_output(schema, "Extract", { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(result.result.answer, "from b-1")
+                    test.eq(calls[2].args.schema, schema)
+                end)
+
+                it("skips a top class member that cannot perform evaluation", function()
+                    cards.backup.capabilities = { "evaluate" }
+                    local result, err = llm.evaluate("text", {
+                        resolved = { type = "predicate", instructions = "Is this resolved?" }
+                    }, { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(result.metadata.route.model, "backup")
+                    test.eq(called_models(), "b-1")
+                end)
+
+                it("never crosses embedding models even when requested by class", function()
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.embed("text", { model = "class:premium" })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                end)
+
+                it("does not replace a bound resolver's class selection with registry models", function()
+                    llm._model_resolver = { resolve = function()
+                        return card("governed", { { id = "p.d", provider_model = "governed-1" } })
+                    end }
+                    behaviour["governed-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "governed-1")
                 end)
             end)
 

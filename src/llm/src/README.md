@@ -633,7 +633,10 @@ entries:
 When a call fails, it can move on to other routes and models. The candidates of a call are:
 
 1. The routes of the resolved card, by descending `priority`. A route without one counts as 0 and equal priorities keep list order. These serve the same model through other endpoints.
-2. The routes of each model in the card's `fallback` list, in order. A reference is a model name or `class:<name>` (the top model of that class). It is resolved only when the chain reaches it, through the bound model resolver if there is one. A card is tried once, and the `fallback` list of a fallback card is not followed. At most 4 candidates are tried per call.
+2. For a class request, the remaining models in that class, by descending model `meta.priority`, with each model's routes tried before moving to the next model. Existing `meta.class` membership and provider configuration are sufficient; callers keep using `model = "class:premium"` (or a bare class name when no model has that name).
+3. The routes of each model in the first card's `fallback` list, in order. A reference is a model name or `class:<name>` (the top model of that class). It is resolved only when the chain reaches it, through the bound model resolver if there is one. A card is tried once, and the `fallback` list of a fallback card is not followed. At most 4 provider candidates are tried per call, sharing the same deadline.
+
+An exact model name does not acquire fallback models from its class membership. A per-call `fallback` list replaces automatic class fallback and the card's list; `fallback = false` disables all fallback. A bound model resolver remains authoritative: if it returns a card for a class, registry models are not appended to its selection. `llm.resolve_model` still returns one card for discovery callers.
 
 ```yaml
 - name: claude-sonnet-4-6
@@ -666,6 +669,8 @@ Whether a failure moves the call on depends on its error type and on the candida
 
 `fallback_on` replaces the default set only when it names at least one type; an empty list counts as unset.
 
+For a class request, `authentication_error`, `model_error`, and `context_length_exceeded` can also advance past the first candidate: the requested class may still be served by another member. A class member with no configured providers, no evaluation capability when evaluating, or a provider/route that cannot serve the request is skipped. Invalid requests, content filtering, and errors without a type do not trigger class fallback by default. Streaming must still report that no output has started before a switch is allowed.
+
 A candidate's own transport retries run before the call moves on. A later candidate whose provider cannot be opened, or whose route facts reject the call, is skipped; on the first candidate these errors fail the call as before. Every candidate is called with its own route `context`, `provider_model`, route `options` under the caller's options, and route facts. Nothing carries over from a previous candidate. A `max_tokens` above the candidate card's `output_tokens` is lowered to that limit and reported in `metadata.adjusted.max_tokens` as `requested` and `sent`; with `strict = true` the candidate rejects the call instead, like any other adjustment. A card without `output_tokens` sets no limit.
 
 A streamed call moves on only while the client has received nothing, which the driver reports as `stream_started = false` in the error details. After the first chunk an error never moves the call on. While nothing has been sent, the framework drivers hold the stream's error chunk back; `llm` sends it if the whole call fails, so a call without fallback streams exactly as before. A driver that does not report `stream_started` never falls back while streaming. Drivers built on `output` use `output.send_or_defer_error` and `output.stream_error_details` for this.
@@ -677,7 +682,7 @@ Per-call options, never sent to the driver:
 ```lua
 llm.generate(builder, {
     model = "claude",
-    fallback = { "gpt-5" },   -- replaces the card's list; false disables fallback, other routes included
+    fallback = { "gpt-5" },   -- replaces class/card model fallbacks; false also disables other routes
     deadline_ms = 60000       -- budget for the whole call
 })
 

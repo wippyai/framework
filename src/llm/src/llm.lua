@@ -248,12 +248,13 @@ end
 -- Smart model resolution: name → class → error, plus "class:abc" syntax.
 -- An optional resolver contract takes precedence when bound; if it returns no
 -- card, resolution falls back to the built-in discovery below.
-function llm.resolve_model(model_identifier: string): (ModelCard?, string?)
+local function resolve_model_cards(model_identifier: string): ({ModelCard}?, string?, boolean?)
     local resolver = get_model_resolver()
     if resolver then
         local card, resolve_err = resolver:resolve({ model = model_identifier })
         if card and not resolve_err then
-            return card :: ModelCard
+            -- A bound resolver owns its selection; do not append registry models.
+            return { card :: ModelCard }
         end
         -- resolver declined or errored: fall through to built-in discovery
     end
@@ -268,7 +269,7 @@ function llm.resolve_model(model_identifier: string): (ModelCard?, string?)
             return nil, err
         end
         if class_models and #class_models > 0 then
-            return class_models[1] -- First model (highest priority)
+            return class_models, nil, true
         end
         return nil, "No models found for class: " .. class_name
     end
@@ -276,16 +277,24 @@ function llm.resolve_model(model_identifier: string): (ModelCard?, string?)
     -- Try as model name first
     local model_card, err = models_module.get_by_name(model_identifier)
     if model_card then
-        return model_card :: ModelCard
+        return { model_card :: ModelCard }
     end
 
     -- Try as class name
     local class_models, class_err = models_module.get_by_class(model_identifier)
     if not class_err and class_models and #class_models > 0 then
-        return class_models[1] -- First model (highest priority)
+        return class_models, nil, true
     end
 
     return nil, "Model or class not found: " .. model_identifier
+end
+
+function llm.resolve_model(model_identifier: string): (ModelCard?, string?)
+    local cards, err = resolve_model_cards(model_identifier)
+    if not cards then
+        return nil, err
+    end
+    return cards[1]
 end
 
 -- Convert prompt input to messages array in contract format
@@ -864,13 +873,14 @@ local function fallback_references(spec, options, model_card): {string}
     return fallback.string_list(model_card.fallback) or {}
 end
 
-local function plan(spec, model_card, first_routes: {any}, references: {string}, failures: {FailureEntry})
+local function plan(spec, model_card, first_routes: {any}, references: {string}, failures: {FailureEntry}, class_cards)
     local seen: { [string]: boolean } = {}
     seen[card_name(model_card)] = true
     local card = model_card
     local routes = first_routes
     local route_index = 0
     local reference_index = 0
+    local class_index = 1
     local produced = 0
 
     return function(): any?
@@ -879,16 +889,23 @@ local function plan(spec, model_card, first_routes: {any}, references: {string},
             local next_route = routes[route_index]
             if next_route ~= nil then
                 produced = produced + 1
-                return { card = card, route = next_route, primary = produced == 1 }
+                return { card = card, route = next_route, primary = produced == 1 and card == model_card }
             end
 
-            reference_index = reference_index + 1
-            local reference = references[reference_index]
-            if reference == nil then
-                return nil
+            local reference, resolved, resolve_err
+            if class_cards and class_index < #class_cards then
+                class_index = class_index + 1
+                resolved = class_cards[class_index]
+                reference = card_name(resolved)
+            else
+                reference_index = reference_index + 1
+                reference = references[reference_index]
+                if reference == nil then
+                    return nil
+                end
+                resolved, resolve_err = llm.resolve_model(reference)
             end
 
-            local resolved, resolve_err = llm.resolve_model(reference)
             if not resolved then
                 local skipped: FailureEntry = { model = reference, skipped = true, message = tostring(resolve_err or "model not found") }
                 table.insert(failures, skipped)
@@ -929,12 +946,15 @@ local function fail_chain(options, failures: {FailureEntry}, last: any?)
     return nil, message
 end
 
-local function run_chain(spec, options, model_card, first_routes: {any})
+local function run_chain(spec, options, model_card, first_routes: {any}, class_cards, initial_skip: string?)
     local providers_module = llm._providers or providers
     local deadline_at = call_deadline(options)
     local fallback_on = fallback.switch_set(model_card.fallback_on)
     local failures: {FailureEntry} = {}
-    local next_candidate = plan(spec, model_card, first_routes, fallback_references(spec, options, model_card), failures)
+    if initial_skip then
+        table.insert(failures, { model = card_name(model_card), skipped = true, message = initial_skip })
+    end
+    local next_candidate = plan(spec, model_card, first_routes, fallback_references(spec, options, model_card), failures, class_cards)
     local last: any = nil
 
     while true do
@@ -981,7 +1001,7 @@ local function run_chain(spec, options, model_card, first_routes: {any})
         end
 
         if failure.preflight then
-            if candidate.primary then
+            if candidate.primary and not class_cards then
                 -- A primary route the call cannot use fails the call, as before fallback.
                 log_failure(options, failure.message)
                 return nil, failure.message
@@ -995,7 +1015,7 @@ local function run_chain(spec, options, model_card, first_routes: {any})
             entry.message = failure.message
             table.insert(failures, entry)
             last = failure
-            if not fallback.should_switch(details, candidate.primary, failure.stream ~= nil, fallback_on) then
+            if not fallback.should_switch(details, candidate.primary, failure.stream ~= nil, fallback_on, class_cards ~= nil) then
                 break
             end
         end
@@ -1006,6 +1026,7 @@ end
 
 local function call_resolved(spec, options)
     local model_card, first_routes
+    local class_cards, initial_skip
     if options.route ~= nil then
         local pin = options.route
         if type(pin) ~= "table" or type(pin.model) ~= "string" or pin.model == ""
@@ -1030,31 +1051,45 @@ local function call_resolved(spec, options)
         end
         first_routes = { pinned }
     else
-        local resolve_err
-        model_card, resolve_err = llm.resolve_model(options.model :: string)
-        if not model_card then
+        local cards, resolve_err, by_class = resolve_model_cards(options.model :: string)
+        if not cards then
             return nil, resolve_err
+        end
+        model_card = cards[1]
+        if by_class and spec.model_fallback and options.fallback ~= false and type(options.fallback) ~= "table" then
+            class_cards = cards
         end
     end
 
     if spec.check then
         local check_err = spec.check(model_card)
         if check_err then
-            return nil, check_err
+            if not class_cards then
+                return nil, check_err
+            end
+            initial_skip = check_err
         end
     end
 
     if not model_card.providers or #model_card.providers == 0 then
-        return nil, "Model has no configured providers: " .. options.model
+        if not class_cards then
+            return nil, "Model has no configured providers: " .. options.model
+        end
+        initial_skip = initial_skip or "no configured providers"
     end
-    if first_routes == nil then
+    if initial_skip then
+        first_routes = {}
+    elseif first_routes == nil then
         first_routes = fallback.ordered_routes(model_card)
         if options.fallback == false then
             first_routes = { first_routes[1] }
         end
     end
     if #first_routes == 0 then
-        return nil, "Model has no configured providers: " .. options.model
+        if not class_cards then
+            return nil, "Model has no configured providers: " .. options.model
+        end
+        initial_skip = initial_skip or "no configured providers"
     end
 
     if spec.before then
@@ -1064,7 +1099,7 @@ local function call_resolved(spec, options)
         end
     end
 
-    return run_chain(spec, options, model_card, first_routes)
+    return run_chain(spec, options, model_card, first_routes, class_cards, initial_skip)
 end
 
 local function always_eligible(_card): (boolean, string?)
