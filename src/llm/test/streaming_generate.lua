@@ -8,6 +8,13 @@ local function handler(contract_args)
     if serr then return nil, errors.new({ message = "store error: " .. tostring(serr), kind = "Internal" }) end
     s:set("streaming_started", true)
     local scenario = s:get("streaming_scenario")
+    if scenario.fallback then
+        s:set("streaming_" .. tostring(contract_args.model), true)
+        if contract_args.model == "primary" then
+            return nil, errors.new({ message = "primary unavailable", kind = errors.UNAVAILABLE,
+                details = { error_type = "server_error", stream_started = false } })
+        end
+    end
     local content = table.concat(scenario.chunks)
     if contract_args.stream and contract_args.stream.reply_to then
         local streamer, streamer_err = output.streamer(contract_args.stream.reply_to, contract_args.stream.topic, 0)

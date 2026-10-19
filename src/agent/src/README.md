@@ -234,7 +234,8 @@ without a provider request.
 `llm.generate`). The step then returns `{ stopped = true, result = <text streamed
 before cancellation>, finish_reason = "cancelled" }`. The same channel passed as
 the third argument of `tool_caller:execute(context, validated_tools, cancel)`
-cancels in-flight tool calls; each reports `cancelled = true`.
+cancels pending tool calls; completed peers keep their results.
+
 ### Route Pinning
 
 When the model's first route fails and `llm` answers from a fallback model, the rest of the turn has to stay on that model: the vendor that produced a tool call must receive its result. Each response carries `route_pin`: the route the host passed in, or the route that answered when this step fell back, otherwise `nil`. A host that drives a multi-step turn passes `route_pin` back as `route` in the runtime options of the next step and drops it when a new turn starts. While the first route answers nothing is pinned, so every step keeps its fallback chain. An agent runner lives for one step or one run, so the host keeps the pin, not the runner.

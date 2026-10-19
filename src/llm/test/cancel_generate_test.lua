@@ -35,6 +35,34 @@ end
 
 local function define_tests()
     describe("Cancellable generation", function()
+        local original_resolver = llm._model_resolver
+        after_each(function() llm._model_resolver = original_resolver end)
+
+        it("cancels a real fallback attempt without dispatching another model", function()
+            local s = scenario("hold", { "Backup partial" })
+            s:set("streaming_scenario", { mode = "hold", chunks = { "Backup partial" }, fallback = true })
+            for _, name in ipairs({ "primary", "backup", "third" }) do s:set("streaming_" .. name, false) end
+            llm._model_resolver = { resolve = function(_, args)
+                return { id = "app:" .. args.model, name = args.model, capabilities = { "generate" },
+                    fallback = args.model == "primary" and { "backup", "third" } or nil,
+                    providers = { { id = PROVIDER, provider_model = args.model } } }
+            end }
+            local stream = process.listen("cancel_test.fallback")
+            local cancel = channel.new(1)
+            local done = start_generate({ model = "primary", cancel = cancel, deadline_ms = 10000,
+                stream = { reply_to = process.pid(), topic = "cancel_test.fallback" } })
+            test.eq(receive_within(stream, "5s", "fallback chunk").content, "Backup partial")
+            cancel:send(true)
+            local outcome = receive_within(done, "2s", "cancelled fallback")
+            process.unlisten(stream)
+            test.is_nil(outcome.err)
+            test.eq(outcome.result.finish_reason, output.FINISH_REASON.CANCELLED)
+            test.eq(outcome.result.result, "Backup partial")
+            test.is_true((s:get("streaming_primary")))
+            test.is_true((s:get("streaming_backup")))
+            test.is_false((s:get("streaming_third")))
+        end)
+
         it("does not dispatch a provider when cancellation is already signaled", function()
             local s = scenario("complete", { "must not run" })
             local cancel = channel.new()

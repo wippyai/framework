@@ -334,7 +334,6 @@ entries:
       evaluation: wippy.llm:evaluation
       route: wippy.llm.util:route
       fallback: wippy.llm.util:fallback
-      output: wippy.llm:output
 
   - name: evaluation
     kind: library.lua
