@@ -2483,6 +2483,17 @@ local function define_tests()
                     test.is_true(result.metadata.fallbacks[1].skipped)
                 end)
 
+                it("gives the first usable class route a short initial call budget", function()
+                    cards.primary.providers = {}
+                    llm._clock = function() return 1000 end
+                    local result, err = llm.generate("Hi", { model = "class:premium", deadline_ms = 3000 })
+                    test.is_nil(err)
+                    test.eq(called_models(), "b-1")
+                    test.eq(calls[1].args.timeout, 3)
+                    test.eq(result.metadata.route.model, "backup")
+                    test.is_true(result.metadata.fallbacks[1].skipped)
+                end)
+
                 it("records a skipped class member when none of its route entries are usable", function()
                     cards.primary.providers = { false }
                     local result, err = llm.generate("Hi", { model = "class:premium" })
