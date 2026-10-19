@@ -889,7 +889,7 @@ local function plan(spec, model_card, first_routes: {any}, references: {string},
             local next_route = routes[route_index]
             if next_route ~= nil then
                 produced = produced + 1
-                return { card = card, route = next_route, primary = produced == 1 and card == model_card }
+                return { card = card, route = next_route, primary = produced == 1 }
             end
 
             local reference, resolved, resolve_err
