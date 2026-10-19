@@ -452,17 +452,23 @@ function test.it_skip(name, fn)
 end
 
 -- Value formatting for assertion error messages
-local function format_value(val: any): string
+local function format_value(val: any, ancestors: {[any]: boolean?}?): string
     if type(val) == "string" then
         return string.format("%q", val)
     elseif type(val) == "table" then
         if val._tostring then
             return tostring(val:_tostring())
         else
+            ancestors = ancestors or {}
+            if ancestors[val] then
+                return "<cycle>"
+            end
+            ancestors[val] = true
             local str = "{"
             for k, v in pairs(val) do
-                str = str .. (type(k) == "number" and "" or k .. "=") .. format_value(v) .. ","
+                str = str .. (type(k) == "number" and "" or k .. "=") .. format_value(v, ancestors) .. ","
             end
+            ancestors[val] = nil
             return str .. "}"
         end
     else
