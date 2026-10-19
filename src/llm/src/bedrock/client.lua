@@ -166,7 +166,7 @@ local function signed_request(path, payload, options)
     end
 
     local function send_once()
-        return transport.dispatch(bedrock_client._http_client, "POST", full_url, request_opts)
+        return transport.dispatch(bedrock_client._http_client, "POST", full_url, request_opts, config.deadline_at)
     end
 
     local retry = transport.request_retry(options.retry, config.retry)

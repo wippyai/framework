@@ -104,10 +104,22 @@ local VERBS = {
     DELETE = "delete"
 }
 
-function transport.dispatch(http: any, method: string, url: string, options: {[string]: any}): (HttpResponse?, string?)
+function transport.dispatch(http: any, method: string, url: string, options: {[string]: any}, deadline_at: number?): (HttpResponse?, string?)
     local verb = VERBS[method]
     if not verb then
         error("Unsupported HTTP method: " .. tostring(method))
+    end
+    if deadline_at ~= nil then
+        local remaining_ms = deadline_at - transport.now_ms()
+        if remaining_ms <= 0 then return nil, "Request deadline exceeded" end
+        -- Do not mutate the shared options: every retry starts with the original
+        -- timeout and caps it against the remaining call budget.
+        local capped = {}
+        for key, value in pairs(options) do capped[key] = value end
+        local timeout = tonumber(options.timeout)
+        if timeout and timeout > 0 then remaining_ms = math.min(remaining_ms, timeout * 1000) end
+        capped.timeout = tostring(remaining_ms) .. "ms"
+        options = capped
     end
     local response, err = http[verb](url, options)
     return response :: HttpResponse?, err and tostring(err) or nil
@@ -123,12 +135,15 @@ end
 -- Sends a request with bounded exponential backoff. `send_once` performs one
 -- attempt and returns (response, err); `parse_error` maps a non-2xx response
 -- to the provider's error shape. Without a retry policy the request is sent
--- once. `deadline_at` (Unix milliseconds) bounds the retries: a retry whose
+-- once. `deadline_at` (Unix milliseconds) prevents dispatch after expiry. A retry whose
 -- backoff would end at or after it is not attempted, and the last error is
 -- returned instead.
 function transport.send(send_once: () -> (HttpResponse?, string?), parse_error: (HttpResponse) -> RequestError, retry: Retry?, deadline_at: number?): (HttpResponse?, RequestError?)
     local retries = 0
     while true do
+        if deadline_at ~= nil and transport.now_ms() >= deadline_at then
+            return nil, { status_code = 0, message = "Request deadline exceeded" }
+        end
         local response, err = send_once()
 
         local request_error: RequestError

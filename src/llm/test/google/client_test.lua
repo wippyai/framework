@@ -690,7 +690,7 @@ local function define_tests()
                 tests.eq(http.calls, 1)
             end)
 
-            it("should not retry past the call deadline", function()
+            it("should not dispatch past the call deadline", function()
                 local http = flaky_http({ 503, 503, 200 })
 
                 local response, err = client.request("POST", "https://test.googleapis.com/v1/test", {
@@ -698,8 +698,8 @@ local function define_tests()
                 }, { attempts = 3, backoff_ms = 0 }, 1)
 
                 tests.is_nil(response)
-                tests.eq(err.status_code, 503)
-                tests.eq(http.calls, 1)
+                tests.eq(err.status_code, 0)
+                tests.eq(http.calls, 0)
             end)
         end)
 

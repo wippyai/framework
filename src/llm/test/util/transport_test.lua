@@ -282,17 +282,18 @@ local function define_tests()
                 test.eq(#sleeps, 0)
             end)
 
-            it("should not retry once the deadline has passed", function()
+            it("should not dispatch once the deadline has passed", function()
                 local sender = statuses({ 500 })
                 local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 0 }, clock_ms - 1)
                 test.is_nil(response)
-                test.eq(err.status_code, 500)
-                test.eq(sender.count(), 1)
+                test.eq(err.status_code, 0)
+                test.contains(err.message, "deadline")
+                test.eq(sender.count(), 0)
             end)
 
             it("should return a success that arrives before the deadline", function()
                 local sender = statuses({ 200 })
-                local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 100 }, clock_ms - 1)
+                local response, err = transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 100 }, clock_ms + 1)
                 test.is_nil(err)
                 test.eq(response.body, "body 1")
             end)
@@ -302,6 +303,36 @@ local function define_tests()
                 transport.send(sender.send, parse_error, { attempts = 3, backoff_ms = 10 })
                 test.eq(sender.count(), 4)
                 test.eq(table.concat(sleeps, ","), "10ms,20ms,40ms")
+            end)
+        end)
+
+        describe("request deadline dispatch", function()
+            local original_now = transport.now_ms
+            after_each(function() transport.now_ms = original_now end)
+
+            it("uses subsecond budgets without widening or mutating request options", function()
+                transport.now_ms = function() return 1000 end
+                local options = { timeout = 10 }
+                local seen
+                local http = { post = function(_, request)
+                    seen = request.timeout
+                    return { status_code = 200 }
+                end }
+                transport.dispatch(http, "POST", "fixture", options, 1250)
+                test.eq(seen, "250ms")
+                test.eq(options.timeout, 10)
+            end)
+
+            it("does not start HTTP after expiry even without a retry policy", function()
+                transport.now_ms = function() return 1000 end
+                local calls = 0
+                local response, err = transport.dispatch({ get = function()
+                    calls = calls + 1
+                    return { status_code = 200 }
+                end }, "GET", "fixture", {}, 1000)
+                test.is_nil(response)
+                test.contains(err, "deadline")
+                test.eq(calls, 0)
             end)
         end)
 

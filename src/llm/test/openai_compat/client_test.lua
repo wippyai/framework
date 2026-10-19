@@ -737,15 +737,15 @@ local function define_tests()
                 test.eq(http.calls, 2)
             end)
 
-            it("should not retry past the call deadline from the context", function()
+            it("should not dispatch past the call deadline from the context", function()
                 use_context({ api_key = "test-key", retry = { attempts = 3, backoff_ms = 0 }, deadline_at = 1 })
                 local http = flaky_http({ 503, 503, 200 })
 
                 local response, err = openai_client.request("/chat/completions", {})
 
                 test.is_nil(response)
-                test.eq(err.status_code, 503)
-                test.eq(http.calls, 1)
+                test.eq(err.status_code, 0)
+                test.eq(http.calls, 0)
             end)
         end)
     end)

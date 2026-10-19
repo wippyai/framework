@@ -1539,15 +1539,15 @@ local function define_tests()
                 test.eq(http.calls, 3)
             end)
 
-            it("should not retry past the call deadline from the context", function()
+            it("should not dispatch past the call deadline from the context", function()
                 use_context({ api_key = "test-key", retry = { attempts = 3, backoff_ms = 0 }, deadline_at = 1 })
                 local http = flaky_http({ 503, 503, 200 })
 
                 local response, err = claude_client.request("/v1/messages", {})
 
                 test.is_nil(response)
-                test.eq(err.status_code, 503)
-                test.eq(http.calls, 1)
+                test.eq(err.status_code, 0)
+                test.eq(http.calls, 0)
             end)
 
             it("should keep retrying while the context deadline allows it", function()

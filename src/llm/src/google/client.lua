@@ -305,7 +305,7 @@ function client.request(method, url, http_options, retry: transport.Retry?, dead
     end
 
     local function send_once()
-        return transport.dispatch(client._http_client, method, url, http_options)
+        return transport.dispatch(client._http_client, method, url, http_options, deadline_at)
     end
 
     local response, request_error = transport.send(send_once, parse_error_response, retry, deadline_at)

@@ -458,7 +458,7 @@ local function define_tests()
         end)
 
         describe("Retry", function()
-            it("should not retry past the call deadline from the context", function()
+            it("should not dispatch past the call deadline from the context", function()
                 with_key({ retry = { attempts = 3, backoff_ms = 0 }, deadline_at = 1 })
 
                 local calls = 0
@@ -473,8 +473,8 @@ local function define_tests()
 
                 test.is_nil(response)
                 assert(err)
-                test.eq(err.status_code, 503)
-                test.eq(calls, 1)
+                test.eq(err.status_code, 0)
+                test.eq(calls, 0)
             end)
 
             it("should retry a server error and return the eventual success", function()

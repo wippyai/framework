@@ -184,7 +184,7 @@ function typesafe_client.request(endpoint_path, payload, options)
     end
 
     local function send_once()
-        return transport.dispatch(typesafe_client._http_client, method, full_url, http_options)
+        return transport.dispatch(typesafe_client._http_client, method, full_url, http_options, config.deadline_at)
     end
 
     local retry = transport.request_retry(options.retry, config.retry)

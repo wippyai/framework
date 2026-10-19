@@ -789,6 +789,7 @@ entries:
       - http_client
     imports:
       openai_client: wippy.llm.openai:client
+      transport: wippy.llm.util:transport
       test: wippy.test:test
     method: run_tests
 
