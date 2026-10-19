@@ -61,6 +61,37 @@ local function define_tests()
             test.eq(true, true)
         end)
 
+        test.it("formats a self-reference in assertion failures", function()
+            local value: any = {}
+            value.self = value
+            local ok, err = pcall(test.eq, value, nil)
+            test.is_false(ok)
+            test.contains(tostring(err), "expected nil, got {self=<cycle>,}")
+        end)
+
+        test.it("formats mutually recursive tables", function()
+            local first: any = {}
+            local second: any = {parent = first}
+            first.child = second
+            local ok, err = pcall(test.is_nil, first)
+            test.is_false(ok)
+            test.contains(tostring(err), "got {child={parent=<cycle>,},}")
+        end)
+
+        test.it("expands shared acyclic tables each time", function()
+            local shared = {value = 7}
+            local ok, err = pcall(test.eq, {shared, shared}, nil)
+            test.is_false(ok)
+            test.contains(tostring(err), "got {{value=7,},{value=7,},}")
+        end)
+
+        test.it("preserves custom assertion value formatting", function()
+            local value = {_tostring = function() return "custom" end}
+            local ok, err = pcall(test.is_nil, value)
+            test.is_false(ok)
+            test.contains(tostring(err), "got custom")
+        end)
+
         test.it("neq passes for different values", function()
             test.neq(1, 2)
             test.neq("a", "b")
