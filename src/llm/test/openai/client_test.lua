@@ -12,6 +12,23 @@ local function define_tests()
             openai_client._http_client = nil
         end)
 
+        it("returns an error for scalar or null JSON before attaching metadata", function()
+            openai_client._ctx = { all = function() return { api_key = "test-key" } end }
+            openai_client._env = { get = function() return nil end }
+            for _, body in ipairs({ "null", "false", "42", '"unexpected"' }) do
+                openai_client._http_client = {
+                    post = function()
+                        return { status_code = 200, body = body, headers = { ["X-Request-Id"] = "malformed-response" } }
+                    end
+                }
+                local response, err = openai_client.request("/decisions", {})
+                test.is_nil(response)
+                test.not_nil(err)
+                test.contains(err.message, "expected a JSON object")
+                test.eq(err.metadata.request_id, "malformed-response")
+            end
+        end)
+
         describe("HTTP Method Support", function()
             it("should default to POST method", function()
                 openai_client._ctx = {

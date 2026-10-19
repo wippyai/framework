@@ -32,3 +32,54 @@ entries:
       - time
       - json
     method: run
+
+  - name: runtime_processes
+    kind: process.host
+    lifecycle:
+      auto_start: true
+
+  - name: actor_runtime_fixture
+    kind: process.lua
+    source: file://actor_runtime_fixture.lua
+    imports:
+      actor: wippy.actor:actor
+    modules:
+      - time
+    method: run
+
+  - name: actor_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-runtime
+      timeout: 20s
+    source: file://actor_runtime_test.lua
+    imports:
+      actor: wippy.actor:actor
+      test: wippy.test:test
+    modules:
+      - system
+      - time
+    method: run
+
+  - name: actor_resident_fixture
+    kind: process.lua
+    source: file://actor_runtime_fixture.lua
+    imports:
+      actor: wippy.actor:actor
+    modules:
+      - time
+    method: resident
+
+  - name: actor_runtime_resident_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: actor-runtime
+      timeout: 25s
+    source: file://actor_resident_test.lua
+    imports:
+      test: wippy.test:test
+    modules:
+      - time
+    method: run

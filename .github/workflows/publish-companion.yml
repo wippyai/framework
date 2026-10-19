@@ -1,0 +1,77 @@
+name: Publish companion release
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Released companion module
+        required: true
+        type: choice
+        options: [session, dataflow]
+      tag:
+        description: Existing GitHub release tag (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-companion-${{ inputs.component }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Validate released source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPONENT: ${{ inputs.component }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$COMPONENT" in session|dataflow) ;; *) exit 1 ;; esac
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release view "$RELEASE_TAG" --repo "wippyai/$COMPONENT" --json tagName,isDraft,isPrerelease \
+            --jq 'select(.isDraft == false and .isPrerelease == false) | .tagName' > release-tag.txt
+          test "$(cat release-tag.txt)" = "$RELEASE_TAG"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: framework
+          persist-credentials: false
+      - uses: ./framework/.github/actions/setup-wippy
+        id: wippy
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: wippyai/${{ inputs.component }}
+          ref: ${{ inputs.tag }}
+          path: module
+          persist-credentials: false
+
+      - name: Validate module and build notes
+        env:
+          COMPONENT: ${{ inputs.component }}
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(awk '/^module:/ {print $2; exit}' module/wippy.yaml)" = "$COMPONENT"
+          if [ "$COMPONENT" = session ]; then version_file=module/src/_index.yaml; else version_file=module/wippy.yaml; fi
+          test "$(awk '/^version:/ {gsub(/"/, "", $2); print $2; exit}' "$version_file")" = "$RELEASE_VERSION"
+          python3 framework/scripts/release_notes.py --line module/CHANGELOG.md "$RELEASE_VERSION" > release-notes.txt
+          test -s release-notes.txt
+
+      - name: Pack and publish the released module
+        env:
+          WIPPY: ${{ steps.wippy.outputs.path }}
+          WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "${WIPPY_TOKEN:-}"
+          "$WIPPY" publish --config module --version "$RELEASE_VERSION" --dry-run
+          "$WIPPY" publish --config module --version "$RELEASE_VERSION" --release-notes "$(cat release-notes.txt)"

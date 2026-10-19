@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.4](https://github.com/wippyai/framework/compare/agent-v0.5.3...agent-v0.5.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* Permission refresh is opt-in: bind the execution identity resolver and set refresh_perms to true. Parallel tools share one refresh per batch; sequential tools refresh at each call boundary. Stop is checked again after prompt construction and before provider generation.
+* **agent:** opt in to authority refresh at tool boundaries ([#173](https://github.com/wippyai/framework/issues/173)) ([3b92e76](https://github.com/wippyai/framework/commit/3b92e76d8f8d51343d3a1b5d94483ddf5d8285c9))
+* harden Lua actor, relay, tool-round and runner behavior ([#165](https://github.com/wippyai/framework/issues/165)) ([d4607bb](https://github.com/wippyai/framework/commit/d4607bb274e09a1d0cc6bef533f45546846fb79b))
+
+## [0.5.3] (2026-10-07)
+
+### Features
+
+* Add opt-in Attention traits and separate tools for semantic search, scoped CSS search, pointer, focus, selection and browser actions.
+* Scope browser authority to each permitted tool call. Bound read results and remove expired or superseded observations through existing stale metadata.
+* Support highlight, confirmation and approved capture. Capture prepares a removable draft for a later explicit Send.
+
+### Dependencies
+
+* Require LLM 0.5.5 for the validated Attention context renderer. Agents without Attention traits retain ordinary tool execution.
+
 ## [0.5.2](https://github.com/wippyai/framework/compare/agent-v0.5.1...agent-v0.5.2) (2026-10-02)
 
 

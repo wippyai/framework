@@ -230,11 +230,15 @@ local function handle_client_connection(state: CentralState, client_pid: any, me
     end
 end
 
-local function handle_activity_update(state: CentralState, payload: any)
+local function handle_activity_update(state: CentralState, payload: any, from_pid: string)
     local user_id = string(payload.user_id)
     local hub = state.user_hubs[user_id]
-    if hub then
+    if hub and hub.hub_pid == from_pid then
         hub.client_count = tonumber(payload.client_count) or 0
+        if hub.client_count > 0 then
+            hub.terminating = false
+            hub.termination_started_at = nil
+        end
         if payload.last_activity then
             local activity_time, err = time.parse(time.RFC3339, string(payload.last_activity))
             if activity_time then
@@ -279,11 +283,13 @@ local function check_inactive_hubs(state: CentralState)
         local time_since_activity = now:sub(last_activity)
 
         if time_since_activity:seconds() > inactivity_duration:seconds() then
-            local success, err = process.cancel(hub_info.hub_pid, consts.CANCEL_TIMEOUT)
+            -- Session retirement is cooperative. Cancelling its parent here
+            -- would propagate cancellation to an otherwise healthy turn.
+            local success, err = process.send(hub_info.hub_pid, consts.HUB_CONTROL.RETIRE, {})
             if success then
                 hub_info.terminating = true
                 hub_info.termination_started_at = now
-                logger:info("terminating inactive user hub", { user_id = user_id, inactive_for_seconds = time_since_activity:seconds() })
+                logger:info("retiring inactive user hub", { user_id = user_id, inactive_for_seconds = time_since_activity:seconds() })
             end
         end
 
@@ -367,7 +373,10 @@ local function run(upgrade_state: any?): any
                     logger:info("user leaving central hub", { user_id = payload.metadata.user_id })
                 end
             elseif topic == consts.HUB_TOPICS.ACTIVITY_UPDATE then
-                handle_activity_update(state, payload)
+                handle_activity_update(state, payload, msg:from())
+            elseif topic == consts.HUB_CONTROL.RETIRE then
+                -- Collection is issued only by our own inactivity sweep.
+                -- Never turn an incoming request into a trusted broadcast.
             else
                 for user_id, hub_info in pairs(state.user_hubs) do
                     process.send(hub_info.hub_pid, topic, payload)
@@ -413,4 +422,6 @@ return {
     _restore_hubs = restore_hubs,
     _encode_upgrade_state = encode_upgrade_state,
     _decode_upgrade_state = decode_upgrade_state,
+    _check_inactive_hubs = check_inactive_hubs,
+    _handle_activity_update = handle_activity_update,
 }

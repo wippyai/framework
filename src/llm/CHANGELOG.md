@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.5.7](https://github.com/wippyai/framework/compare/llm-v0.5.6...llm-v0.5.7) (2026-10-14)
+
+
+### Features
+
+* **llm:** support OpenAI Decisions evaluation ([#166](https://github.com/wippyai/framework/issues/166)) ([a7baba6](https://github.com/wippyai/framework/commit/a7baba6b5f7e718aec42c1a66783791868d477c6))
+
+
+### Bug Fixes
+
+* harden Lua actor, relay, tool-round and runner behavior ([#165](https://github.com/wippyai/framework/issues/165)) ([d4607bb](https://github.com/wippyai/framework/commit/d4607bb274e09a1d0cc6bef533f45546846fb79b))
+* **llm:** preserve positional messages through prompt mapping ([#177](https://github.com/wippyai/framework/issues/177)) ([199516b](https://github.com/wippyai/framework/commit/199516b9fe963541c1cad46ae5db728b948a7b0b))
+
+## [0.5.6](https://github.com/wippyai/framework/compare/llm-v0.5.5...llm-v0.5.6) (2026-10-09)
+
+
+### Bug Fixes
+
+* **llm:** stream Bedrock ConverseStream events as they arrive ([#167](https://github.com/wippyai/framework/issues/167)) ([d623e6e](https://github.com/wippyai/framework/commit/d623e6eb7e68e9f4f4c90dc7a338270983963944))
+
+## [0.5.5] (2026-10-07)
+
+### Features
+
+* Render validated Attention context as bounded, untrusted model input. Support kind/version dispatch and authorized visual attachments.
+* Render bounded context without adding technical data to visible conversation text.
+
+### Bug fixes
+
+* Pass only the first search result to the context renderer test assertion, preserving compatibility with the current runtime's type checker.
+
 ## [0.5.4](https://github.com/wippyai/framework/compare/llm-v0.5.3...llm-v0.5.4) (2026-10-02)
 
 

@@ -47,6 +47,7 @@ local consts = {
     -- ws client. The hub joins/leaves the named pg process group and then fans
     -- that group's broadcasts to the user's clients via the normal inbox path.
     HUB_CONTROL = {
+        RETIRE = "hub.retire",
         PG_SUBSCRIBE = "pg.subscribe",
         PG_UNSUBSCRIBE = "pg.unsubscribe"
     },
@@ -83,7 +84,8 @@ local consts = {
     },
 
     -- Fixed timeouts
-    CANCEL_TIMEOUT = "10s"
+    CANCEL_TIMEOUT = "10s",
+    DISCONNECT_GRACE = "1s"
 }
 
 function consts.get_config(): RelayConfig

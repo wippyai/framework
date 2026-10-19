@@ -1,0 +1,13 @@
+version: '1.0'
+namespace: attention.test
+
+entries:
+  - name: processes
+    kind: process.host
+    meta:
+      comment: Isolated process-service host for owning suite lifecycle verification
+    host:
+      workers: 2
+      max_processes: 10
+    lifecycle:
+      auto_start: true

@@ -1,6 +1,7 @@
 local test = require("test")
 
 return {
+    empty_plan = test.run_cases(function() end),
     failing_case = test.run_cases(function()
         test.describe("failed case", function()
             test.it("keeps its failure", function()

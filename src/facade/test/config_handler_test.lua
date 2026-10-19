@@ -1,11 +1,12 @@
 local test = require("test")
 local json = require("json")
 local registry = require("registry")
+local fs = require("fs")
 
 local NS = "wippy.facade:"
 
 local REQ_NAMES: {string} = {
-    "fe_facade_url", "fe_entry_path", "fe_mode", "render_engine", "session_type",
+    "fe_facade_url", "host_policy_mode", "fe_entry_path", "fe_mode", "render_engine", "session_type",
     "history_mode", "show_admin", "start_nav_open", "allow_select_model",
     "hide_nav_bar", "disable_right_panel", "hide_session_selector",
     "custom_css", "css_variables", "icon_sets",
@@ -14,7 +15,7 @@ local REQ_NAMES: {string} = {
     "content_fs",
     "app_title", "app_icon", "app_name", "login_path",
     "login_redirect_param",
-    "api_routes", "additional_nav_items", "state_cache",
+    "api_routes", "additional_nav_items", "state_cache", "attention",
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts", "host_config_layout", "theme_mode",
     "theme_persist", "theme_storage_key",
@@ -23,7 +24,8 @@ local REQ_NAMES: {string} = {
 
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
-        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.59",
+        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+        host_policy_mode = "auto",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
         render_engine = "iframe",
@@ -52,6 +54,7 @@ local function setup_registry(overrides: {[string]: string}?)
         api_routes = "{}",
         additional_nav_items = "[]",
         state_cache = "{}",
+        attention = "{}",
         allow_additional_tags = "{}",
         chat = "{}",
         axios_defaults = "{}",
@@ -72,22 +75,18 @@ local function setup_registry(overrides: {[string]: string}?)
     local snap = registry.snapshot()
     local changes = snap:changes()
     for name, value in pairs(defaults) do
-        changes:create({
-            id = NS .. name,
-            kind = "ns.requirement",
-            data = { default = value },
-        })
+        local id = NS .. name
+        if registry.get(id) then
+            changes:update({ id = id, kind = "ns.requirement", data = { default = value } })
+        else
+            changes:create({ id = id, kind = "ns.requirement", data = { default = value } })
+        end
     end
     changes:apply()
 end
 
 local function teardown_registry()
-    local snap = registry.snapshot()
-    local changes = snap:changes()
-    for _, name in ipairs(REQ_NAMES) do
-        changes:delete(NS .. name)
-    end
-    changes:apply()
+    setup_registry()
 end
 
 local function derive_ws_url(api_url: string): string
@@ -188,7 +187,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.59"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -266,7 +265,7 @@ local function define_tests()
 
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
-                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.59")
+                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.62")
 
                 entry = registry.get(NS .. "fe_entry_path")
                 test.eq(entry.data.default, "/iframe.html")
@@ -308,6 +307,34 @@ local function define_tests()
                 test.eq(decoded.layouts.default.direction, "vertical")
                 test.eq(decoded.panels.main.kind, "page")
                 test.eq(decoded.panels.main.id, "home")
+            end)
+
+            test.it("attention requirement defaults to empty JSON object", function()
+                local entry = registry.get(NS .. "attention")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "{}")
+            end)
+
+            test.it("attention decodes a valid opt-in config JSON", function()
+                local attention_json = '{"enabled":true,"messageContext":{"enabled":true,"defaultInclude":true},"sampling":{"radiusCssPx":20,"stepCssPx":5}}'
+                local snap = registry.snapshot()
+                local changes = snap:changes()
+                changes:update({
+                    id = NS .. "attention",
+                    kind = "ns.requirement",
+                    data = { default = attention_json },
+                })
+                changes:apply()
+
+                local entry = registry.get(NS .. "attention")
+                local decoded, err = json.decode(entry.data.default :: string)
+                test.is_nil(err)
+                test.not_nil(decoded)
+                test.is_true(decoded.enabled)
+                test.is_true(decoded.messageContext.enabled)
+                test.is_true(decoded.messageContext.defaultInclude)
+                test.eq(decoded.sampling.radiusCssPx, 20)
+                test.eq(decoded.sampling.stepCssPx, 5)
             end)
 
             test.it("tanstack requirement defaults to empty JSON object", function()
@@ -401,12 +428,30 @@ local function define_tests()
             end)
         end)
 
-        test.describe("config JSON structure (wippy-context-2.0)", function()
+        test.describe("config JSON structure (wippy-context-2.1)", function()
+            test.it("forwards global attention config through both facade shells", function()
+                local source_fs, fs_err = fs.get('app.facade_test:source')
+                test.is_nil(fs_err)
+                test.not_nil(source_fs)
+                local template, template_err = source_fs:readfile('/index.jet')
+                test.is_nil(template_err)
+                test.not_nil(template)
+                local static_shell, shell_err = source_fs:readfile('/public/index.html')
+                test.is_nil(shell_err)
+                test.not_nil(static_shell)
+                test.not_nil((string.find(template, "attention: cfg.attention", 1, true)))
+                test.not_nil((string.find(static_shell, "attention: cfg.attention", 1, true)))
+                for _, field in ipairs({ "allowSelectModel", "hideSessionSelector", "allowAdditionalTags" }) do
+                    test.not_nil((string.find(template, field .. ": cfg." .. field, 1, true)))
+                    test.not_nil((string.find(static_shell, field .. ": cfg." .. field, 1, true)))
+                end
+            end)
+
             test.it("builds complete config object", function()
                 local config = {
-                    facade_url = "https://front.wippy.ai",
-                    iframe_origin = "https://front.wippy.ai",
-                    iframe_url = "https://front.wippy.ai/iframe.html?waitForCustomConfig",
+                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+                    iframe_origin = "https://web-host.wippy.ai",
+                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
                     login_path = "/login.html",
                     env = {
                         APP_API_URL = "http://localhost:8085",
@@ -414,6 +459,13 @@ local function define_tests()
                         APP_WEBSOCKET_URL = "ws://localhost:8085",
                     },
                     routePrefix = "http://localhost:8085",
+                    allowSelectModel = false,
+                    hideSessionSelector = false,
+                    allowAdditionalTags = table.create(0, 1),
+                    attention = {
+                        enabled = true,
+                        messageContext = { enabled = true, defaultInclude = false },
+                    },
                     themeMode = "auto",
                     themePersist = "cookie",
                     themeStorageKey = "@wippy-theme-mode",
@@ -437,7 +489,6 @@ local function define_tests()
                         session = { type = "non-persistent" },
                         history = "hash",
                         showAdmin = true,
-                        allowSelectModel = false,
                         startNavOpen = false,
                         hideNavBar = false,
                         disableRightPanel = false,
@@ -450,18 +501,29 @@ local function define_tests()
 
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
-                test.eq(decoded.facade_url, "https://front.wippy.ai")
+                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.62")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
+                test.is_true(decoded.attention.enabled)
+                test.is_true(decoded.attention.messageContext.enabled)
+                test.is_false(decoded.attention.messageContext.defaultInclude)
+                test.is_nil(decoded.hostConfig.attention)
                 test.eq(decoded.hostConfig.session.type, "non-persistent")
                 test.is_true(decoded.hostConfig.showAdmin)
-                test.is_false(decoded.hostConfig.allowSelectModel)
+                test.is_false(decoded.allowSelectModel)
+                test.is_false(decoded.hideSessionSelector)
+                test.not_nil(decoded.allowAdditionalTags)
+                test.eq(next(decoded.allowAdditionalTags), nil)
+                test.is_nil(decoded.hostConfig.allowSelectModel)
+                test.is_nil(decoded.hostConfig.hideSessionSelector)
+                test.is_nil(decoded.hostConfig.allowAdditionalTags)
                 test.eq(decoded.theming.host.i18n.app.title, "Wippy")
                 test.eq(decoded.themeMode, "auto")
                 test.eq(decoded.themePersist, "cookie")
                 test.eq(decoded.themeStorageKey, "@wippy-theme-mode")
                 test.eq(decoded.login_path, "/login.html")
             end)
+
         end)
     end)
 end

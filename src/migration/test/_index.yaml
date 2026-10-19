@@ -161,3 +161,44 @@ entries:
       repository: wippy.migration:repository
       migration_registry: wippy.migration:registry
       test: wippy.test:test
+
+  - name: runner_alias_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-runner
+    source: file://runner_alias_test.lua
+    method: run
+    modules: [sql, funcs, env]
+    imports:
+      runner: wippy.migration:runner
+      repository: wippy.migration:repository
+      migration_registry: wippy.migration:registry
+      migration_api: wippy.migration:migration
+      test: wippy.test:test
+
+  - name: alias_mig_one
+    kind: function.lua
+    meta:
+      type: migration
+      target_db: app:db
+      description: Alias fixture with a string alias
+      timestamp: "2025-01-01T00:00:00Z"
+      alias: app.legacy:alias_mig_one
+    source: file://alias_mig_one.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
+
+  - name: alias_mig_two
+    kind: function.lua
+    meta:
+      type: migration
+      target_db: app:db
+      description: Alias fixture with an array of aliases
+      timestamp: "2025-01-02T00:00:00Z"
+      alias: [app.legacy:alias_mig_two_a, app.legacy:alias_mig_two_b]
+    source: file://alias_mig_two.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate

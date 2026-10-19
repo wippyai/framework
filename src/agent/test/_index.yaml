@@ -307,9 +307,11 @@ entries:
     modules:
       - env
       - time
+      - funcs
     imports:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
+      attention_guard: wippy.agent.traits:attention_guard
     method: run_tests
 
   # app:tools_delay_tool_test
@@ -391,3 +393,61 @@ entries:
       - time
       - ctx
     method: delayed_echo
+
+  - name: tools_authority_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: live_authority
+    source: file://tools/authority_test.lua
+    modules: [security, funcs]
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+      execution_authority: wippy.agent.tools:execution_authority
+    security:
+      actor: {id: authority.contract}
+      policies: [app.agent_authority:test_policy]
+    method: run_tests
+
+  - name: authority_provider_failure
+    kind: function.lua
+    source: file://tools/authority_test.lua
+    modules: [security, funcs]
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+      execution_authority: wippy.agent.tools:execution_authority
+    method: provider_failure
+  - name: tools_controls_runtime_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: agent-runtime
+    source: file://tools/controls_runtime_test.lua
+    imports:
+      test: wippy.test:test
+      tool_caller: wippy.agent.tools:caller
+    method: run_tests
+
+  - name: control_fixture
+    kind: function.lua
+    meta:
+      type: tool
+      input_schema: '{"type":"object"}'
+    source: file://tools/control_fixture.lua
+    modules: [ctx]
+    method: execute
+
+  - name: control_wrapper_apply
+    kind: function.lua
+    source: file://tools/control_fixture.lua
+    modules: [ctx]
+    method: apply
+
+  - name: control_wrapper_binding
+    kind: contract.binding
+    contracts:
+      - contract: wippy.agent:tool_wrapper
+        methods:
+          apply: app:control_wrapper_apply
