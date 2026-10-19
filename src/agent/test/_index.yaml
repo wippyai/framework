@@ -425,6 +425,7 @@ entries:
       type: test
       suite: agent-runtime
     source: file://tools/controls_runtime_test.lua
+    modules: [time]
     imports:
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
@@ -436,13 +437,13 @@ entries:
       type: tool
       input_schema: '{"type":"object"}'
     source: file://tools/control_fixture.lua
-    modules: [ctx]
+    modules: [ctx, time]
     method: execute
 
   - name: control_wrapper_apply
     kind: function.lua
     source: file://tools/control_fixture.lua
-    modules: [ctx]
+    modules: [ctx, time]
     method: apply
 
   - name: control_wrapper_binding

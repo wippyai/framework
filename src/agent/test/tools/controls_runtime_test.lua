@@ -1,5 +1,6 @@
 local test = require("test")
 local tool_caller = require("tool_caller")
+local time = require("time")
 
 local function call(id, args)
     return {id = id, name = "runtime_control", registry_id = "app:control_fixture",
@@ -19,6 +20,35 @@ end
 
 local function define_tests()
     describe("registered tool runtime controls", function()
+        it("retains a completed peer after cancelling a waiting parallel call", function()
+            local caller = tool_caller.new():set_strategy(tool_caller.STRATEGY.PARALLEL)
+            local cancel = channel.new()
+            local executor = {}
+            executor.with_context = function(self) return self end
+            executor.async = function(_, id)
+                local completed = id == "app:done"
+                local response = channel.new(1)
+                if completed then response:send(true); cancel:close() end
+                return {
+                    response = function() return response end,
+                    cancel = function() return not completed end,
+                    is_canceled = function() return not completed end,
+                    result = function()
+                        if completed then return { data = function() return "committed result" end } end
+                        return nil, "cancelled"
+                    end,
+                }
+            end
+            caller.executor = executor
+            caller.authority, caller.authority_error = nil, nil
+            local results = caller:execute({}, {
+                { call_id = "held", name = "held", registry_id = "app:held", args = {}, meta = {}, valid = true },
+                { call_id = "done", name = "done", registry_id = "app:done", args = {}, meta = {}, valid = true },
+            }, cancel)
+            test.is_true(results[1].cancelled)
+            test.eq(results[2].result, "committed result", "finished effects need their real outcome")
+            test.is_nil(results[2].cancelled)
+        end)
         for _, strategy in ipairs({tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL}) do
             it(strategy .. " preserves IDs, controls and successful peers across mixed failures", function()
                 local caller = tool_caller.new():set_strategy(strategy)
@@ -52,6 +82,78 @@ local function define_tests()
                 test.not_nil(results["missing-id"].error)
                 for id, result in pairs(results) do test.eq(result.tool_call.call_id, id) end
                 test.eq(caller:get_wrapper_observations()[1].content.reason, "tool_execution_failed")
+            end)
+
+            it(strategy .. " cancels in-flight calls when the cancel channel closes", function()
+                local caller = tool_caller.new():set_strategy(strategy)
+                caller:set_wrapper_context({host = {kind = "session", session_id = "runtime"}})
+                local validated, err = caller:validate({
+                    call("held-a", {message = "a", hold_ms = 30000}),
+                    call("held-b", {message = "b", hold_ms = 30000}),
+                })
+                test.is_nil(err)
+                local cancel = channel.new()
+                local done = channel.new(1)
+                coroutine.spawn(function() done:send(caller:execute({}, validated, cancel)) end)
+                time.sleep("50ms")
+
+                local started = time.now()
+                cancel:close()
+                local timer = time.timer("2s")
+                local selected = channel.select({done:case_receive(), timer:channel():case_receive()})
+                timer:stop()
+                test.eq(selected.channel, done, "Cancelled tool calls must return promptly")
+                test.is_true(time.now():sub(started):seconds() < 2)
+                local results = selected.value
+                test.eq(count(results), 2)
+                for _, id in ipairs({"held-a", "held-b"}) do
+                    test.is_true(results[id].cancelled)
+                    test.is_nil(results[id].result)
+                    test.eq(results[id].error, "Tool call was cancelled")
+                    test.eq(results[id].tool_call.call_id, id)
+                end
+            end)
+
+            it("" .. strategy .. " does not start tools when cancellation is already signaled", function()
+                local caller = tool_caller.new():set_strategy(strategy)
+                local starts = 0
+                local executor = {}
+                executor.with_context = function(self) return self end
+                executor.async = function()
+                    starts = starts + 1
+                    local response = channel.new(1)
+                    return {
+                        response = function() return response end,
+                        cancel = function() return true end,
+                        is_canceled = function() return true end,
+                        result = function() return nil, "cancelled" end,
+                    }
+                end
+                caller.executor = executor
+                caller.authority, caller.authority_error = nil, nil
+                local cancel = channel.new()
+                cancel:close()
+                local results = caller:execute({}, {
+                    a = { call_id = "a", name = "a", registry_id = "app:a", args = {}, meta = {}, valid = true },
+                    b = { call_id = "b", name = "b", registry_id = "app:b", args = {}, meta = {}, valid = true },
+                }, cancel)
+                test.is_true(results.a.cancelled)
+                test.is_true(results.b.cancelled)
+                test.eq(starts, 0, "a pre-cancelled batch must not launch a side-effecting call")
+            end)
+
+            it(strategy .. " completes calls normally when the cancel channel stays open", function()
+                local caller = tool_caller.new():set_strategy(strategy)
+                caller:set_wrapper_context({host = {kind = "session", session_id = "runtime"}})
+                local validated, err = caller:validate({call("open-id", {message = "kept"})})
+                test.is_nil(err)
+
+                local results = caller:execute({scope = "session"}, validated, channel.new())
+
+                test.is_nil(results["open-id"].error)
+                test.is_nil(results["open-id"].cancelled)
+                test.eq(results["open-id"].result.message, "kept")
+                test.eq(results["open-id"].result.scope, "session")
             end)
 
             it(strategy .. " collects detached behavior proposals and resets each execution", function()

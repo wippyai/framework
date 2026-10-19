@@ -225,6 +225,7 @@ local response, err = runner:step(builder, {
     disable_memory_recall = false,
     previous_memory_ids = { "mem_1", "mem_2" },
     stop_check = function() return stop_requested end,
+    cancel = turn_cancel,
     route = earlier_response.route_pin  -- later steps of a turn: stay on the model that answered
 })
 ```
@@ -232,6 +233,12 @@ local response, err = runner:step(builder, {
 `stop_check` runs after prompt functions and memory recall, immediately before
 provider generation. When it returns true, `step` returns `{ stopped = true }`
 without a provider request.
+
+`cancel` is a channel the host closes to cancel the in-flight provider call (see
+`llm.generate`). The step then returns `{ stopped = true, result = <text streamed
+before cancellation>, finish_reason = "cancelled" }`. The same channel passed as
+the third argument of `tool_caller:execute(context, validated_tools, cancel)`
+cancels pending tool calls; completed peers keep their results.
 
 ### Route Pinning
 

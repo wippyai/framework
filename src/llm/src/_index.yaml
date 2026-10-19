@@ -323,16 +323,17 @@ entries:
     source: file://llm.lua
     modules:
       - security
+      - uuid
       - time
       - logger
     imports:
       contract: contract
+      output: wippy.llm:output
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
       evaluation: wippy.llm:evaluation
       route: wippy.llm.util:route
       fallback: wippy.llm.util:fallback
-      output: wippy.llm:output
 
   - name: evaluation
     kind: library.lua
