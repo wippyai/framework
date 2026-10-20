@@ -2,7 +2,7 @@
 
 Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loads the Wippy frontend bundle from a CDN via iframe, with all configuration driven through `ns.requirement` entries.
 
-Facade 0.6.45 is published and selects Web Host 1.0.64 by default. Its public npm packages are available at 0.0.64. Facade accepts generic configuration contributors without depending on the modules that provide them. The npm engine change and Views fragment fix remain outside this release.
+Facade 0.6.46 selects Web Host 1.0.66 by default. Its public npm packages are 0.0.66. Facade accepts generic configuration contributors without depending on the modules that provide them, and its config and CSS variable handlers can call an application-bound `wippy.facade:resolver`. The npm engine change and Views fragment fix remain outside this release.
 
 ## How it works
 
@@ -80,7 +80,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.64` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.66` | CDN base URL for the Web Host frontend bundle |
 | `host_policy_mode` | `auto` | `auto` detects official CDN versions and preserves legacy policy for unknown hosts; `legacy` mirrors policy into `hostConfig`; `shared` keeps root-only policy for custom modern hosts. Invalid values fail the config endpoint. |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
@@ -135,7 +135,7 @@ These accept JSON strings for complex configuration:
 | `import_map` | `{}` | `importMap` | Import-map overrides merged with the Web Host map before module loading. Empty or invalid JSON keeps the Host map unchanged. Requires Web Host 1.0.63 or newer. |
 | `extra_scripts` | `[]` | `extraScripts` | External `<script>` tags injected into `index.html` before the Web Host bundle loads. See [Extra scripts](#extra-scripts). |
 
-The Facade pins Web Host 1.0.64 by default. A custom older Host keeps its existing Iconify and import-map defaults; these configuration options require Host 1.0.63 or newer. Import-map configuration accepts only `imports` and `scopes` with HTTP(S) or relative target URLs. An invalid map is rejected before module loading.
+The Facade pins Web Host 1.0.66 by default. A custom older Host keeps its existing Iconify and import-map defaults; these configuration options require Host 1.0.63 or newer. Import-map configuration accepts only `imports` and `scopes` with HTTP(S) or relative target URLs. An invalid map is rejected before module loading.
 
 ### Module configuration contributors
 
@@ -407,10 +407,10 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.64",
-  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.64/schemas/wippy-context-2.1.json",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.66",
+  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.66/schemas/wippy-context-2.1.json",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.64/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.66/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {

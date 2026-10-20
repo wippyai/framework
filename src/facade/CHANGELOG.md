@@ -5,6 +5,19 @@
 - Grant the config and CSS variable handlers only the resolver contract permissions they use.
 - Do not cache CSS variables because resolver output can vary by request.
 - Test the resolver permissions in each handler's combined security scope.
+- Target Web Host 1.0.66.
+
+## [0.6.45](https://github.com/wippyai/framework/compare/facade-v0.6.44...facade-v0.6.45) (2026-10-19)
+
+- Compose module settings through generic configuration contributors, so a module can supply Facade requirement values without a Facade dependency on that module.
+- Compose installed CDN source choices through Facade.
+- Remove the unused SQL module and keep the test runner compatible.
+- Target Web Host 1.0.64.
+
+## [0.6.44](https://github.com/wippyai/framework/compare/facade-v0.6.43...facade-v0.6.44) (2026-10-12)
+
+- Forward frontend providers and import maps through Facade with the `iconify` and `import_map` requirements, which need Web Host 1.0.63 or newer.
+- Target Web Host 1.0.63.
 
 ## [0.6.43](https://github.com/wippyai/framework/compare/facade-v0.6.42...facade-v0.6.43) (2026-10-09)
 
