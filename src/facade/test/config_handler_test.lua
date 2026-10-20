@@ -19,12 +19,12 @@ local REQ_NAMES: {string} = {
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts", "host_config_layout", "theme_mode",
     "theme_persist", "theme_storage_key",
-    "tanstack",
+    "tanstack", "iconify", "import_map",
 }
 
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
-        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.66",
         host_policy_mode = "auto",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
@@ -64,6 +64,8 @@ local function setup_registry(overrides: {[string]: string}?)
         theme_persist = "none",
         theme_storage_key = "@wippy-theme-mode",
         tanstack = "{}",
+        iconify = "{}",
+        import_map = "{}",
     }
 
     if overrides then
@@ -265,7 +267,7 @@ local function define_tests()
 
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
-                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.62")
+                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.66")
 
                 entry = registry.get(NS .. "fe_entry_path")
                 test.eq(entry.data.default, "/iframe.html")
@@ -362,6 +364,16 @@ local function define_tests()
                 test.is_false(decoded.content.refetchOnWindowFocus)
                 test.is_true(decoded.lists.refetchOnWindowFocus)
             end)
+
+            test.it("iconify and import_map requirements default to empty JSON objects", function()
+                local entry = registry.get(NS .. "iconify")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "{}")
+
+                entry = registry.get(NS .. "import_map")
+                test.not_nil(entry)
+                test.eq(entry.data.default, "{}")
+            end)
         end)
 
         test.describe("extra scripts", function()
@@ -439,8 +451,36 @@ local function define_tests()
                 local static_shell, shell_err = source_fs:readfile('/public/index.html')
                 test.is_nil(shell_err)
                 test.not_nil(static_shell)
+                local handler, handler_err = source_fs:readfile('/config_handler.lua')
+                test.is_nil(handler_err)
+                test.not_nil(handler)
                 test.not_nil((string.find(template, "attention: cfg.attention", 1, true)))
                 test.not_nil((string.find(static_shell, "attention: cfg.attention", 1, true)))
+                test.not_nil((string.find(template, "iconify: cfg.iconify", 1, true)))
+                test.not_nil((string.find(static_shell, "iconify: cfg.iconify", 1, true)))
+                test.not_nil((string.find(template, "importMap: cfg.importMap", 1, true)))
+                test.not_nil((string.find(static_shell, "importMap: cfg.importMap", 1, true)))
+                test.not_nil((string.find(template, "cfg.schema_url ||", 1, true)))
+                test.not_nil((string.find(static_shell, "cfg.schema_url ||", 1, true)))
+                test.not_nil((string.find(template, "window.WippyImportMapBootstrap.register(undefined, hostImportMap, cfg.importMap, document.baseURI)", 1, true)))
+                test.not_nil((string.find(static_shell, "window.WippyImportMapBootstrap.register(undefined, hostImportMap, cfg.importMap, document.baseURI)", 1, true)))
+                test.not_nil((string.find(template, "script.src = '/@wippy-fe/import-map-bootstrap.js'", 1, true)))
+                test.not_nil((string.find(static_shell, "script.src = '/@wippy-fe/import-map-bootstrap.js'", 1, true)))
+                test.not_nil((string.find(handler, 'local iconify = non_empty_map_or_nil(get_req_json_any("iconify"))', 1, true)))
+                test.not_nil((string.find(handler, 'local import_map = non_empty_map_or_nil(get_req_json_any("import_map"))', 1, true)))
+                test.not_nil((string.find(handler, "iconify = iconify,", 1, true)))
+                test.not_nil((string.find(handler, "importMap = import_map,", 1, true)))
+                local map_at = string.find(template, "window.WippyImportMapBootstrap.register(undefined, hostImportMap, cfg.importMap, document.baseURI)", 1, true)
+                local map_bootstrap_at = string.find(template, "await loadImportMapBootstrap()", 1, true)
+                local deferred_modules_at = string.find(template, "await Promise.all(deferredModuleScripts", 1, true)
+                local module_at = string.find(template, "await import(cfg.facade_url + moduleFile)", 1, true)
+                test.not_nil(map_at)
+                test.not_nil(map_bootstrap_at)
+                test.not_nil(deferred_modules_at)
+                test.not_nil(module_at)
+                test.is_true(map_bootstrap_at < map_at)
+                test.is_true(map_at < deferred_modules_at)
+                test.is_true(map_at < module_at)
                 for _, field in ipairs({ "allowSelectModel", "hideSessionSelector", "allowAdditionalTags" }) do
                     test.not_nil((string.find(template, field .. ": cfg." .. field, 1, true)))
                     test.not_nil((string.find(static_shell, field .. ": cfg." .. field, 1, true)))
@@ -449,9 +489,9 @@ local function define_tests()
 
             test.it("builds complete config object", function()
                 local config = {
-                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62",
+                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.66",
                     iframe_origin = "https://web-host.wippy.ai",
-                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.62/iframe.html?waitForCustomConfig",
+                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.66/iframe.html?waitForCustomConfig",
                     login_path = "/login.html",
                     env = {
                         APP_API_URL = "http://localhost:8085",
@@ -465,6 +505,17 @@ local function define_tests()
                     attention = {
                         enabled = true,
                         messageContext = { enabled = true, defaultInclude = false },
+                    },
+                    iconify = {
+                        providers = {
+                            [""] = {
+                                resources = { "https://icons.example.test" },
+                                path = "/webcomponents-test/iconify/",
+                            },
+                        },
+                    },
+                    importMap = {
+                        imports = { ["primevue/button"] = "https://host.example/button.js" },
                     },
                     themeMode = "auto",
                     themePersist = "cookie",
@@ -501,12 +552,15 @@ local function define_tests()
 
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
-                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.62")
+                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.66")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
                 test.is_true(decoded.attention.enabled)
                 test.is_true(decoded.attention.messageContext.enabled)
                 test.is_false(decoded.attention.messageContext.defaultInclude)
+                test.eq(decoded.iconify.providers[""].resources[1], "https://icons.example.test")
+                test.eq(decoded.iconify.providers[""].path, "/webcomponents-test/iconify/")
+                test.eq(decoded.importMap.imports["primevue/button"], "https://host.example/button.js")
                 test.is_nil(decoded.hostConfig.attention)
                 test.eq(decoded.hostConfig.session.type, "non-persistent")
                 test.is_true(decoded.hostConfig.showAdmin)

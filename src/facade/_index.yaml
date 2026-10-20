@@ -39,7 +39,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.62
+    default: https://web-host.wippy.ai/webcomponents-1.0.66
 
   - name: host_policy_mode
     kind: ns.requirement
@@ -120,6 +120,15 @@ entries:
       - entry: wippy.facade:app_icon
         path: .default
     default: "wippy:logo"
+
+  - name: iconify
+    kind: ns.requirement
+    meta:
+      description: Iconify provider configuration as JSON; an empty object keeps the Host defaults
+    targets:
+      - entry: wippy.facade:iconify
+        path: .default
+    default: "{}"
 
   # Feature flags
   - name: show_admin
@@ -439,6 +448,15 @@ entries:
         path: .default
     default: "{}"
 
+  - name: import_map
+    kind: ns.requirement
+    meta:
+      description: Import map overrides as JSON; empty or invalid JSON keeps the Web Host map
+    targets:
+      - entry: wippy.facade:import_map
+        path: .default
+    default: "{}"
+
   - name: extra_scripts
     kind: ns.requirement
     meta:
@@ -586,18 +604,46 @@ entries:
     method: handler
     imports:
       theming_helpers: wippy.facade:theming_helpers
+      config_contributors: wippy.facade:config_contributors
     modules:
       - http
       - registry
       - json
       - env
       - fs
+      - funcs
+      - logger
     security:
       actor:
         id: wippy.facade:config_handler
       policies:
         - wippy.facade:config_read_runtime
         - wippy.facade:content_fs_runtime
+        - wippy.facade:resolver_contract_read_runtime
+        - wippy.facade:resolver_implementation_open_runtime
+        - wippy.facade:resolver_method_call_runtime
+        - wippy.facade:config_contributor_discovery_runtime
+        - wippy.facade:config_contributor_read_runtime
+        - wippy.facade:config_contributor_call_runtime
+
+  - name: config_contributors
+    kind: library.lua
+    meta:
+      comment: Composes declared module configuration contributions
+    source: file://config_contributors.lua
+    imports:
+      theming_helpers: wippy.facade:theming_helpers
+      config_contributors_core: wippy.facade:config_contributors_core
+    modules:
+      - json
+      - registry
+      - funcs
+
+  - name: config_contributors_core
+    kind: library.lua
+    meta:
+      comment: Validates and composes configuration contributor inputs and results
+    source: file://config_contributors_core.lua
 
   - name: config_endpoint
     kind: http.endpoint
@@ -626,6 +672,9 @@ entries:
       policies:
         - wippy.facade:config_read_runtime
         - wippy.facade:content_fs_runtime
+        - wippy.facade:resolver_contract_read_runtime
+        - wippy.facade:resolver_implementation_open_runtime
+        - wippy.facade:resolver_method_call_runtime
 
   - name: css_vars_endpoint
     kind: http.endpoint
@@ -682,4 +731,73 @@ entries:
       resources: '*'
       actions:
         - fs.get
+      effect: allow
+
+  - name: resolver_contract_read_runtime
+    kind: security.policy
+    meta:
+      comment: Reads only the optional Facade resolver contract definition
+    policy:
+      resources:
+        - wippy.facade:resolver
+      actions:
+        - contract.get
+      effect: allow
+
+  - name: resolver_method_call_runtime
+    kind: security.policy
+    meta:
+      comment: Calls only the resolver contract's resolve method
+    policy:
+      resources: resolve
+      actions:
+        - contract.call
+      effect: allow
+
+  - name: resolver_implementation_open_runtime
+    kind: security.policy
+    meta:
+      comment: Opens a resolver implementation selected by the fixed Facade contract
+    policy:
+      resources: '*'
+      actions:
+        - contract.open
+      effect: allow
+
+  - name: config_contributor_call_runtime
+    kind: security.policy
+    meta:
+      comment: Calls only module-owned Facade configuration contributor functions
+    policy:
+      resources: '*'
+      actions:
+        - funcs.call
+      conditions:
+        - field: resource
+          operator: matches
+          value: '^[a-z][a-z0-9._-]*:facade_config_contribute$'
+      effect: allow
+
+  - name: config_contributor_read_runtime
+    kind: security.policy
+    meta:
+      comment: Reads only module-owned Facade configuration contributor entries
+    policy:
+      resources: '*'
+      actions:
+        - registry.get
+      conditions:
+        - field: resource
+          operator: matches
+          value: '^[a-z][a-z0-9._-]*:facade_config_contribute$'
+      effect: allow
+
+  - name: config_contributor_discovery_runtime
+    kind: security.policy
+    meta:
+      comment: Discovers declared Facade configuration contributor functions
+    policy:
+      resources: '*'
+      actions:
+        - registry.find
       effect: allow

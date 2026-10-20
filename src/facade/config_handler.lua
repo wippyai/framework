@@ -2,6 +2,7 @@ local http = require("http")
 local json = require("json")
 local env = require("env")
 local theming = require("theming_helpers")
+local config_contributors = require("config_contributors")
 
 local function derive_ws_url(api_url: string): string
     if api_url == "" then
@@ -64,6 +65,15 @@ local function handler()
     -- binds one, its overrides replace matching requirement values below; with no
     -- binding this is {} and every read falls back to the static ns.requirement.
     local overrides = theming.resolve_overrides()
+    -- Contributions apply only to the full config response. The CSS variables
+    -- endpoint continues to use the application resolver directly.
+    local contributor_diagnostics
+    overrides, contributor_diagnostics = config_contributors.compose_requirements(overrides)
+    for _, diagnostic in ipairs(contributor_diagnostics) do
+        require("logger"):named("facade.config_contributors"):warn("configuration contribution was skipped", {
+            diagnostic = diagnostic,
+        })
+    end
 
     local function get_req(name: string): string
         return theming.requirement(name, overrides)
@@ -230,6 +240,8 @@ local function handler()
     -- TanStack Query defaults: { default?, content?, lists? }. Passed through
     -- verbatim; the host validates/whitelists the option keys client-side.
     local tanstack = non_empty_map_or_nil(get_req_json_any("tanstack"))
+    local iconify = non_empty_map_or_nil(get_req_json_any("iconify"))
+    local import_map = non_empty_map_or_nil(get_req_json_any("import_map"))
 
     -- Clamp theme_mode to the valid enum; anything else (typo/misconfig) → auto,
     -- so a bad value can't ship a silently-ignored class to the client.
@@ -276,6 +288,8 @@ local function handler()
         allowAdditionalTags = additional_tags,
         axiosDefaults = axios_defaults,
         tanstack = tanstack,
+        iconify = iconify,
+        importMap = import_map,
         extraScripts = extra_scripts,
         theming = {
             global = global_scope,

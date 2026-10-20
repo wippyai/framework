@@ -21,7 +21,7 @@ local function handler()
     local css = theming.build_variables_css(vars)
 
     res:set_content_type("text/css")
-    res:set_header("Cache-Control", "public, max-age=3600")
+    res:set_header("Cache-Control", "no-store")
     res:set_status(http.STATUS.OK)
     res:write(css)
 end

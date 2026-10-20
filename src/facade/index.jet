@@ -56,6 +56,27 @@
         }
         var cfg = await res.json();
 
+        function loadImportMapBootstrap() {
+            if (window.WippyImportMapBootstrap && typeof window.WippyImportMapBootstrap.register === 'function') {
+                return Promise.resolve();
+            }
+            return new Promise(function (resolve, reject) {
+                var script = document.createElement('script');
+                script.src = '/@wippy-fe/import-map-bootstrap.js';
+                script.onload = function () {
+                    if (window.WippyImportMapBootstrap && typeof window.WippyImportMapBootstrap.register === 'function') {
+                        resolve();
+                    } else {
+                        reject(new Error('Wippy import-map bootstrap did not register'));
+                    }
+                };
+                script.onerror = function () {
+                    reject(new Error('Failed to load Wippy import-map bootstrap'));
+                };
+                document.head.appendChild(script);
+            });
+        }
+
         function goToLogin() {
             var loginPath = cfg.login_path || '/login.html';
             var paramName = cfg.login_redirect_param;
@@ -85,11 +106,13 @@
         try { token = JSON.parse(stored).token; }
         catch (e) { goToLogin(); return; }
 
+        var deferredModuleScripts = [];
         if (Array.isArray(cfg.extraScripts) && cfg.extraScripts.length) {
             await Promise.all(cfg.extraScripts.map(function (entry) {
                 return new Promise(function (resolve) {
                     var attrs = typeof entry === 'string' ? { src: entry } : (entry || {});
                     if (!attrs.src) { resolve(); return; }
+                    if (attrs.type === 'module') { deferredModuleScripts.push(attrs); resolve(); return; }
                     var s = document.createElement('script');
                     s.src = attrs.src;
                     if (attrs.type) s.type = attrs.type;
@@ -121,19 +144,37 @@
             cfg.routePrefix = cfg.env.APP_API_URL;
         }
 
-        // Inject import map BEFORE any module loading
+        // Use the Host validator and composer before any module loading.
+        await loadImportMapBootstrap();
+        var hostImportMap;
         try {
             var mapRes = await fetch(cfg.facade_url + '/import-map.json');
             if (mapRes.ok) {
-                var mapData = await mapRes.json();
-                var mapScript = document.createElement('script');
-                mapScript.type = 'importmap';
-                mapScript.textContent = JSON.stringify(mapData);
-                document.head.appendChild(mapScript);
+                hostImportMap = await mapRes.json();
             }
         } catch (e) {
             console.warn('Failed to load import map:', e);
         }
+        window.WippyImportMapBootstrap.register(undefined, hostImportMap, cfg.importMap, document.baseURI);
+
+        await Promise.all(deferredModuleScripts.map(function (attrs) {
+            return new Promise(function (resolve) {
+                var s = document.createElement('script');
+                s.src = attrs.src;
+                s.type = 'module';
+                if (attrs.async) s.async = true;
+                if (attrs.defer) s.defer = true;
+                if (attrs.noModule) s.noModule = true;
+                if (attrs.crossorigin) s.crossOrigin = attrs.crossorigin;
+                if (attrs.integrity) s.integrity = attrs.integrity;
+                s.onload = resolve;
+                s.onerror = function () {
+                    console.warn('Failed to load extra module script:', attrs.src);
+                    resolve();
+                };
+                document.head.appendChild(s);
+            });
+        }));
 
         // Now safe to load modules — import map is already in the DOM.
         // `cfg.module_file` is "/module.js" (compat) or "/managed-layout.js"
@@ -169,6 +210,8 @@
             hideSessionSelector: cfg.hideSessionSelector,
             allowAdditionalTags: cfg.allowAdditionalTags,
             axiosDefaults: cfg.axiosDefaults,
+            iconify: cfg.iconify,
+            importMap: cfg.importMap,
             theming: cfg.theming,
             hostConfig: cfg.hostConfig,
             context: { resourceId: '', resourceType: 'page' },
