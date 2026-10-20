@@ -619,6 +619,9 @@ entries:
       policies:
         - wippy.facade:config_read_runtime
         - wippy.facade:content_fs_runtime
+        - wippy.facade:resolver_contract_read_runtime
+        - wippy.facade:resolver_implementation_open_runtime
+        - wippy.facade:resolver_method_call_runtime
         - wippy.facade:config_contributor_discovery_runtime
         - wippy.facade:config_contributor_read_runtime
         - wippy.facade:config_contributor_call_runtime
@@ -669,6 +672,9 @@ entries:
       policies:
         - wippy.facade:config_read_runtime
         - wippy.facade:content_fs_runtime
+        - wippy.facade:resolver_contract_read_runtime
+        - wippy.facade:resolver_implementation_open_runtime
+        - wippy.facade:resolver_method_call_runtime
 
   - name: css_vars_endpoint
     kind: http.endpoint
@@ -725,6 +731,37 @@ entries:
       resources: '*'
       actions:
         - fs.get
+      effect: allow
+
+  - name: resolver_contract_read_runtime
+    kind: security.policy
+    meta:
+      comment: Reads only the optional Facade resolver contract definition
+    policy:
+      resources:
+        - wippy.facade:resolver
+      actions:
+        - contract.get
+      effect: allow
+
+  - name: resolver_method_call_runtime
+    kind: security.policy
+    meta:
+      comment: Calls only the resolver contract's resolve method
+    policy:
+      resources: resolve
+      actions:
+        - contract.call
+      effect: allow
+
+  - name: resolver_implementation_open_runtime
+    kind: security.policy
+    meta:
+      comment: Opens a resolver implementation selected by the fixed Facade contract
+    policy:
+      resources: '*'
+      actions:
+        - contract.open
       effect: allow
 
   - name: config_contributor_call_runtime

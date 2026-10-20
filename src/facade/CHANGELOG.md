@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.46](https://github.com/wippyai/framework/compare/facade-v0.6.45...facade-v0.6.46) (2026-10-20)
+
+- Grant the config and CSS variable handlers only the resolver contract permissions they use.
+- Do not cache CSS variables because resolver output can vary by request.
+- Test the resolver permissions in each handler's combined security scope.
+
 ## [0.6.43](https://github.com/wippyai/framework/compare/facade-v0.6.42...facade-v0.6.43) (2026-10-09)
 
 - Target Web Host 1.0.62 and forward model selection, session selector visibility, and sanitizer tags as shared top-level policy. Existing requirement names stay unchanged.

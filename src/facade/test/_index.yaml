@@ -48,6 +48,7 @@ entries:
       test: wippy.test:test
     modules:
       - security
+      - registry
 
   - name: config_contributors_test
     kind: function.lua
