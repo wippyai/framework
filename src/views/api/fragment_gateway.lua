@@ -65,24 +65,25 @@ end
 
 -- Whether the Web Host serves the import-map bootstrap helper (Host 1.0.63+).
 -- Decided by asking the Host for the file, not by reading a version out of the
--- URL. A transport error is not memoized and falls back to the static map.
+-- URL. Only a positive answer is memoized: each pool worker keeps its own cache,
+-- and a remembered 4xx (a CDN path answers 403 until it is deployed) would keep
+-- that worker on the static map after the Host appears. A miss falls back to
+-- the static map and is asked again on the next mount.
 local _bootstrap_cache: {[string]: boolean} = {}
 local function host_has_bootstrap(fbase: string): boolean
     if fbase == "" then
         return false
     end
-    local cached = _bootstrap_cache[fbase]
-    if cached ~= nil then
-        return cached
+    if _bootstrap_cache[fbase] then
+        return true
     end
     local resp, err = http_client.get(fbase .. "/@wippy-fe/import-map-bootstrap.js", { timeout = 10 })
     if err or not resp then
         return false
     end
-    local status = resp.status_code or 0
-    local present = status == 200 and resp.body ~= nil and resp.body ~= ""
-    if present or (status >= 400 and status < 500) then
-        _bootstrap_cache[fbase] = present
+    local present = (resp.status_code or 0) == 200 and resp.body ~= nil and resp.body ~= ""
+    if present then
+        _bootstrap_cache[fbase] = true
     end
     return present
 end
