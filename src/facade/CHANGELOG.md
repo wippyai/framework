@@ -6,6 +6,7 @@
 - Do not cache CSS variables because resolver output can vary by request.
 - Test the resolver permissions in each handler's combined security scope.
 - Target Web Host 1.0.66.
+- Vendor `loading.js` and the source maps of both vendored scripts from Web Host 1.0.66. `make sync` now also copies the `.map` files, so each map matches its script.
 
 ## [0.6.45](https://github.com/wippyai/framework/compare/facade-v0.6.44...facade-v0.6.45) (2026-10-19)
 

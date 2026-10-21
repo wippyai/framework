@@ -9,7 +9,7 @@
 WEB_HOST_CDN = https://web-host.wippy.ai/webcomponents-1.0.66
 
 # Files to sync from CDN into public/@wippy-fe/
-CDN_FILES = loading.js import-map-bootstrap.js
+CDN_FILES = loading.js loading.js.map import-map-bootstrap.js import-map-bootstrap.js.map
 
 .PHONY: sync help
 
