@@ -975,6 +975,7 @@ entries:
     source: file://openai/mapper_test.lua
     modules:
       - json
+      - registry
     imports:
       openai_mapper: wippy.llm.openai:mapper
       output: wippy.llm:output
@@ -1194,6 +1195,7 @@ entries:
     source: file://openai_compat/mapper_test.lua
     modules:
       - json
+      - registry
     imports:
       openai_mapper: wippy.llm.openai_compat:mapper
       output: wippy.llm:output

@@ -897,6 +897,20 @@ local function define_tests()
         end)
 
         describe("Delegate Handling", function()
+            it("keeps malformed delegate arguments in the tool error path", function()
+                mock_llm.generate = function()
+                    return { finish_reason = "tool_call", tool_calls = {
+                        { id = "bad", name = "to_data_specialist", arguments = '{"task":',
+                            raw_arguments = '{"task":', arguments_error = "unexpected end of JSON input" }
+                    } }
+                end
+                local result = agent.new(compiled_spec_with_delegates):step(mock_prompt.new())
+                test.is_nil(result.delegate_calls)
+                test.eq(#result.tool_calls, 1)
+                test.eq(result.tool_calls[1].raw_arguments, '{"task":')
+                test.eq(result.tool_calls[1].arguments_error, "unexpected end of JSON input")
+            end)
+
             it("should handle delegate calls correctly", function()
                 local test_agent = agent.new(compiled_spec_with_delegates)
                 local prompt_builder = mock_prompt.new()
@@ -1092,6 +1106,27 @@ local function define_tests()
         end)
 
         describe("Token Usage Tracking", function()
+            it("forwards each step context to the LLM without retaining it", function()
+                local seen = {}
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen[#seen + 1] = options
+                        return { result = "done", tokens = { prompt_tokens = 10, completion_tokens = 5 },
+                            finish_reason = "stop" }
+                    end
+                }
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                for _, options in ipairs({ { context_id = "first-context" }, { context_id = "second-context" }, {} }) do
+                    local result, err = runner:step(builder, options)
+                    test.is_nil(err)
+                    test.not_nil(result)
+                end
+                test.eq(seen[1].context_id, "first-context")
+                test.eq(seen[2].context_id, "second-context")
+                test.is_nil(seen[3].context_id)
+            end)
+
             it("should track token usage correctly", function()
                 local test_agent = agent.new(basic_compiled_spec)
                 local prompt_builder = mock_prompt.new()

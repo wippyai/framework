@@ -509,6 +509,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     end
 
     local options = {
+        context_id = runtime_options.context_id,
         model = self.model,
         max_tokens = self.max_tokens,
         temperature = self.temperature
@@ -670,7 +671,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
         for _, tool_call in ipairs(response.tool_calls) do
             local tool_info = self.tools[tool_call.name]
-            if tool_info and tool_info.agent_id then
+            if tool_info and tool_info.agent_id and not tool_call.arguments_error then
                 local delegate_call = {
                     id = tool_call.id,
                     name = tool_call.name,
