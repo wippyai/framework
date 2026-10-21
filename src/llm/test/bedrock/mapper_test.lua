@@ -4,6 +4,72 @@ local json = require("json")
 
 local function define_tests()
     describe("Bedrock Converse Mapper", function()
+
+        describe("Payment and quota classification", function()
+            it("classifies HTTP 402 as non-retryable payment_required", function()
+                for _, message in ipairs({ "Payment required", "Network quota unavailable", "Maximum allowed tokens" }) do
+                    local input = { status_code = 402, message = message }
+                    local kind, returned_message, details = mapper.classify_error(input)
+                    test.eq(kind, "payment_required")
+                    test.eq(returned_message, message)
+                    test.eq(details.status_code, 402)
+                    local err = output.errors.generate({ _provider_id = "bedrock" })
+                        :classifier(mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), false)
+                    test.eq(err:message(), message)
+                    test.eq(err:details().error_type, "payment_required")
+                end
+            end)
+
+            it("classifies machine-readable exhausted quota on HTTP 429 as non-retryable", function()
+                for _, field in ipairs({ "code", "type" }) do
+                    local input = { status_code = 429, message = "Quota exhausted" }
+                    input.error = { [field] = "insufficient_quota", message = input.message }
+                    local kind, message, details = mapper.classify_error(input)
+                    test.eq(kind, "payment_required")
+                    test.eq(message, input.message)
+                    test.eq(details.status_code, 429)
+                    local err = output.errors.generate({ _provider_id = "bedrock" })
+                        :classifier(mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), false)
+                    test.eq(err:details().error_type, "payment_required")
+                end
+            end)
+
+            it("keeps ordinary and unknown HTTP 429 errors retryable", function()
+                for _, input in ipairs({
+                    { status_code = 429, message = "Rate limit exceeded" },
+                    { status_code = 429, message = "Quota exceeded" },
+                    { status_code = 429, message = "Rate limited", code = "unknown_quota_code" },
+                }) do
+                    local kind, message = mapper.classify_error(input)
+                    test.eq(kind, "rate_limit_exceeded")
+                    test.eq(message, input.message)
+                    local err = output.errors.generate({ _provider_id = "bedrock" })
+                        :classifier(mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), true)
+                end
+            end)
+
+            it("keeps other HTTP status classifications with quota metadata", function()
+                for _, case in ipairs({
+                    { status = 400, kind = "invalid_request" },
+                    { status = 401, kind = "authentication_error" },
+                    { status = 403, kind = "authentication_error" },
+                    { status = 404, kind = "model_error" },
+                    { status = 500, kind = "server_error" },
+                    { status = 503, kind = "server_error" },
+                    { status = 418, kind = "server_error" },
+                }) do
+                    local kind, message = mapper.classify_error({
+                        status_code = case.status, message = "Provider error",
+                        code = "insufficient_quota", type = "insufficient_quota",
+                    })
+                    test.eq(kind, case.kind)
+                    test.eq(message, "Provider error")
+                end
+            end)
+        end)
         it("preserves explicit failure status in tool results", function()
             for _, failed in ipairs({ false, true }) do
                 local mapped = mapper.map_messages({{ role = "function_result", name = "lookup",

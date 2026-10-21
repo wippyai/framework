@@ -38,7 +38,12 @@ local function filter_tool_schema(schema)
     return recursive_filter(schema)
 end
 
-local function map_error_type(status_code, message)
+local function map_error_type(status_code, message, code, provider_type)
+    if status_code == 402 or (status_code == 429
+        and (code == "insufficient_quota" or provider_type == "insufficient_quota")) then
+        return output.ERROR_TYPE.PAYMENT_REQUIRED
+    end
+
     local error_type = output.ERROR_TYPE.SERVER_ERROR
 
     if status_code == 400 then
@@ -423,7 +428,7 @@ function mapper.classify_error(google_error: any?): (string, string, table?)
     end
 
     local message = google_error.message or "Google API error"
-    local kind = map_error_type(google_error.status_code, message)
+    local kind = map_error_type(google_error.status_code, message, google_error.code, google_error.type)
 
     local details = {
         status_code = google_error.status_code,

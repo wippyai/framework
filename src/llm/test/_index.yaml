@@ -210,6 +210,8 @@ entries:
       llm: wippy.llm:llm
       models: wippy.llm.discovery:models
       decisions_handler: wippy.llm.openai:evaluate
+      openai_mapper: wippy.llm.openai:mapper
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 

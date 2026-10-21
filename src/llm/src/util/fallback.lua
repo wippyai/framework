@@ -16,6 +16,7 @@ fallback.MIN_FALLBACK_BUDGET_MS = 5000
 
 local DEFAULT_FALLBACK_ON: {string} = {
     "rate_limit_exceeded",
+    "payment_required",
     "server_error",
     "timeout_error",
     "network_error",
@@ -32,6 +33,7 @@ end
 
 local TRANSIENT = fallback.set_of({
     "rate_limit_exceeded",
+    "payment_required",
     "server_error",
     "timeout_error",
     "network_error",

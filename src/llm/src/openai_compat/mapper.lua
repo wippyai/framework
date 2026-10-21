@@ -15,7 +15,12 @@ openai_mapper.CAPABILITY = {
 }
 
 -- Error type mapping from HTTP status codes and message content
-local function map_error_type(status_code, message)
+local function map_error_type(status_code, message, code, provider_type)
+    if status_code == 402 or (status_code == 429
+        and (code == "insufficient_quota" or provider_type == "insufficient_quota")) then
+        return output.ERROR_TYPE.PAYMENT_REQUIRED
+    end
+
     local error_type = output.ERROR_TYPE.SERVER_ERROR
 
     if status_code == 400 then
@@ -619,7 +624,7 @@ function openai_mapper.classify_error(openai_error: any?): (string, string, tabl
     end
 
     local message = openai_error.message or "OpenAI-compatible API error"
-    local kind    = map_error_type(openai_error.status_code, message)
+    local kind    = map_error_type(openai_error.status_code, message, openai_error.code, openai_error.type)
 
     local details = {
         status_code = openai_error.status_code,

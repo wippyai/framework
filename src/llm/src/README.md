@@ -527,6 +527,7 @@ llm.ERROR_TYPE = {
     INVALID_REQUEST = "invalid_request",
     AUTHENTICATION = "authentication_error",
     RATE_LIMIT = "rate_limit_exceeded",
+    PAYMENT_REQUIRED = "payment_required",
     SERVER_ERROR = "server_error",
     CONTEXT_LENGTH = "context_length_exceeded",
     CONTENT_FILTER = "content_filtered",
@@ -537,6 +538,8 @@ llm.ERROR_TYPE = {
 ```
 
 These are the types drivers report (`output.ERROR_TYPE`). A driver error keeps its type in `details.error_type`, which fallback decisions use; the stdlib error kind alone cannot tell `context_length_exceeded`, `content_filtered` and `invalid_request` apart.
+
+HTTP 402 and HTTP 429 with an `insufficient_quota` machine code or type report non-retryable `payment_required` errors. These errors still advance to the next fallback candidate by default. Ordinary HTTP 429 responses remain retryable `rate_limit_exceeded` errors; message text alone does not identify exhausted quota.
 
 ## Registering Models
 
@@ -660,14 +663,14 @@ An exact model name does not acquire fallback models from its class membership. 
       provider_model: us.anthropic.claude-sonnet-4-6
       priority: 50
   fallback: [gemini-pro, class:fast]          # other models, in order
-  fallback_on: [rate_limit_exceeded, server_error, timeout_error, network_error]
+  fallback_on: [rate_limit_exceeded, payment_required, server_error, timeout_error, network_error]
 ```
 
 Whether a failure moves the call on depends on its error type and on the candidate:
 
 | Error type | First candidate | Later candidates |
 |---|---|---|
-| `rate_limit_exceeded`, `server_error`, `timeout_error`, `network_error` | next (the default `fallback_on`) | next |
+| `rate_limit_exceeded`, `payment_required`, `server_error`, `timeout_error`, `network_error` | next (the default `fallback_on`) | next |
 | `authentication_error`, `model_error`, `context_length_exceeded` | next only when listed in `fallback_on` | next |
 | `invalid_request`, `content_filtered` | next only when listed in `fallback_on` | stop |
 | an error without a type | stop | stop |
