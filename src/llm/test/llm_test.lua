@@ -471,6 +471,35 @@ local function define_tests()
                 test.eq(records[1].options.metadata.estimated_prompt_tokens, details.estimated_prompt_tokens)
             end)
 
+            it("does not charge internal message metadata against the context window", function()
+                local metadata = { note = string.rep("x", 1600), preserve_position = true }
+                local messages = { { role = "user", content = "hi", metadata = metadata } }
+                local result, err = llm.generate(messages, { model = "small", max_tokens = 40 })
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(#calls, 1)
+                test.eq(calls[1].messages[1].metadata, metadata)
+            end)
+
+            it("does not count cache-marker identities as model input", function()
+                local marker = { role = "cache_marker", marker_id = string.rep("x", 1600) }
+                local result, err = llm.generate({ { role = "user", content = "hi" }, marker }, { model = "small", max_tokens = 40 })
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(#calls, 1)
+                test.eq(calls[1].messages[2], marker)
+            end)
+
+            it("counts reusable thinking content carried in message metadata", function()
+                local result, err, details = llm.generate({ { role = "assistant", content = "hi",
+                    metadata = { thinking_blocks = { { type = "thinking", thinking = string.rep("x", 1600) } } } } },
+                    { model = "small", max_tokens = 40 })
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(details.error_type, "context_window")
+                test.eq(#calls, 0)
+            end)
+
             it("reserves the effective output budget and counts tool schemas", function()
                 card.max_tokens = 150
                 local result, err, details = llm.generate("hi", { model = "small", max_tokens = 40,

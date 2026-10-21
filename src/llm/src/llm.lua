@@ -10,6 +10,7 @@ local uuid = require("uuid")
 local time = require("time")
 local logger = require("logger")
 local json = require("json")
+local prompt = require("prompt")
 
 type Message = {
     role: string,
@@ -790,8 +791,24 @@ end
 -- The same four-bytes-per-token approximation used by compression and the
 -- provider mappers. Estimates describe attempted input, never billable usage.
 local function estimate_prompt(contract_args)
+    local messages = nil
+    if contract_args.messages then
+        messages = {}
+        for _, message in ipairs(contract_args.messages) do
+            if message.role ~= prompt.ROLE.CACHE_MARKER then
+                local input = {}
+                for key, value in pairs(message) do
+                    if key ~= "metadata" then input[key] = value end
+                end
+                if type(message.metadata) == "table" and message.metadata.thinking_blocks then
+                    input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
+                end
+                table.insert(messages, input)
+            end
+        end
+    end
     local encoded, err = json.encode({
-        messages = contract_args.messages,
+        messages = messages,
         tools = contract_args.tools,
         schema = contract_args.schema,
         input = contract_args.input,

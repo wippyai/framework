@@ -790,7 +790,9 @@ including tools or the output schema, before dispatch. Admission uses the select
 model card's `max_tokens` context window and reserves the effective output limit.
 Cards without a context window and direct provider calls retain their existing
 behavior. Estimates use the existing four-bytes-per-token approximation; they are
-not provider tokenizer counts.
+not provider tokenizer counts. Message metadata used by the host and cache marker
+identities do not count; reusable thinking blocks remain part of the estimate.
+The outgoing messages retain all their fields.
 
 `generate` accepts an optional `checkpoint` with `token_threshold` and a
 `compact(info)` callback. When the estimate crosses that threshold or the context
