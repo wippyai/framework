@@ -651,6 +651,28 @@ local function define_tests()
             end)
         end)
 
+        it("rejects decoded argument failures before schema lookup in both strategies", function()
+            for _, strategy in ipairs({ tool_caller.STRATEGY.SEQUENTIAL, tool_caller.STRATEGY.PARALLEL }) do
+                execution_contexts = {}
+                local caller = tool_caller.new():set_strategy(strategy)
+                local validated, err = caller:validate({
+                    { id = "bad", name = "calculator", registry_id = "test:calculator",
+                        arguments = '{"value":', raw_arguments = '{"value":', arguments_error = "unexpected end of JSON input" },
+                    { id = "unknown", name = "unknown", registry_id = "test:unknown",
+                        arguments = '', raw_arguments = '', arguments_error = "unexpected end of JSON input" },
+                    { id = "good", name = "calculator", registry_id = "test:calculator", arguments = {} }
+                })
+                test.is_nil(err)
+                test.eq(validated.bad.valid, false)
+                test.eq(validated.unknown.valid, false)
+                local results = caller:execute({}, validated)
+                test.eq(results.bad.error, "Failed to parse arguments: unexpected end of JSON input")
+                test.eq(results.unknown.error, results.bad.error)
+                test.eq(results.good.result, 42)
+                test.eq(#execution_contexts, 1, "only the valid call reaches the executor")
+            end
+        end)
+
         describe("Validation", function()
             it("rejects empty IDs and duplicates introduced by a before-execute wrapper", function()
                 local caller = tool_caller.new()

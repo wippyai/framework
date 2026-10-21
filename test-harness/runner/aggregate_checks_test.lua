@@ -3,6 +3,7 @@ local exec = require("exec")
 local fs = require("fs")
 local env = require("env")
 local time = require("time")
+local registry = require("registry")
 
 local function read_all(stream)
     local chunks = {}
@@ -18,6 +19,8 @@ end
 local function run_check(target, message, exit_code)
     local root = env.get("WIPPY_FRAMEWORK_ROOT")
     test.not_nil(root, "WIPPY_FRAMEWORK_ROOT must select the real Framework checkout")
+    local fixture_entry, fixture_err = registry.get("app:aggregate_fixtures")
+    test.not_nil(fixture_entry, tostring(fixture_err))
     local files = fs.get("app:aggregate_fixtures")
     local directory = "check-" .. tostring(time.now():unix_nano())
     for _, path in ipairs({directory, directory .. "/src", directory .. "/src/fixture",
@@ -32,7 +35,7 @@ local function run_check(target, message, exit_code)
     local executor, executor_err = exec.get("app:build_executor")
     test.not_nil(executor, tostring(executor_err))
     local command = "make --no-print-directory -f " .. string.format("%q", root .. "/Makefile")
-        .. " -C " .. string.format("%q", "/tmp/wippy-aggregate-checks/" .. directory)
+        .. " -C " .. string.format("%q", fixture_entry.data.directory .. "/" .. directory)
         .. " " .. target .. " TEST_MODULES=fixture"
     local proc, create_err = executor:exec(command, {env = {MAKEFLAGS = ""}})
     test.not_nil(proc, tostring(create_err))

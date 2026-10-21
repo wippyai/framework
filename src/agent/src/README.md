@@ -219,6 +219,7 @@ local builder = prompt.new()
     :add_user("What's the weather in Tokyo?")
 
 local response, err = runner:step(builder, {
+    context_id = "abc123",
     context = { session_id = "abc123" },
     stream_target = { reply_to = process.self(), topic = "stream" },
     tool_call = "auto",
@@ -229,6 +230,9 @@ local response, err = runner:step(builder, {
     route = earlier_response.route_pin  -- later steps of a turn: stay on the model that answered
 })
 ```
+
+`context_id` is optional and passes through to LLM usage tracking. It identifies the
+conversation independently of the agent's prompt and tool execution `context`.
 
 `stop_check` runs after prompt functions and memory recall, immediately before
 provider generation. When it returns true, `step` returns `{ stopped = true }`

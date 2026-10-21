@@ -202,3 +202,15 @@ entries:
     imports:
       migration: wippy.migration:migration
     method: migrate
+
+  - name: repository_schema_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-repository
+    source: file://repository_schema_test.lua
+    method: run
+    modules: [sql, registry, env, uuid]
+    imports:
+      repository: wippy.migration:repository
+      test: wippy.test:test

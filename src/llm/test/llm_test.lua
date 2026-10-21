@@ -3,6 +3,8 @@ local discovery_models = require("models")
 local decisions_handler = require("decisions_handler")
 local json = require("json")
 local security = require("security")
+local openai_mapper = require("openai_mapper")
+local output = require("output")
 
 local function define_tests()
     describe("LLM Library Unit Tests", function()
@@ -414,6 +416,7 @@ local function define_tests()
                 track_usage = function(self, model_id, prompt_tokens, completion_tokens, thinking_tokens,
                                        cache_read_tokens, cache_write_tokens, options)
                     self.last_model_id = model_id
+                    self.last_options = options
                     return "usage_" .. tostring(math.random(1000, 9999))
                 end
             }
@@ -1284,6 +1287,31 @@ local function define_tests()
         end)
 
         describe("Usage Tracking", function()
+            it("forwards explicit context with timestamp and metadata to the tracker", function()
+                local metadata = { source = "test" }
+                local usage_id, err = llm.track_usage({ tokens = { prompt_tokens = 10 } }, "gpt-4o", {
+                    context_id = "session-context", timestamp = 1234, metadata = metadata
+                })
+                test.is_nil(err)
+                test.not_nil(usage_id)
+                test.eq(mock_usage_tracker.last_options.context_id, "session-context")
+                test.eq(mock_usage_tracker.last_options.timestamp, 1234)
+                test.eq(mock_usage_tracker.last_options.metadata, metadata)
+            end)
+
+            it("leaves an omitted context unset for ambient usage tracking", function()
+                local _, err = llm.track_usage({ tokens = { prompt_tokens = 10 } }, "gpt-4o")
+                test.is_nil(err)
+                test.is_nil(mock_usage_tracker.last_options.context_id)
+            end)
+
+            it("correlates generated usage with the supplied context", function()
+                local result, err = llm.generate("Hello", { model = "gpt-4o", context_id = "session-context" })
+                test.is_nil(err)
+                test.not_nil(result.usage_record)
+                test.eq(mock_usage_tracker.last_options.context_id, "session-context")
+            end)
+
             it("should track usage when tracker is available", function()
                 local response = {
                     tokens = {
@@ -2044,6 +2072,55 @@ local function define_tests()
             end)
 
             describe("switching", function()
+                for _, case in ipairs({
+                    { name = "HTTP 402", input = { status_code = 402, message = "Payment required" },
+                        error_type = "payment_required", retryable = false },
+                    { name = "quota HTTP 429", input = { status_code = 429, code = "insufficient_quota", message = "Quota exhausted" },
+                        error_type = "payment_required", retryable = false },
+                    { name = "ordinary HTTP 429", input = { status_code = 429, message = "Rate limited" },
+                        error_type = "rate_limit_exceeded", retryable = true },
+                }) do
+                    it("switches from the primary on " .. case.name .. " with default fallback settings", function()
+                        cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                        cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                        local provider_error = output.errors.generate({ _provider_id = "p.a" })
+                            :classifier(openai_mapper.classify_error):from(case.input):build()
+                        test.eq(provider_error:retryable(), case.retryable)
+                        behaviour["a-1"] = function() return nil, provider_error end
+
+                        local result, err = llm.generate("Hi", { model = "primary" })
+
+                        test.is_nil(err)
+                        test.eq(result.result, "from b-1")
+                        test.eq(called_models(), "a-1,b-1")
+                        test.eq(result.metadata.route.model, "backup")
+                        test.eq(#result.metadata.fallbacks, 1)
+                        test.eq(result.metadata.fallbacks[1].error_type, case.error_type)
+                        test.eq(result.metadata.fallbacks[1].message, case.input.message)
+                    end)
+
+                    it("moves past a fallback candidate on " .. case.name, function()
+                        cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup", "third" } })
+                        cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                        cards.third = card("third", { { id = "p.c", provider_model = "c-1" } })
+                        behaviour["a-1"] = fail_with("server_error")
+                        local provider_error = output.errors.generate({ _provider_id = "p.b" })
+                            :classifier(openai_mapper.classify_error):from(case.input):build()
+                        test.eq(provider_error:retryable(), case.retryable)
+                        behaviour["b-1"] = function() return nil, provider_error end
+
+                        local result, err = llm.generate("Hi", { model = "primary" })
+
+                        test.is_nil(err)
+                        test.eq(result.result, "from c-1")
+                        test.eq(called_models(), "a-1,b-1,c-1")
+                        test.eq(result.metadata.route.model, "third")
+                        test.eq(#result.metadata.fallbacks, 2)
+                        test.eq(result.metadata.fallbacks[2].error_type, case.error_type)
+                        test.eq(result.metadata.fallbacks[2].message, case.input.message)
+                    end)
+                end
+
                 it("answers from the primary and reports the route", function()
                     cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
 
@@ -2064,9 +2141,10 @@ local function define_tests()
                     cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
                     behaviour["a-1"] = fail_with("rate_limit_exceeded")
 
-                    local result, err = llm.generate("Hi", { model = "primary" })
+                    local result, err = llm.generate("Hi", { model = "primary", context_id = "session-context" })
 
                     test.is_nil(err)
+                    test.eq(mock_usage_tracker.last_options.context_id, "session-context")
                     test.eq(result.result, "from b-1")
                     test.eq(called_models(), "a-1,b-1")
                     test.eq(result.metadata.route.model, "backup")

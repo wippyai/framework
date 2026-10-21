@@ -1,10 +1,77 @@
 local openai_mapper = require("openai_mapper")
 local output = require("output")
 local json = require("json")
+local registry = require("registry")
 local test = require("test")
 
 local function define_tests()
     describe("OpenAI Mapper", function()
+
+        describe("Payment and quota classification", function()
+            it("classifies HTTP 402 as non-retryable payment_required", function()
+                for _, message in ipairs({ "Payment required", "Network quota unavailable", "Maximum allowed tokens" }) do
+                    local input = { status_code = 402, message = message }
+                    local kind, returned_message, details = openai_mapper.classify_error(input)
+                    test.eq(kind, "payment_required")
+                    test.eq(returned_message, message)
+                    test.eq(details.status_code, 402)
+                    local err = output.errors.generate({ _provider_id = "openai_compat" })
+                        :classifier(openai_mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), false)
+                    test.eq(err:message(), message)
+                    test.eq(err:details().error_type, "payment_required")
+                end
+            end)
+
+            it("classifies machine-readable exhausted quota on HTTP 429 as non-retryable", function()
+                for _, field in ipairs({ "code", "type" }) do
+                    local input = { status_code = 429, message = "Quota exhausted" }
+                    input[field] = "insufficient_quota"
+                    local kind, message, details = openai_mapper.classify_error(input)
+                    test.eq(kind, "payment_required")
+                    test.eq(message, input.message)
+                    test.eq(details.status_code, 429)
+                    local err = output.errors.generate({ _provider_id = "openai_compat" })
+                        :classifier(openai_mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), false)
+                    test.eq(err:details().error_type, "payment_required")
+                end
+            end)
+
+            it("keeps ordinary and unknown HTTP 429 errors retryable", function()
+                for _, input in ipairs({
+                    { status_code = 429, message = "Rate limit exceeded" },
+                    { status_code = 429, message = "Quota exceeded" },
+                    { status_code = 429, message = "Rate limited", code = "unknown_quota_code" },
+                }) do
+                    local kind, message = openai_mapper.classify_error(input)
+                    test.eq(kind, "rate_limit_exceeded")
+                    test.eq(message, input.message)
+                    local err = output.errors.generate({ _provider_id = "openai_compat" })
+                        :classifier(openai_mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), true)
+                end
+            end)
+
+            it("keeps other HTTP status classifications with quota metadata", function()
+                for _, case in ipairs({
+                    { status = 400, kind = "invalid_request" },
+                    { status = 401, kind = "authentication_error" },
+                    { status = 403, kind = "authentication_error" },
+                    { status = 404, kind = "model_error" },
+                    { status = 500, kind = "server_error" },
+                    { status = 503, kind = "server_error" },
+                    { status = 418, kind = "server_error" },
+                }) do
+                    local kind, message = openai_mapper.classify_error({
+                        status_code = case.status, message = "Provider error",
+                        code = "insufficient_quota", type = "insufficient_quota",
+                    })
+                    test.eq(kind, case.kind)
+                    test.eq(message, "Provider error")
+                end
+            end)
+        end)
         it("preserves explicit failure in standalone and assistant-attached tool results", function()
             for _, failed in ipairs({ false, true }) do
                 for _, attached in ipairs({ false, true }) do
@@ -804,50 +871,45 @@ local function define_tests()
                 end
             end)
 
-            it("should handle invalid JSON arguments", function()
-                local openai_tool_calls = {
-                    {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "test_tool",
-                            arguments = 'invalid json {'
-                        }
-                    }
-                }
-
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
-
-                test.eq(#contract_tool_calls, 1)
-                local tc = contract_tool_calls[1]
-                if tc then
-                    test.eq(tc.id, "call_123")
-                    test.eq(tc.name, "test_tool")
-                    test.not_nil(tc.arguments)
-                    test.is_nil(next(tc.arguments))
+            it("preserves malformed arguments and the decoder error", function()
+                local generator, lookup_err = registry.get("wippy.llm:generator")
+                test.is_nil(lookup_err)
+                assert(generator)
+                local schema = generator.data.methods[1].output_schemas[1].definition
+                for _, raw in ipairs({ 'invalid json {', '{"answer":', '' }) do
+                    local _, expected_error = json.decode(raw)
+                    test.not_nil(expected_error)
+                    local calls = openai_mapper.map_tool_calls({ { id = "bad", type = "function", ["function"] = { name = "lookup", arguments = raw } } })
+                    test.eq(#calls, 1)
+                    test.eq(calls[1].id, "bad")
+                    test.eq(calls[1].name, "lookup")
+                    test.eq(calls[1].arguments, raw)
+                    test.eq(calls[1].raw_arguments, raw)
+                    test.eq(calls[1].arguments_error, tostring(expected_error))
+                    local valid, validation_err = json.validate(schema, {
+                        success = true, result = { content = "", tool_calls = calls }
+                    })
+                    test.is_nil(validation_err)
+                    test.is_true(valid)
                 end
             end)
 
-            it("should handle empty arguments", function()
-                local openai_tool_calls = {
-                    {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "test_tool",
-                            arguments = ""
-                        }
-                    }
-                }
-
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
-
-                test.eq(#contract_tool_calls, 1)
-                local tc = contract_tool_calls[1]
-                if tc then
-                    test.not_nil(tc.arguments)
-                    test.is_nil(next(tc.arguments))
+            it("keeps valid and absent argument behavior unchanged", function()
+                for _, raw in ipairs({ '{}', '{"answer":"done"}' }) do
+                    local calls = openai_mapper.map_tool_calls({ { id = "good", ["function"] = { name = "lookup", arguments = raw } } })
+                    local expected = json.decode(raw)
+                    local expected_json = json.encode(expected)
+                    local actual_json = json.encode(calls[1].arguments)
+                    test.eq(actual_json, expected_json)
+                    test.is_nil(calls[1].arguments_error)
+                    test.is_nil(calls[1].raw_arguments)
                 end
+                local raw = nil
+                local calls = openai_mapper.map_tool_calls({ { id = "good", ["function"] = { name = "lookup", arguments = raw } } })
+                test.eq(type(calls[1].arguments), "table")
+                test.is_nil(next(calls[1].arguments))
+                test.is_nil(calls[1].arguments_error)
+                test.is_nil(calls[1].raw_arguments)
             end)
 
             it("should handle nil tool calls", function()
