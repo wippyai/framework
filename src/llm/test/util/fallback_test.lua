@@ -139,8 +139,8 @@ local function define_tests()
                 test.is_false(fallback.should_switch({ error_type = 42 }, false, false, default_on))
             end)
 
-            it("switches the primary on the default transient types only", function()
-                for _, error_type in ipairs({ "rate_limit_exceeded", "server_error", "timeout_error", "network_error" }) do
+            it("switches the primary on the default error types only", function()
+                for _, error_type in ipairs({ "rate_limit_exceeded", "server_error", "timeout_error", "network_error", "payment_required" }) do
                     test.is_true(fallback.should_switch({ error_type = error_type }, true, false, default_on), error_type)
                 end
                 for _, error_type in ipairs({ "authentication_error", "model_error", "context_length_exceeded",
@@ -154,11 +154,13 @@ local function define_tests()
                 test.is_true(fallback.should_switch({ error_type = "authentication_error" }, true, false, custom))
                 test.is_true(fallback.should_switch({ error_type = "content_filtered" }, true, false, custom))
                 test.is_false(fallback.should_switch({ error_type = "server_error" }, true, false, custom))
+                test.is_false(fallback.should_switch({ error_type = "payment_required" }, true, false, custom))
+                test.is_false(fallback.should_switch({ error_type = "payment_required" }, true, false, custom, true))
             end)
 
             it("moves past a fallback candidate on transient and candidate failures", function()
                 for _, error_type in ipairs({ "rate_limit_exceeded", "server_error", "timeout_error", "network_error",
-                    "authentication_error", "model_error", "context_length_exceeded" }) do
+                    "authentication_error", "model_error", "context_length_exceeded", "payment_required" }) do
                     test.is_true(fallback.should_switch({ error_type = error_type }, false, false, {}), error_type)
                 end
             end)
@@ -175,6 +177,9 @@ local function define_tests()
                 test.is_false(fallback.should_switch({ error_type = "server_error", stream_started = "no" }, false, true, default_on))
                 test.is_true(fallback.should_switch({ error_type = "server_error", stream_started = false }, true, true, default_on))
                 test.is_true(fallback.should_switch({ error_type = "model_error", stream_started = false }, false, true, default_on))
+                test.is_false(fallback.should_switch({ error_type = "payment_required", stream_started = true }, true, true, default_on))
+                test.is_true(fallback.should_switch({ error_type = "payment_required", stream_started = false }, true, true, default_on))
+                test.is_true(fallback.should_switch({ error_type = "payment_required", stream_started = false }, false, true, default_on))
             end)
 
             it("ignores stream_started when the call does not stream", function()
@@ -195,6 +200,7 @@ local function define_tests()
                     test.is_true(set.rate_limit_exceeded)
                     test.is_true(set.timeout_error)
                     test.is_true(set.network_error)
+                    test.is_true(set.payment_required)
                     test.is_nil(set.authentication_error)
                 end
             end)
