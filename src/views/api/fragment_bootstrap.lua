@@ -14,7 +14,8 @@
 --     config, as the iframe engine does) and inserts one import map before any
 --     module script exists in the realm. A `<base>` at the page URL exists only
 --     during that call, so relative addresses resolve as in the iframe engine.
--- A failure rejects `window.__WIPPY_IMPORT_MAP_READY__`. Host 1.0.66 waits for
+-- The proxy module loads only after the map is in place. A failure rejects
+-- `window.__WIPPY_IMPORT_MAP_READY__` and loads no proxy. Host 1.0.66 waits for
 -- that promise before it streams the page, so the page does not run, as the
 -- iframe engine refuses the same maps. Hosts without `import-map-bootstrap.js`
 -- get a static Host map.
@@ -101,6 +102,15 @@ local REGISTER_SCRIPT = [[
   // register() inserts the map: the browser resolves the addresses then, and
   // the realm keeps its own URL afterwards. register() resolves keys and scope
   // URLs against the same base and validates the maps exactly as written.
+  // The proxy's own imports resolve through the map, so it loads only after the
+  // map is registered. A script inserted before `load` still delays the realm's
+  // `load` event, which web-fragments waits for before it streams the page.
+  function loadProxy(url) {
+    var script = physicalCreateElement("script");
+    script.setAttribute("type", "module");
+    script.setAttribute("src", url);
+    (physicalDocument.head || physicalDocument.documentElement).appendChild(script);
+  }
   function registerAtPageBase(bootstrap, pageMap, hostMap, configuredMap, pageBase) {
     var head = physicalDocument.head || physicalDocument.documentElement;
     var base = physicalCreateElement("base");
@@ -125,6 +135,7 @@ local REGISTER_SCRIPT = [[
       fallback.setAttribute("type", "importmap");
       fallback.textContent = JSON.stringify(hostMap);
       (physicalDocument.head || physicalDocument.documentElement).appendChild(fallback);
+      loadProxy(payload.proxyUrl);
       return;
     }
     var pageMap;
@@ -135,6 +146,7 @@ local REGISTER_SCRIPT = [[
     var configured = readConfiguredImportMap();
     if (!configured.found) report("Fragment import map: no Wippy Host configuration is readable from this realm, so the configured import map is not applied.");
     registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase);
+    loadProxy(payload.proxyUrl);
   } catch (error) {
     report("Fragment initialization failed", error);
     appendPhysicalFailure("This view could not be initialized. " + String(error && error.message || error));
@@ -158,28 +170,29 @@ local function build_stub(fbase, imports, options)
     options = options or {}
     local host_map = inline_json({ imports = imports or {} })
     local loading = '<script src="' .. attr_url(fbase .. "/@wippy-fe/loading.js") .. '"></script>'
-    local proxy = '<script type="module" src="' .. attr_url(fbase .. "/@wippy-fe/proxy-fragment.js") .. '"></script>'
+    local proxy_url = fbase .. "/@wippy-fe/proxy-fragment.js"
     local head = '<!doctype html><title>Web Fragments: reframed</title>'
         .. '<script>window.__WIPPY_FRAGMENT_MODE__ = true;</script>'
     if not options.bootstrap then
         return head
             .. '<script type="importmap">' .. host_map .. '</script>'
             .. loading
-            .. proxy
+            .. '<script type="module" src="' .. attr_url(proxy_url) .. '"></script>'
     end
     -- The page map stays raw text, so a malformed map gets the same parse error
-    -- as in the iframe engine. Absent fields are left out.
+    -- as in the iframe engine. Absent fields are left out. The register script
+    -- loads the proxy from proxyUrl once the map is registered.
     local payload = inline_json({
         hostMap = { imports = imports or {} },
         pageMapText = options.page_map,
         pageBase = options.page_base,
+        proxyUrl = proxy_url,
     })
     return head
         .. '<script type="application/json" id="wippy-fragment-bootstrap">' .. payload .. '</script>'
         .. loading
         .. '<script src="' .. attr_url(fbase .. "/@wippy-fe/import-map-bootstrap.js") .. '"></script>'
         .. '<script>' .. REGISTER_SCRIPT .. '</script>'
-        .. proxy
 end
 
 local function respond_text(res, status, message)

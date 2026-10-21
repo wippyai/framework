@@ -108,6 +108,9 @@ local function define_tests()
             for _, island in ipairs({ "wippy-host-import-map", "wippy-page-import-map", "wippy-page-base" }) do
                 test.eq(contains(html, island), false)
             end
+            -- No static module script: the register script loads the proxy.
+            test.eq(contains(html, '<script type="module"'), false)
+            test.eq(contains(payload, '"proxyUrl":' .. fragment_bootstrap.inline_json(FBASE .. "/@wippy-fe/proxy-fragment.js")), true)
         end)
 
         test.it("leaves out the page map and base URL when the page has none", function()
@@ -147,17 +150,24 @@ local function define_tests()
             test.eq(response.headers["Cache-Control"], "no-store")
         end)
 
-        test.it("registers synchronously before the proxy, reading the Host config from ancestors", function()
+        test.it("registers synchronously, then loads the proxy, reading the Host config from ancestors", function()
             local html = fragment_bootstrap.build_stub(FBASE, { vue = "v" }, { bootstrap = true })
             local loading_at = at(html, 'src="' .. FBASE .. '/@wippy-fe/loading.js"')
             -- A plain classic script: no async, defer or type, so it runs before the register script.
             local helper_at = at(html, '<script src="' .. FBASE .. '/@wippy-fe/import-map-bootstrap.js"></script>')
-            local register_at = at(html, "registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase)")
-            local proxy_at = at(html, '<script type="module" src="' .. FBASE .. '/@wippy-fe/proxy-fragment.js"></script>')
-            test.eq(loading_at ~= nil and helper_at ~= nil and register_at ~= nil and proxy_at ~= nil, true)
-            test.eq(loading_at < helper_at and helper_at < register_at and register_at < proxy_at, true)
+            local register_at = at(html, "registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase);")
+            test.eq(loading_at ~= nil and helper_at ~= nil and register_at ~= nil, true)
+            test.eq(loading_at < helper_at and helper_at < register_at, true)
 
             local script = register_script(html)
+            -- The proxy loads after a successful registration and after the Host-map
+            -- fallback, and not in the failure branch.
+            local proxy_after_register = at(script, "registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase);")
+            local proxy_load = script:find("loadProxy(payload.proxyUrl);", proxy_after_register, true)
+            local failure_at = at(script, "} catch (error) {")
+            test.eq(proxy_load ~= nil and failure_at ~= nil and proxy_load < failure_at, true)
+            test.eq(script:find("loadProxy(", failure_at, true), nil)
+            test.eq(contains(script, "fallback.textContent = JSON.stringify(hostMap);"), true)
             for _, async_marker in ipairs({ "await", "async", "waitForConfig", "postMessage", ".then(", "setTimeout" }) do
                 test.eq(contains(script, async_marker), false)
             end
