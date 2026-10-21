@@ -465,16 +465,18 @@ local LIFECYCLE_PHASES = {
     activate = true,
     before_step = true,
     after_step = true,
+    after_persist = true,
     deactivate = true,
 }
 
-local LIFECYCLE_PHASE_ORDER = { "activate", "before_step", "after_step", "deactivate" }
+local LIFECYCLE_PHASE_ORDER = { "activate", "before_step", "after_step", "after_persist", "deactivate" }
 
 local BEHAVIOR_HANDLES = {
     recall = true,
     activate = true,
     before_step = true,
     after_step = true,
+    after_persist = true,
     deactivate = true,
     checkpoint = true,
     before_execute = true,

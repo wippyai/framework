@@ -31,7 +31,17 @@ local PHASE = {
     ACTIVATE = "activate",
     BEFORE_STEP = "before_step",
     AFTER_STEP = "after_step",
+    AFTER_PERSIST = "after_persist",
     DEACTIVATE = "deactivate",
+}
+
+-- Bindings without a phase list receive these phases. after_persist reaches
+-- only bindings that select it.
+local DEFAULT_PHASES = {
+    [PHASE.ACTIVATE] = true,
+    [PHASE.BEFORE_STEP] = true,
+    [PHASE.AFTER_STEP] = true,
+    [PHASE.DEACTIVATE] = true,
 }
 
 local lifecycle_runtime = {
@@ -72,7 +82,7 @@ end
 
 local function supports_phase(binding: LifecycleBindingSpec, phase: string): boolean
     if type(binding.phases) ~= "table" or #binding.phases == 0 then
-        return true
+        return DEFAULT_PHASES[phase] == true
     end
 
     for _, binding_phase in ipairs(binding.phases) do
@@ -163,6 +173,13 @@ function lifecycle_runtime.apply(bindings: any, payload: any): (table, string?)
 
     if type(current_payload.host) ~= "table" or type(current_payload.host.kind) ~= "string" or current_payload.host.kind == "" then
         return summary, "lifecycle host is required"
+    end
+
+    if phase == PHASE.AFTER_PERSIST then
+        local refs = current_payload.refs
+        if type(refs) ~= "table" or type(refs.event_id) ~= "string" or refs.event_id == "" then
+            return summary, "lifecycle after_persist requires refs.event_id"
+        end
     end
 
     for _, binding in ipairs(normalized) do

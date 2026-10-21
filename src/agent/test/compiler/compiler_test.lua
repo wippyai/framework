@@ -1375,6 +1375,38 @@ local function define_tests()
                 }), 0)
             end)
 
+            it("compiles an after_persist behavior into an explicit lifecycle phase binding", function()
+                local behaviors = {
+                    {
+                        id = "indexer",
+                        handles = { "after_step", "after_persist" },
+                        handlers = { lifecycle = "test.behavior:indexer" },
+                        after_persist = { batch = 4 },
+                    },
+                }
+                test.eq(#compiler.validate_behaviors(behaviors), 0)
+
+                trait_definitions.persist_trait = {
+                    id = "persist_trait",
+                    name = "Persist Trait",
+                    prompt = "",
+                    tools = {},
+                    behaviors = behaviors,
+                }
+
+                local compiled, err = compiler.compile({ id = "test:persist", prompt = "base", traits = { "persist_trait" } })
+                trait_definitions.persist_trait = nil
+
+                test.is_nil(err)
+                test.eq(#compiled.bindings.lifecycle, 2)
+                test.eq(compiled.bindings.lifecycle[1].phases[1], "after_step")
+                test.eq(compiled.bindings.lifecycle[2].phases[1], "after_persist")
+                test.eq(#compiled.bindings.lifecycle[2].phases, 1)
+                test.eq(compiled.bindings.lifecycle[2].binding, "test.behavior:indexer")
+                test.eq(compiled.bindings.lifecycle[2].options.batch, 4)
+                test.is_nil(compiled.bindings.lifecycle[1].options.batch)
+            end)
+
             it("configures canonical recall and checkpointing from one trait attachment", function()
                 trait_definitions.complete_memory = {
                     id = "complete_memory",
