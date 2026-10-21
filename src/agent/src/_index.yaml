@@ -132,7 +132,17 @@ entries:
         description: |
           Retrieve relevant memories based on what's currently being worked on and recent actions.
 
-          The binding context should include relevant identifiers (agent_id, session_id, etc).
+          Session and dataflow hosts supply binding context.agent_run containing
+          host, agent, and run_context. Providers use that pointer for bounded
+          history reads; returned event IDs are provenance anchors.
+          Host identity refs do not grant authorization.
+
+          The runner continues generation when recall fails. A provider error, a
+          provider that cannot be opened, or a result without a valid memories
+          list is reported as memory_recall_error on the agent step result;
+          hosts expose it as lifecycle outcome.memory_recall_error and keep it
+          in the step's persisted metadata. Skipped recall and an empty
+          memories list are not errors.
 
           Recent actions should be string summaries describing what happened:
           - "user: How do I optimize my database?"
@@ -413,17 +423,32 @@ entries:
         get_history, or get_prompt with the supplied host.
 
         Returned messages are appended to the current prompt only by phases that
-        run before an LLM step (activate and before_step today). Durable memory,
+        run before an LLM step (activate and before_step today). They are
+        per-step context: developer messages sit after the conversation cache
+        breakpoint, so they never alter the cached prompt prefix. Durable memory,
         checkpoint, or audit writes belong inside the binding implementation.
         Multiple bindings may be attached by multiple traits; the compiler orders
         them by priority and declaration order.
+
+        A binding without a phase list receives activate, before_step,
+        after_step and deactivate. after_persist reaches only bindings that list
+        it explicitly.
 
         Phase semantics:
         - activate: a compiled agent becomes active in this runner. On an agent
           switch, the old agent receives deactivate before the new one activates.
         - before_step: just before the current agent calls the LLM; returned
           messages can add prompt context for this step.
-        - after_step: after the agent step result is known.
+        - after_step: after the agent step result is known, before the host
+          stores it.
+        - after_persist: after the host commits the step's assistant/action
+          record and that record is readable through the supplied run_context.
+          refs.event_id is the record's history id as returned by
+          run_context get_history. outcome is the after_step outcome. It may run
+          before tool execution and does not imply tool results or the host run
+          are stored. Returned messages and _control are ignored. Delivery is
+          synchronous with no crash-recovery or exactly-once guarantee;
+          providers derive idempotency keys from host identity and event_id.
         - deactivate: the active agent leaves the runner because the host
           finished, failed, or switched to another agent.
     methods:
@@ -436,13 +461,23 @@ entries:
                 "properties": {
                   "phase": {
                     "type": "string",
-                    "enum": ["activate", "before_step", "after_step", "deactivate"]
+                    "enum": ["activate", "before_step", "after_step", "after_persist", "deactivate"]
                   },
                   "host": { "type": "object" },
                   "agent": { "type": "object" },
                   "reason": { "type": "string" },
-                  "outcome": { "type": "object" },
-                  "refs": { "type": "object" },
+                  "outcome": {
+                    "type": "object",
+                    "properties": {
+                      "memory_recall_error": { "type": "string" }
+                    }
+                  },
+                  "refs": {
+                    "type": "object",
+                    "properties": {
+                      "event_id": { "type": "string", "minLength": 1 }
+                    }
+                  },
                   "run_context": {
                     "type": "object",
                     "properties": {
