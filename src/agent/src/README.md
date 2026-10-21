@@ -439,6 +439,8 @@ it. The phase may precede tool execution, ignores returned messages and
 `_control`, and reaches only bindings that select it (`handles: [after_persist]`
 or an explicit legacy `phases` entry); bindings without a phase list keep the
 four original phases. Delivery is synchronous with no exactly-once guarantee.
+Hosts call `lifecycle_runtime.subscribed(bindings, "after_persist")` to make
+the extra work of acknowledged persistence conditional on a subscriber.
 
 Hosts explicitly collect these proposals from the lifecycle summary (`controls`)
 and from `caller:get_wrapper_controls()`. A host that persists proposals with

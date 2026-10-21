@@ -317,6 +317,22 @@ local function define_tests()
             test.eq(#calls, 8)
         end)
 
+        it("reports whether any binding selects a phase", function()
+            local bindings = {
+                { id = "absent", binding = "absent" },
+                { id = "step", binding = "step", phases = { "after_step" } },
+            }
+            test.is_true(lifecycle_runtime.subscribed(bindings, "after_step"))
+            test.is_true(lifecycle_runtime.subscribed(bindings, "activate"))
+            test.is_false(lifecycle_runtime.subscribed(bindings, "after_persist"))
+            test.is_false(lifecycle_runtime.subscribed(nil, "after_step"))
+
+            bindings[#bindings + 1] = { id = "persist", binding = "persist", phases = { "after_persist" } }
+            test.is_true(lifecycle_runtime.subscribed(bindings, "after_persist"))
+            test.is_true(lifecycle_runtime.subscribed({ lifecycle = bindings }, "after_persist"))
+            test.eq(#calls, 0)
+        end)
+
         it("rejects after_persist without the persisted event id", function()
             local bindings = { { id = "persist", binding = "persist", phases = { "after_persist" } } }
 

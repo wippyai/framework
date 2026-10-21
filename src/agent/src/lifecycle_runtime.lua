@@ -147,6 +147,17 @@ local function call_binding(binding_spec: LifecycleBindingSpec, payload: Lifecyc
     return (type(result) == "table" and result or {}) :: table, nil
 end
 
+-- True when at least one binding receives the phase. Hosts use it to pay for
+-- phase-specific work, such as acknowledged persistence, only when subscribed.
+function lifecycle_runtime.subscribed(bindings: any, phase: string): boolean
+    for _, binding in ipairs(normalize_bindings(bindings)) do
+        if supports_phase(binding, phase) then
+            return true
+        end
+    end
+    return false
+end
+
 function lifecycle_runtime.apply(bindings: any, payload: any): (table, string?)
     local current_payload: LifecyclePayload = copy_payload(payload :: LifecyclePayload?)
     local phase = current_payload.phase
