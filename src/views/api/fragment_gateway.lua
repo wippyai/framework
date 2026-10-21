@@ -163,7 +163,11 @@ local function handler()
             end
             page_map = fragment_html.page_import_map(html)
         end
-        fragment_bootstrap.respond_iframe(res, fbase, imports, { bootstrap = bootstrap, page_map = page_map })
+        fragment_bootstrap.respond_iframe(res, fbase, imports, {
+            bootstrap = bootstrap,
+            page_map = page_map,
+            page_base = base_url,
+        })
         return
     end
 

@@ -66,6 +66,34 @@ local REGISTER_SCRIPT = [[
       try { physicalWindow.console.error("Could not render fragment initialization failure", renderError); } catch (_) {}
     }
   }
+  function resolveAddresses(addresses, base) {
+    if (!addresses || typeof addresses !== "object" || Array.isArray(addresses)) return addresses;
+    var out = Object.create(null);
+    for (var key in addresses) {
+      if (!Object.prototype.hasOwnProperty.call(addresses, key)) continue;
+      var value = addresses[key];
+      if (typeof value === "string" && (value.charAt(0) === "/" || value.slice(0, 2) === "./" || value.slice(0, 3) === "../")) {
+        try { value = new URL(value, base).href; } catch (_) {}
+      }
+      out[key] = value;
+    }
+    return out;
+  }
+  // The iframe engine resolves the page map's relative addresses against the
+  // page's <base href>. The realm's own URL is the gateway route, so resolve
+  // them against the page URL here. Invalid shapes pass through to register().
+  function resolvePageMap(map, base) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return map;
+    var out = Object.create(null);
+    for (var key in map) if (Object.prototype.hasOwnProperty.call(map, key)) out[key] = map[key];
+    if (Object.prototype.hasOwnProperty.call(out, "imports")) out.imports = resolveAddresses(out.imports, base);
+    if (out.scopes && typeof out.scopes === "object" && !Array.isArray(out.scopes)) {
+      var scopes = Object.create(null);
+      for (var scope in out.scopes) if (Object.prototype.hasOwnProperty.call(out.scopes, scope)) scopes[scope] = resolveAddresses(out.scopes[scope], base);
+      out.scopes = scopes;
+    }
+    return out;
+  }
   function readConfiguredImportMap() {
     var current = physicalParent;
     var sawConfig = false;
@@ -92,9 +120,11 @@ local REGISTER_SCRIPT = [[
     if (typeof pageText === "string") {
       try { pageMap = JSON.parse(pageText); } catch (parseError) { throw new TypeError("Failed to parse page import map: " + String(parseError)); }
     }
+    var pageBase = JSON.parse(physicalGetElementById("wippy-page-base").textContent || "null");
+    if (typeof pageBase !== "string" || pageBase === "") pageBase = physicalBase;
     var configured = readConfiguredImportMap();
     if (!configured.found) physicalWindow.console.error("Fragment import map: no Wippy Host configuration is readable from this realm, so the configured import map is not applied.");
-    bootstrap.register(pageMap, hostMap, configured.map, physicalBase);
+    bootstrap.register(resolvePageMap(pageMap, pageBase), hostMap, configured.map, pageBase);
   } catch (error) {
     try { physicalWindow.console.error("Fragment initialization failed", error); } catch (_) {}
     appendPhysicalFailure("This view could not be initialized. " + String(error && error.message || error));
@@ -109,6 +139,8 @@ end
 --- Build the realm stub.
 --- options.bootstrap: the Host serves `@wippy-fe/import-map-bootstrap.js`.
 --- options.page_map: raw text of the page's first import map, or nil.
+--- options.page_base: the page's base URL, which relative page-map entries
+--- resolve against.
 local function build_stub(fbase, imports, options)
     options = options or {}
     local host_map = inline_json({ imports = imports or {} })
@@ -123,9 +155,11 @@ local function build_stub(fbase, imports, options)
             .. proxy
     end
     local page_map = options.page_map ~= nil and inline_json(options.page_map) or "null"
+    local page_base = options.page_base ~= nil and inline_json(options.page_base) or "null"
     return head
         .. '<script type="application/json" id="wippy-host-import-map">' .. host_map .. '</script>'
         .. '<script type="application/json" id="wippy-page-import-map">' .. page_map .. '</script>'
+        .. '<script type="application/json" id="wippy-page-base">' .. page_base .. '</script>'
         .. loading
         .. '<script src="' .. attr_url(fbase .. "/@wippy-fe/import-map-bootstrap.js") .. '"></script>'
         .. '<script>' .. REGISTER_SCRIPT .. '</script>'
