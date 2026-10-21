@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.9](https://github.com/wippyai/framework/compare/llm-v0.5.8...llm-v0.5.9) (2026-10-21)
+
+
+### Bug Fixes
+
+* classify payment and quota errors without stopping fallback ([#197](https://github.com/wippyai/framework/issues/197)) ([0faadc6](https://github.com/wippyai/framework/commit/0faadc666afe477de8c412af322ef1147bd8b0cd))
+* preserve malformed tool argument diagnostics ([#196](https://github.com/wippyai/framework/issues/196)) ([5e10c11](https://github.com/wippyai/framework/commit/5e10c11575abc17d23840f0af73f4c6f5445db3e))
+* propagate usage context through agent and llm ([#199](https://github.com/wippyai/framework/issues/199)) ([bcee7a5](https://github.com/wippyai/framework/commit/bcee7a5afd57a94dd58656d9a5ed96282c94f21f))
+
 ## [0.5.8](https://github.com/wippyai/framework/compare/llm-v0.5.7...llm-v0.5.8) (2026-10-19)
 
 
