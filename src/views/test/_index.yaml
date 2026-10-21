@@ -216,3 +216,16 @@ entries:
     imports:
       test: wippy.test:test
       fragment_bootstrap: wippy.views.api:fragment_bootstrap
+
+  # app:fragment_html_test
+  - name: fragment_html_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway HTML tokenizer, import-map extraction and document edits
+    source: file://fragment_html_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      fragment_html: wippy.views.api:fragment_html

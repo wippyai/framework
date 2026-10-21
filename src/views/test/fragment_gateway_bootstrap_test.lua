@@ -1,6 +1,8 @@
 local test = require("test")
 local fragment_bootstrap = require("fragment_bootstrap")
 
+local FBASE = "https://host.example/webcomponents-1.0.66"
+
 local function make_response()
     local response = { headers = {}, status = nil, content_type = nil, body = "" }
     function response:set_header(name, value) self.headers[name] = value end
@@ -14,101 +16,128 @@ local function contains(text, part)
     return text:find(part, 1, true) ~= nil
 end
 
+local function at(text, part)
+    return text:find(part, 1, true)
+end
+
+-- Text between `<script ... id="<id>">` and the next `</script>`.
+local function json_island(html, id)
+    local open = '<script type="application/json" id="' .. id .. '">'
+    local s = at(html, open)
+    if not s then
+        return nil
+    end
+    local from = s + #open
+    local close = html:find("</script>", from, true)
+    if not close then
+        return nil
+    end
+    return html:sub(from, close - 1)
+end
+
+-- The inline classic script that holds `readConfiguredImportMap`.
+local function register_script(html)
+    local marker = at(html, "readConfiguredImportMap")
+    if not marker then
+        return ""
+    end
+    local open = nil
+    local pos = 1
+    while true do
+        local found = html:find("<script>", pos, true)
+        if not found or found > marker then
+            break
+        end
+        open = found
+        pos = found + 1
+    end
+    local close = html:find("</script>", marker, true)
+    if not open or not close then
+        return ""
+    end
+    return html:sub(open, close)
+end
+
 local function define_tests()
     test.describe("fragment gateway bootstrap", function()
-        test.it("returns an uncached unavailable response for an empty host map", function()
-            local response = make_response()
-            local served = fragment_bootstrap.respond_iframe(response, "https://host.example/webcomponents-1.0.63", {})
-            test.eq(served, false)
-            test.eq(response.status, 503)
-            test.eq(response.headers["Cache-Control"], "no-store")
-            test.eq(response.content_type, "text/plain")
-            test.eq(response.body, "Web Host import map is unavailable")
+        test.it("returns an uncached unavailable response for an empty or missing host map", function()
+            for _, imports in ipairs({ {}, false }) do
+                local response = make_response()
+                local served = fragment_bootstrap.respond_iframe(response, FBASE, imports or nil, { bootstrap = true })
+                test.eq(served, false)
+                test.eq(response.status, 503)
+                test.eq(response.headers["Cache-Control"], "no-store")
+                test.eq(response.content_type, "text/plain")
+                test.eq(response.body, "Web Host import map is unavailable")
+            end
         end)
 
-        test.it("keeps the 1.0.62 default fragment startup without requesting the new helper", function()
-            local response = make_response()
-            local served = fragment_bootstrap.respond_iframe(response, "https://host.example/webcomponents-1.0.62", {
-                vue = "https://host.example/vendor/vue.js",
-            })
-            test.eq(served, true)
-            test.eq(contains(response.body, '<script type="importmap">'), true)
-            test.eq(contains(response.body, 'src="https://host.example/webcomponents-1.0.62/@wippy-fe/loading.js"'), true)
-            test.eq(contains(response.body, 'src="https://host.example/webcomponents-1.0.62/@wippy-fe/import-map-bootstrap.js"'), false)
-            test.eq(contains(response.body, "waitForConfig"), false)
-            test.eq(contains(response.body, 'src="https://host.example/webcomponents-1.0.62/@wippy-fe/proxy-fragment.js"'), true)
+        test.it("keeps the static Host map when the Host has no import-map bootstrap", function()
+            local html = fragment_bootstrap.build_stub(FBASE, { vue = "https://host.example/vendor/vue.js" }, { bootstrap = false })
+            test.eq(at(html, '<!doctype html><title>Web Fragments: reframed</title>'), 1)
+            test.eq(contains(html, '<script type="importmap">{"imports":{"vue":"https://host.example/vendor/vue.js"}}</script>'), true)
+            test.eq(contains(html, 'src="' .. FBASE .. '/@wippy-fe/loading.js"'), true)
+            test.eq(contains(html, '<script type="module" src="' .. FBASE .. '/@wippy-fe/proxy-fragment.js"></script>'), true)
+            test.eq(contains(html, "import-map-bootstrap.js"), false)
+            test.eq(contains(html, "register("), false)
         end)
 
-        test.it("serves an escaped inert map and registers before proxy/API readiness", function()
+        test.it("serves the bootstrap stub privately with both maps as inert JSON", function()
             local response = make_response()
-            local imports = {
+            local served = fragment_bootstrap.respond_iframe(response, FBASE, {
                 vue = "https://host.example/vendor/vue.js",
                 dangerous = "https://host.example/</script>" .. "\226\128\168" .. "x" .. "\226\128\169",
-            }
-            local served = fragment_bootstrap.respond_iframe(response, "https://host.example/webcomponents-1.0.63", imports)
+            }, { bootstrap = true, page_map = '{"imports":{"page":"./p.js","x":"</script><!--"}}' })
             test.eq(served, true)
             test.eq(response.status, 200)
-            test.eq(response.headers["Cache-Control"], "public, max-age=300")
+            test.eq(response.headers["Cache-Control"], "private, max-age=60")
             test.eq(response.headers.Vary, "sec-fetch-dest")
             test.eq(response.content_type, "text/html")
             local html = response.body
+            test.eq(at(html, '<!doctype html><title>Web Fragments: reframed</title>'), 1)
             test.eq(contains(html, '<script type="importmap">'), false)
-            test.eq(contains(html, '<script type="application/json" id="wippy-host-import-map">'), true)
-            test.eq(contains(html, "\\u003c/script\\u003e"), true)
-            test.eq(contains(html, "\\u2028"), true)
-            test.eq(contains(html, "\\u2029"), true)
-            test.eq(contains(html, 'src="https://host.example/webcomponents-1.0.63/@wippy-fe/loading.js"'), true)
-            test.eq(contains(html, 'src="https://host.example/webcomponents-1.0.63/@wippy-fe/import-map-bootstrap.js"'), true)
-            test.eq(contains(html, "physicalWindow.WippyImportMapBootstrap"), true)
-            test.eq(contains(html, "waitForConfig({ waitForParent: true, waitForNestedInjection: true })"), true)
-            test.eq(contains(html, "bootstrap.register(undefined, hostMap, config.importMap, physicalBase)"), true)
-            test.eq(contains(html, "const physicalWindow = window; const physicalDocument = window.document"), true)
-            test.eq(contains(html, "const physicalRoot = physicalDocument.documentElement; const physicalBody = physicalDocument.body"), true)
-            test.eq(contains(html, "physicalCreateElement = physicalDocument.createElement.bind(physicalDocument)"), true)
-            test.eq(contains(html, "physicalTarget.appendChild.bind(physicalTarget)"), true)
-            test.eq(contains(html, "throw error;"), true)
-            test.eq(contains(html, "await import(\"https://host.example/webcomponents-1.0.63/@wippy-fe/proxy-fragment.js\")"), true)
-            test.eq(contains(html, "await physicalWindow.getWippyApi()"), true)
-            test.eq(contains(html, "window.__WIPPY_IMPORT_MAP_READY__"), true)
-            test.eq(contains(html, 'alert.setAttribute("role", "alert")'), true)
-            local helper_at = html:find("src=\"https://host.example/webcomponents-1.0.63/@wippy-fe/import-map-bootstrap.js\"", 1, true)
-            local wait_at = html:find("waitForConfig", 1, true)
-            local register_at = html:find("bootstrap.register", 1, true)
-            local proxy_at = html:find("await import", 1, true)
-            local api_at = html:find("await physicalWindow.getWippyApi", 1, true)
-            local append_at = html:find("physicalAppend =", 1, true)
-            test.eq(helper_at < append_at and append_at < wait_at and wait_at < register_at and register_at < proxy_at and proxy_at < api_at, true)
 
-            local valid_response = make_response()
-            local valid_served = fragment_bootstrap.respond_iframe(valid_response, "https://host.example/webcomponents-1.0.63", {
-                vue = "https://host.example/vendor/vue.js",
-                app_entry = "https://host.example/apps/entry.js",
-            })
-            test.eq(valid_served, true)
+            local host = json_island(html, "wippy-host-import-map")
+            test.eq(contains(host, "<"), false)
+            test.eq(contains(host, "\\u003c/script"), true)
+            test.eq(contains(host, "\\u2028"), true)
+            test.eq(contains(host, "\\u2029"), true)
+
+            local page = json_island(html, "wippy-page-import-map")
+            test.eq(page, fragment_bootstrap.inline_json('{"imports":{"page":"./p.js","x":"</script><!--"}}'))
+            test.eq(contains(page, "<"), false)
+            test.eq(page:sub(1, 1), '"')
         end)
 
-        test.it("returns the uncached unavailable response when the host map is missing", function()
-            local response = make_response()
-            local served = fragment_bootstrap.respond_iframe(response, "https://host.example/webcomponents-1.0.66", nil)
-            test.eq(served, false)
-            test.eq(response.status, 503)
-            test.eq(response.headers["Cache-Control"], "no-store")
+        test.it("embeds null when the page has no import map", function()
+            local html = fragment_bootstrap.build_stub(FBASE, { vue = "v" }, { bootstrap = true })
+            test.eq(json_island(html, "wippy-page-import-map"), "null")
         end)
 
-        test.it("treats an unversioned dev Host URL as a bootstrap-capable Host", function()
-            local html = fragment_bootstrap.build_stub("http://localhost:5173", { vue = "http://localhost:5173/vendor/vue.js" })
-            test.eq(contains(html, 'src="http://localhost:5173/@wippy-fe/import-map-bootstrap.js"'), true)
-            test.eq(contains(html, '<script type="importmap">'), false)
+        test.it("registers synchronously before the proxy, reading the Host config from ancestors", function()
+            local html = fragment_bootstrap.build_stub(FBASE, { vue = "v" }, { bootstrap = true })
+            local loading_at = at(html, 'src="' .. FBASE .. '/@wippy-fe/loading.js"')
+            local helper_at = at(html, 'src="' .. FBASE .. '/@wippy-fe/import-map-bootstrap.js"')
+            local register_at = at(html, "bootstrap.register(pageMap, hostMap, configured.map, physicalBase)")
+            local proxy_at = at(html, '<script type="module" src="' .. FBASE .. '/@wippy-fe/proxy-fragment.js"></script>')
+            test.eq(loading_at ~= nil and helper_at ~= nil and register_at ~= nil and proxy_at ~= nil, true)
+            test.eq(loading_at < helper_at and helper_at < register_at and register_at < proxy_at, true)
+
+            local script = register_script(html)
+            for _, async_marker in ipairs({ "await", "async", "waitForConfig", "postMessage", ".then(", "setTimeout" }) do
+                test.eq(contains(script, async_marker), false)
+            end
+            test.eq(contains(script, "current.__WIPPY_APP_CONFIG__"), true)
+            test.eq(contains(script, 'Object.prototype.hasOwnProperty.call(config, "importMap")'), true)
+            test.eq(contains(script, "next = current.parent"), true)
+            test.eq(contains(script, "Failed to parse page import map: "), true)
+            test.eq(contains(script, 'alert.setAttribute("role", "alert")'), true)
         end)
 
-        test.it("compares Host versions as numbers", function()
-            local newer = fragment_bootstrap.build_stub("https://host.example/webcomponents-1.0.100", { vue = "v" })
-            test.eq(contains(newer, "@wippy-fe/import-map-bootstrap.js"), true)
-            test.eq(contains(newer, '<script type="importmap">'), false)
-
-            local older = fragment_bootstrap.build_stub("https://host.example/webcomponents-1.0.9", { vue = "v" })
-            test.eq(contains(older, "@wippy-fe/import-map-bootstrap.js"), false)
-            test.eq(contains(older, '<script type="importmap">'), true)
+        test.it("escapes the Host URL inside attributes", function()
+            local html = fragment_bootstrap.build_stub('https://host.example/a&b"c', { vue = "v" }, { bootstrap = true })
+            test.eq(contains(html, 'src="https://host.example/a&amp;b&quot;c/@wippy-fe/import-map-bootstrap.js"'), true)
+            test.eq(contains(html, 'a&b"c'), false)
         end)
     end)
 end

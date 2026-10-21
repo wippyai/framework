@@ -207,10 +207,11 @@ entries:
         compress.min.length: "1024"
 
     # Web-Fragments gateway (EE2-2313, EXPERIMENTAL). Serves the reframing contract
-    # for a view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
-    # the app HTML with the fragment proxy + <base> injected (empty/document),
-    # and asset proxying (everything else). Delivery-mode wrapper — render.lua
-    # is untouched. Auth-agnostic: the injected proxy handshakes the host for config.
+    # for a view.page rendered as a fragment: the realm stub (Sec-Fetch-Dest: iframe)
+    # that registers the page, Host and configured import maps before the stream,
+    # the app HTML transformed for the realm (empty/document), and asset proxying
+    # (everything else). Delivery-mode wrapper — render.lua is untouched.
+    # Auth-agnostic: the fragment proxy handshakes the host for config.
     - name: fragment_bootstrap
       kind: library.lua
       meta:
@@ -219,6 +220,13 @@ entries:
       source: file://fragment_bootstrap.lua
       modules:
         - json
+
+    - name: fragment_html
+      kind: library.lua
+      meta:
+        comment: HTML tokenizer and byte-range document edits for fragment-mode views
+        description: Reads and edits view.page HTML for the fragment gateway without pattern matching
+      source: file://fragment_html.lua
 
     - name: fragment_gateway
       kind: function.lua
@@ -229,6 +237,7 @@ entries:
       imports:
         page_registry: wippy.views:page_registry
         fragment_bootstrap: wippy.views.api:fragment_bootstrap
+        fragment_html: wippy.views.api:fragment_html
       method: handler
       modules:
         - http
