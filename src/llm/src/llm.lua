@@ -796,12 +796,15 @@ local function estimate_prompt(contract_args)
         messages = {}
         for _, message in ipairs(contract_args.messages) do
             if message.role ~= prompt.ROLE.CACHE_MARKER then
-                local input = {}
-                for key, value in pairs(message) do
-                    if key ~= "metadata" then input[key] = value end
-                end
-                if type(message.metadata) == "table" and message.metadata.thinking_blocks then
-                    input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
+                local input = message
+                if message.metadata ~= nil then
+                    input = {}
+                    for key, value in pairs(message) do
+                        if key ~= "metadata" then input[key] = value end
+                    end
+                    if type(message.metadata) == "table" and message.metadata.thinking_blocks then
+                        input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
+                    end
                 end
                 table.insert(messages, input)
             end
