@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.24](https://github.com/wippyai/framework/compare/migration-v0.3.23...migration-v0.3.24) (2026-10-21)
+
+
+### Bug Fixes
+
+* **migration:** detect ledgers through the database search path ([#198](https://github.com/wippyai/framework/issues/198)) ([8866877](https://github.com/wippyai/framework/commit/886687767230d778ff2910be95f2763d6d149e4f))
+
 ## [0.3.23](https://github.com/wippyai/framework/compare/migration-v0.3.22...migration-v0.3.23) (2026-10-14)
 
 
