@@ -4,15 +4,16 @@
 -- reframed starts streaming the page into the realm on the iframe's first
 -- `load` event, so the import map must be registered while the stub parses:
 --   * The Host map (`{fe_facade_url}/import-map.json`), the page's own map and
---     the page URL travel as inert JSON in the stub.
+--     the page URL travel as one inert JSON payload in the stub.
 --   * The configured map is the Host's accepted AppConfig `importMap`, which the
 --     Host publishes as `window.__WIPPY_APP_CONFIG__` before it mounts any page.
 --     Every realm is same-origin with its parent, so the stub reads it
 --     synchronously from the nearest ancestor that carries it.
 --   * The Web Host's `WippyImportMapBootstrap.register(page, host, config, base)`
---     validates and composes them (page < Host < config, as the iframe engine
---     does) and inserts one import map before any module script exists in the
---     realm.
+--     validates the maps exactly as written, composes them (page < Host <
+--     config, as the iframe engine does) and inserts one import map before any
+--     module script exists in the realm. A `<base>` at the page URL exists only
+--     during that call, so relative addresses resolve as in the iframe engine.
 -- A failure rejects `window.__WIPPY_IMPORT_MAP_READY__`. Host 1.0.66 waits for
 -- that promise before it streams the page, so the page does not run, as the
 -- iframe engine refuses the same maps. Hosts without `import-map-bootstrap.js`
@@ -77,53 +78,6 @@ local REGISTER_SCRIPT = [[
       report("Could not render fragment initialization failure", renderError);
     }
   }
-  function readJson(id, fallback) {
-    var element = physicalGetElementById(id);
-    return JSON.parse(element && element.textContent || fallback);
-  }
-  // A relative address a browser would resolve against the document base.
-  // Addresses the Host validator rejects (a backslash, a control character, or
-  // a trailing-slash key without a trailing-slash address) stay as written, so
-  // the validator still rejects them as in the iframe engine.
-  function resolvable(key, value) {
-    if (typeof value !== "string") return false;
-    if (!(value.charAt(0) === "/" || value.slice(0, 2) === "./" || value.slice(0, 3) === "../")) return false;
-    for (var i = 0; i < value.length; i++) {
-      var code = value.charCodeAt(i);
-      if (code < 32 || code === 127 || code === 92) return false;
-    }
-    return !(key.slice(-1) === "/" && value.slice(-1) !== "/");
-  }
-  function resolveAddresses(addresses, base) {
-    if (!addresses || typeof addresses !== "object" || Array.isArray(addresses)) return addresses;
-    var out = Object.create(null);
-    for (var key in addresses) {
-      if (!hasOwn.call(addresses, key)) continue;
-      var value = addresses[key];
-      if (resolvable(key, value)) {
-        try { value = new URL(value, base).href; } catch (_) {}
-      }
-      out[key] = value;
-    }
-    return out;
-  }
-  // The iframe engine gives the page a <base href> at the page URL, so the
-  // browser resolves relative addresses in all three maps against it. A realm's
-  // own URL is the gateway route, so resolve them against the page URL here.
-  // register() resolves keys and scope URLs against the same base. Invalid
-  // shapes pass through unchanged for register() to reject.
-  function resolveMap(map, base) {
-    if (!map || typeof map !== "object" || Array.isArray(map)) return map;
-    var out = Object.create(null);
-    for (var key in map) if (hasOwn.call(map, key)) out[key] = map[key];
-    if (hasOwn.call(out, "imports")) out.imports = resolveAddresses(out.imports, base);
-    if (out.scopes && typeof out.scopes === "object" && !Array.isArray(out.scopes)) {
-      var scopes = Object.create(null);
-      for (var scope in out.scopes) if (hasOwn.call(out.scopes, scope)) scopes[scope] = resolveAddresses(out.scopes[scope], base);
-      out.scopes = scopes;
-    }
-    return out;
-  }
   function readConfiguredImportMap() {
     var current = physicalParent;
     var sawConfig = false;
@@ -141,8 +95,27 @@ local REGISTER_SCRIPT = [[
     }
     return { found: sawConfig, map: undefined };
   }
+  // The iframe engine gives the page a <base href> at its HTML directory, so the
+  // browser resolves relative addresses in all three maps against it. A realm's
+  // own URL is the gateway route, so the same <base> exists only while
+  // register() inserts the map: the browser resolves the addresses then, and
+  // the realm keeps its own URL afterwards. register() resolves keys and scope
+  // URLs against the same base and validates the maps exactly as written.
+  function registerAtPageBase(bootstrap, pageMap, hostMap, configuredMap, pageBase) {
+    var head = physicalDocument.head || physicalDocument.documentElement;
+    var base = physicalCreateElement("base");
+    base.setAttribute("href", pageBase);
+    head.insertBefore(base, head.firstChild);
+    try {
+      bootstrap.register(pageMap, hostMap, configuredMap, pageBase);
+    } finally {
+      head.removeChild(base);
+    }
+  }
   try {
-    var hostMap = readJson("wippy-host-import-map", "{}");
+    var element = physicalGetElementById("wippy-fragment-bootstrap");
+    var payload = JSON.parse(element && element.textContent || "{}");
+    var hostMap = payload.hostMap || { imports: {} };
     var bootstrap = physicalWindow.WippyImportMapBootstrap;
     if (!bootstrap || typeof bootstrap.register !== "function") {
       // The helper did not load (for example a network failure). Keep the page
@@ -154,16 +127,14 @@ local REGISTER_SCRIPT = [[
       (physicalDocument.head || physicalDocument.documentElement).appendChild(fallback);
       return;
     }
-    var pageText = readJson("wippy-page-import-map", "null");
     var pageMap;
-    if (typeof pageText === "string") {
-      try { pageMap = JSON.parse(pageText); } catch (parseError) { throw new TypeError("Failed to parse page import map: " + String(parseError)); }
+    if (typeof payload.pageMapText === "string") {
+      try { pageMap = JSON.parse(payload.pageMapText); } catch (parseError) { throw new TypeError("Failed to parse page import map: " + String(parseError)); }
     }
-    var pageBase = readJson("wippy-page-base", "null");
-    if (typeof pageBase !== "string" || pageBase === "") pageBase = physicalBase;
+    var pageBase = typeof payload.pageBase === "string" && payload.pageBase !== "" ? payload.pageBase : physicalBase;
     var configured = readConfiguredImportMap();
     if (!configured.found) report("Fragment import map: no Wippy Host configuration is readable from this realm, so the configured import map is not applied.");
-    bootstrap.register(resolveMap(pageMap, pageBase), resolveMap(hostMap, pageBase), resolveMap(configured.map, pageBase), pageBase);
+    registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase);
   } catch (error) {
     report("Fragment initialization failed", error);
     appendPhysicalFailure("This view could not be initialized. " + String(error && error.message || error));
@@ -196,12 +167,15 @@ local function build_stub(fbase, imports, options)
             .. loading
             .. proxy
     end
-    local page_map = options.page_map ~= nil and inline_json(options.page_map) or "null"
-    local page_base = options.page_base ~= nil and inline_json(options.page_base) or "null"
+    -- The page map stays raw text, so a malformed map gets the same parse error
+    -- as in the iframe engine. Absent fields are left out.
+    local payload = inline_json({
+        hostMap = { imports = imports or {} },
+        pageMapText = options.page_map,
+        pageBase = options.page_base,
+    })
     return head
-        .. '<script type="application/json" id="wippy-host-import-map">' .. host_map .. '</script>'
-        .. '<script type="application/json" id="wippy-page-import-map">' .. page_map .. '</script>'
-        .. '<script type="application/json" id="wippy-page-base">' .. page_base .. '</script>'
+        .. '<script type="application/json" id="wippy-fragment-bootstrap">' .. payload .. '</script>'
         .. loading
         .. '<script src="' .. attr_url(fbase .. "/@wippy-fe/import-map-bootstrap.js") .. '"></script>'
         .. '<script>' .. REGISTER_SCRIPT .. '</script>'

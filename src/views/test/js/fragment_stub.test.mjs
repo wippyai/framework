@@ -36,19 +36,52 @@ class Element {
   get type() { return this.getAttribute('type') ?? '' }
   set type(value) { this.setAttribute('type', value) }
   get firstChild() { return this.children[0] ?? null }
-  appendChild(child) { this.children.push(child); return child }
+  appendChild(child) { return this.insertBefore(child, null) }
   insertBefore(child, ref) {
     const at = ref ? this.children.indexOf(ref) : -1
     if (at < 0)
       this.children.push(child)
     else
       this.children.splice(at, 0, child)
+    child.parentNode = this
+    // A browser parses an import map when it is inserted, against the document
+    // base URL at that moment.
+    if (child.tagName === 'SCRIPT' && child.getAttribute('type') === 'importmap')
+      child.registeredBase = this.ownerDocument.baseURI
+    return child
+  }
+
+  removeChild(child) {
+    const at = this.children.indexOf(child)
+    assert.ok(at >= 0, 'removeChild gets a child of this element')
+    this.children.splice(at, 1)
+    child.parentNode = null
     return child
   }
 }
 
+// Resolve the addresses of a registered map as the browser does: URL-like
+// addresses against the base URL at registration, absolute ones as written.
+function browserResolved(map, base) {
+  const addresses = (input) => {
+    const out = Object.create(null)
+    for (const [key, value] of Object.entries(input ?? {})) {
+      const relative = value.startsWith('/') || value.startsWith('./') || value.startsWith('../')
+      Object.defineProperty(out, key, { value: relative ? new URL(value, base).href : value, enumerable: true })
+    }
+    return out
+  }
+  const out = { imports: addresses(map.imports) }
+  if (map.scopes) {
+    out.scopes = Object.create(null)
+    for (const [scope, entries] of Object.entries(map.scopes))
+      out.scopes[scope] = addresses(entries)
+  }
+  return out
+}
+
 function makeDocument() {
-  const doc = { baseURI: REALM }
+  const doc = {}
   doc.documentElement = new Element(doc, 'html')
   doc.head = doc.documentElement.appendChild(new Element(doc, 'head'))
   doc.body = doc.documentElement.appendChild(new Element(doc, 'body'))
@@ -58,6 +91,14 @@ function makeDocument() {
     walk(doc.documentElement)
     return out
   }
+  // The first <base href> in tree order sets the document base URL.
+  Object.defineProperty(doc, 'baseURI', {
+    get() {
+      const base = all().find(el => el.tagName === 'BASE' && el.getAttribute('href') !== null)
+      return base ? new URL(base.getAttribute('href'), REALM).href : REALM
+    },
+  })
+  doc.bases = () => all().filter(el => el.tagName === 'BASE')
   doc.createElement = tag => new Element(doc, tag)
   doc.getElementById = id => all().find(el => el.getAttribute('id') === id) ?? null
   doc.querySelector = (selector) => {
@@ -76,18 +117,18 @@ function hostWindow(config, parent) {
   return win
 }
 
-function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImports = HOST_IMPORTS } = {}) {
+function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImports = HOST_IMPORTS, onRegister } = {}) {
   const document = makeDocument()
-  const island = (id, text) => {
-    const el = document.createElement('script')
-    el.setAttribute('type', 'application/json')
-    el.setAttribute('id', id)
-    el.textContent = text
-    document.head.appendChild(el)
-  }
-  island('wippy-host-import-map', JSON.stringify({ imports: hostImports }))
-  island('wippy-page-import-map', pageMapText === undefined ? 'null' : JSON.stringify(pageMapText))
-  island('wippy-page-base', pageBase === null ? 'null' : JSON.stringify(pageBase))
+  // The payload as build_stub writes it: absent fields are left out.
+  const payload = document.createElement('script')
+  payload.setAttribute('type', 'application/json')
+  payload.setAttribute('id', 'wippy-fragment-bootstrap')
+  payload.textContent = JSON.stringify({
+    hostMap: { imports: hostImports },
+    ...(pageMapText === undefined ? {} : { pageMapText }),
+    ...(pageBase === null ? {} : { pageBase }),
+  })
+  document.head.appendChild(payload)
   const errors = []
   const window = {
     document,
@@ -98,13 +139,26 @@ function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImpo
   window.window = window
   window.parent = parent ?? window
   const context = vm.createContext(window)
-  if (helper)
+  if (helper) {
     vm.runInContext(HELPER, context)
+    if (onRegister) {
+      const register = window.WippyImportMapBootstrap.register
+      window.WippyImportMapBootstrap.register = function (...args) {
+        onRegister(document)
+        return register.apply(this, args)
+      }
+    }
+  }
   vm.runInContext(REGISTER, context)
   const maps = document.importMaps()
+  const raw = maps.length ? JSON.parse(maps[0].textContent) : null
   return {
     maps,
-    map: maps.length ? JSON.parse(maps[0].textContent) : null,
+    raw,
+    map: raw ? browserResolved(raw, maps[0].registeredBase) : null,
+    registeredBase: maps[0]?.registeredBase,
+    bases: document.bases(),
+    baseAfter: document.baseURI,
     first: document.head.firstChild,
     alerts: document.alerts(),
     errors,
@@ -136,6 +190,10 @@ test('composes page < Host < configured and resolves page addresses against the 
   assert.deepEqual(r.alerts, [])
   assert.deepEqual(r.errors, [])
   assert.equal(r.ready, undefined)
+  assert.equal(r.registeredBase, PAGE, 'the browser parses the map against the page URL')
+  assert.deepEqual(r.bases, [], 'the temporary <base> is removed')
+  assert.equal(r.baseAfter, REALM, 'the realm keeps its own URL afterwards')
+  assert.equal(r.raw.imports.local, './p.js', 'register() gets the address as written')
   const imports = r.map.imports
   assert.equal(imports.shared, 'https://cfg.test/shared.js')
   assert.equal(imports.vue, 'https://cdn.test/vue.js')
@@ -211,6 +269,31 @@ test('maps the Host validator rejects reject the ready promise, as in the iframe
   }
 })
 
+test('addresses with surrounding whitespace are rejected as in the iframe engine, not cleaned', async () => {
+  // Browsers strip trailing whitespace from a URL, but the Host validator
+  // rejects such an address. The stub must not clean it before validation.
+  for (const bad of ['./p.js ', ' ./p.js', './p.js\n', '/p.js ']) {
+    const r = runStub({ pageMapText: JSON.stringify({ imports: { bad } }), parent: hostWindow({ importMap: null }) })
+    assert.equal(r.maps.length, 0, JSON.stringify(bad))
+    const error = await rejection(r.ready)
+    assert.match(String(error.message), /Invalid page import map/)
+    assert.deepEqual(r.bases, [], 'the temporary <base> is removed after a failure')
+  }
+})
+
+test('the page <base> exists only while register() runs', () => {
+  const during = []
+  const r = runStub({
+    pageMapText: JSON.stringify({ imports: { local: './p.js' } }),
+    parent: hostWindow({ importMap: null }),
+    onRegister: document => during.push({ base: document.baseURI, count: document.bases().length }),
+  })
+  assert.deepEqual(during, [{ base: PAGE, count: 1 }])
+  assert.deepEqual(r.bases, [])
+  assert.equal(r.baseAfter, REALM)
+  assert.equal(r.map.imports.local, 'http://app.test/app/demo/p.js')
+})
+
 test('a "__proto__" specifier stays an ordinary entry', () => {
   const r = runStub({
     pageMapText: '{"imports":{"__proto__":"./proto.js","ok":"./ok.js"}}',
@@ -228,7 +311,7 @@ test('falls back to the realm URL without a page base', () => {
 test('applies the Host map alone when the helper did not load', () => {
   const r = runStub({ helper: false, pageMapText: JSON.stringify({ imports: { local: './p.js' } }), parent: hostWindow({ importMap: null }) })
   assert.equal(r.maps.length, 1)
-  assert.deepEqual(r.map, { imports: HOST_IMPORTS })
+  assert.deepEqual(r.raw, { imports: HOST_IMPORTS })
   assert.equal(r.errors.length, 1)
   assert.match(r.errors[0], /bootstrap is unavailable/)
   assert.equal(r.ready, undefined)
