@@ -241,7 +241,113 @@ local function define_tests()
             test.eq(fragment_html.decode_attribute("&#x69;mport&#109;ap"), "importmap")
             test.eq(fragment_html.decode_attribute("a&amp;b&lt;&gt;&quot;&apos;"), "a&b<>\"'")
             test.eq(fragment_html.decode_attribute("&#233;"), "\195\169")
-            test.eq(fragment_html.decode_attribute("&unknown; &amp no-semicolon &#;"), "&unknown; &amp no-semicolon &#;")
+            test.eq(fragment_html.decode_attribute("&unknown; &amp no-semicolon &#;"), "&unknown; & no-semicolon &#;")
+        end)
+
+        test.it("decodes character references the way the tokenizer does in attributes", function()
+            local cases = {
+                { "&#105mportmap", "importmap" }, -- numeric without `;`
+                { "&#000000000000105;mportmap", "importmap" },
+                { "&Tab;importmap", "\timportmap" },
+                { "&AMP;&LT;&GT;&QUOT;", "&<>\"" },
+                { "a&ampx", "a&ampx" }, -- a letter follows a legacy reference
+                { "a&amp=x", "a&amp=x" }, -- `=` follows a legacy reference
+                { "&# 105;", "&# 105;" },
+                { "&#+105;", "&#+105;" },
+                { "&#x;", "&#x;" },
+                { "&#0;", "\239\191\189" },
+                { "&#x110000;", "\239\191\189" },
+                { "&#xD800;", "\239\191\189" },
+            }
+            for _, c in ipairs(cases) do
+                test.eq(fragment_html.decode_attribute(c[1]), c[2])
+            end
+        end)
+
+        test.it("resolves dot segments, backslashes and control characters like the URL standard", function()
+            local cases = {
+                { "%2e/../a.css", "http://app.test/app/app/a.css" },
+                { "x/%2E%2e/a.css", "http://app.test/app/app/demo/a.css" },
+                { "..\\a.css", "http://app.test/app/app/a.css" },
+                { "./a.css?x=\\y", "http://app.test/app/app/demo/a.css?x=\\y" },
+                { "\t./a\n.css\r", "http://app.test/app/app/demo/a.css" },
+                { "http:x.css", "http://app.test/app/app/demo/x.css" },
+            }
+            for _, c in ipairs(cases) do
+                test.eq(fragment_html.resolve_url(BASE, c[1]), c[2])
+            end
+            for _, ref in ipairs({ "\\\\cdn.test\\a.css", "ht\ntp://x.test/a.css", "https:x.css", "http:/x.test/a", "http:" }) do
+                test.eq(fragment_html.resolve_url(BASE, ref), nil)
+            end
+        end)
+    end)
+
+    test.describe("fragment html robustness", function()
+        test.it("joins large outputs without overflowing", function()
+            local out = transform(string.rep('<img src="x.png">', 20000))
+            local count, pos = 0, 1
+            while true do
+                local s = out:find('src="http://app.test/app/app/demo/x.png"', pos, true)
+                if not s then
+                    break
+                end
+                count = count + 1
+                pos = s + 1
+            end
+            test.eq(count, 20000)
+            local maps = string.rep('<script type="importmap">{}</script>', 20000)
+            test.eq(transform(maps .. "<p>"), "<p>")
+        end)
+
+        test.it("handles very long attribute values", function()
+            local long = string.rep("a", 40000)
+            test.eq(fragment_html.decode_attribute(long .. "&amp;"), long .. "&")
+            local out = transform('<link href="./' .. long .. '.css?x=1&amp;y=2">')
+            test.eq(out, '<link href="http://app.test/app/app/demo/' .. long .. '.css?x=1&amp;y=2">')
+            local tag = '<script type="' .. long .. '&amp;">{}</script>'
+            test.eq(fragment_html.page_import_map(tag), nil)
+        end)
+
+        test.it("rewrites the first of many attributes in one tag", function()
+            local parts = {}
+            for k = 1, 4000 do
+                parts[k] = "a" .. k .. '="' .. k .. '"'
+            end
+            local out = transform("<img " .. table.concat(parts, " ") .. ' src="x.png" src="y.png">')
+            test.eq(contains(out, 'src="http://app.test/app/app/demo/x.png" src="y.png">'), true)
+        end)
+
+        test.it("skips import maps inside <template>", function()
+            local html = '<template><script type="importmap">{"a":1}</script></template>'
+                .. '<script type="importmap">{"b":2}</script>'
+            test.eq(fragment_html.page_import_map(html), '{"b":2}')
+            test.eq(fragment_html.page_import_map('<template><template></template><script type="importmap">{}</script></template>'), nil)
+        end)
+
+        test.it("lowercases names as ASCII only", function()
+            -- U+0130 and U+212A are lowercased to ASCII by the runtime's string.lower.
+            test.eq(fragment_html.page_import_map('<scr\196\176pt type="importmap">{}</scr\196\176pt>'), nil)
+            test.eq(fragment_html.page_import_map('<script type="\196\176mportmap">{}</script>'), nil)
+            -- A real <link> would get `x.css` made absolute; this element is unknown.
+            local html = '<lin\226\132\170 href="x.css">'
+            test.eq(transform(html), html)
+            test.eq(transform('<LINK href="x.css">'), '<LINK href="http://app.test/app/app/demo/x.css">')
+        end)
+
+        test.it("rewrites srcset lists, object data and SVG references", function()
+            local out = transform('<img srcset="a.png 1x, ../b.png 2x, https://cdn.test/c.png 3x">'
+                .. '<link rel="preload" as="image" imagesrcset="d.png 480w,e.png 800w" href="d.png">'
+                .. '<object data="doc.pdf"></object>'
+                .. '<svg><use href="sprite.svg#i"></use><use href="#local"></use><image xlink:href="./p.png"/></svg>')
+            test.eq(contains(out, 'srcset="http://app.test/app/app/demo/a.png 1x, http://app.test/app/app/b.png 2x, https://cdn.test/c.png 3x"'), true)
+            test.eq(contains(out, 'imagesrcset="http://app.test/app/app/demo/d.png 480w, http://app.test/app/app/demo/e.png 800w"'), true)
+            test.eq(contains(out, 'href="http://app.test/app/app/demo/d.png"'), true)
+            test.eq(contains(out, 'data="http://app.test/app/app/demo/doc.pdf"'), true)
+            test.eq(contains(out, 'href="http://app.test/app/app/demo/sprite.svg#i"'), true)
+            test.eq(contains(out, '<use href="#local">'), true)
+            test.eq(contains(out, 'xlink:href="http://app.test/app/app/demo/p.png"'), true)
+            local absolute = '<img srcset="https://cdn.test/a.png 1x, data:image/png;base64,AA,BB 2x">'
+            test.eq(transform(absolute), absolute)
         end)
     end)
 end

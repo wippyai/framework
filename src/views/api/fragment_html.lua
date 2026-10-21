@@ -9,6 +9,12 @@
 --
 -- Edits are applied by byte range, so every byte the gateway does not edit is
 -- returned unchanged. Nothing here pattern-matches HTML.
+--
+-- Known limits: the tokenizer does not run the tree builder. Content inside
+-- <svg>/<math> (where raw-text elements are not raw text and CDATA sections
+-- exist), <select>, <frameset>, and markup that the parser moves out of a
+-- <table> can differ from a browser. Stray <html>/<head>/<body> tags are
+-- renamed like real ones. Well-formed view.page documents are not affected.
 
 local M = {}
 
@@ -25,8 +31,85 @@ local function is_alpha(c)
     return c ~= nil and ((c >= 65 and c <= 90) or (c >= 97 and c <= 122))
 end
 
+local function is_digit(c)
+    return c ~= nil and c >= 48 and c <= 57
+end
+
 local function is_alnum(c)
-    return is_alpha(c) or (c ~= nil and c >= 48 and c <= 57)
+    return is_alpha(c) or is_digit(c)
+end
+
+local function is_hex(c)
+    return is_digit(c) or (c ~= nil and ((c >= 65 and c <= 70) or (c >= 97 and c <= 102)))
+end
+
+-- table.concat fails above roughly 32,000 pieces in this runtime, so output is
+-- joined in blocks.
+local BLOCK = 2048
+
+local function joiner()
+    return { blocks = {}, pieces = {} }
+end
+
+local function join_add(j, s)
+    local pieces = j.pieces
+    pieces[#pieces + 1] = s
+    if #pieces >= BLOCK then
+        j.blocks[#j.blocks + 1] = table.concat(pieces)
+        j.pieces = {}
+    end
+end
+
+local function join_result(j)
+    j.blocks[#j.blocks + 1] = table.concat(j.pieces)
+    return table.concat(j.blocks)
+end
+
+-- ASCII-only lowercase. The runtime's string.lower also maps some non-ASCII
+-- letters (for example U+0130 and U+212A) to ASCII, which the HTML parser
+-- does not do.
+local function ascii_lower(s)
+    local j = nil
+    local run = 1
+    for k = 1, #s do
+        local c = s:byte(k)
+        if c >= 65 and c <= 90 then
+            j = j or joiner()
+            if k > run then
+                join_add(j, s:sub(run, k - 1))
+            end
+            join_add(j, string.char(c + 32))
+            run = k + 1
+        end
+    end
+    if not j then
+        return s
+    end
+    if run <= #s then
+        join_add(j, s:sub(run))
+    end
+    return join_result(j)
+end
+
+-- Literal (non-pattern) replacement of every occurrence of `from` in `text`.
+local function replace_plain(text, from, to)
+    local j = nil
+    local pos = 1
+    while true do
+        local s = text:find(from, pos, true)
+        if not s then
+            break
+        end
+        j = j or joiner()
+        join_add(j, text:sub(pos, s - 1))
+        join_add(j, to)
+        pos = s + #from
+    end
+    if not j then
+        return text
+    end
+    join_add(j, text:sub(pos))
+    return join_result(j)
 end
 
 -- `</name` (ASCII case-insensitive) at `i`, followed by whitespace, `/` or `>`:
@@ -35,7 +118,7 @@ local function end_tag_at(html, i, name)
     if html:byte(i) ~= LT or html:byte(i + 1) ~= SLASH then
         return false
     end
-    if html:sub(i + 2, i + 1 + #name):lower() ~= name then
+    if ascii_lower(html:sub(i + 2, i + 1 + #name)) ~= name then
         return false
     end
     local after = html:byte(i + 2 + #name)
@@ -44,7 +127,7 @@ end
 
 -- `script` (ASCII case-insensitive) at `j`, followed by whitespace, `/` or `>`.
 local function script_word_at(html, j)
-    if html:sub(j, j + 5):lower() ~= "script" then
+    if ascii_lower(html:sub(j, j + 5)) ~= "script" then
         return false
     end
     local after = html:byte(j + 6)
@@ -179,7 +262,7 @@ local function read_tag(html, lt, is_end)
         s = lt,
         name_s = name_s,
         name_e = i - 1,
-        name = html:sub(name_s, i - 1):lower(),
+        name = ascii_lower(html:sub(name_s, i - 1)),
         attrs = {},
         self_closing = false,
     }
@@ -216,7 +299,7 @@ local function read_tag(html, lt, is_end)
             if i > n then
                 return nil
             end
-            local attr = { name = html:sub(an_s, i - 1):lower(), name_s = an_s, name_e = i - 1 }
+            local attr = { name = ascii_lower(html:sub(an_s, i - 1)), name_s = an_s, name_e = i - 1 }
             local j = i
             while j <= n and is_ws(html:byte(j)) do
                 j = j + 1
@@ -297,7 +380,7 @@ function M.tokenize(html)
                 local e = comment_end(html, lt + 4)
                 table.insert(tokens, { type = "comment", s = lt, e = e })
                 i = e + 1
-            elseif html:sub(lt + 2, lt + 8):lower() == "doctype" then
+            elseif ascii_lower(html:sub(lt + 2, lt + 8)) == "doctype" then
                 local gt = html:find(">", lt + 2, true) or n
                 table.insert(tokens, { type = "doctype", s = lt, e = gt })
                 i = gt + 1
@@ -369,9 +452,16 @@ function M.tokenize(html)
     return tokens
 end
 
--- Minimal character-reference decoding for attribute values: numeric
--- references and the five XML entities, each terminated by `;`.
-local NAMED = { amp = "&", lt = "<", gt = ">", quot = '"', apos = "'" }
+-- Character references in attribute values, as the HTML tokenizer decodes
+-- them: numeric references (with or without `;`), the named references that
+-- matter for `type`, `data-role` and URL values, and the legacy forms of
+-- amp/lt/gt/quot without `;` when no letter, digit or `=` follows.
+local NAMED = {
+    amp = "&", AMP = "&", lt = "<", LT = "<", gt = ">", GT = ">",
+    quot = '"', QUOT = '"', apos = "'", Tab = "\t", NewLine = "\n",
+}
+local LEGACY = { amp = true, AMP = true, lt = true, LT = true, gt = true, GT = true, quot = true, QUOT = true }
+local REPLACEMENT = "\239\191\189" -- U+FFFD
 
 local function utf8_char(cp)
     if cp < 0x80 then
@@ -386,40 +476,82 @@ local function utf8_char(cp)
     end
 end
 
+-- Decode the character reference whose `&` is at `i`. Returns the text and the
+-- index after the reference, or nil when the tokenizer would keep `&` as text.
+local function char_ref(value, i)
+    local n = #value
+    if value:byte(i + 1) == HASH then
+        local k = i + 2
+        local hex = value:byte(k) == 120 or value:byte(k) == 88
+        if hex then
+            k = k + 1
+        end
+        local digits_s = k
+        local cp = 0
+        while k <= n do
+            local c = value:byte(k)
+            if hex and is_hex(c) then
+                local d = is_digit(c) and c - 48 or (c >= 97 and c - 87 or c - 55)
+                cp = math.min(cp * 16 + d, 0x110000)
+            elseif not hex and is_digit(c) then
+                cp = math.min(cp * 10 + (c - 48), 0x110000)
+            else
+                break
+            end
+            k = k + 1
+        end
+        if k == digits_s then
+            return nil, nil
+        end
+        if value:byte(k) == SEMI then
+            k = k + 1
+        end
+        if cp == 0 or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF) then
+            return REPLACEMENT, k
+        end
+        return utf8_char(cp), k
+    end
+    local k = i + 1
+    while k <= n and is_alnum(value:byte(k)) do
+        k = k + 1
+    end
+    local name = value:sub(i + 1, k - 1)
+    local text = NAMED[name]
+    if not text then
+        return nil, nil
+    end
+    if value:byte(k) == SEMI then
+        return text, k + 1
+    end
+    if LEGACY[name] and value:byte(k) ~= EQ then
+        return text, k -- the loop above stopped at a byte that is not alphanumeric
+    end
+    return nil, nil
+end
+
 function M.decode_attribute(value)
     if not value or not value:find("&", 1, true) then
         return value
     end
-    local out = {}
-    local i, n = 1, #value
-    while i <= n do
-        local c = value:byte(i)
-        local decoded, next_i = nil, nil
-        if c == AMP then
-            local semi = value:find(";", i + 1, true)
-            if semi and semi - i <= 12 then
-                local body = value:sub(i + 1, semi - 1)
-                if body:byte(1) == HASH then
-                    local hex = body:byte(2) == 120 or body:byte(2) == 88
-                    local digits = hex and body:sub(3) or body:sub(2)
-                    local cp = digits ~= "" and tonumber(digits, hex and 16 or 10) or nil
-                    if cp and cp > 0 and cp <= 0x10FFFF and not (cp >= 0xD800 and cp <= 0xDFFF) then
-                        decoded, next_i = utf8_char(cp), semi + 1
-                    end
-                elseif NAMED[body] then
-                    decoded, next_i = NAMED[body], semi + 1
-                end
-            end
+    local j = joiner()
+    local pos = 1
+    while true do
+        local amp = value:find("&", pos, true)
+        if not amp then
+            break
         end
-        if decoded then
-            table.insert(out, decoded)
-            i = next_i
+        local text, next_i = char_ref(value, amp)
+        if text and next_i then
+            join_add(j, value:sub(pos, amp - 1))
+            join_add(j, text)
+            pos = next_i
         else
-            table.insert(out, string.char(c))
-            i = i + 1
+            join_add(j, value:sub(pos, amp))
+            pos = amp + 1
         end
     end
-    return table.concat(out)
+    join_add(j, value:sub(pos))
+    return join_result(j)
 end
 
 local function trim_ascii_ws(s)
@@ -456,7 +588,7 @@ function M.is_import_map(tag)
         return false
     end
     local value = attr_value(tag, "type")
-    return value ~= nil and trim_ascii_ws(value):lower() == "importmap"
+    return value ~= nil and ascii_lower(trim_ascii_ws(value)) == "importmap"
 end
 
 local function is_wippy_scripts_placeholder(tag)
@@ -467,12 +599,19 @@ local function is_wippy_scripts_placeholder(tag)
     return value ~= nil and trim_ascii_ws(value) == "@wippy/scripts"
 end
 
---- Raw text of the first import map in the document (what the iframe engine
---- reads with `querySelector('script[type="importmap"]')`), or nil when there
---- is none or it is empty.
+--- Raw text of the first import map that a browser would apply, or nil when
+--- there is none or it is empty. Import maps inside <template> are inert and
+--- are skipped.
 function M.page_import_map(html, tokens)
+    local template_depth = 0
     for _, t in ipairs(tokens or M.tokenize(html)) do
-        if M.is_import_map(t) then
+        if t.name == "template" then
+            if t.type == "start" then
+                template_depth = template_depth + 1
+            elseif t.type == "end" and template_depth > 0 then
+                template_depth = template_depth - 1
+            end
+        elseif template_depth == 0 and M.is_import_map(t) then
             local text = html:sub(t.content_s, t.content_e)
             if text == "" then
                 return nil
@@ -485,20 +624,48 @@ end
 
 -- URL helpers --------------------------------------------------------------
 
-local function has_scheme(ref)
+-- The lowercased scheme of `ref` and the index after its `:`, or nil.
+local function scheme_of(ref)
     if not is_alpha(ref:byte(1)) then
-        return false
+        return nil, nil
     end
     for k = 2, #ref do
         local c = ref:byte(k)
-        if c == 58 then
-            return true -- ':'
+        if c == 58 then -- ':'
+            return ascii_lower(ref:sub(1, k - 1)), k + 1
         end
-        if not (is_alnum(c) or c == 43 or c == 45 or c == 46) then
-            return false -- not + - .
+        if not (is_alnum(c) or c == 43 or c == 45 or c == 46) then -- not + - .
+            return nil, nil
         end
     end
-    return false
+    return nil, nil
+end
+
+local function has_scheme(ref)
+    return scheme_of(ref) ~= nil
+end
+
+-- A reference as the URL parser reads it against an http(s) base: leading and
+-- trailing C0 controls and spaces stripped, tabs and newlines removed, and `\`
+-- read as `/` before the query.
+local function clean_ref(ref)
+    local i, j = 1, #ref
+    while i <= j and ref:byte(i) <= 32 do
+        i = i + 1
+    end
+    while j >= i and ref:byte(j) <= 32 do
+        j = j - 1
+    end
+    local s = replace_plain(replace_plain(replace_plain(ref:sub(i, j), "\t", ""), "\n", ""), "\r", "")
+    local cut = #s + 1
+    for k = 1, #s do
+        local c = s:byte(k)
+        if c == 63 or c == HASH then
+            cut = k
+            break
+        end
+    end
+    return replace_plain(s:sub(1, cut - 1), "\\", "/") .. s:sub(cut)
 end
 
 -- Split an absolute or root-relative URL into origin ("scheme://authority" or
@@ -536,7 +703,20 @@ local function split_url(url)
     return origin, rest, ""
 end
 
--- RFC 3986 section 5.2.4.
+-- 1 for a single-dot segment, 2 for a double-dot segment (percent-encoded dots
+-- included, as in the URL standard), else 0.
+local function dot_kind(seg)
+    local s = ascii_lower(seg)
+    if s == "." or s == "%2e" then
+        return 1
+    end
+    if s == ".." or s == ".%2e" or s == "%2e." or s == "%2e%2e" then
+        return 2
+    end
+    return 0
+end
+
+-- RFC 3986 section 5.2.4, with the URL standard's dot segments.
 local function remove_dot_segments(path)
     local absolute = path:byte(1) == SLASH
     local segments = {}
@@ -553,11 +733,12 @@ local function remove_dot_segments(path)
     end
     for idx, seg in ipairs(parts) do
         local last = idx == #parts
-        if seg == "." then
+        local kind = dot_kind(seg)
+        if kind == 1 then
             if last then
                 table.insert(segments, "")
             end
-        elseif seg == ".." then
+        elseif kind == 2 then
             if #segments > 0 and not (#segments == 1 and segments[1] == "" and absolute) then
                 table.remove(segments)
             end
@@ -575,12 +756,22 @@ local function remove_dot_segments(path)
     return out
 end
 
---- Resolve `ref` against the absolute `base_url` (a directory URL). Returns nil
---- when `ref` is already absolute, protocol-relative, a fragment, or empty.
+--- Resolve `ref` against the absolute http(s) `base_url` (a directory URL).
+--- Returns nil when `ref` is already absolute, protocol-relative, a fragment,
+--- or empty.
 function M.resolve_url(base_url, ref)
-    local value = trim_ascii_ws(ref)
-    if value == "" or value:byte(1) == HASH or has_scheme(value) then
+    local value = clean_ref(ref)
+    if value == "" or value:byte(1) == HASH then
         return nil
+    end
+    local scheme, rest_at = scheme_of(value)
+    if scheme and rest_at then
+        -- `http:x.css` against an http base is relative (the URL standard's
+        -- special-relative state); any other scheme makes the reference absolute.
+        if scheme ~= scheme_of(base_url) or value:byte(rest_at) == SLASH or rest_at > #value then
+            return nil
+        end
+        value = value:sub(rest_at)
     end
     if value:byte(1) == SLASH and value:byte(2) == SLASH then
         return nil
@@ -608,33 +799,91 @@ function M.resolve_url(base_url, ref)
     return base_origin .. remove_dot_segments(merged) .. ref_suffix
 end
 
-local function escape_attribute(value)
-    local out = {}
-    for k = 1, #value do
-        local c = value:sub(k, k)
-        if c == "&" then
-            table.insert(out, "&amp;")
-        elseif c == '"' then
-            table.insert(out, "&quot;")
+-- Rewrite every candidate URL of a srcset-style list (the HTML "parse a srcset
+-- attribute" steps), keeping descriptors. Returns nil when nothing changes.
+local function srcset_rewrite(value, base_url)
+    local j = joiner()
+    local changed, first = false, true
+    local i, n = 1, #value
+    while i <= n do
+        local c = value:byte(i)
+        if is_ws(c) or c == 44 then -- ','
+            i = i + 1
         else
-            table.insert(out, c)
+            local url_s = i
+            while i <= n and not is_ws(value:byte(i)) do
+                i = i + 1
+            end
+            local url_e = i - 1
+            local ended = false
+            while url_e >= url_s and value:byte(url_e) == 44 do
+                url_e = url_e - 1
+                ended = true
+            end
+            local descriptors = ""
+            if not ended then
+                local d_s, depth = i, 0
+                while i <= n do
+                    local d = value:byte(i)
+                    if d == 40 then -- '('
+                        depth = depth + 1
+                    elseif d == 41 and depth > 0 then -- ')'
+                        depth = depth - 1
+                    elseif d == 44 and depth == 0 then
+                        break
+                    end
+                    i = i + 1
+                end
+                descriptors = trim_ascii_ws(value:sub(d_s, i - 1))
+            end
+            local url = value:sub(url_s, url_e)
+            if url ~= "" then
+                local resolved = M.resolve_url(base_url, url)
+                if resolved then
+                    changed = true
+                    url = resolved
+                end
+                if not first then
+                    join_add(j, ", ")
+                end
+                join_add(j, url)
+                if descriptors ~= "" then
+                    join_add(j, " ")
+                    join_add(j, descriptors)
+                end
+                first = false
+            end
         end
     end
-    return table.concat(out)
+    if not changed then
+        return nil
+    end
+    return join_result(j)
 end
 
--- Elements whose href/src load a resource. A <base> in the reflected shadow is
--- not honored, so every relative reference must become absolute. Other
--- elements' href/src (navigation such as <a>) only get `./` and `../`
--- references made absolute, as before.
+local function escape_attribute(value)
+    return replace_plain(replace_plain(value, "&", "&amp;"), '"', "&quot;")
+end
+
+-- Attributes that load a resource. In the main document's shadow root a
+-- relative URL would resolve against the Host page's URL, so every relative
+-- reference becomes absolute. On other elements (navigation such as <a>) only
+-- `./` and `../` references are made absolute.
 local RESOURCE_ATTRS: {[string]: {[string]: boolean}} = {
     link = { href = true }, script = { src = true }, img = { src = true }, source = { src = true },
     video = { src = true, poster = true }, audio = { src = true }, track = { src = true },
-    embed = { src = true }, iframe = { src = true }, input = { src = true },
+    embed = { src = true }, iframe = { src = true }, input = { src = true }, object = { data = true },
+    image = { href = true, ["xlink:href"] = true }, use = { href = true, ["xlink:href"] = true },
+    feimage = { href = true, ["xlink:href"] = true },
+}
+
+-- Attributes that hold a comma-separated list of candidate URLs.
+local SRCSET_ATTRS: {[string]: {[string]: boolean}} = {
+    img = { srcset = true }, source = { srcset = true }, link = { imagesrcset = true },
 }
 
 local function directory_relative(value)
-    local v = trim_ascii_ws(value)
+    local v = clean_ref(value)
     return v:sub(1, 2) == "./" or v:sub(1, 3) == "../"
 end
 
@@ -642,12 +891,19 @@ local function url_edit(tag, a, base_url)
     if a.value == nil or a.value == "" then
         return nil
     end
-    local attrs = RESOURCE_ATTRS[tag.name]
-    local resource = attrs ~= nil and attrs[a.name] == true
-    if not resource and not ((a.name == "href" or a.name == "src") and directory_relative(M.decode_attribute(a.value))) then
-        return nil
+    local value = M.decode_attribute(a.value)
+    local resolved
+    local lists = SRCSET_ATTRS[tag.name]
+    if lists ~= nil and lists[a.name] == true then
+        resolved = srcset_rewrite(value, base_url)
+    else
+        local attrs = RESOURCE_ATTRS[tag.name]
+        local resource = attrs ~= nil and attrs[a.name] == true
+        if not resource and not ((a.name == "href" or a.name == "src") and directory_relative(value)) then
+            return nil
+        end
+        resolved = M.resolve_url(base_url, value)
     end
-    local resolved = M.resolve_url(base_url, M.decode_attribute(a.value))
     if not resolved then
         return nil
     end
@@ -661,17 +917,17 @@ local function apply_edits(html, edits)
         end
         return (x.e - x.s) < (y.e - y.s) -- an insertion (e < s) goes before a replacement at the same place
     end)
-    local out, pos = {}, 1
+    local j, pos = joiner(), 1
     for _, ed in ipairs(edits) do
         if ed.s < pos then
             error("fragment_html: overlapping edits at byte " .. tostring(ed.s))
         end
-        table.insert(out, html:sub(pos, ed.s - 1))
-        table.insert(out, ed.text)
+        join_add(j, html:sub(pos, ed.s - 1))
+        join_add(j, ed.text)
         pos = ed.e + 1
     end
-    table.insert(out, html:sub(pos))
-    return table.concat(out)
+    join_add(j, html:sub(pos))
+    return join_result(j)
 end
 
 local WF = { html = "wf-html", head = "wf-head", body = "wf-body" }
@@ -696,11 +952,15 @@ function M.transform_document(html, options)
                 table.insert(edits, { s = t.s, e = last, text = "" })
             else
                 if options.base_url and options.base_url ~= "" then
+                    -- Only the first of duplicate attributes counts, as in the parser.
+                    local seen = {}
                     for _, a in ipairs(t.attrs) do
-                        local first = attr(t, a.name) == a
-                        local ed = first and url_edit(t, a, options.base_url) or nil
-                        if ed then
-                            table.insert(edits, ed)
+                        if not seen[a.name] then
+                            seen[a.name] = true
+                            local ed = url_edit(t, a, options.base_url)
+                            if ed then
+                                table.insert(edits, ed)
+                            end
                         end
                     end
                 end
