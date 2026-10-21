@@ -285,8 +285,8 @@ local function get_memory_contract(self: any, runtime_context: any): (any?, stri
     local contract_module = get_contract()
 
     local memory_contract_def, err = contract_module.get(AGENT_CONFIG.memory.contract_id)
-    if err then
-        return nil, "Failed to get memory contract: " .. tostring(err)
+    if err or not memory_contract_def then
+        return nil, "Failed to get memory contract: " .. tostring(err or "not found")
     end
 
     local merged_context = {}
@@ -304,15 +304,22 @@ local function get_memory_contract(self: any, runtime_context: any): (any?, stri
 
     merged_context.agent_id = self.id
 
-    local memory_instance, err = memory_contract_def:open(tostring(self.memory_contract.implementation_id), merged_context)
-    if err then
-        return nil, "Failed to open memory implementation: " .. tostring(err)
+    local memory_instance, open_err = memory_contract_def:open(tostring(self.memory_contract.implementation_id), merged_context)
+    if open_err or not memory_instance then
+        return nil, "Failed to open memory implementation: " .. tostring(open_err or "no instance")
     end
 
     return memory_instance
 end
 
-local function perform_memory_recall(self: any, prompt_builder: any, runtime_options: any): (string?, any)
+type MemoryRecall = {
+    text: string,
+    ids: {string},
+}
+
+-- Returns nil, nil when recall is skipped or finds nothing; an error means the
+-- configured provider could not be consulted or answered malformed data.
+local function perform_memory_recall(self: any, prompt_builder: any, runtime_options: any): (MemoryRecall?, string?)
     if not self.memory_contract or not self.memory_contract.implementation_id then
         return nil, nil
     end
@@ -330,9 +337,9 @@ local function perform_memory_recall(self: any, prompt_builder: any, runtime_opt
 
     local ro = runtime_options :: any
     local context = ro and ro.context or {}
-    local memory_contract, err = get_memory_contract(self, context)
-    if err then
-        return nil, nil
+    local memory_contract, open_err = get_memory_contract(self, context)
+    if open_err then
+        return nil, open_err
     end
 
     local prompt_memory_ids = extract_memory_ids_from_messages(messages, options.scan_limit)
@@ -349,7 +356,7 @@ local function perform_memory_recall(self: any, prompt_builder: any, runtime_opt
         end
     end
 
-    local recall_result, err = memory_contract:recall({
+    local recall_result, recall_err = memory_contract:recall({
         recent_actions = recent_actions,
         previous_memories = all_previous_memory_ids,
         constraints = {
@@ -358,21 +365,33 @@ local function perform_memory_recall(self: any, prompt_builder: any, runtime_opt
         }
     })
 
-    if err or not recall_result or not recall_result.memories or #recall_result.memories == 0 then
+    if recall_err then
+        return nil, "Memory recall failed: " .. tostring(recall_err)
+    end
+    if type(recall_result) ~= "table" then
+        return nil, "Memory recall returned no result"
+    end
+    local memories = recall_result.memories
+    if type(memories) ~= "table" then
+        return nil, "Memory recall result has no memories list"
+    end
+    if #memories == 0 then
         return nil, nil
     end
 
-    local memory_parts = table.create(#recall_result.memories, 0)
-    local memory_ids = table.create(#recall_result.memories, 0)
+    local memory_parts = table.create(#memories, 0)
+    local memory_ids = table.create(#memories, 0)
 
-    for _, memory in ipairs(recall_result.memories) do
+    for index, memory in ipairs(memories) do
+        if type(memory) ~= "table" or type(memory.id) ~= "string" or memory.id == ""
+            or type(memory.content) ~= "string" then
+            return nil, "Memory recall returned a malformed memory at index " .. tostring(index)
+        end
         table.insert(memory_parts, "- " .. memory.content)
         table.insert(memory_ids, memory.id)
     end
 
-    local memory_text = table.concat(memory_parts, "\n")
-
-    return memory_text, memory_ids
+    return { text = table.concat(memory_parts, "\n"), ids = memory_ids }, nil
 end
 
 local function extract_tool_schemas_for_llm(tools: any): {table}
@@ -496,11 +515,12 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         complete_system_prompt = complete_system_prompt .. "\n\n" .. dynamic_prompt
     end
 
-    local memory_text, memory_ids = perform_memory_recall(self, prompt_builder, runtime_options)
+    local recall, memory_recall_error = perform_memory_recall(self, prompt_builder, runtime_options)
+    local memory_ids = recall and recall.ids
     local memory_prompt = nil
 
-    if memory_text and memory_ids then
-        local formatted_memory = string.format(tostring(AGENT_CONFIG.memory.recall_prompt), memory_text)
+    if recall then
+        local formatted_memory = string.format(tostring(AGENT_CONFIG.memory.recall_prompt), recall.text)
         memory_prompt = {
             role = prompt.ROLE.DEVELOPER,
             content = { prompt.text(formatted_memory) },
@@ -616,16 +636,24 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
 
     if runtime_options.stop_check and runtime_options.stop_check() then
-        return { stopped = true }, nil
+        return { stopped = true, memory_recall_error = memory_recall_error }, nil
     end
 
     local result, err = llm_instance.generate(final_messages, options)
     if err then
+        if memory_recall_error then
+            return { memory_recall_error = memory_recall_error }, err
+        end
         return nil, err
     end
 
     if result.finish_reason == output.FINISH_REASON.CANCELLED then
-        return { stopped = true, result = result.result, finish_reason = result.finish_reason }, nil
+        return {
+            stopped = true,
+            result = result.result,
+            finish_reason = result.finish_reason,
+            memory_recall_error = memory_recall_error
+        }, nil
     end
 
     local response = {
@@ -633,7 +661,8 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         tokens = result.tokens,
         finish_reason = result.finish_reason,
         metadata = result.metadata,
-        route_pin = route_pin(runtime_options.route, result.metadata)
+        route_pin = route_pin(runtime_options.route, result.metadata),
+        memory_recall_error = memory_recall_error
     }
 
     if output.detect_truncation(result) then
