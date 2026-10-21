@@ -1,6 +1,7 @@
 local openai_mapper = require("openai_mapper")
 local output = require("output")
 local json = require("json")
+local registry = require("registry")
 local test = require("test")
 
 local function define_tests()
@@ -805,6 +806,10 @@ local function define_tests()
             end)
 
             it("preserves malformed arguments and the decoder error", function()
+                local generator, lookup_err = registry.get("wippy.llm:generator")
+                test.is_nil(lookup_err)
+                assert(generator)
+                local schema = generator.data.methods[1].output_schemas[1].definition
                 for _, raw in ipairs({ 'invalid json {', '{"answer":', '' }) do
                     local _, expected_error = json.decode(raw)
                     test.not_nil(expected_error)
@@ -815,6 +820,11 @@ local function define_tests()
                     test.eq(calls[1].arguments, raw)
                     test.eq(calls[1].raw_arguments, raw)
                     test.eq(calls[1].arguments_error, tostring(expected_error))
+                    local valid, validation_err = json.validate(schema, {
+                        success = true, result = { content = "", tool_calls = calls }
+                    })
+                    test.is_nil(validation_err)
+                    test.is_true(valid)
                 end
             end)
 
