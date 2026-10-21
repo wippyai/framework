@@ -229,3 +229,18 @@ entries:
     imports:
       test: wippy.test:test
       fragment_html: wippy.views.api:fragment_html
+
+  # app:fragment_service_test
+  - name: fragment_service_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway request handling with a fake runtime (branches, caches, paths)
+    source: file://fragment_service_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      fragment_service: wippy.views.api:fragment_service
+    modules:
+      - json

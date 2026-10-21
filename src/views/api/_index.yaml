@@ -228,6 +228,16 @@ entries:
         description: Reads and edits view.page HTML for the fragment gateway without pattern matching
       source: file://fragment_html.lua
 
+    - name: fragment_service
+      kind: library.lua
+      meta:
+        comment: Request handling for the fragment gateway, with its runtime dependencies passed in
+        description: Serves the realm stub, the transformed page document and page assets for fragment-mode views
+      source: file://fragment_service.lua
+      imports:
+        fragment_bootstrap: wippy.views.api:fragment_bootstrap
+        fragment_html: wippy.views.api:fragment_html
+
     - name: fragment_gateway
       kind: function.lua
       meta:
@@ -236,14 +246,16 @@ entries:
       source: file://fragment_gateway.lua
       imports:
         page_registry: wippy.views:page_registry
-        fragment_bootstrap: wippy.views.api:fragment_bootstrap
-        fragment_html: wippy.views.api:fragment_html
+        bundled_meta: wippy.views:bundled_meta
+        fragment_service: wippy.views.api:fragment_service
       method: handler
       modules:
         - http
         - http_client
         - registry
         - json
+        - time
+        - logger
       security:
         actor:
           id: wippy.views.api:fragment_gateway
@@ -251,11 +263,13 @@ entries:
           - wippy.views:public_registry_runtime
           # Required: page_registry.resolve_base_url reads PUBLIC_API_URL to turn a
           # page's relative url/base_path into an ABSOLUTE origin. Without this the
-          # read is denied, base_url stays relative, and the document fetch is then
-          # rejected by public_metadata_http_runtime (which only allows http(s)://*).
+          # read is denied, base_url stays relative, and the gateway answers 500.
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          # bundled_meta (the HTML entry of a page without a YAML entry_point)
+          # records its once-only warning in a memory store.
+          - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
         workers: 4
