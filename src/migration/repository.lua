@@ -47,11 +47,7 @@ migrations.schemas = {
 -- Queries to check if migration table exists
 migrations.table_exists_queries = {
     [sql.type.POSTGRES] = [[
-        SELECT EXISTS (
-            SELECT FROM pg_tables
-            WHERE schemaname = 'public'
-            AND tablename = '_migrations'
-        )
+        SELECT to_regclass('_migrations') IS NOT NULL AS exists
     ]],
 
     [sql.type.SQLITE] = [[
