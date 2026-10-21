@@ -9,6 +9,8 @@ type ToolCall = {
     id: string,
     name: string,
     arguments: string | table,
+    raw_arguments: string?,
+    arguments_error: string?,
     registry_id: string,
     context: table?,
     provider_metadata: table?,
@@ -528,6 +530,19 @@ function tool_caller:validate(tool_calls: {ToolCall}?): (any, string?)
         local registry_id = tool_call.registry_id
         -- Use the original call ID from LLM instead of generating new UUID
         local function_call_id = tool_call.id
+
+        if tool_call.arguments_error then
+            validated_tools[function_call_id] = {
+                call_id = function_call_id,
+                name = tool_name,
+                args = arguments,
+                registry_id = registry_id,
+                meta = {},
+                error = "Failed to parse arguments: " .. tool_call.arguments_error,
+                valid = false
+            }
+            goto continue
+        end
 
         -- Get tool schema with metadata
         local schema, err = get_tools().get_tool_schema(registry_id)

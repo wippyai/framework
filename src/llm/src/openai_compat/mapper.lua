@@ -500,9 +500,14 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
     for i, tool_call in ipairs(openai_tool_calls) do
         if tool_call["function"] then
             local arguments = {}
+            local raw_arguments, arguments_error
             if tool_call["function"].arguments then
                 local parsed_args, parse_err = json.decode(tostring(tool_call["function"].arguments))
-                if not parse_err and parsed_args then
+                if parse_err then
+                    raw_arguments = tostring(tool_call["function"].arguments)
+                    arguments = raw_arguments
+                    arguments_error = tostring(parse_err)
+                elseif parsed_args then
                     arguments = parsed_args
                 end
             end
@@ -510,7 +515,9 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
             contract_tool_calls[i] = {
                 id = tool_call.id,
                 name = tool_call["function"].name,
-                arguments = arguments
+                arguments = arguments,
+                raw_arguments = raw_arguments,
+                arguments_error = arguments_error
             }
         end
     end

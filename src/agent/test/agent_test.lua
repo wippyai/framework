@@ -897,6 +897,20 @@ local function define_tests()
         end)
 
         describe("Delegate Handling", function()
+            it("keeps malformed delegate arguments in the tool error path", function()
+                mock_llm.generate = function()
+                    return { finish_reason = "tool_call", tool_calls = {
+                        { id = "bad", name = "to_data_specialist", arguments = '{"task":',
+                            raw_arguments = '{"task":', arguments_error = "unexpected end of JSON input" }
+                    } }
+                end
+                local result = agent.new(compiled_spec_with_delegates):step(mock_prompt.new())
+                test.is_nil(result.delegate_calls)
+                test.eq(#result.tool_calls, 1)
+                test.eq(result.tool_calls[1].raw_arguments, '{"task":')
+                test.eq(result.tool_calls[1].arguments_error, "unexpected end of JSON input")
+            end)
+
             it("should handle delegate calls correctly", function()
                 local test_agent = agent.new(compiled_spec_with_delegates)
                 local prompt_builder = mock_prompt.new()
