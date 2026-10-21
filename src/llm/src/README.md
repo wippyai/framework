@@ -782,3 +782,30 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 - `wippy.llm.discovery` - Model and provider discovery
 - `wippy.llm.util` - Utilities (text compression)
 - `wippy.llm.env` - Environment configuration
+
+### Context admission
+
+Resolved `generate` and `structured_output` calls estimate the complete prompt,
+including tools or the output schema, before dispatch. Admission uses the selected
+model card's `max_tokens` context window and reserves the effective output limit.
+Cards without a context window and direct provider calls retain their existing
+behavior. Estimates use the existing four-bytes-per-token approximation; they are
+not provider tokenizer counts.
+
+`generate` accepts an optional `checkpoint` with `token_threshold` and a
+`compact(info)` callback. When the estimate crosses that threshold or the context
+window, the callback returns a replacement prompt or `nil, error`. The replacement
+is checked once before dispatch. Agent steps accept the same optional runtime
+option, with a callback that returns a conversation prompt builder; Agent retains
+its system instructions, cache markers and recalled memory around that builder.
+
+A prompt that still exceeds the window returns `nil, message, details` with
+`details.error_type = llm.ERROR_TYPE.CONTEXT_WINDOW` (`context_window`),
+`estimated_prompt_tokens`, `requested_output_tokens`, `context_window` and `model`.
+The existing string error remains the second return value.
+
+Admission and provider rejections use the existing usage tracker. Metadata adds
+`outcome = "rejected"`, the estimated prompt size, requested output size and the
+error type when available. Billable token fields contain only usage actually
+reported by the provider; absent usage remains zero. Caller metadata and the
+optional `context_id` are preserved. No schema migration is required.

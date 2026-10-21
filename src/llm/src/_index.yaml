@@ -322,6 +322,7 @@ entries:
         - providers
     source: file://llm.lua
     modules:
+      - json
       - security
       - uuid
       - time

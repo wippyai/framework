@@ -435,6 +435,169 @@ local function define_tests()
             llm._model_resolver = nil
         end)
 
+        describe("Context admission", function()
+            local card, calls, records
+            before_each(function()
+                card = { name = "small", max_tokens = 200, output_tokens = 40,
+                    capabilities = { "generate", "tool_use" },
+                    providers = { { id = "provider", provider_model = "wire", options = {} } } }
+                calls, records = {}, {}
+                llm._model_resolver = { resolve = function() return card end }
+                mock_providers.open = function()
+                    return { generate = function(_self, args)
+                        calls[#calls + 1] = args
+                        return { result = "ok", tokens = { prompt_tokens = 10, completion_tokens = 2 }, metadata = {} }
+                    end }
+                end
+                mock_usage_tracker.track_usage = function(_self, model, input, completion, thinking, read, write, options)
+                    records[#records + 1] = { model = model, input = input, completion = completion, options = options }
+                    return "usage"
+                end
+            end)
+
+            it("rejects oversized prompts before dispatch with typed details and estimated usage", function()
+                local result, err, details = llm.generate(string.rep("x", 1600), { model = "small", max_tokens = 40, context_id = "conversation" })
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(#calls, 0)
+                test.eq(details.error_type, "context_window")
+                test.eq(details.context_window, 200)
+                test.gt(details.estimated_prompt_tokens, 200)
+                test.eq(#records, 1)
+                test.eq(records[1].input, 0)
+                test.eq(records[1].completion, 0)
+                test.eq(records[1].options.context_id, "conversation")
+                test.eq(records[1].options.metadata.outcome, "rejected")
+                test.eq(records[1].options.metadata.estimated_prompt_tokens, details.estimated_prompt_tokens)
+            end)
+
+            it("reserves the effective output budget and counts tool schemas", function()
+                card.max_tokens = 100
+                local result, err = llm.generate("hi", { model = "small", max_tokens = 40,
+                    tools = { { name = "lookup", description = string.rep("x", 400), schema = { type = "object" } } } })
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(#calls, 0)
+            end)
+
+            it("compacts before dispatch at the configured threshold and rechecks the replacement", function()
+                local compacted = 0
+                local result, err = llm.generate(string.rep("x", 300), { model = "small", max_tokens = 40,
+                    checkpoint = { token_threshold = 50, compact = function(info)
+                        compacted = compacted + 1
+                        test.gt(info.estimated_prompt_tokens, 50)
+                        test.eq(#calls, 0)
+                        return { { role = "user", content = "retained task and summary" } }
+                    end } })
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(compacted, 1)
+                test.eq(#calls, 1)
+                test.eq(calls[1].messages[1].content, "retained task and summary")
+                test.is_nil(calls[1].options.checkpoint)
+                test.eq(#records, 1)
+            end)
+
+            it("rejects after one compaction when the prompt still exceeds the model window", function()
+                local compacted = 0
+                local result, err, details = llm.generate(string.rep("x", 1600), { model = "small",
+                    checkpoint = { token_threshold = 50, compact = function()
+                        compacted = compacted + 1
+                        return { { role = "user", content = string.rep("y", 1600) } }
+                    end } })
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(details.error_type, "context_window")
+                test.eq(compacted, 1)
+                test.eq(#calls, 0)
+                test.eq(#records, 1)
+            end)
+
+            it("keeps fitting requests and successful token accounting unchanged", function()
+                local result, err = llm.generate("hi", { model = "small", max_tokens = 100,
+                    checkpoint = { token_threshold = 100, compact = function() error("unexpected checkpoint") end } })
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(#calls, 1)
+                test.eq(calls[1].options.max_tokens, 40)
+                test.eq(records[1].input, 10)
+                test.is_nil(records[1].options.metadata)
+            end)
+
+            it("does not dispatch another class candidate when checkpointing fails", function()
+                llm._model_resolver = nil
+                mock_models.get_by_class = function()
+                    return { card, { name = "other", max_tokens = 200, providers = card.providers } }
+                end
+                local compacted = 0
+                local result, err = llm.generate(string.rep("x", 300), { model = "class:small",
+                    checkpoint = { token_threshold = 50, compact = function()
+                        compacted = compacted + 1
+                        return nil, "checkpoint failed"
+                    end } })
+                test.is_nil(result)
+                test.contains(err, "checkpoint failed")
+                test.eq(compacted, 1)
+                test.eq(#calls, 0)
+            end)
+
+            it("keeps the compacted prompt when the configured route changes", function()
+                card.providers[2] = { id = "alternate", provider_model = "wire", options = {} }
+                local compacted = 0
+                mock_providers.open = function(provider)
+                    return { generate = function(_self, args)
+                        calls[#calls + 1] = args
+                        if provider == "provider" then
+                            return nil, output.errors.generate():kind("server_error"):message("unavailable"):build()
+                        end
+                        return { result = "done", metadata = {} }
+                    end }
+                end
+                local result, err = llm.generate(string.rep("x", 1600), { model = "small", max_tokens = 40,
+                    checkpoint = { token_threshold = 50, compact = function()
+                        compacted = compacted + 1
+                        return { { role = "user", content = "retained task" } }
+                    end } })
+                test.is_nil(err)
+                test.eq(result.result, "done")
+                test.eq(compacted, 1)
+                test.eq(#calls, 2)
+                test.eq(calls[1].messages[1].content, "retained task")
+                test.eq(calls[2].messages[1].content, "retained task")
+            end)
+
+            it("honors cancellation committed while checkpointing before starting the provider", function()
+                local cancel = channel.new()
+                local result, err = llm.generate(string.rep("x", 300), { model = "small", cancel = cancel,
+                    checkpoint = { token_threshold = 50, compact = function()
+                        cancel:close()
+                        return { { role = "user", content = "retained task" } }
+                    end } })
+                test.is_nil(err)
+                test.eq(result.finish_reason, output.FINISH_REASON.CANCELLED)
+                test.eq(#calls, 0)
+                test.eq(#records, 0)
+            end)
+
+            it("accounts provider rejections without inventing billable usage", function()
+                mock_providers.open = function()
+                    return { generate = function()
+                        return nil, output.errors.generate():kind("context_length_exceeded"):message("rejected"):build()
+                    end }
+                end
+                local result, err = llm.generate("hi", { model = "small", context_id = "conversation", metadata = { caller = "test" } })
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(#records, 1)
+                test.eq(records[1].input, 0)
+                test.eq(records[1].options.context_id, "conversation")
+                test.eq(records[1].options.metadata.caller, "test")
+                test.eq(records[1].options.metadata.outcome, "rejected")
+                test.eq(records[1].options.metadata.error_type, "context_length_exceeded")
+                test.gt(records[1].options.metadata.estimated_prompt_tokens, 0)
+            end)
+        end)
+
         describe("Route request facts", function()
             local schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
 

@@ -73,6 +73,7 @@ output.ERROR_TYPE = {
     PAYMENT_REQUIRED = "payment_required",
     SERVER_ERROR = "server_error",
     CONTEXT_LENGTH = "context_length_exceeded",
+    CONTEXT_WINDOW = "context_window",
     CONTENT_FILTER = "content_filtered",
     TIMEOUT = "timeout_error",
     MODEL_ERROR = "model_error",
@@ -90,6 +91,7 @@ output.ERROR_KIND_MAP = {
     [output.ERROR_TYPE.PAYMENT_REQUIRED] = { kind = errors.PERMISSION_DENIED, retryable = false },
     [output.ERROR_TYPE.MODEL_ERROR]     = { kind = errors.NOT_FOUND,        retryable = false },
     [output.ERROR_TYPE.CONTEXT_LENGTH]  = { kind = errors.INVALID,          retryable = false },
+    [output.ERROR_TYPE.CONTEXT_WINDOW]  = { kind = errors.INVALID,          retryable = false },
     [output.ERROR_TYPE.CONTENT_FILTER]  = { kind = errors.INVALID,          retryable = false },
 }
 

@@ -9,6 +9,7 @@ local output = require("output")
 local uuid = require("uuid")
 local time = require("time")
 local logger = require("logger")
+local json = require("json")
 
 type Message = {
     role: string,
@@ -198,7 +199,7 @@ local llm = {}
 -- Contract constants
 local USAGE_TRACKER_CONTRACT = "wippy.llm:usage_tracker"
 local MODEL_RESOLVER_CONTRACT = "wippy.llm:model_resolver"
-local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms" })
+local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms", "checkpoint" })
 
 -- Dependency injection fields
 llm._models = nil
@@ -786,6 +787,68 @@ local function declares_capability(card: any, capability: string): boolean
     return false
 end
 
+-- The same four-bytes-per-token approximation used by compression and the
+-- provider mappers. Estimates describe attempted input, never billable usage.
+local function estimate_prompt(contract_args)
+    local encoded, err = json.encode({
+        messages = contract_args.messages,
+        tools = contract_args.tools,
+        schema = contract_args.schema,
+        input = contract_args.input,
+        state = contract_args.state,
+        questions = contract_args.questions,
+    })
+    if not encoded then return nil, err end
+    return math.ceil(#encoded / 4)
+end
+
+local function rejected_usage(raw_result, contract_args, candidate, options, details)
+    local estimated, estimate_err = estimate_prompt(contract_args)
+    if not estimated then return nil, estimate_err end
+    local metadata = {}
+    for key, value in pairs(options.metadata or {}) do metadata[key] = value end
+    metadata.outcome = "rejected"
+    metadata.estimated_prompt_tokens = estimated
+    metadata.requested_output_tokens = tonumber(contract_args.options.max_tokens)
+        or output_limit(candidate.card) or 0
+    metadata.error_type = details and details.error_type
+    local _, err = llm.track_usage(raw_result, candidate.card and card_name(candidate.card) or options.model, {
+        context_id = options.context_id, timestamp = options.timestamp, metadata = metadata,
+    })
+    return true, err
+end
+
+local function admit_prompt(contract_args, card, checkpoint)
+    if not contract_args.messages then return true end
+    local window = card and tonumber(card.max_tokens)
+    local threshold = checkpoint and tonumber(checkpoint.token_threshold)
+    if not window and not threshold then return true end
+    local estimated, err = estimate_prompt(contract_args)
+    if not estimated then return nil, err end
+    local reserved = tonumber(contract_args.options.max_tokens) or output_limit(card) or 0
+    local info = {
+        estimated_prompt_tokens = estimated, requested_output_tokens = reserved,
+        context_window = window, model = card and card_name(card),
+    }
+    if checkpoint and type(checkpoint.compact) == "function" and (
+        (threshold and threshold > 0 and estimated > threshold)
+        or (window and window > 0 and estimated + reserved > window)) then
+        local replacement, compact_err = checkpoint.compact(info)
+        if not replacement then return nil, compact_err or "Checkpoint returned no prompt" end
+        local prepared, prepare_err = prepare_messages(replacement)
+        if not prepared then return nil, prepare_err end
+        contract_args.messages = prepared
+        estimated, err = estimate_prompt(contract_args)
+        if not estimated then return nil, err end
+        info.estimated_prompt_tokens = estimated
+    end
+    if window and window > 0 and estimated + reserved > window then
+        info.error_type = output.ERROR_TYPE.CONTEXT_WINDOW
+        return nil, "Estimated prompt and output reservation exceed the model context window", info
+    end
+    return true
+end
+
 local function execute(spec, candidate: any, options, deadline_at: number?, providers_module)
     if spec.method == "generate" and options.cancel
         and not channel.select({ options.cancel:case_receive(), default = true }).default then
@@ -835,6 +898,19 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
         end
         state = prepared
     end
+
+    local admitted, admission_err, admission_details = admit_prompt(contract_args, candidate.card,
+        spec.method == "generate" and options.checkpoint or nil)
+    if not admitted then
+        if admission_details then
+            local _, usage_err = rejected_usage(nil, contract_args, candidate, options, admission_details)
+            if usage_err then admission_err = admission_err .. "; usage tracking failed: " .. tostring(usage_err) end
+        end
+        return nil, { preflight = true, error = native_error(admission_err, errors.INVALID, false), message = tostring(admission_err),
+            details = admission_details or { error_type = output.ERROR_TYPE.INVALID_REQUEST } }
+    end
+
+    if spec.prompt then spec.prompt.messages = contract_args.messages end
 
     -- Each candidate gets fresh contract arguments; the messages table is
     -- shared, which is safe because a contract call hands the driver a copy.
@@ -893,7 +969,7 @@ local function call_direct(spec, options)
 
     emit_deferred_error(failure.stream, failure.details)
     log_failure(options, failure.message)
-    return nil, failure.error
+    return nil, failure.error, failure.details
 end
 
 local function fallback_references(spec, options, model_card): {string}
@@ -982,7 +1058,7 @@ local function fail_chain(options, failures: {FailureEntry}, last: any?)
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = message })
     end
     if #failures <= 1 then
-        return nil, last.error
+        return nil, last.error, last.details
     end
     return nil, errors.new({
         message = message,
@@ -1047,10 +1123,13 @@ local function run_chain(spec, options, model_card, first_routes: {any}, class_c
         end
 
         if failure.preflight then
+            if failure.details then
+                return nil, failure.error, failure.details
+            end
             if candidate.primary and not class_cards then
                 -- A primary route the call cannot use fails the call, as before fallback.
                 log_failure(options, failure.message)
-                return nil, failure.error
+                return nil, failure.error, failure.details
             end
             entry.skipped = true
             entry.message = failure.message
@@ -1180,8 +1259,9 @@ function llm.generate(prompt_input, options)
 
     options = options_for_actor(options)
 
-    local messages = nil
-    local result, err = call({
+    local request = { messages = {} }
+    local result, err, details = call({
+        prompt = request,
         method = "generate",
         exclude = { "model", "model_profile", "cancel" },
         direct_exclude = { "model", "provider_id", "cancel" },
@@ -1192,11 +1272,11 @@ function llm.generate(prompt_input, options)
             if not prepared then
                 return prepare_err
             end
-            messages = prepared
+            request.messages = prepared
             return nil
         end,
         build = function(wire_model, _card)
-            return { messages = messages, model = wire_model, options = {} }
+            return { messages = request.messages, model = wire_model, options = {} }
         end,
         prepare = function(contract_args, provider_info, call_options, providers_module, card)
             local adjusted, route_err = prepare_route(contract_args, provider_info, call_options, providers_module, card)
@@ -1215,10 +1295,10 @@ function llm.generate(prompt_input, options)
         end
     }, options)
 
-    return result :: GenerateResponse?, err
+    return result :: GenerateResponse?, err, details
 end
 
-function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, error?)
+function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, error?, table?)
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
@@ -1229,8 +1309,9 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
     options = options_for_actor(options)
 
-    local messages = nil
-    local result, err = call({
+    local request = { messages = {} }
+    local result, err, details = call({
+        prompt = request,
         method = "structured_output",
         exclude = { "model", "schema", "model_profile" },
         direct_exclude = { "model", "provider_id", "schema" },
@@ -1241,11 +1322,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
             if not prepared then
                 return prepare_err
             end
-            messages = prepared
+            request.messages = prepared
             return nil
         end,
         build = function(wire_model, _card)
-            return { messages = messages, model = wire_model, schema = schema, options = {} }
+            return { messages = request.messages, model = wire_model, schema = schema, options = {} }
         end,
         prepare = prepare_route_facts,
         finish = function(raw_result, state)
@@ -1253,7 +1334,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         end
     }, options)
 
-    return result :: GenerateResponse?, err
+    return result :: GenerateResponse?, err, details
 end
 
 function llm.embed(text, options)

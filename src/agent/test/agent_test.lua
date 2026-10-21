@@ -1509,6 +1509,40 @@ local function define_tests()
             end)
         end)
 
+        describe("Context checkpoint prompt rebuilding", function()
+            it("preserves system instructions and memory around a compacted conversation", function()
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                builder:add_user("large conversation")
+                agent._llm = { generate = function(messages, options)
+                    test.not_nil(options.checkpoint)
+                    test.eq(options.checkpoint.token_threshold, 50)
+                    local replacement, err = options.checkpoint.compact({ estimated_prompt_tokens = 100 })
+                    test.is_nil(err)
+                    test.eq(replacement[1], messages[1])
+                    test.eq(replacement[1].role, "system")
+                    local task_found, old_found = false, false
+                    for _, message in ipairs(replacement) do
+                        for _, part in ipairs(type(message.content) == "table" and message.content or {}) do
+                            if part.text == "retained task" then task_found = true end
+                            if part.text == "large conversation" then old_found = true end
+                        end
+                    end
+                    test.is_true(task_found)
+                    test.is_false(old_found)
+                    return { result = "done", metadata = {} }
+                end }
+                local result, err = runner:step(builder, { checkpoint = { token_threshold = 50, compact = function(info)
+                    test.eq(info.estimated_prompt_tokens, 100)
+                    local replacement = mock_prompt.new()
+                    replacement:add_user("retained task")
+                    return replacement
+                end } })
+                test.is_nil(err)
+                test.eq(result.result, "done")
+            end)
+        end)
+
         describe("Runtime Options Integration", function()
             it("should pass through stream target", function()
                 local captured_options = nil
