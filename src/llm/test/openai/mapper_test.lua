@@ -5,6 +5,72 @@ local test = require("test")
 
 local function define_tests()
     describe("OpenAI Mapper", function()
+
+        describe("Payment and quota classification", function()
+            it("classifies HTTP 402 as non-retryable payment_required", function()
+                for _, message in ipairs({ "Payment required", "Network quota unavailable", "Maximum allowed tokens" }) do
+                    local input = { status_code = 402, message = message }
+                    local kind, returned_message, details = openai_mapper.classify_error(input)
+                    test.eq(kind, "payment_required")
+                    test.eq(returned_message, message)
+                    test.eq(details.status_code, 402)
+                    local err = output.errors.generate({ _provider_id = "openai" })
+                        :classifier(openai_mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), false)
+                    test.eq(err:message(), message)
+                    test.eq(err:details().error_type, "payment_required")
+                end
+            end)
+
+            it("classifies machine-readable exhausted quota on HTTP 429 as non-retryable", function()
+                for _, field in ipairs({ "code", "type" }) do
+                    local input = { status_code = 429, message = "Quota exhausted" }
+                    input[field] = "insufficient_quota"
+                    local kind, message, details = openai_mapper.classify_error(input)
+                    test.eq(kind, "payment_required")
+                    test.eq(message, input.message)
+                    test.eq(details.status_code, 429)
+                    local err = output.errors.generate({ _provider_id = "openai" })
+                        :classifier(openai_mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), false)
+                    test.eq(err:details().error_type, "payment_required")
+                end
+            end)
+
+            it("keeps ordinary and unknown HTTP 429 errors retryable", function()
+                for _, input in ipairs({
+                    { status_code = 429, message = "Rate limit exceeded" },
+                    { status_code = 429, message = "Quota exceeded" },
+                    { status_code = 429, message = "Rate limited", code = "unknown_quota_code" },
+                }) do
+                    local kind, message = openai_mapper.classify_error(input)
+                    test.eq(kind, "rate_limit_exceeded")
+                    test.eq(message, input.message)
+                    local err = output.errors.generate({ _provider_id = "openai" })
+                        :classifier(openai_mapper.classify_error):from(input):build()
+                    test.eq(err:retryable(), true)
+                end
+            end)
+
+            it("keeps other HTTP status classifications with quota metadata", function()
+                for _, case in ipairs({
+                    { status = 400, kind = "invalid_request" },
+                    { status = 401, kind = "authentication_error" },
+                    { status = 403, kind = "authentication_error" },
+                    { status = 404, kind = "model_error" },
+                    { status = 500, kind = "server_error" },
+                    { status = 503, kind = "server_error" },
+                    { status = 418, kind = "server_error" },
+                }) do
+                    local kind, message = openai_mapper.classify_error({
+                        status_code = case.status, message = "Provider error",
+                        code = "insufficient_quota", type = "insufficient_quota",
+                    })
+                    test.eq(kind, case.kind)
+                    test.eq(message, "Provider error")
+                end
+            end)
+        end)
         it("keeps positional instructions in the Responses input stream", function()
             for _, role in ipairs({ "system", "developer" }) do
                 local messages = {

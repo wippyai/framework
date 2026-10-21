@@ -40,6 +40,7 @@ mapper.CLAUDE_ERROR_TYPE_MAP["overloaded_error"] = output.ERROR_TYPE.SERVER_ERRO
 mapper.HTTP_STATUS_MAP = {} :: {[number]: string}
 mapper.HTTP_STATUS_MAP[400] = output.ERROR_TYPE.INVALID_REQUEST
 mapper.HTTP_STATUS_MAP[401] = output.ERROR_TYPE.AUTHENTICATION
+mapper.HTTP_STATUS_MAP[402] = output.ERROR_TYPE.PAYMENT_REQUIRED
 mapper.HTTP_STATUS_MAP[403] = output.ERROR_TYPE.AUTHENTICATION
 mapper.HTTP_STATUS_MAP[404] = output.ERROR_TYPE.MODEL_ERROR
 mapper.HTTP_STATUS_MAP[413] = output.ERROR_TYPE.INVALID_REQUEST
@@ -169,6 +170,12 @@ function mapper.classify_error(claude_error: any?): (string, string, table?)
         message = claude_error.message or message
     elseif claude_error.message then
         message = claude_error.message
+    end
+
+    local provider_error = claude_error.error
+    if claude_error.status_code == 402 or (claude_error.status_code == 429 and provider_error
+        and (provider_error.code == "insufficient_quota" or provider_error.type == "insufficient_quota")) then
+        kind = output.ERROR_TYPE.PAYMENT_REQUIRED
     end
 
     local details = {
