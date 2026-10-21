@@ -178,6 +178,30 @@ process via a shared memory store):
 The synthesis fallback is preserved indefinitely for legacy entries,
 but the warning is your signal to migrate the consumer.
 
+### When `wippy-meta.json` cannot be read
+
+The server reads `wippy-meta.json` over HTTP from `{PUBLIC_API_URL}{meta.url}/`.
+`PUBLIC_API_URL` is the address browsers use, so the request fails when the
+server cannot reach that address: an empty or relative value, a port mapping, a
+reverse proxy, a WAF or bot check, an SSO edge, or a public domain the server
+cannot resolve. The page is then served from its YAML entry. It still renders,
+but without the settings in its `package.json` `wippy` block, such as
+`configOverrides` (theme variables and custom CSS), proxy injections and
+`renderEngine`. The usual symptom is a page in the host's theme instead of its
+own.
+
+The views module reports each failure once per entry and reason:
+
+- as an error in the runtime log, under the `wippy.views` logger, with the entry
+  id, the URL it tried, the reason (for example `HTTP 403`) and the fix;
+- in the page response as `wippy.metaError`, which Web Host prints to the
+  browser console.
+
+To fix it, make `{PUBLIC_API_URL}/<page path>/wippy-meta.json` return HTTP 200
+to a request from the server itself: set `PUBLIC_API_URL` to an absolute
+http(s) URL that both browsers and the server can reach, or let the server's
+requests for `wippy-meta.json` through the proxy or edge in front of it.
+
 ### Layer boundaries: who owns what
 
 This is the principle the rest of the migration follows:

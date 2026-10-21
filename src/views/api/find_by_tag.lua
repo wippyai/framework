@@ -104,9 +104,9 @@ local function handler()
         return
     end
 
+    -- A failed fetch is already logged as an error by bundled_meta.
     local meta, meta_err = bundled_meta.fetch_for_component(component)
     if meta_err then
-        print("[views/find_by_tag] bundled_meta fetch error for tag=" .. tostring(tag) .. ": " .. tostring(meta_err))
         meta = nil
     end
 

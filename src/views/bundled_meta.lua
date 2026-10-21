@@ -22,6 +22,13 @@
 -- registry loader). Self-HTTP adds one round-trip per metadata request,
 -- which is acceptable for the cardinality of the views API (typically
 -- cached at the consumer side anyway).
+--
+-- The self-fetch is also the weak point: `PUBLIC_API_URL` is the address
+-- browsers use, and a server behind a proxy, WAF, SSO edge or port mapping
+-- often cannot reach it. A failed fetch still renders the page (from its
+-- YAML entry), only without its package settings, so every failure is
+-- logged as an error with the fix and returned to the caller as a
+-- diagnostic the Host can show in the browser console.
 
 local json = require("json")
 local http_client = require("http_client")
@@ -72,16 +79,56 @@ local function log_missing_once(entry_id: string?, kind: string, url: string)
     ))
 end
 
+-- Log a failed fetch once per entry and error (shared store, so handler-pool
+-- workers do not repeat it). Returns the operator message.
+local function log_fetch_failure_once(kind: string, entry_id: string?, url: string, err: string): string
+    local message = M.describe_fetch_failure(kind, entry_id, url, err)
+    local key = "error:" .. tostring(entry_id or url) .. ":" .. err
+
+    local s, store_err = store.get(WARN_STORE_ID)
+    if not store_err and s then
+        local existing = s:get(key)
+        if not existing then
+            s:set(key, true)
+        end
+        s:release()
+        if existing then
+            return message
+        end
+    end
+
+    -- Create the logger here, not at module load: a named logger created when
+    -- the library loads is silently dropped when a function handler (such as
+    -- the /pages/content endpoint) calls it later (seen on runtime 0.3.47a).
+    require("logger"):named("wippy.views"):error(message, { kind = kind, id = entry_id, url = url, error = err })
+    return message
+end
+
+-- The operator message for a wippy-meta.json that could not be read: what
+-- failed, what the page loses, and how to fix it.
+function M.describe_fetch_failure(kind: string, entry_id: string?, url: string, err: string): string
+    return string.format(
+        "wippy/views could not read wippy-meta.json for %s '%s' from %s (%s). "
+        .. "The %s is served from its registry entry instead, without the package.json "
+        .. "settings in that file: configOverrides (theme variables and custom CSS), "
+        .. "proxy injections and renderEngine. This server fetches the file through "
+        .. "PUBLIC_API_URL. Set PUBLIC_API_URL to an absolute http(s) URL that both "
+        .. "browsers and this server can reach, and check that a request from the "
+        .. "server to %s returns HTTP 200.",
+        kind, tostring(entry_id or "?"), url, err, kind, url
+    )
+end
+
 -- Internal: try fetching wippy-meta.json for a resolved entity.
 -- `base_url` MUST be an absolute URL with trailing slash (as produced by
 -- `page_registry.resolve_base_url` / `component_registry.resolve_base_url`).
--- Returns (table | nil, error_string | nil).
+-- Returns (table | nil, error_string | nil, url).
 --
 -- Treats 404 as "no bundled meta" (returns nil, nil) so callers can cleanly
 -- fall back. Other status codes / network errors propagate as error strings.
 local function fetch(base_url)
     if type(base_url) ~= "string" or base_url == "" then
-        return nil, nil
+        return nil, nil, nil
     end
 
     -- Ensure trailing slash for clean concatenation
@@ -91,6 +138,12 @@ local function fetch(base_url)
     end
     url = url .. "wippy-meta.json"
 
+    -- A relative URL means PUBLIC_API_URL is empty or not an http(s) URL. The
+    -- HTTP client cannot fetch it ("unsupported protocol scheme"), so say why.
+    if not url:match("^https?://") then
+        return nil, "the URL is not absolute, so PUBLIC_API_URL is empty or not an http(s) URL", url
+    end
+
     local response, err = http_client.get(url, {
         timeout = DEFAULT_TIMEOUT_SEC,
         headers = { ["Accept"] = "application/json" },
@@ -98,51 +151,57 @@ local function fetch(base_url)
 
     if err or not response then
         -- Network-level failure: not a "missing meta", a real error.
-        return nil, "wippy-meta fetch failed: " .. tostring(err or "no response")
+        return nil, "fetch failed: " .. tostring(err or "no response"), url
     end
 
     if response.status_code == 404 then
         -- Bundle has no wippy-meta.json — this is the legacy/migration path.
-        return nil, nil
+        return nil, nil, url
     end
 
     if response.status_code < 200 or response.status_code >= 300 then
-        return nil, "wippy-meta fetch returned " .. tostring(response.status_code) .. " for " .. url
+        return nil, "HTTP " .. tostring(response.status_code), url
     end
 
     local body = response.body or ""
     if body == "" then
-        return nil, "wippy-meta fetch returned empty body for " .. url
+        return nil, "empty response body", url
     end
 
     local parsed, decode_err = json.decode(body)
     if decode_err then
-        return nil, "wippy-meta parse error for " .. url .. ": " .. tostring(decode_err)
+        return nil, "response is not JSON: " .. tostring(decode_err), url
     end
 
     if type(parsed) ~= "table" then
-        return nil, "wippy-meta is not a JSON object for " .. url
+        return nil, "response is not a JSON object", url
     end
 
-    return parsed, nil
+    return parsed, nil, url
 end
+
+M._fetch = fetch
 
 -- Fetch bundled meta for a page (view.page or view.component) resolved via
 -- page_registry. Returns (meta | nil, error | nil). Nil + nil means "no
 -- bundle present — caller should fall back to YAML-synthesis". A one-time
 -- per-worker warning is logged on the first miss for a given page id so
--- the synthesis fallback never goes silent.
+-- the synthesis fallback never goes silent. On a failed fetch the error is
+-- the full operator message (logged once as an error).
 function M.fetch_for_page(page)
     if not page then
         return nil, "page is required"
     end
     local base_url = page_registry.resolve_base_url(page)
-    local meta, err = fetch(base_url)
-    if not meta and not err then
-        local id = type(page.id) == "string" and (page.id :: string) or nil
+    local meta, err, url = fetch(base_url)
+    local id = type(page.id) == "string" and (page.id :: string) or nil
+    if err then
+        return nil, log_fetch_failure_once("page", id, url or "", err)
+    end
+    if not meta then
         log_missing_once(id, "page", (base_url or "") .. "wippy-meta.json")
     end
-    return meta, err
+    return meta, nil
 end
 
 -- Fetch bundled meta for a component resolved via component_registry.
@@ -152,12 +211,15 @@ function M.fetch_for_component(component)
         return nil, "component is required"
     end
     local base_url = component_registry.resolve_base_url(component)
-    local meta, err = fetch(base_url)
-    if not meta and not err then
-        local id = type(component.id) == "string" and (component.id :: string) or nil
+    local meta, err, url = fetch(base_url)
+    local id = type(component.id) == "string" and (component.id :: string) or nil
+    if err then
+        return nil, log_fetch_failure_once("component", id, url or "", err)
+    end
+    if not meta then
         log_missing_once(id, "component", (base_url or "") .. "wippy-meta.json")
     end
-    return meta, err
+    return meta, nil
 end
 
 -- Local deep-merge: overlay wins on conflicts, recursive on nested tables.

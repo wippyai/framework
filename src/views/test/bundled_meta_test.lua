@@ -322,6 +322,30 @@ local function define_tests()
         end)
     end)
 
+    test.describe("bundled_meta fetch failures", function()
+        test.it("refuses a relative URL and names PUBLIC_API_URL instead of an HTTP client error", function()
+            local meta, err, url = bundled_meta._fetch("/app/keeper/")
+            test.eq(meta, nil)
+            test.eq(url, "/app/keeper/wippy-meta.json")
+            test.ok(type(err) == "string" and err:find("PUBLIC_API_URL", 1, true) ~= nil,
+                "error names PUBLIC_API_URL: " .. tostring(err))
+        end)
+
+        test.it("describes what failed, what the page loses and how to fix it", function()
+            local message = bundled_meta.describe_fetch_failure(
+                "page", "keeper:main", "http://edge.example/app/keeper/wippy-meta.json", "HTTP 403")
+            for _, part in ipairs({
+                "page 'keeper:main'",
+                "http://edge.example/app/keeper/wippy-meta.json",
+                "HTTP 403",
+                "configOverrides",
+                "Set PUBLIC_API_URL",
+            }) do
+                test.ok(message:find(part, 1, true) ~= nil, "message contains '" .. part .. "': " .. message)
+            end
+        end)
+    end)
+
 end
 
 local run_cases = test.run_cases(define_tests)

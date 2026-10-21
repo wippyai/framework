@@ -246,6 +246,7 @@ entries:
       modules:
         - http_client
         - json
+        - logger
         - store
     - name: bundled_meta_warn
       kind: store.memory
