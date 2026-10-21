@@ -477,9 +477,11 @@ local function define_tests()
                     tools = { { name = "lookup", description = string.rep("x", 400), schema = { type = "object" } } } })
                 test.is_nil(result)
                 test.not_nil(err)
-                test.lte(details.estimated_prompt_tokens, card.max_tokens)
-                test.eq(details.requested_output_tokens, 40)
-                test.gt(details.estimated_prompt_tokens + details.requested_output_tokens, card.max_tokens)
+                local estimated, reserved = details.estimated_prompt_tokens, details.requested_output_tokens
+                if estimated == nil or reserved == nil then error("Missing context admission token estimates") end
+                test.lte(estimated, card.max_tokens)
+                test.eq(reserved, 40)
+                test.gt(estimated + reserved, card.max_tokens)
                 test.eq(#calls, 0)
             end)
 
