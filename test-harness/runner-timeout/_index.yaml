@@ -1,6 +1,10 @@
 version: "1.0"
 namespace: app
 entries:
+  - name: test_dep
+    kind: ns.dependency
+    component: wippy/test
+    version: "*"
   - name: terminal_dep
     kind: ns.dependency
     component: wippy/terminal
@@ -20,8 +24,6 @@ entries:
     method: late
     modules:
       - time
-    imports:
-      test: wippy.test:test
   - name: timeout_late_next
     kind: function.lua
     meta:
@@ -29,7 +31,7 @@ entries:
       suite: timeout_late
       order: 2
       timeout: 3s
-    source: file://timeout_fixtures.lua
+    source: file://timeout_assertions.lua
     method: next_late
     modules:
       - time
@@ -46,8 +48,6 @@ entries:
     method: silent
     modules:
       - time
-    imports:
-      test: wippy.test:test
   - name: timeout_silent_next
     kind: function.lua
     meta:
@@ -55,7 +55,7 @@ entries:
       suite: timeout_silent
       order: 2
       timeout: 3s
-    source: file://timeout_fixtures.lua
+    source: file://timeout_assertions.lua
     method: next_silent
     modules:
       - time
