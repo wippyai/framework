@@ -250,7 +250,7 @@ end
 -- start of the page <head> so the streamed document already carries them. The
 -- asset names are the Web Host build's stable, unhashed outputs.
 local function host_css_links(fbase)
-    local base = fbase .. "/@wippy-fe/assets/"
+    local base = fragment_bootstrap.attr_url(fbase .. "/@wippy-fe/assets/")
     return '<link rel="stylesheet" data-role="wippy-host-styles-theme-config" href="' .. base .. 'theme-config.css">'
         .. '<link rel="stylesheet" data-role="wippy-host-styles-iframe" href="' .. base .. 'iframe.css">'
         .. '<link rel="stylesheet" data-role="wippy-host-styles-primevue" href="' .. base .. 'tailwind.css">'

@@ -271,6 +271,15 @@ local function define_tests()
             test.eq(calls_to(w, HELPER_URL), 0)
         end)
 
+        test.it("escapes the Host URL in the style links", function()
+            local w = world()
+            w.facade = 'https://host.test/a&b"c'
+            local res = serve(w, nil, "empty")
+            test.eq(res.status, 200)
+            test.eq(contains(res.body, 'href="https://host.test/a&amp;b&quot;c/@wippy-fe/assets/theme-config.css"'), true)
+            test.eq(contains(res.body, 'a&b"c'), false)
+        end)
+
         test.it("proxies assets from the HTML directory", function()
             local w = world()
             w.pages.demo.entry_point = "dist/app.html"

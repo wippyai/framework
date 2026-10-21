@@ -49,6 +49,9 @@ class Element {
     // base URL at that moment.
     if (child.tagName === 'SCRIPT' && child.getAttribute('type') === 'importmap')
       child.registeredBase = this.ownerDocument.baseURI
+    // The order in which maps and module scripts enter the document.
+    if (child.tagName === 'SCRIPT' && ['importmap', 'module'].includes(child.getAttribute('type')))
+      this.ownerDocument.events.push(child.getAttribute('type'))
     return child
   }
 
@@ -81,11 +84,12 @@ function browserResolved(map, base) {
   return out
 }
 
-function makeDocument() {
-  const doc = {}
+// `body: false` is the state while a real parser runs the stub's inline script in <head>.
+function makeDocument({ body = true } = {}) {
+  const doc = { events: [] }
   doc.documentElement = new Element(doc, 'html')
   doc.head = doc.documentElement.appendChild(new Element(doc, 'head'))
-  doc.body = doc.documentElement.appendChild(new Element(doc, 'body'))
+  doc.body = body ? doc.documentElement.appendChild(new Element(doc, 'body')) : null
   const all = () => {
     const out = []
     const walk = (el) => { for (const c of el.children) { out.push(c); walk(c) } }
@@ -108,7 +112,6 @@ function makeDocument() {
   }
   doc.importMaps = () => all().filter(el => el.tagName === 'SCRIPT' && el.getAttribute('type') === 'importmap')
   doc.moduleScripts = () => all().filter(el => el.tagName === 'SCRIPT' && el.getAttribute('type') === 'module')
-  doc.headOrder = () => doc.head.children.map(el => el.getAttribute('type') || el.tagName)
   doc.alerts = () => all().filter(el => el.getAttribute('role') === 'alert').map(el => el.textContent)
   return doc
 }
@@ -120,8 +123,8 @@ function hostWindow(config, parent) {
   return win
 }
 
-function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImports = HOST_IMPORTS, onRegister } = {}) {
-  const document = makeDocument()
+function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImports = HOST_IMPORTS, onRegister, proxyUrl = PROXY, body = true } = {}) {
+  const document = makeDocument({ body })
   // The payload as build_stub writes it: absent fields are left out.
   const payload = document.createElement('script')
   payload.setAttribute('type', 'application/json')
@@ -130,7 +133,7 @@ function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImpo
     hostMap: { imports: hostImports },
     ...(pageMapText === undefined ? {} : { pageMapText }),
     ...(pageBase === null ? {} : { pageBase }),
-    proxyUrl: PROXY,
+    ...(proxyUrl === null ? {} : { proxyUrl }),
   })
   document.head.appendChild(payload)
   const errors = []
@@ -162,7 +165,7 @@ function runStub({ pageMapText, pageBase = PAGE, parent, helper = true, hostImpo
     map: raw ? browserResolved(raw, maps[0].registeredBase) : null,
     registeredBase: maps[0]?.registeredBase,
     proxies: document.moduleScripts().map(el => el.getAttribute('src')),
-    headOrder: document.headOrder(),
+    events: document.events,
     bases: document.bases(),
     baseAfter: document.baseURI,
     first: document.head.firstChild,
@@ -201,7 +204,7 @@ test('composes page < Host < configured and resolves page addresses against the 
   assert.equal(r.baseAfter, REALM, 'the realm keeps its own URL afterwards')
   assert.equal(r.raw.imports.local, './p.js', 'register() gets the address as written')
   assert.deepEqual(r.proxies, [PROXY], 'the proxy loads once')
-  assert.ok(r.headOrder.indexOf('importmap') < r.headOrder.indexOf('module'), 'the proxy loads after the map')
+  assert.deepEqual(r.events, ['importmap', 'module'], 'the map is inserted before the proxy')
   const imports = r.map.imports
   assert.equal(imports.shared, 'https://cfg.test/shared.js')
   assert.equal(imports.vue, 'https://cdn.test/vue.js')
@@ -258,6 +261,7 @@ test('an unparseable page map registers nothing and rejects the ready promise', 
   assert.equal(r.alerts.length, 1)
   assert.match(r.alerts[0], /Failed to parse page import map/)
   assert.deepEqual(r.proxies, [], 'no proxy loads without a map')
+  assert.equal(r.errors.length, 1, 'the failure is logged once')
   const error = await rejection(r.ready)
   assert.match(String(error.message), /Failed to parse page import map/)
 })
@@ -274,6 +278,9 @@ test('maps the Host validator rejects reject the ready promise, as in the iframe
     const r = runStub({ parent: hostWindow({ importMap: null }), ...options })
     assert.equal(r.maps.length, 0)
     assert.deepEqual(r.proxies, [], 'no proxy loads without a map')
+    assert.equal(r.errors.length, 1, 'the failure is logged once')
+    assert.equal(r.alerts.length, 1, 'the failure is shown')
+    assert.deepEqual(r.bases, [], 'the temporary <base> is removed after a failure')
     const error = await rejection(r.ready)
     assert.match(String(error.message), message)
   }
@@ -290,6 +297,24 @@ test('addresses with surrounding whitespace are rejected as in the iframe engine
     assert.match(String(error.message), /Invalid page import map/)
     assert.deepEqual(r.bases, [], 'the temporary <base> is removed after a failure')
   }
+})
+
+test('a payload without a proxy URL fails before anything registers', async () => {
+  const r = runStub({ proxyUrl: null, pageMapText: JSON.stringify({ imports: { local: './p.js' } }), parent: hostWindow({ importMap: null }) })
+  assert.equal(r.maps.length, 0)
+  assert.deepEqual(r.proxies, [])
+  assert.equal(r.alerts.length, 1)
+  const error = await rejection(r.ready)
+  assert.match(String(error.message), /no proxy URL/)
+})
+
+test('a failure is shown even before <body> exists', async () => {
+  // A real parser runs the inline script in <head>, before <body> exists.
+  const r = runStub({ body: false, pageMapText: '{"imports":', parent: hostWindow({ importMap: null }) })
+  assert.equal(r.alerts.length, 1)
+  assert.match(r.alerts[0], /Failed to parse page import map/)
+  assert.equal(r.errors.length, 1)
+  await rejection(r.ready)
 })
 
 test('the page <base> exists only while register() runs', () => {
@@ -324,7 +349,7 @@ test('applies the Host map alone when the helper did not load', () => {
   assert.equal(r.maps.length, 1)
   assert.deepEqual(r.raw, { imports: HOST_IMPORTS })
   assert.deepEqual(r.proxies, [PROXY], 'the proxy still loads with the Host map')
-  assert.ok(r.headOrder.indexOf('importmap') < r.headOrder.indexOf('module'), 'the proxy loads after the map')
+  assert.deepEqual(r.events, ['importmap', 'module'], 'the map is inserted before the proxy')
   assert.equal(r.errors.length, 1)
   assert.match(r.errors[0], /bootstrap is unavailable/)
   assert.equal(r.ready, undefined)

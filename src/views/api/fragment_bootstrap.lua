@@ -15,10 +15,10 @@
 --     module script exists in the realm. A `<base>` at the page URL exists only
 --     during that call, so relative addresses resolve as in the iframe engine.
 -- The proxy module loads only after the map is in place. A failure rejects
--- `window.__WIPPY_IMPORT_MAP_READY__` and loads no proxy. Host 1.0.66 waits for
--- that promise before it streams the page, so the page does not run, as the
--- iframe engine refuses the same maps. Hosts without `import-map-bootstrap.js`
--- get a static Host map.
+-- `window.__WIPPY_IMPORT_MAP_READY__` and loads no proxy. Web Host 1.0.63 and
+-- later wait for that promise before they stream the page, so the page does not
+-- run, as the iframe engine refuses the same maps. Hosts without
+-- `import-map-bootstrap.js` (before 1.0.63) get a static Host map.
 local json = require("json")
 
 local function has_host_imports(imports)
@@ -125,6 +125,7 @@ local REGISTER_SCRIPT = [[
   try {
     var element = physicalGetElementById("wippy-fragment-bootstrap");
     var payload = JSON.parse(element && element.textContent || "{}");
+    if (typeof payload.proxyUrl !== "string" || payload.proxyUrl === "") throw new TypeError("Fragment stub payload has no proxy URL");
     var hostMap = payload.hostMap || { imports: {} };
     var bootstrap = physicalWindow.WippyImportMapBootstrap;
     if (!bootstrap || typeof bootstrap.register !== "function") {
@@ -148,11 +149,14 @@ local REGISTER_SCRIPT = [[
     registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase);
     loadProxy(payload.proxyUrl);
   } catch (error) {
-    report("Fragment initialization failed", error);
-    appendPhysicalFailure("This view could not be initialized. " + String(error && error.message || error));
+    // Reject first, so the Host does not stream the page even if reporting fails.
     var failed = Promise.reject(error);
     failed.catch(function () {});
     physicalWindow.__WIPPY_IMPORT_MAP_READY__ = failed;
+    report("Fragment initialization failed", error);
+    var detail;
+    try { detail = String(error && error.message || error); } catch (_) { detail = "unknown error"; }
+    appendPhysicalFailure("This view could not be initialized. " + detail);
   }
 })();
 ]]
@@ -171,7 +175,8 @@ local function build_stub(fbase, imports, options)
     local host_map = inline_json({ imports = imports or {} })
     local loading = '<script src="' .. attr_url(fbase .. "/@wippy-fe/loading.js") .. '"></script>'
     local proxy_url = fbase .. "/@wippy-fe/proxy-fragment.js"
-    local head = '<!doctype html><title>Web Fragments: reframed</title>'
+    -- The payload can hold non-ASCII text from the page's import map.
+    local head = '<!doctype html><meta charset="utf-8"><title>Web Fragments: reframed</title>'
         .. '<script>window.__WIPPY_FRAGMENT_MODE__ = true;</script>'
     if not options.bootstrap then
         return head
@@ -226,6 +231,7 @@ end
 return {
     has_host_imports = has_host_imports,
     inline_json = inline_json,
+    attr_url = attr_url,
     build_stub = build_stub,
     respond_iframe = respond_iframe,
 }
