@@ -472,11 +472,14 @@ local function define_tests()
             end)
 
             it("reserves the effective output budget and counts tool schemas", function()
-                card.max_tokens = 100
-                local result, err = llm.generate("hi", { model = "small", max_tokens = 40,
+                card.max_tokens = 150
+                local result, err, details = llm.generate("hi", { model = "small", max_tokens = 40,
                     tools = { { name = "lookup", description = string.rep("x", 400), schema = { type = "object" } } } })
                 test.is_nil(result)
                 test.not_nil(err)
+                test.lte(details.estimated_prompt_tokens, card.max_tokens)
+                test.eq(details.requested_output_tokens, 40)
+                test.gt(details.estimated_prompt_tokens + details.requested_output_tokens, card.max_tokens)
                 test.eq(#calls, 0)
             end)
 
