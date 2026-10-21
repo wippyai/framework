@@ -30,7 +30,7 @@ The module consists of several components:
 - **Migration API** - Main interface for running individual migration definitions with transaction support
 
 Key features include:
-- Transaction-based execution ensures migrations are applied atomically
+- Transaction-based execution keeps ordinary migrations atomic; opt-in `up(fn, "batch")` data migrations commit resumable pages
 - Cross-database support for PostgreSQL, SQLite, and MySQL with engine-specific implementations
 - Automatic migration tracking and duplicate detection
 - Forward and backward migration support with rollback capabilities
