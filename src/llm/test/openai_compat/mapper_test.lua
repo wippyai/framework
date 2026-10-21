@@ -804,50 +804,36 @@ local function define_tests()
                 end
             end)
 
-            it("should handle invalid JSON arguments", function()
-                local openai_tool_calls = {
-                    {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "test_tool",
-                            arguments = 'invalid json {'
-                        }
-                    }
-                }
-
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
-
-                test.eq(#contract_tool_calls, 1)
-                local tc = contract_tool_calls[1]
-                if tc then
-                    test.eq(tc.id, "call_123")
-                    test.eq(tc.name, "test_tool")
-                    test.not_nil(tc.arguments)
-                    test.is_nil(next(tc.arguments))
+            it("preserves malformed arguments and the decoder error", function()
+                for _, raw in ipairs({ 'invalid json {', '{"answer":', '' }) do
+                    local _, expected_error = json.decode(raw)
+                    test.not_nil(expected_error)
+                    local calls = openai_mapper.map_tool_calls({ { id = "bad", type = "function", ["function"] = { name = "lookup", arguments = raw } } })
+                    test.eq(#calls, 1)
+                    test.eq(calls[1].id, "bad")
+                    test.eq(calls[1].name, "lookup")
+                    test.eq(calls[1].arguments, raw)
+                    test.eq(calls[1].raw_arguments, raw)
+                    test.eq(calls[1].arguments_error, tostring(expected_error))
                 end
             end)
 
-            it("should handle empty arguments", function()
-                local openai_tool_calls = {
-                    {
-                        id = "call_123",
-                        type = "function",
-                        ["function"] = {
-                            name = "test_tool",
-                            arguments = ""
-                        }
-                    }
-                }
-
-                local contract_tool_calls = openai_mapper.map_tool_calls(openai_tool_calls, {})
-
-                test.eq(#contract_tool_calls, 1)
-                local tc = contract_tool_calls[1]
-                if tc then
-                    test.not_nil(tc.arguments)
-                    test.is_nil(next(tc.arguments))
+            it("keeps valid and absent argument behavior unchanged", function()
+                for _, raw in ipairs({ '{}', '{"answer":"done"}' }) do
+                    local calls = openai_mapper.map_tool_calls({ { id = "good", ["function"] = { name = "lookup", arguments = raw } } })
+                    local expected = json.decode(raw)
+                    local expected_json = json.encode(expected)
+                    local actual_json = json.encode(calls[1].arguments)
+                    test.eq(actual_json, expected_json)
+                    test.is_nil(calls[1].arguments_error)
+                    test.is_nil(calls[1].raw_arguments)
                 end
+                local raw = nil
+                local calls = openai_mapper.map_tool_calls({ { id = "good", ["function"] = { name = "lookup", arguments = raw } } })
+                test.eq(type(calls[1].arguments), "table")
+                test.is_nil(next(calls[1].arguments))
+                test.is_nil(calls[1].arguments_error)
+                test.is_nil(calls[1].raw_arguments)
             end)
 
             it("should handle nil tool calls", function()

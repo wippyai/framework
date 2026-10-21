@@ -22,7 +22,9 @@ type Message = {
 type ToolCall = {
     id: string?,
     name: string,
-    arguments: any
+    arguments: any,
+    raw_arguments: string?,
+    arguments_error: string?
 }
 
 type TokenUsage = {

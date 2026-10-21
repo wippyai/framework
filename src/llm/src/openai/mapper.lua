@@ -430,9 +430,14 @@ function openai_mapper.map_tool_calls(function_call_items)
     local result = {}
     for i, item in ipairs(function_call_items) do
         local arguments = {}
+        local raw_arguments, arguments_error
         if item.arguments then
             local parsed_args, parse_err = json.decode(tostring(item.arguments))
-            if not parse_err and parsed_args then
+            if parse_err then
+                raw_arguments = tostring(item.arguments)
+                arguments = raw_arguments
+                arguments_error = tostring(parse_err)
+            elseif parsed_args then
                 arguments = parsed_args
             end
         end
@@ -440,7 +445,9 @@ function openai_mapper.map_tool_calls(function_call_items)
         result[i] = {
             id = item.call_id or item.id,
             name = item.name,
-            arguments = arguments
+            arguments = arguments,
+            raw_arguments = raw_arguments,
+            arguments_error = arguments_error
         }
     end
     return result
