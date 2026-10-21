@@ -550,20 +550,29 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     table.insert(final_messages, system_message)
     table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = self.id })
 
-    -- Add ongoing conversation
-    for _, msg in ipairs(conversation_messages) do
-        table.insert(final_messages, msg)
-    end
-
     -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
     -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
     -- marker after the newest user/tool-result message lets the next turn read everything up to
-    -- here from cache. Placed before the memory recall, which changes turn to turn. Providers
+    -- here from cache. Trailing developer notes are per-step context (lifecycle messages the
+    -- host appends for this step), so the marker precedes them, as it precedes the memory
+    -- recall: content that changes step to step stays outside the cached prefix. Providers
     -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
-    local tail = conversation_messages[#conversation_messages]
-    if tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
-        and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM then
-        table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
+    local tail_index = #conversation_messages
+    while tail_index > 0 and conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER do
+        tail_index = tail_index - 1
+    end
+    local tail = conversation_messages[tail_index]
+    if not (tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
+        and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM) then
+        tail_index = -1
+    end
+
+    -- Add ongoing conversation
+    for index, msg in ipairs(conversation_messages) do
+        table.insert(final_messages, msg)
+        if index == tail_index then
+            table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
+        end
     end
 
     -- Append memory recall after conversation
