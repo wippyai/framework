@@ -1106,6 +1106,27 @@ local function define_tests()
         end)
 
         describe("Token Usage Tracking", function()
+            it("forwards each step context to the LLM without retaining it", function()
+                local seen = {}
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen[#seen + 1] = options
+                        return { result = "done", tokens = { prompt_tokens = 10, completion_tokens = 5 },
+                            finish_reason = "stop" }
+                    end
+                }
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                for _, options in ipairs({ { context_id = "first-context" }, { context_id = "second-context" }, {} }) do
+                    local result, err = runner:step(builder, options)
+                    test.is_nil(err)
+                    test.not_nil(result)
+                end
+                test.eq(seen[1].context_id, "first-context")
+                test.eq(seen[2].context_id, "second-context")
+                test.is_nil(seen[3].context_id)
+            end)
+
             it("should track token usage correctly", function()
                 local test_agent = agent.new(basic_compiled_spec)
                 local prompt_builder = mock_prompt.new()

@@ -509,6 +509,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     end
 
     local options = {
+        context_id = runtime_options.context_id,
         model = self.model,
         max_tokens = self.max_tokens,
         temperature = self.temperature

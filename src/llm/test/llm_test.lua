@@ -414,6 +414,7 @@ local function define_tests()
                 track_usage = function(self, model_id, prompt_tokens, completion_tokens, thinking_tokens,
                                        cache_read_tokens, cache_write_tokens, options)
                     self.last_model_id = model_id
+                    self.last_options = options
                     return "usage_" .. tostring(math.random(1000, 9999))
                 end
             }
@@ -1284,6 +1285,31 @@ local function define_tests()
         end)
 
         describe("Usage Tracking", function()
+            it("forwards explicit context with timestamp and metadata to the tracker", function()
+                local metadata = { source = "test" }
+                local usage_id, err = llm.track_usage({ tokens = { prompt_tokens = 10 } }, "gpt-4o", {
+                    context_id = "session-context", timestamp = 1234, metadata = metadata
+                })
+                test.is_nil(err)
+                test.not_nil(usage_id)
+                test.eq(mock_usage_tracker.last_options.context_id, "session-context")
+                test.eq(mock_usage_tracker.last_options.timestamp, 1234)
+                test.eq(mock_usage_tracker.last_options.metadata, metadata)
+            end)
+
+            it("leaves an omitted context unset for ambient usage tracking", function()
+                local _, err = llm.track_usage({ tokens = { prompt_tokens = 10 } }, "gpt-4o")
+                test.is_nil(err)
+                test.is_nil(mock_usage_tracker.last_options.context_id)
+            end)
+
+            it("correlates generated usage with the supplied context", function()
+                local result, err = llm.generate("Hello", { model = "gpt-4o", context_id = "session-context" })
+                test.is_nil(err)
+                test.not_nil(result.usage_record)
+                test.eq(mock_usage_tracker.last_options.context_id, "session-context")
+            end)
+
             it("should track usage when tracker is available", function()
                 local response = {
                     tokens = {
@@ -2064,9 +2090,10 @@ local function define_tests()
                     cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
                     behaviour["a-1"] = fail_with("rate_limit_exceeded")
 
-                    local result, err = llm.generate("Hi", { model = "primary" })
+                    local result, err = llm.generate("Hi", { model = "primary", context_id = "session-context" })
 
                     test.is_nil(err)
+                    test.eq(mock_usage_tracker.last_options.context_id, "session-context")
                     test.eq(result.result, "from b-1")
                     test.eq(called_models(), "a-1,b-1")
                     test.eq(result.metadata.route.model, "backup")
