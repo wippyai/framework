@@ -1378,7 +1378,7 @@ function llm.track_usage(response, model_id, options): (string?, string?)
     end
 
     -- Prepare tracking options
-    local tracking_options = {}
+    local tracking_options = { context_id = options.context_id }
 
     if options.timestamp then
         tracking_options.timestamp = options.timestamp
