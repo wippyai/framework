@@ -203,3 +203,16 @@ entries:
       test: wippy.test:test
     modules:
       - security
+
+  # app:fragment_gateway_bootstrap_test
+  - name: fragment_gateway_bootstrap_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway bootstrap response and loader contract
+    source: file://fragment_gateway_bootstrap_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      fragment_bootstrap: wippy.views.api:fragment_bootstrap
