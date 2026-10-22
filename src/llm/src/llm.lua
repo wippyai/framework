@@ -920,16 +920,19 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
 
     local admitted, admission_err, admission_details = admit_prompt(contract_args, candidate.card,
         spec.method == "generate" and options.checkpoint or nil)
+    if spec.prompt then spec.prompt.messages = contract_args.messages end
     if not admitted then
         if admission_details then
             local _, usage_err = rejected_usage(nil, contract_args, candidate, options, admission_details)
-            if usage_err then admission_err = admission_err .. "; usage tracking failed: " .. tostring(usage_err) end
+            if usage_err then admission_err = tostring(admission_err) .. "; usage tracking failed: " .. tostring(usage_err) end
+            admission_err = errors.new({ kind = errors.INVALID, retryable = false,
+                message = tostring(admission_err), details = admission_details })
+        else
+            admission_err = native_error(admission_err, errors.INVALID, false)
         end
-        return nil, { preflight = true, error = native_error(admission_err, errors.INVALID, false), message = tostring(admission_err),
+        return nil, { preflight = admission_details == nil, error = admission_err, message = tostring(admission_err),
             details = admission_details or { error_type = output.ERROR_TYPE.INVALID_REQUEST } }
     end
-
-    if spec.prompt then spec.prompt.messages = contract_args.messages end
 
     -- Each candidate gets fresh contract arguments; the messages table is
     -- shared, which is safe because a contract call hands the driver a copy.
@@ -945,12 +948,13 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
     end
     if err then
         err = native_error(err, errors.UNKNOWN)
-        return nil, {
-            error = err,
-            message = fallback.error_message(err),
-            details = fallback.error_details(err),
-            stream = stream_target(contract_args)
-        }
+        local details = fallback.error_details(err)
+        local _, usage_err = rejected_usage(raw_result, contract_args, candidate, options, details)
+        if usage_err then
+            err = errors.new({ kind = err:kind(), retryable = err:retryable(), details = err:details(),
+                message = err:message() .. "; usage tracking failed: " .. tostring(usage_err) })
+        end
+        return nil, { error = err, message = err:message(), details = details, stream = stream_target(contract_args) }
     end
 
     local normalized = normalize_response(raw_result)
@@ -1084,7 +1088,7 @@ local function fail_chain(options, failures: {FailureEntry}, last: any?)
         kind = last.error:kind(),
         retryable = last.error:retryable(),
         details = last.error:details()
-    })
+    }), last.details
 end
 
 local function run_chain(spec, options, model_card, first_routes: {any}, class_cards, initial_skip: string?)

@@ -803,10 +803,13 @@ is checked once before dispatch. Agent steps accept the same optional runtime
 option, with a callback that returns a conversation prompt builder; Agent retains
 its system instructions, cache markers and recalled memory around that builder.
 
-A prompt that still exceeds the window returns `nil, message, details` with
+A prompt that still exceeds the window returns `nil, error, details` with
 `details.error_type = llm.ERROR_TYPE.CONTEXT_WINDOW` (`context_window`),
 `estimated_prompt_tokens`, `requested_output_tokens`, `context_window` and `model`.
-The existing string error remains the second return value.
+The native error preserves its kind, retryability, message and admission details.
+Existing class and configured model routing can select a candidate with a larger
+window; admission checks each candidate before dispatch. Checkpoint failures
+terminate the call.
 
 Admission and provider rejections use the existing usage tracker. Metadata adds
 `outcome = "rejected"`, the estimated prompt size, requested output size and the

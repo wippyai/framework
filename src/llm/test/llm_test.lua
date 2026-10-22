@@ -461,6 +461,10 @@ local function define_tests()
                 test.not_nil(err)
                 test.eq(#calls, 0)
                 test.eq(details.error_type, "context_window")
+                test.eq(err:kind(), errors.INVALID)
+                test.is_false(err:retryable())
+                test.eq(err:details().error_type, details.error_type)
+                test.eq(err:details().estimated_prompt_tokens, details.estimated_prompt_tokens)
                 test.eq(details.context_window, 200)
                 test.gt(details.estimated_prompt_tokens, 200)
                 test.eq(#records, 1)
@@ -579,7 +583,7 @@ local function define_tests()
                         return nil, "checkpoint failed"
                     end } })
                 test.is_nil(result)
-                test.contains(err, "checkpoint failed")
+                test.eq(err:message(), "checkpoint failed")
                 test.eq(compacted, 1)
                 test.eq(#calls, 0)
             end)
@@ -623,9 +627,10 @@ local function define_tests()
             end)
 
             it("accounts provider rejections without inventing billable usage", function()
+                local cause = output.errors.generate():kind("context_length_exceeded"):message("rejected"):build()
                 mock_providers.open = function()
                     return { generate = function()
-                        return nil, output.errors.generate():kind("context_length_exceeded"):message("rejected"):build()
+                        return nil, cause
                     end }
                 end
                 local result, err = llm.generate("hi", { model = "small", context_id = "conversation", metadata = { caller = "test" } })
@@ -638,6 +643,24 @@ local function define_tests()
                 test.eq(records[1].options.metadata.outcome, "rejected")
                 test.eq(records[1].options.metadata.error_type, "context_length_exceeded")
                 test.gt(records[1].options.metadata.estimated_prompt_tokens, 0)
+                test.eq(err, cause)
+                test.eq(err:details().error_type, "context_length_exceeded")
+            end)
+
+            it("retains native provider details when rejected usage tracking fails", function()
+                local cause = errors.new({ kind = errors.UNAVAILABLE, retryable = true, message = "provider unavailable",
+                    details = { error_type = "server_error", operation = "generate" } })
+                mock_providers.open = function()
+                    return { generate = function() return nil, cause end }
+                end
+                mock_usage_tracker.track_usage = function() return nil, "usage unavailable" end
+                local result, err, details = llm.generate("hi", { model = "small", fallback = false })
+                test.is_nil(result)
+                test.eq(err:kind(), cause:kind())
+                test.eq(err:retryable(), cause:retryable())
+                test.eq(err:details().operation, "generate")
+                test.eq(details.error_type, "server_error")
+                test.eq(err:message(), "provider unavailable; usage tracking failed: usage unavailable")
             end)
         end)
 

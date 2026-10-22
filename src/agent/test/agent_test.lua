@@ -1521,6 +1521,10 @@ local function define_tests()
                     test.is_nil(err)
                     test.eq(replacement[1], messages[1])
                     test.eq(replacement[1].role, "system")
+                    test.eq(replacement[3].role, "user")
+                    test.eq(replacement[4].role, "cache_marker")
+                    test.eq(replacement[4].marker_id, "conversation_tail")
+                    test.eq(replacement[5].role, "developer")
                     local task_found, old_found = false, false
                     for _, message in ipairs(replacement) do
                         for _, part in ipairs(type(message.content) == "table" and message.content or {}) do
@@ -1536,6 +1540,7 @@ local function define_tests()
                     test.eq(info.estimated_prompt_tokens, 100)
                     local replacement = mock_prompt.new()
                     replacement:add_user("retained task")
+                    replacement:add_developer("Per-step lifecycle note")
                     return replacement
                 end } })
                 test.is_nil(err)
