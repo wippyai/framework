@@ -5,3 +5,6 @@ test:
 
 lint:
 	wippy lint --level error
+
+# Metadata HTTP fixtures run on app:gateway in this test workspace.
+export PUBLIC_API_URL := http://localhost:19086

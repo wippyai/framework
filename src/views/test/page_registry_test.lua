@@ -3,6 +3,7 @@ local registry = require("registry")
 local page_registry = require("page_registry")
 local security = require("security")
 local funcs = require("funcs")
+local env = require("env")
 
 -- can_access reads the ambient security actor/scope directly, so a "no
 -- actor" case cannot be produced by omission here: the CLI test runner
@@ -761,6 +762,38 @@ local function define_tests()
                 test.is_nil(err)
                 for _, pid in pairs(routes) do
                     test.is_true(pid ~= NS .. "mr_no_mount")
+                end
+            end)
+        end)
+
+        test.describe("base path and base URL", function()
+            -- resolve_base_url = PUBLIC_API_URL + resolve_base_path for a
+            -- relative path; the test Makefile sets PUBLIC_API_URL.
+            local cases = {
+                { page = { url = "/app/keeper" }, path = "/app/keeper/" },
+                { page = { url = "/app/keeper/" }, path = "/app/keeper/" },
+                { page = { url = "/app", base_path = "keeper" }, path = "/app/keeper/" },
+                { page = { url = "/app/", base_path = "keeper/" }, path = "/app/keeper/" },
+                { page = { base_path = "/kickside-agent-onboarding" }, path = "//kickside-agent-onboarding/" },
+                { page = { url = "https://cdn.example/ui" }, path = "https://cdn.example/ui/", remote = true },
+                { page = { url = "" }, path = "" },
+                { page = {}, path = "" },
+            }
+
+            test.it("resolve_base_path joins url and base_path with one trailing slash", function()
+                for _, c in ipairs(cases) do
+                    test.eq(page_registry.resolve_base_path(c.page), c.path)
+                end
+            end)
+
+            test.it("resolve_base_url adds PUBLIC_API_URL to a local path only", function()
+                local origin = env.get("PUBLIC_API_URL") or ""
+                for _, c in ipairs(cases) do
+                    local expected = c.path
+                    if origin ~= "" and c.path ~= "" and not c.remote then
+                        expected = origin .. c.path
+                    end
+                    test.eq(page_registry.resolve_base_url(c.page), expected)
                 end
             end)
         end)

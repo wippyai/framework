@@ -215,29 +215,38 @@ function pages.get(page_id)
     return page
 end
 
--- Resolve a page URL to an absolute base URL with trailing slash.
--- When base_path is set, it is appended to the URL to form the project root.
--- Entry point paths are relative to this resolved base.
-function pages.resolve_base_url(page)
-    local base_url = page.url or ""
+-- Resolve a page URL to its project root with trailing slash, as declared:
+-- a path on this server (e.g. "/app/keeper/") or an absolute URL of a
+-- remote page. When base_path is set, it is appended to the URL.
+function pages.resolve_base_path(page)
+    local base = page.url or ""
 
     -- Append base_path to get the project root
     local base_path = page.base_path or ""
     if base_path ~= "" then
-        if not base_url:match("/$") then
-            base_url = base_url .. "/"
+        if not base:match("/$") then
+            base = base .. "/"
         end
-        base_url = base_url .. base_path
+        base = base .. base_path
     end
+
+    if base ~= "" and not base:match("/$") then
+        base = base .. "/"
+    end
+
+    return base
+end
+
+-- Resolve a page URL to an absolute base URL with trailing slash.
+-- When base_path is set, it is appended to the URL to form the project root.
+-- Entry point paths are relative to this resolved base.
+function pages.resolve_base_url(page)
+    local base_url = pages.resolve_base_path(page)
 
     local origin = env.get("PUBLIC_API_URL") or ""
 
     if origin ~= "" and base_url ~= "" and not base_url:match("^https?://") then
         base_url = origin .. base_url
-    end
-
-    if base_url ~= "" and not base_url:match("/$") then
-        base_url = base_url .. "/"
     end
 
     return base_url

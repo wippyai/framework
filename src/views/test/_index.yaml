@@ -27,6 +27,92 @@ entries:
   - name: envs
     kind: env.storage.os
 
+  # Static mounts for the wippy-meta.json tests: a dedicated mount
+  # (/static-fixture), a catch-all mount (/) like the facade's, an SPA
+  # mount, and a longer mount on a second server that views must ignore.
+  - name: test_static_fs
+    kind: fs.directory
+    meta:
+      scope: dev
+      comment: Fixture pages with a valid, an invalid, an array, a directory and no wippy-meta.json
+    directory: ./fixtures/static
+
+  - name: test_static
+    kind: http.static
+    meta:
+      scope: dev
+      comment: Serves fixtures/static at /static-fixture
+      server: gateway
+    fs: test_static_fs
+    path: /static-fixture
+
+  - name: test_root_fs
+    kind: fs.directory
+    meta:
+      scope: dev
+      comment: Fixture page served only by the catch-all mount
+    directory: ./fixtures/root
+
+  - name: test_root_static
+    kind: http.static
+    meta:
+      scope: dev
+      comment: Catch-all mount serving fixtures/root at /
+      server: gateway
+    fs: test_root_fs
+    path: /
+
+  - name: test_spa_fs
+    kind: fs.directory
+    meta:
+      scope: dev
+      comment: SPA fixture; the SPA handler serves the whole request path from here
+    directory: ./fixtures/spa
+
+  - name: test_spa_static
+    kind: http.static
+    meta:
+      scope: dev
+      comment: SPA mount at /spa-fixture (legacy options form)
+      server: gateway
+    fs: test_spa_fs
+    path: /spa-fixture
+    options:
+      spa: true
+      index: index.html
+
+  - name: other_gateway
+    kind: http.service
+    meta:
+      scope: dev
+      comment: Second HTTP server; its mounts are not the views API server's
+    addr: :19087
+    lifecycle:
+      auto_start: true
+
+  - name: test_other_static
+    kind: http.static
+    meta:
+      scope: dev
+      comment: Longer mount on the other server; views must not pick it for gateway pages
+      server: other_gateway
+    fs: test_root_fs
+    path: /static-fixture/meta-page
+
+  # app:test_bad_meta_page
+  - name: test_bad_meta_page
+    kind: registry.entry
+    meta:
+      scope: dev
+      type: view.page
+      name: test_bad_meta_page
+      title: Bad meta fixture
+      url: /static-fixture/bad-page
+      entry_point: index.html
+      public: true
+      announced: false
+      secure: false
+
   - name: test_templates
     kind: template.set
     meta:
@@ -114,6 +200,50 @@ entries:
         - view
       effect: allow
 
+  # A root-router endpoint overrides an existing file under /static-fixture.
+  - name: test_metadata_router
+    kind: http.router
+    meta:
+      scope: dev
+      server: gateway
+    prefix: /
+
+  - name: routed_metadata
+    kind: function.lua
+    meta:
+      scope: dev
+    source: file://routed_metadata.lua
+    method: handler
+    modules:
+      - http
+
+  - name: routed_metadata.endpoint
+    kind: http.endpoint
+    meta:
+      scope: dev
+      router: test_metadata_router
+    func: routed_metadata
+    method: GET
+    path: /static-fixture/shadow-page/wippy-meta.json
+
+  - name: denied_metadata
+    kind: function.lua
+    meta:
+      scope: dev
+    source: file://routed_metadata.lua
+    method: denied
+    modules:
+      - http
+
+  - name: denied_metadata.endpoint
+    kind: http.endpoint
+    meta:
+      scope: dev
+      router: test_metadata_router
+    func: denied_metadata
+    method: GET
+    path: /static-fixture/guarded-page/wippy-meta.json
+
   # app:page_registry_test
   - name: page_registry_test
     kind: function.lua
@@ -130,6 +260,7 @@ entries:
       - registry
       - security
       - funcs
+      - env
 
   # app:component_registry_test
   - name: component_registry_test
@@ -146,6 +277,7 @@ entries:
       component_registry: wippy.views:component_registry
     modules:
       - registry
+      - env
 
   # app:resource_registry_test
   - name: resource_registry_test
@@ -183,12 +315,58 @@ entries:
     meta:
       type: test
       suite: views
-      comment: Bundled-meta projection tests (YAML-first precedence + nil-vs-empty override)
+      comment: Bundled-meta projection tests (YAML-first precedence + nil-vs-empty override), wippy-meta.json loading over the mount filesystem and HTTP, failure messages and log dedup
     source: file://bundled_meta_test.lua
     method: run
     imports:
       test: wippy.test:test
       bundled_meta: wippy.views:bundled_meta
+      static_meta: wippy.views:static_meta
+    modules:
+      - funcs
+      - security
+      - env
+      - http_client
+      - json
+
+  # app:static_meta_test
+  - name: static_meta_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Mount selection and mount filesystem reads for wippy-meta.json, and the read_static_meta permission boundary
+    source: file://static_meta_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      static_meta: wippy.views:static_meta
+    modules:
+      - funcs
+      - security
+      - registry
+
+  # app:bundled_meta_probe
+  - name: bundled_meta_probe
+    kind: function.lua
+    meta:
+      scope: dev
+      comment: Test seam - runs bundled_meta._load under a funcs.call-supplied security scope, so tests can check the handler policies
+    source: file://bundled_meta_probe.lua
+    method: run
+    imports:
+      bundled_meta: wippy.views:bundled_meta
+
+  # app:fs_access_probe
+  - name: fs_access_probe
+    kind: function.lua
+    meta:
+      scope: dev
+      comment: Test seam - tries fs.get under a funcs.call-supplied security scope
+    source: file://fs_access_probe.lua
+    method: run
+    modules:
+      - fs
 
   # app:public_security_test
   - name: public_security_test

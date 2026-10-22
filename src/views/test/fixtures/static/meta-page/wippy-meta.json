@@ -1,0 +1,8 @@
+{
+  "name": "@test/meta-page",
+  "wippy": {
+    "type": "page",
+    "path": "app.html",
+    "configOverrides": { "customization": { "cssVariables": { "--fixture-color": "#123456" } } }
+  }
+}

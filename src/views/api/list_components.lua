@@ -55,10 +55,9 @@ local function handler()
                 -- Same projection that /components/by-tag uses: YAML-first per
                 -- field, bundled wippy-meta.json (when present) as fallback.
                 -- Drives title/description/tag_name/entry_point/props/events.
+                -- A failed fetch is already logged as an error by bundled_meta.
                 local meta, meta_err = bundled_meta.fetch_for_component(component)
                 if meta_err then
-                    print("[views/list_components] bundled_meta fetch error for "
-                        .. tostring(component.id) .. ": " .. tostring(meta_err))
                     meta = nil
                 end
 

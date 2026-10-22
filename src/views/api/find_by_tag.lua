@@ -57,11 +57,11 @@ local function handler()
     -- Slow path: a consumer that ships `wippy.tagName` in its bundled
     -- wippy-meta.json but does NOT declare `meta.tag_name` in the YAML
     -- registry entry will miss the fast path (the registry has no key
-    -- to match against). Scan all view.components, fetch each one's
+    -- to match against). Scan all view.components, read each one's
     -- bundled meta, and find the entry whose `wippy.tagName` matches.
-    -- Linear in the number of view.components × one HTTP self-fetch
-    -- each — first miss for any tag, then served from the bundled_meta
-    -- cache on subsequent calls.
+    -- Linear in the number of view.components, with one wippy-meta.json
+    -- read each (from the mount filesystem, or over HTTP); nothing is
+    -- cached between requests.
     if not component then
         local all, all_err = component_registry.find_all()
         if not all_err and all then
@@ -104,9 +104,9 @@ local function handler()
         return
     end
 
+    -- A failed fetch is already logged as an error by bundled_meta.
     local meta, meta_err = bundled_meta.fetch_for_component(component)
     if meta_err then
-        print("[views/find_by_tag] bundled_meta fetch error for tag=" .. tostring(tag) .. ": " .. tostring(meta_err))
         meta = nil
     end
 

@@ -235,25 +235,68 @@ entries:
           consumer's app.html / index.js. Used by /pages/content/{id},
           /components/list, and /components/by-tag/{tag} as the single source
           of truth for view.page / view.component metadata when present.
+          The file is read from the filesystem of the http.static mount that
+          serves the entry URL, through wippy.views:read_static_meta; it is
+          fetched over HTTP when views cannot be sure the HTTP server would
+          serve that same file (see static_meta).
           Callers fall back to YAML-synthesis when fetch returns nil + nil.
-          A process-wide deprecation warning fires the FIRST time an entry is
-          seen without bundled meta (deduplicated via the shared `bundled_meta_warn`
-          memory store so each handler-pool worker doesn't re-warn the same id).
+          Misses and failures are logged at most once per hour per entry
+          (deduplicated via the shared `bundled_meta_warn` memory store so
+          handler-pool workers don't repeat each other).
       source: file://bundled_meta.lua
       imports:
         page_registry: wippy.views:page_registry
         component_registry: wippy.views:component_registry
+        static_meta: wippy.views:static_meta
       modules:
+        - funcs
         - http_client
         - json
+        - logger
         - store
+    - name: static_meta
+      kind: library.lua
+      meta:
+        comment: Finds the http.static mount that serves a view entry URL and reads its wippy-meta.json
+        description: |
+          Chooses the mount the way the runtime's HTTP server routes the
+          request (server, cleaned path, longest mount path, SPA mode) and
+          refuses mounts whose middleware only the HTTP server applies.
+          Endpoint overlap or unresolved routing also falls back to HTTP,
+          which owns endpoint precedence and middleware.
+          Opening the filesystem needs fs.get, which only
+          wippy.views:read_static_meta has.
+      source: file://static_meta.lua
+      modules:
+        - fs
+        - registry
+    - name: read_static_meta
+      kind: function.lua
+      meta:
+        comment: Reads a view entry's wippy-meta.json from the http.static mount that serves it
+        description: |
+          The only views function that may open filesystems. The views API
+          handlers call it through funcs, so they never hold fs.get.
+      source: file://static_meta_reader.lua
+      imports:
+        static_meta: wippy.views:static_meta
+      method: run
+      security:
+        actor:
+          id: wippy.views:read_static_meta
+        policies:
+          - wippy.views:public_registry_runtime
+          - wippy.views:public_metadata_fs_runtime
+      pool:
+        size: 4
+        workers: 4
     - name: bundled_meta_warn
       kind: store.memory
       meta:
         comment: |
-          Process-wide dedup of "no wippy-meta.json" deprecation warnings.
-          Each entry id is logged at most once per wippy process lifetime,
-          regardless of which handler-pool worker observes the miss.
+          Process-wide dedup of wippy-meta.json warnings and errors. Each
+          entry and cause is logged at most once per hour (keys expire),
+          regardless of which handler-pool worker observes it.
       max_size: 1000
       cleanup_interval: "1h"
     - name: public_registry_runtime
@@ -287,6 +330,25 @@ entries:
           - https://*
         actions:
           - http_client.request
+        effect: allow
+    - name: public_metadata_fs_runtime
+      kind: security.policy
+      meta:
+        comment: Only wippy.views:read_static_meta has this policy. It opens the filesystem behind an http.static mount to read the wippy-meta.json that mount serves. Any volume can back a mount, so the resource is not narrowed; the function only reads that one file.
+      policy:
+        resources: '*'
+        actions:
+          - fs.get
+        effect: allow
+    - name: public_metadata_reader_runtime
+      kind: security.policy
+      meta:
+        comment: Public view API handlers may call wippy.views:read_static_meta, which reads wippy-meta.json from a mount filesystem for them.
+      policy:
+        resources:
+          - wippy.views:read_static_meta
+        actions:
+          - funcs.call
         effect: allow
     - name: public_metadata_private_ip_runtime
       kind: security.policy

@@ -51,6 +51,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_reader_runtime
           - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
@@ -85,6 +86,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_reader_runtime
           - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
@@ -121,6 +123,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_reader_runtime
           - wippy.views:public_metadata_store_runtime
           - wippy.views:public_data_func_runtime
       pool:
@@ -230,6 +233,7 @@ entries:
           id: wippy.views.api:fragment_gateway
         policies:
           - wippy.views:public_registry_runtime
+          - wippy.views:public_metadata_reader_runtime
           # Required: page_registry.resolve_base_url reads PUBLIC_API_URL to turn a
           # page's relative url/base_path into an ABSOLUTE origin. Without this the
           # read is denied, base_url stays relative, and the document fetch is then
