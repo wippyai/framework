@@ -9,7 +9,7 @@ any database-specific logic.
 The DSL includes the following functions:
 - migration(description, fn) - Define a migration with a description
 - database(type, fn) - Define database-specific implementation
-- up(fn, mode?) - Define forward logic; "batch" opts into resumable pages
+- up(fn, mode?) - Define forward logic; "batch" / "external_batch" opt into resumable pages
 - after(fn) - Define post-migration steps
 - down(fn) - Define rollback logic
 ]]
@@ -18,6 +18,7 @@ type DatabaseImpl = {
     type: string?,
     up: any?,
     up_batch: any?,
+    up_external_batch: any?,
     after: any?,
     down: any?,
 }
@@ -133,19 +134,25 @@ function migration_core.create_up_fn(context: MigrationContext): any
             error("Up migration must be a function")
         end
 
-        if mode ~= nil and mode ~= "batch" then
-            error("Up migration mode must be 'batch' or absent")
+        if mode ~= nil and mode ~= "batch" and mode ~= "external_batch" then
+            error("Up migration mode must be 'batch', 'external_batch' or absent")
         end
+        local implementation = context.current_database
         if mode == "batch" then
-            if context.current_database.up then
+            if implementation.up or implementation.up_external_batch then
                 error("Atomic and batched up() callbacks cannot be combined")
             end
-            context.current_database.up_batch = fn
+            implementation.up_batch = fn
+        elseif mode == "external_batch" then
+            if implementation.up or implementation.up_batch then
+                error("Atomic, transactional and external batch callbacks cannot be combined")
+            end
+            implementation.up_external_batch = fn
         else
-            if context.current_database.up_batch then
+            if implementation.up_batch or implementation.up_external_batch then
                 error("Atomic and batched up() callbacks cannot be combined")
             end
-            context.current_database.up = fn
+            implementation.up = fn
         end
     end
 end
@@ -232,7 +239,7 @@ function migration_core.validate_implementation(implementation: MigrationItem, d
         return false, "No implementation for database type: " .. db_type
     end
 
-    if type(impl.up) ~= "function" and type(impl.up_batch) ~= "function" then
+    if type(impl.up) ~= "function" and type(impl.up_batch) ~= "function" and type(impl.up_external_batch) ~= "function" then
         return false, "Missing 'up' function for " .. db_type
     end
 

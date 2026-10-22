@@ -71,17 +71,17 @@ local function execute_page(migration_item: any, options: any): any
         }
     end
 
-    if impl.up_batch and (migration_id == "" or #migration_id > 512) then
+    if (impl.up_batch or impl.up_external_batch) and (migration_id == "" or #migration_id > 512) then
         return {status = "error", description = migration_item.description,
             name = migration_item.description, error = "Batched migration ID must contain 1 to 512 characters"}
     end
 
-    if impl.up_batch and db_type ~= sql.type.SQLITE and db_type ~= sql.type.POSTGRES then
+    if (impl.up_batch or impl.up_external_batch) and db_type ~= sql.type.SQLITE and db_type ~= sql.type.POSTGRES then
         return {status = "error", description = migration_item.description,
             name = migration_item.description, error = "Batched migrations support only SQLite and PostgreSQL"}
     end
 
-    if direction == "up" and not impl.up and not impl.up_batch then
+    if direction == "up" and not impl.up and not impl.up_batch and not impl.up_external_batch then
         return {
             status = "error",
             description = migration_item.description,
@@ -161,7 +161,7 @@ local function execute_page(migration_item: any, options: any): any
             end
         end
 
-        if is_applied and options.force and impl.up_batch then
+        if is_applied and options.force and (impl.up_batch or impl.up_external_batch) then
             tx:rollback()
             return {status = "error", description = migration_item.description,
                 name = migration_item.description, error = "Cannot force an applied batched migration"}
@@ -183,7 +183,7 @@ local function execute_page(migration_item: any, options: any): any
     local more = false
     local progress_ids: {string}? = nil
     local progress_table = options.progress_table
-    if impl.up_batch then
+    if impl.up_batch or impl.up_external_batch then
         progress_ids = {migration_id}
         for _, alias in ipairs(options.aliases or {}) do
             table.insert(progress_ids, tostring(alias))
@@ -199,7 +199,41 @@ local function execute_page(migration_item: any, options: any): any
         end
     end
 
-    if direction == "up" and impl.up_batch then
+    if direction == "up" and impl.up_external_batch then
+        local cursor, cursor_err = repository.get_progress(tx, progress_table, progress_ids :: {string})
+        if cursor_err then
+            tx:rollback()
+            return {status = "error", name = migration_item.description, error = tostring(cursor_err)}
+        end
+        if not options.external_ready then
+            -- Release the ledger lock before any caller-owned work. The same
+            -- runner validates and commits its checkpoint in a fresh page.
+            local committed, commit_err = tx:commit()
+            if not committed or commit_err then
+                tx:rollback()
+                return {status = "error", name = migration_item.description,
+                    error = "Failed to commit external batch snapshot: " .. tostring(commit_err)}
+            end
+            options.progress_table = progress_table
+            return {status = "prepared", cursor = cursor}
+        end
+        if cursor ~= options.external_cursor then
+            tx:rollback()
+            return {status = "pending"}
+        end
+        local next_cursor = options.external_next_cursor
+        if next_cursor ~= nil and (type(next_cursor) ~= "string" or next_cursor == "" or next_cursor == cursor) then
+            tx:rollback()
+            return {status = "error", name = migration_item.description,
+                error = "Batched migration checkpoint must be a non-empty string different from the previous checkpoint"}
+        end
+        success, err = true, nil
+        if next_cursor ~= nil then
+            local saved, save_err = repository.record_progress(tx, progress_table, migration_id, next_cursor)
+            success, err = saved ~= nil and saved ~= false and save_err == nil, save_err
+            more = success
+        end
+    elseif direction == "up" and impl.up_batch then
         success, err = pcall(execute_batch, tx, impl, progress_table, progress_ids :: {string}, migration_id)
         more = success and err ~= nil
     elseif direction == "up" then
@@ -274,7 +308,7 @@ local function execute_page(migration_item: any, options: any): any
         end
     end
 
-    if impl.up_batch and not more then
+    if (impl.up_batch or impl.up_external_batch) and not more then
         local removed, remove_err = repository.remove_progress(tx, progress_table, progress_ids :: {string})
         if not removed then
             tx:rollback()
@@ -284,7 +318,8 @@ local function execute_page(migration_item: any, options: any): any
     end
 
     local commit_success, commit_err = tx:commit()
-    if not commit_success then
+    if not commit_success or commit_err then
+        tx:rollback()
         return {
             status = "error",
             description = migration_item.description,
@@ -316,11 +351,41 @@ end
 
 local function execute_batched_migration(migration_item: any, options: any): any
     local started = time.now()
+    local external = migration_item.database_implementations[options.db_type].up_external_batch
+    local contention_attempts = 0
     while true do
         local result = execute_page(migration_item, options)
-        if result.status ~= "pending" then
+        if result.status == "prepared" then
+            local success, next_cursor = pcall(external, options.db, result.cursor)
+            if success then
+                options.external_ready = true
+                options.external_cursor = result.cursor
+                options.external_next_cursor = next_cursor
+                result = execute_page(migration_item, options)
+                options.external_ready = nil
+                options.external_cursor = nil
+                options.external_next_cursor = nil
+            else
+                result = {status = "error", name = migration_item.description, error = tostring(next_cursor)}
+            end
+        end
+        -- Only the opt-in external mode can replay committed caller work.
+        -- Every such callback must be idempotent, including its final action.
+        local contended = false
+        if external and options.db_type == sql.type.SQLITE and result.status == "error" then
+            local message = tostring(result.error):lower()
+            contended = message:find("database is locked", 1, true) ~= nil
+                or message:find("database table is locked", 1, true) ~= nil
+                or message:find("database schema is locked", 1, true) ~= nil
+        end
+        if contended and contention_attempts < 4 then
+            time.sleep(tostring(50 * 2 ^ contention_attempts) .. "ms")
+            contention_attempts = contention_attempts + 1
+        elseif result.status ~= "pending" then
             result.duration = time.now():sub(started):milliseconds() / 1000
             return result
+        else
+            contention_attempts = 0
         end
     end
 end
@@ -414,7 +479,8 @@ function migration.run(fn: () -> (), options: RunOptions?): any
     for _, m in ipairs(implementations) do
         if m.database_implementations[db_type] then
             local execute = execute_page
-            if opts.direction == "up" and m.database_implementations[db_type].up_batch then
+            if opts.direction == "up" and (m.database_implementations[db_type].up_batch
+                or m.database_implementations[db_type].up_external_batch) then
                 execute = execute_batched_migration
             end
             local result = execute(m, {
