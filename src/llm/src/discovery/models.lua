@@ -1,3 +1,4 @@
+local error_context = require("error_context")
 local registry = require("registry")
 local fallback = require("fallback")
 
@@ -25,7 +26,7 @@ function models.get_by_name(name)
     })
 
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
 
     if not entries or #entries == 0 then
@@ -48,7 +49,7 @@ function models.get_by_class(class_name)
     })
 
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
 
     if not entries then
@@ -89,7 +90,7 @@ function models.get_all()
     })
 
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
 
     if not entries then
@@ -123,7 +124,7 @@ function models.get_all_classes()
     })
 
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
 
     if not entries then

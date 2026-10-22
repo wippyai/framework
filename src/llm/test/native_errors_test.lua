@@ -1,5 +1,7 @@
 local test = require("test")
 local llm = require("llm")
+local providers = require("providers")
+local models = require("models")
 
 local function call(method, options)
     if method == "structured_output" then return llm.structured_output({ type = "object" }, "Question", options) end
@@ -131,6 +133,111 @@ return test.run_cases(function()
                 end
             end
         end)
+
+        it("keeps existing class fallback to a larger context model", function()
+            llm._models = {get_by_class = function() return {
+                {name = "small", max_tokens = 200, providers = {{id = "provider", provider_model = "small"}}},
+                {name = "large", max_tokens = 2000, providers = {{id = "provider", provider_model = "large"}}},
+            } end}
+            llm._providers = {
+                driver_declares_legacy_reasoning_flag = function() return false end,
+                open = function() return {generate = function(_, args)
+                    if args.model == "small" then
+                        return nil, errors.new({kind = errors.INVALID, message = "context too large",
+                            details = {error_type = "context_length_exceeded"}})
+                    end
+                    return {result = "ok", tokens = {}, metadata = {}}
+                end} end,
+            }
+            local result, err = llm.generate(string.rep("x", 1600), {model = "class:test", max_tokens = 40})
+            test.is_nil(err)
+            test.eq(result.metadata.route.model, "large")
+        end)
+
+        for _, method in ipairs({ "generate", "structured_output", "embed", "evaluate", "status" }) do
+            for _, boundary in ipairs({ "registry", "contract", "binding" }) do
+                it("preserves " .. method .. " " .. boundary .. " errors through real discovery", function()
+                    local saved_registry, saved_contract = providers._registry, providers._contract
+                    local cause = errors.new({ kind = errors.UNAVAILABLE, retryable = true,
+                        message = "temporarily unavailable", details = { operation = boundary, nested = { retained = true } } })
+                    providers._registry = { get = function()
+                        if boundary == "registry" then return nil, cause end
+                        return { meta = { type = "llm.provider" }, data = { driver = { id = "test:binding" } } }
+                    end }
+                    providers._contract = { get = function()
+                        if boundary == "contract" then return nil, cause end
+                        return {
+                            with_context = function(self) return self end,
+                            open = function() return nil, cause end,
+                        }
+                    end }
+                    llm._providers = providers
+                    local ran, result, err = pcall(call, method, { model = "test-model" })
+                    providers._registry, providers._contract = saved_registry, saved_contract
+                    test.is_true(ran, tostring(result))
+                    test.is_nil(result)
+                    test.eq(err:kind(), errors.UNAVAILABLE)
+                    test.is_true(err:retryable())
+                    test.eq(err:details().operation, boundary)
+                    test.is_true(err:details().nested.retained)
+                    local prefix = boundary == "registry" and "Registry error: "
+                        or boundary == "contract" and "Failed to get provider contract: "
+                        or "Failed to open provider binding: "
+                    test.eq(tostring(err), "Failed to open provider: " .. prefix .. cause:message())
+                end)
+            end
+        end
+
+        for _, method in ipairs({ "generate", "structured_output" }) do
+            it("preserves " .. method .. " driver lookup failures through real discovery", function()
+                local saved_registry, saved_contract = providers._registry, providers._contract
+                local cause = errors.new({ kind = errors.UNAVAILABLE, retryable = true,
+                    message = "driver lookup unavailable", details = { operation = "driver" } })
+                providers._registry = { get = function(id)
+                    if id == "test:binding" then return nil, cause end
+                    return { meta = { type = "llm.provider" }, data = { driver = { id = "test:binding" } } }
+                end }
+                providers._contract = { get = function() return {
+                    with_context = function(self) return self end,
+                    open = function() return {} end,
+                } end }
+                llm._providers = providers
+                local ran, result, err = pcall(call, method, { model = "test-model" })
+                providers._registry, providers._contract = saved_registry, saved_contract
+                test.is_true(ran, tostring(result))
+                test.is_nil(result)
+                test.eq(err:kind(), errors.UNAVAILABLE)
+                test.is_true(err:retryable())
+                test.eq(err:details().operation, "driver")
+                test.eq(tostring(err), "Registry error: driver lookup unavailable")
+            end)
+        end
+
+        for _, operation in ipairs({ "name", "class", "bare_class", "available_models", "get_classes" }) do
+            it("preserves native registry errors through real model discovery for " .. operation, function()
+                local saved_registry = models._registry
+                local cause = errors.new({ kind = errors.PERMISSION_DENIED, retryable = false,
+                    message = "catalog denied", details = { operation = operation } })
+                models._registry = { find = function(query)
+                    if operation == "bare_class" and query["meta.name"] then return {} end
+                    return nil, cause
+                end }
+                llm._models = models
+                local ran, result, err = pcall(function()
+                    if operation == "name" then return llm.resolve_model("test-model") end
+                    if operation == "class" then return llm.resolve_model("class:test") end
+                    if operation == "bare_class" then return llm.resolve_model("test-class") end
+                    return llm[operation]()
+                end)
+                models._registry = saved_registry
+                test.is_true(ran, tostring(result))
+                test.is_nil(result)
+                test.eq(err:kind(), errors.PERMISSION_DENIED)
+                test.is_false(err:retryable())
+                test.eq(err:details().operation, operation)
+                test.eq(tostring(err), "Registry error: catalog denied")
+            end)
+        end
 
         it("types provider opening failures without a native cause", function()
             for _, cause in ipairs({ "binding missing", false }) do

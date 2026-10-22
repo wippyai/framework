@@ -288,11 +288,17 @@ local function resolve_model_cards(model_identifier: string): ({ModelCard}?, err
     if model_card then
         return { model_card :: ModelCard }
     end
+    if err and type(err) ~= "string" then
+        return nil, err
+    end
 
     -- Try as class name
     local class_models, class_err = models_module.get_by_class(model_identifier)
     if not class_err and class_models and #class_models > 0 then
         return class_models, nil, true
+    end
+    if class_err and type(class_err) ~= "string" then
+        return nil, class_err
     end
 
     return nil, errors.new({ kind = errors.NOT_FOUND, retryable = false, message = "Model or class not found: " .. model_identifier })

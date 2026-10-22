@@ -522,7 +522,10 @@ errors retain their kind, retryability, and details. `tostring(err)` and
 several candidates fail. The summary retains the last provider error's metadata.
 Provider invocation failures without a summary return the original native error.
 Provider opening failures retain their metadata and the `Failed to open provider:`
-message prefix.
+message prefix. Registry lookups, contract discovery, and binding opening preserve
+native causes through the actual discovery path, including their existing message
+prefixes. A native catalog failure is propagated rather than reported as a missing
+model or class.
 
 Invalid inputs and route configuration use `errors.INVALID`; missing models,
 classes, and pinned routes use `errors.NOT_FOUND`. Internal failures use

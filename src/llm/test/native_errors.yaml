@@ -8,4 +8,6 @@ entries:
     method: run
     imports:
       llm: wippy.llm:llm
+      providers: wippy.llm.discovery:providers
+      models: wippy.llm.discovery:models
       test: wippy.test:test
