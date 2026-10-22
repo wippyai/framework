@@ -475,6 +475,21 @@ local function define_tests()
                 test.eq(records[1].options.metadata.estimated_prompt_tokens, details.estimated_prompt_tokens)
             end)
 
+            it("advances to a class member that fits the context window", function()
+                local large = {name = "large", max_tokens = 2000, output_tokens = 40,
+                    capabilities = card.capabilities, providers = card.providers}
+                llm._model_resolver = {resolve = function() return nil end}
+                local saved_models = llm._models
+                llm._models = {get_by_class = function() return {card, large} end,
+                    get_by_name = function() return nil end}
+                local result, err = llm.generate(string.rep("x", 1600), {model = "class:test", max_tokens = 40})
+                llm._models = saved_models
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(#calls, 1)
+                test.eq(result.metadata.route.model, "large")
+            end)
+
             it("keeps an unspecified output budget distinct from the card output ceiling", function()
                 card.output_tokens = 180
                 local result, err = llm.generate(string.rep("x", 150), { model = "small" })
@@ -492,6 +507,151 @@ local function define_tests()
                 test.not_nil(result)
                 test.eq(#calls, 1)
                 test.eq(calls[1].messages[1].metadata, metadata)
+            end)
+
+            for _, media_type in ipairs({ "image", "document" }) do
+                for _, source_type in ipairs({ "base64", "url" }) do
+                    it("does not count " .. media_type .. " " .. source_type .. " transport bytes as text tokens", function()
+                        card.capabilities = { "generate", "tool_use", "vision" }
+                        card.max_tokens = 8192
+                        local encoded = string.rep("A", 65536)
+                        local mime_type = media_type == "image" and "image/png" or "application/pdf"
+                        local source = source_type == "base64"
+                            and {type = "base64", mime_type = mime_type, data = encoded}
+                            or {type = "url", url = "data:" .. mime_type .. ";base64," .. encoded}
+                        local part = {type = media_type, source = source}
+                        local result, err = llm.generate({{role = "user", content = {part}}},
+                            {model = "small", max_tokens = 40, checkpoint = {
+                                token_threshold = 256, compact = function() error("media transport must not trigger a checkpoint") end,
+                            }})
+                        test.is_nil(err)
+                        test.not_nil(result)
+                        test.eq(#calls, 1)
+                        test.eq(calls[1].messages[1].content[1].source, source)
+                        test.eq(part.source, source)
+                        test.eq(source_type == "base64" and source.data or source.url,
+                            source_type == "base64" and encoded or "data:" .. mime_type .. ";base64," .. encoded)
+                        test.eq(records[1].input, 10)
+                        test.is_nil(records[1].options.metadata)
+                    end)
+                end
+            end
+
+            it("still rejects oversized text accompanying an image", function()
+                card.capabilities = { "generate", "tool_use", "vision" }
+                local result, err, details = llm.generate({{role = "user", content = {
+                    {type = "text", text = string.rep("x", 1600)},
+                    {type = "image", source = {type = "base64", mime_type = "image/png", data = "AAAA"}},
+                }}}, {model = "small", max_tokens = 40})
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(details.error_type, "context_window")
+                test.eq(details.unestimated_media_parts, 1)
+                test.eq(records[1].options.metadata.unestimated_media_parts, 1)
+                test.eq(#calls, 0)
+            end)
+
+            for _, part in ipairs({
+                {type = "image", source = {type = "url", url = "https://example.test/image?signature=" .. string.rep("A", 65536)}},
+                {type = "input_image", image_url = "data:image/png;base64," .. string.rep("A", 65536)},
+                {type = "input_file", filename = "report.pdf", file_data = "data:application/pdf;base64," .. string.rep("A", 65536)},
+            }) do
+                it("preserves " .. part.type .. " resource content without charging transport bytes", function()
+                    card.max_tokens = 8192
+                    local original = assert(json.encode(part))
+                    local result, err = llm.generate({{role = "user", content = {part}}}, {model = "small"})
+                    test.is_nil(err)
+                    test.not_nil(result)
+                    test.eq(#calls, 1)
+                    test.eq(assert(json.encode(part)), original)
+                    test.eq(calls[1].messages[1].content[1], part)
+                end)
+            end
+
+            it("still counts textual document sources and document context", function()
+                for _, part in ipairs({
+                    {type = "document", source = {type = "text", data = string.rep("x", 1600)}},
+                    {type = "document", source = {type = "base64", data = "AAAA"}, context = string.rep("x", 1600)},
+                }) do
+                    local result, err, details = llm.generate({{role = "user", content = {part}}}, {model = "small"})
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(details.error_type, "context_window")
+                    test.eq(#calls, 0)
+                end
+            end)
+
+            it("counts data URLs when they are ordinary text or function results", function()
+                for _, message in ipairs({
+                    {role = "user", content = {{type = "text", text = "data:image/png;base64," .. string.rep("A", 1600)}}},
+                    {role = "function_result", name = "lookup", content = {data = string.rep("A", 1600)}},
+                    {role = "function_result", name = "lookup", content = {
+                        {type = "image", source = {type = "base64", data = string.rep("A", 1600)}},
+                    }},
+                    {role = "function_result", name = "lookup", content = {
+                        attachment = {type = "image", source = {type = "base64", data = string.rep("A", 1600)}},
+                    }},
+                }) do
+                    local result, err, details = llm.generate({message}, {model = "small"})
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(details.error_type, "context_window")
+                    test.is_nil(details.unestimated_media_parts)
+                    test.eq(#calls, 0)
+                end
+            end)
+
+            it("still budgets structured output schemas alongside media", function()
+                local result, err, details = llm.structured_output({type = "object", description = string.rep("x", 1600)},
+                    {{role = "user", content = {{type = "image", source = {type = "base64", data = "AAAA"}}}}},
+                    {model = "small", max_tokens = 40})
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(details.error_type, "context_window")
+                test.eq(details.unestimated_media_parts, 1)
+                test.eq(#records, 1)
+                test.eq(#calls, 0)
+            end)
+
+            it("recomputes unknown media costs after checkpoint replacement", function()
+                local compacted = 0
+                local result, err, details = llm.generate({{role = "user", content = {
+                    {type = "text", text = string.rep("x", 1600)},
+                    {type = "image", source = {type = "base64", data = "AAAA"}},
+                }}}, {model = "small", checkpoint = {compact = function(info)
+                    compacted = compacted + 1
+                    test.eq(info.unestimated_media_parts, 1)
+                    return {{role = "user", content = string.rep("x", 1600)}}
+                end}})
+                test.is_nil(result)
+                test.not_nil(err)
+                test.eq(compacted, 1)
+                test.eq(details.error_type, "context_window")
+                test.is_nil(details.unestimated_media_parts)
+                test.is_nil(records[1].options.metadata.unestimated_media_parts)
+                test.eq(#calls, 0)
+            end)
+
+            it("preserves provider context failures for unestimated media", function()
+                card.max_tokens = 8192
+                local cause = output.errors.generate():kind("context_length_exceeded"):message("media exceeds context"):build()
+                mock_providers.open = function()
+                    return {generate = function(_self, args)
+                        calls[#calls + 1] = args
+                        return nil, cause
+                    end}
+                end
+                local result, err = llm.generate({{role = "user", content = {
+                    {type = "image", source = {type = "base64", data = string.rep("A", 65536)}},
+                }}}, {model = "small", fallback = false})
+                test.is_nil(result)
+                test.eq(err, cause)
+                test.eq(err:details().error_type, "context_length_exceeded")
+                test.eq(#calls, 1)
+                test.eq(#records, 1)
+                test.eq(records[1].input, 0)
+                test.eq(records[1].options.metadata.unestimated_media_parts, 1)
+                test.lt(records[1].options.metadata.estimated_prompt_tokens, 8192)
             end)
 
             it("does not count cache-marker identities as model input", function()

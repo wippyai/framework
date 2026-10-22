@@ -785,8 +785,8 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 ### Context admission
 
-Resolved `generate` and `structured_output` calls estimate the complete prompt,
-including tools or the output schema, before dispatch. Admission uses the selected
+Resolved `generate` and `structured_output` calls estimate prompt text and request
+structure, including tools or the output schema, before dispatch. Admission uses the selected
 model card's `max_tokens` context window and reserves the effective configured
 `max_tokens` output budget. An omitted budget retains the provider defaults; the
 card's output ceiling does not become a requested budget.
@@ -795,6 +795,15 @@ behavior. Estimates use the existing four-bytes-per-token approximation; they ar
 not provider tokenizer counts. Message metadata used by the host and cache marker
 identities do not count; reusable thinking blocks remain part of the estimate.
 The outgoing messages retain all their fields.
+
+Image/document base64 data and resource URLs are transport, so their byte lengths
+are excluded from the text estimate. Native `input_image` and `input_file` transport
+fields receive the same treatment. Text document sources and document context
+still count. Media token costs vary by provider and model; the current contracts
+do not expose a reliable estimate. When media costs are unknown, checkpoint/error
+details and rejected-usage metadata include `unestimated_media_parts` so the text
+estimate is not mistaken for the complete multimodal cost. Providers continue to
+enforce media and total-context limits; their errors remain unchanged.
 
 `generate` accepts an optional `checkpoint` with `token_threshold` and a
 `compact(info)` callback. When the estimate crosses that threshold or the context

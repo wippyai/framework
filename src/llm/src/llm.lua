@@ -792,23 +792,70 @@ local function declares_capability(card: any, capability: string): boolean
     return false
 end
 
--- The same four-bytes-per-token approximation used by compression and the
--- provider mappers. Estimates describe attempted input, never billable usage.
+-- Project supported media parts without their transport payload. Preserve text
+-- sources, captions and other fields; only binary data and resource references
+-- are excluded. The outgoing content is never modified.
+local function admission_content(content)
+    if type(content) ~= "table" or #content == 0 then return content, 0 end
+    local projected, unestimated = {}, 0
+    for index, part in pairs(content) do
+        local source = type(part) == "table" and part.source
+        local source_field = nil
+        if type(part) == "table" and (part.type == prompt.CONTENT_TYPE.IMAGE or part.type == prompt.CONTENT_TYPE.DOCUMENT)
+            and type(source) == "table" then
+            if source.type == "base64" then source_field = "data"
+            elseif source.type == "url" then source_field = "url" end
+        end
+        if source_field then
+            local copy, source_copy = {}, {}
+            for key, value in pairs(part) do copy[key] = value end
+            for key, value in pairs(source) do
+                if key ~= source_field then source_copy[key] = value end
+            end
+            copy.source = source_copy
+            projected[index] = copy
+            unestimated = unestimated + 1
+        elseif type(part) == "table" and (part.type == "input_image" or part.type == "input_file") then
+            -- These native content parts are also accepted by the provider
+            -- mapper. Their references/data are not ordinary text either.
+            local copy = {}
+            for key, value in pairs(part) do
+                if key ~= "image_url" and key ~= "file_data" and key ~= "file_id" and key ~= "file_url" then
+                    copy[key] = value
+                end
+            end
+            projected[index] = copy
+            unestimated = unestimated + 1
+        else
+            projected[index] = part
+        end
+    end
+    return projected, unestimated
+end
+
+-- Text and request structure use the existing four-bytes-per-token heuristic.
+-- Media costs are provider/model dependent and remain explicitly unestimated;
+-- providers retain their own validation and context limits.
 local function estimate_prompt(contract_args)
     local messages = nil
+    local unestimated_media_parts = 0
     if contract_args.messages then
         messages = {}
         for _, message in ipairs(contract_args.messages) do
             if message.role ~= prompt.ROLE.CACHE_MARKER then
-                local input = message
-                if message.metadata ~= nil then
-                    input = {}
-                    for key, value in pairs(message) do
-                        if key ~= "metadata" then input[key] = value end
-                    end
-                    if type(message.metadata) == "table" and message.metadata.thinking_blocks then
-                        input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
-                    end
+                local input = {}
+                for key, value in pairs(message) do
+                    if key ~= "metadata" then input[key] = value end
+                end
+                if type(message.metadata) == "table" and message.metadata.thinking_blocks then
+                    input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
+                end
+                -- Tool results are serialized data, even when that data looks
+                -- like an image part. Only message content is multimodal.
+                if message.role ~= prompt.ROLE.FUNCTION_RESULT and message.role ~= prompt.ROLE.FUNCTION_CALL then
+                    local content, media_parts = admission_content(message.content)
+                    input.content = content
+                    unestimated_media_parts = unestimated_media_parts + media_parts
                 end
                 table.insert(messages, input)
             end
@@ -823,16 +870,17 @@ local function estimate_prompt(contract_args)
         questions = contract_args.questions,
     })
     if not encoded then return nil, err end
-    return math.ceil(#encoded / 4)
+    return math.ceil(#encoded / 4), nil, unestimated_media_parts
 end
 
 local function rejected_usage(raw_result, contract_args, candidate, options, details)
-    local estimated, estimate_err = estimate_prompt(contract_args)
+    local estimated, estimate_err, media_parts = estimate_prompt(contract_args)
     if not estimated then return nil, estimate_err end
     local metadata = {}
     for key, value in pairs(options.metadata or {}) do metadata[key] = value end
     metadata.outcome = "rejected"
     metadata.estimated_prompt_tokens = estimated
+    metadata.unestimated_media_parts = media_parts > 0 and media_parts or nil
     metadata.requested_output_tokens = tonumber(contract_args.options.max_tokens)
     metadata.error_type = details and details.error_type
     local _, err = llm.track_usage(raw_result, candidate.card and card_name(candidate.card) or options.model, {
@@ -846,12 +894,13 @@ local function admit_prompt(contract_args, card, checkpoint)
     local window = card and tonumber(card.max_tokens)
     local threshold = checkpoint and tonumber(checkpoint.token_threshold)
     if not window and not threshold then return true end
-    local estimated, err = estimate_prompt(contract_args)
+    local estimated, err, media_parts = estimate_prompt(contract_args)
     if not estimated then return nil, err end
     local reserved = tonumber(contract_args.options.max_tokens) or 0
     local info = {
         estimated_prompt_tokens = estimated, requested_output_tokens = reserved,
         context_window = window, model = card and card_name(card),
+        unestimated_media_parts = media_parts > 0 and media_parts or nil,
     }
     if checkpoint and type(checkpoint.compact) == "function" and (
         (threshold and threshold > 0 and estimated > threshold)
@@ -861,9 +910,10 @@ local function admit_prompt(contract_args, card, checkpoint)
         local prepared, prepare_err = prepare_messages(replacement)
         if not prepared then return nil, prepare_err end
         contract_args.messages = prepared
-        estimated, err = estimate_prompt(contract_args)
+        estimated, err, media_parts = estimate_prompt(contract_args)
         if not estimated then return nil, err end
         info.estimated_prompt_tokens = estimated
+        info.unestimated_media_parts = media_parts > 0 and media_parts or nil
     end
     if window and window > 0 and estimated + reserved > window then
         info.error_type = output.ERROR_TYPE.CONTEXT_WINDOW
