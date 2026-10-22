@@ -511,14 +511,27 @@ llm.CAPABILITY = {
 ```lua
 local result, err = llm.generate("Hello", {model = "claude"})
 if err then
-    -- transport/system error
-end
-if result and result.error then
-    -- provider error
-    -- result.error: error type constant
-    -- result.error_message: human-readable message
+    print(err:message(), err:kind(), err:retryable())
+    local details = err:details()
 end
 ```
+
+Calls return failures as the second value, using native `errors` values. Provider
+errors retain their kind, retryability, and details. `tostring(err)` and
+`err:message()` contain the display message, including the route summary when
+several candidates fail. The summary retains the last provider error's metadata.
+Provider invocation failures without a summary return the original native error.
+Provider opening failures retain their metadata and the `Failed to open provider:`
+message prefix. Registry lookups, contract discovery, and binding opening preserve
+native causes through the actual discovery path, including their existing message
+prefixes. A native catalog failure is propagated rather than reported as a missing
+model or class.
+
+Invalid inputs and route configuration use `errors.INVALID`; missing models,
+classes, and pinned routes use `errors.NOT_FOUND`. Internal failures use
+`errors.INTERNAL`. These API-created failures are non-retryable. Provider
+implementations that return only a string produce `errors.UNKNOWN`, with that
+same message and no inferred retry policy.
 
 ### Error Types
 

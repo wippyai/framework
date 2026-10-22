@@ -352,11 +352,15 @@ local function define_tests()
 
         describe("driver_declares_legacy_reasoning_flag", function()
             it("is true for a provider bound to a driver that declares the legacy flag", function()
-                test.is_true(providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:openai"))
+                local declared, err = providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:openai")
+                test.is_nil(err)
+                test.is_true(declared)
             end)
 
             it("is false for a provider bound to a driver that does not declare the legacy flag", function()
-                test.is_false(providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:anthropic"))
+                local declared, err = providers.driver_declares_legacy_reasoning_flag("wippy.llm.provider:anthropic")
+                test.is_nil(err)
+                test.is_false(declared)
             end)
 
             it("reports an unknown provider as an error", function()

@@ -53,3 +53,10 @@ entries:
   - name: thinking
     kind: library.lua
     source: file://thinking.lua
+
+  - name: error_context
+    kind: library.lua
+    meta:
+      type: library
+      comment: Preserve native error metadata while adding discovery message context
+    source: file://error_context.lua
