@@ -2,6 +2,7 @@ local test = require("test")
 local registry = require("registry")
 local page_registry = require("page_registry")
 local component_registry = require("component_registry")
+local env = require("env")
 
 local NS = "wippy.views.test:"
 
@@ -291,6 +292,25 @@ local function define_tests()
             test.not_nil(unnamed)
             test.is_nil(unnamed.name)
             test.eq(unnamed.tag_name, "test-unnamed")
+        end)
+
+        test.it("resolve_base_path and resolve_base_url join url, base_path and PUBLIC_API_URL", function()
+            local origin = env.get("PUBLIC_API_URL") or ""
+            local cases = {
+                { comp = { url = "/app/wc/x" }, path = "/app/wc/x/" },
+                { comp = { url = "/app/wc", base_path = "x/" }, path = "/app/wc/x/" },
+                { comp = { base_path = "/kickside-agent-onboarding" }, path = "//kickside-agent-onboarding/" },
+                { comp = { url = "https://cdn.example/wc" }, path = "https://cdn.example/wc/", remote = true },
+                { comp = {}, path = "" },
+            }
+            for _, c in ipairs(cases) do
+                test.eq(component_registry.resolve_base_path(c.comp), c.path)
+                local expected = c.path
+                if origin ~= "" and c.path ~= "" and not c.remote then
+                    expected = origin .. c.path
+                end
+                test.eq(component_registry.resolve_base_url(c.comp), expected)
+            end
         end)
     end)
 end

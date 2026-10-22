@@ -14,34 +14,39 @@
 -- exists only for migration of pre-1.0.31 consumers). See
 -- `web_components.spec.md` § "Package metadata: source of truth".
 --
--- Transport: the file is read from the filesystem of the `http.static`
--- mount that serves the page URL on this server, found the way the HTTP
--- server routes the request (the longest matching mount path wins). Only a
--- remote page (absolute URL), or a URL that no mount on this server has the
--- file for, is fetched over HTTP: `PUBLIC_API_URL` + page URL for a local
--- path, or the absolute URL itself.
+-- Transport: the wippy.views:read_static_meta function reads the file from
+-- the filesystem of the `http.static` mount that serves the entry URL on
+-- this server (see static_meta.lua for how the mount is chosen). When it
+-- cannot be sure that the HTTP server would serve that same file, it says
+-- why, and the file is fetched over HTTP instead: `PUBLIC_API_URL` + entry
+-- path for a local path, or the absolute URL of a remote entry.
 --
 -- HTTP used to be the only transport. It fails whenever the server cannot
 -- reach the address browsers use (proxy, WAF, SSO edge, port mapping, empty
 -- `PUBLIC_API_URL`), and the page then silently lost its theme.
 --
--- A failed read still renders the page (from its YAML entry), only without
--- its package settings, so every failure is logged as an error with the fix
--- and returned to the caller as a diagnostic the Host can show in the
+-- A failed read still renders the entry (from its YAML entry), only without
+-- its package settings. Each failure is logged as an error with the cause
+-- and the fix, at most once per hour per entry and cause. Callers get a
+-- short message without internal details, which the Host can show in the
 -- browser console. A missing file is not a failure: it marks an entry that
 -- has not adopted wippy-meta.json yet.
 
 local json = require("json")
 local http_client = require("http_client")
-local fs = require("fs")
-local registry = require("registry")
+local funcs = require("funcs")
 local store = require("store")
 local page_registry = require("page_registry")
 local component_registry = require("component_registry")
+local static_meta = require("static_meta")
 
 local M = {}
 
 local META_FILE = "wippy-meta.json"
+
+-- The function that reads wippy-meta.json from a mount filesystem. It is
+-- the only views function that may open filesystems.
+local READER_ID = "wippy.views:read_static_meta"
 
 -- Default deadline for the HTTP fetch. Tight on purpose — if the consumer's
 -- own static dir is slow to serve, something else is already broken.
@@ -52,26 +57,57 @@ local DEFAULT_TIMEOUT_SEC = 2
 -- short-lived Lua worker processes that handle each request.
 local WARN_STORE_ID = "wippy.views:bundled_meta_warn"
 
-local function log_missing_once(entry_id: string?, kind: string, url: string)
-    local key = tostring(entry_id or url)
+-- How long a logged message stays deduplicated. The expiry keeps the store
+-- small, and a problem that lasts is logged again every hour.
+local DEDUP_TTL_SEC = 3600
 
-    -- Try to claim the warning slot in the shared store. If the key already
-    -- exists, another worker (or an earlier call on this worker) has already
-    -- emitted the warning for this entry — silently skip.
+-- What an entry loses when its wippy-meta.json cannot be used: the full
+-- text for the log, and a shorter one for the response.
+local LOSSES = {
+    page = "configOverrides (theme variables and custom CSS), proxy injections, "
+        .. "renderEngine, and the entry file (index.html when the registry entry "
+        .. "sets no entry_point)",
+    component = "props, events, tag name, title, description, and the entry file "
+        .. "(index.js when the registry entry sets no entry_point)",
+}
+local PUBLIC_LOSSES = {
+    page = "theme variables, custom CSS, proxy injections, render engine and entry file",
+    component = "props, events, tag name and entry file",
+}
+
+-- Claim a "log once" slot in the shared store. Returns true when the
+-- caller should log. The claim is atomic, so two workers never both log.
+local function claim_once(key: string): boolean
     local s, store_err = store.get(WARN_STORE_ID)
     if store_err or not s then
         -- Store unavailable (shouldn't happen with the registry binding in
-        -- _index.yaml). Fail open: log once-per-request rather than spam.
-        -- The dedup is best-effort, not a correctness guarantee.
-        s = nil
-    else
-        local existing = s:get(key)
-        if existing then
-            s:release()
-            return
-        end
-        s:set(key, true)
-        s:release()
+        -- _index.yaml). Fail open: the dedup is best-effort.
+        return true
+    end
+    local entry, put_err = s:put(key, true, { only_if_absent = true, ttl = DEDUP_TTL_SEC })
+    s:release()
+    if entry then
+        return true
+    end
+    -- "key already exists": logged within the hour. Any other error, such as
+    -- a full store, fails open so the problem still shows in the log.
+    return not tostring(put_err):lower():find("already exists", 1, true)
+end
+
+-- The dedup key for a failed read. Digits are masked so that error texts
+-- with changing numbers (ports, timings) count as one cause.
+local function failure_key(kind: string, entry_id: string?, source: string, err: string): string
+    local cause = err:gsub("%d+", "#")
+    if #cause > 200 then
+        cause = cause:sub(1, 200)
+    end
+    return "error:" .. kind .. ":" .. tostring(entry_id or "?") .. ":" .. source .. ":" .. cause
+end
+
+local function log_missing_once(entry_id: string?, kind: string, url: string)
+    local key = tostring(entry_id or url)
+    if not claim_once("missing:" .. kind .. ":" .. key) then
+        return
     end
 
     print(string.format(
@@ -84,55 +120,59 @@ local function log_missing_once(entry_id: string?, kind: string, url: string)
     ))
 end
 
--- Log a failed read once per entry and error (shared store, so handler-pool
--- workers do not repeat it). Returns the operator message.
-local function log_fetch_failure_once(kind: string, entry_id: string?, source: string, err: string, over_http: boolean): string
-    local message = M.describe_fetch_failure(kind, entry_id, source, err, over_http)
-    local key = "error:" .. tostring(entry_id or source) .. ":" .. err
-
-    local s, store_err = store.get(WARN_STORE_ID)
-    if not store_err and s then
-        local existing = s:get(key)
-        if not existing then
-            s:set(key, true)
-        end
-        s:release()
-        if existing then
-            return message
-        end
+-- Log a failed read once per hour per entry and cause (shared store, so
+-- handler-pool workers do not repeat it).
+local function log_fetch_failure_once(kind: string, entry_id: string?, source: string, err: string, over_http: boolean, via: string?)
+    if not claim_once(failure_key(kind, entry_id, source, err)) then
+        return
     end
 
     -- Create the logger here, not at module load: a named logger created when
     -- the library loads is silently dropped when a function handler (such as
     -- the /pages/content endpoint) calls it later (seen on runtime 0.3.47a).
-    require("logger"):named("wippy.views"):error(message, {
-        kind = kind, id = entry_id, source = source, over_http = over_http, error = err,
+    require("logger"):named("wippy.views"):error(M.describe_fetch_failure(kind, entry_id, source, err, over_http, via), {
+        kind = kind, id = entry_id, source = source, over_http = over_http, http_reason = via, error = err,
     })
-    return message
 end
 
--- The operator message for a wippy-meta.json that could not be read: what
--- failed, what the page loses, and how to fix it. `source` is the file in a
--- mount filesystem, or the URL when `over_http` is true (the default).
-function M.describe_fetch_failure(kind: string, entry_id: string?, source: string, err: string, over_http: boolean?): string
+-- The log message for a wippy-meta.json that could not be read: what
+-- failed, what the entry loses, and how to fix it. `source` is the file in
+-- a mount filesystem, or the URL when `over_http` is true (the default).
+-- `via` says why the file was fetched over HTTP.
+function M.describe_fetch_failure(kind: string, entry_id: string?, source: string, err: string, over_http: boolean?, via: string?): string
     local message = string.format(
         "wippy/views could not read wippy-meta.json for %s '%s' from %s (%s). "
         .. "The %s is served from its registry entry instead, without the package.json "
-        .. "settings in that file: configOverrides (theme variables and custom CSS), "
-        .. "proxy injections and renderEngine. ",
-        kind, tostring(entry_id or "?"), source, err, kind
+        .. "settings in that file: %s. ",
+        kind, tostring(entry_id or "?"), source, err, kind, LOSSES[kind] or LOSSES.page
     )
     if over_http == false then
         return message .. "The file was read from the filesystem of the http.static "
             .. "mount that serves this URL. Check that the server can read it and "
             .. "that it is a JSON object, as @wippy-fe/vite-plugin writes it."
     end
+    message = message .. "The server fetched the file over HTTP"
+        .. (via and (" because " .. via) or "") .. ". "
+    if via == static_meta.REASON.remote then
+        return message .. string.format(
+            "Check that a request from the server to %s returns HTTP 200.", source)
+    end
     return message .. string.format(
-        "No http.static mount on this server has the file, so the server fetches "
-        .. "it over HTTP. For a URL on this server, set PUBLIC_API_URL to an absolute "
-        .. "http(s) URL that both browsers and this server can reach. Check that a "
-        .. "request from the server to %s returns HTTP 200.",
+        "Set PUBLIC_API_URL to an absolute http(s) URL that both browsers and this "
+        .. "server can reach, and check that a request from the server to %s returns "
+        .. "HTTP 200.",
         source
+    )
+end
+
+-- The message callers return to browsers. It names the entry and what it
+-- loses, but no files, URLs or network errors.
+function M.public_failure_message(kind: string, entry_id: string?): string
+    return string.format(
+        "wippy/views could not read wippy-meta.json for %s '%s', so it is served "
+        .. "without the settings in that file (%s). The server log has the cause "
+        .. "and the fix under the wippy.views logger.",
+        kind, tostring(entry_id or "?"), PUBLIC_LOSSES[kind] or PUBLIC_LOSSES.page
     )
 end
 
@@ -147,135 +187,29 @@ local function decode(body: string?, what: string): (any, string?)
         return nil, what .. " is not JSON: " .. tostring(decode_err)
     end
 
-    if type(parsed) ~= "table" then
+    if type(parsed) ~= "table" or (parsed :: any)[1] ~= nil then
         return nil, what .. " is not a JSON object"
     end
 
     return parsed, nil
 end
 
--- Qualify a relative registry ID (`fs: ui_static_fs`) with the namespace of
--- the entry that declares it.
-local function qualify_id(entry_id: string, relative_id: string): string
-    if relative_id:find(":", 1, true) then
-        return relative_id
-    end
-    return registry.parse_id(entry_id).ns .. ":" .. relative_id
-end
-
--- Clean a URL path the way Go's ServeMux does before it routes a request:
--- collapse repeated slashes and resolve "." and ".." segments. Keeps a
--- trailing slash. An entry with only `base_path: /x` resolves to "//x/",
--- which browsers reach through the server's redirect to "/x/".
-local function clean_path(p: string): string
-    local parts: {string} = {}
-    for segment in p:gmatch("[^/]+") do
-        if segment == ".." then
-            if #parts > 0 then
-                table.remove(parts)
-            end
-        elseif segment ~= "." then
-            table.insert(parts, segment)
-        end
-    end
-    local cleaned = "/" .. table.concat(parts, "/")
-    if #parts > 0 and p:sub(-1) == "/" then
-        cleaned = cleaned .. "/"
-    end
-    return cleaned
-end
-
--- Find where a local base path such as "/app/keeper/" keeps its
--- wippy-meta.json. The HTTP server routes a request to the http.static
--- mount with the longest matching path (Go ServeMux subtree rule), and that
--- mount serves the rest of the path from its filesystem. Returns one
--- { fs, file } item per mount with that path (several servers can mount the
--- same path), sorted by entry ID, or nil for a remote URL or a path that no
--- mount serves.
-local function find_static_files(base_path: string): {any}?
+-- Ask the reader function for the file in the mount filesystem. Returns
+-- its result table (see static_meta.read), or an "unavailable" result
+-- when the reader cannot run.
+local function read_from_mount(base_path: string): any
     if base_path:sub(1, 1) ~= "/" then
-        return nil
+        return { status = "unavailable", reason = static_meta.REASON.remote }
     end
-    base_path = clean_path(base_path)
-
-    local entries, err = registry.find({ [".kind"] = "http.static" })
-    if err or not entries then
-        return nil
+    local result, err = funcs.new():call(READER_ID, base_path)
+    if err or type(result) ~= "table" then
+        return {
+            status = "unavailable",
+            reason = "the metadata reader " .. READER_ID .. " could not run (" .. tostring(err or "no result") .. ")",
+        }
     end
-
-    local best_len = -1
-    local found: {any} = {}
-    for _, entry in ipairs(entries) do
-        local data: any = entry.data or {}
-        local mount, fs_id = data.path, data.fs
-        if type(mount) == "string" and type(fs_id) == "string" and fs_id ~= "" then
-            -- "/app/keeper" and "/app/keeper/" mount the same subtree; "/" becomes "".
-            local prefix = (mount:gsub("/+$", ""))
-            local len = #prefix
-            if len >= best_len and base_path:sub(1, len + 1) == prefix .. "/" then
-                if len > best_len then
-                    best_len = len
-                    found = {}
-                end
-                local id = tostring(entry.id)
-                table.insert(found, {
-                    id = id,
-                    fs = qualify_id(id, fs_id),
-                    file = base_path:sub(len + 2) .. META_FILE,
-                    catch_all = len == 0,
-                })
-            end
-        end
-    end
-
-    if #found == 0 then
-        return nil
-    end
-    table.sort(found, function(a: any, b: any): boolean return a.id < b.id end)
-    return found
+    return result
 end
-
--- Read wippy-meta.json from the first mount filesystem that has it.
--- Returns (meta | nil, error | nil, source, done, open_error). `done` is
--- false when the caller should fetch over HTTP instead: no mount filesystem
--- could be opened (`open_error` says why), or only the catch-all "/" mount
--- matched and it lacks the file (an HTTP route may still serve it).
-local function read_static(files: {any}): (any, string?, string?, boolean, string?)
-    local missing: string? = nil
-    local open_error: string? = nil
-    for _, file in ipairs(files) do
-        local volume, get_err = fs.get(file.fs)
-        if not volume then
-            open_error = open_error or (file.fs .. ": " .. tostring(get_err))
-        else
-            local source = file.fs .. "/" .. file.file
-            local exists, exists_err = volume:exists(file.file)
-            if exists_err then
-                return nil, "cannot read the file: " .. tostring(exists_err), source, true
-            end
-            if exists then
-                local body, read_err = volume:readfile(file.file)
-                if read_err then
-                    return nil, "cannot read the file: " .. tostring(read_err), source, true
-                end
-                local meta, decode_err = decode(body, "the file")
-                return meta, decode_err, source, true
-            end
-            if not file.catch_all and not missing then
-                missing = source
-            end
-        end
-    end
-
-    if missing then
-        -- A dedicated mount serves this path and has no file: an entry that
-        -- has not adopted wippy-meta.json yet.
-        return nil, nil, missing, true
-    end
-    return nil, nil, nil, false, open_error
-end
-
-M._find_static_files = find_static_files
 
 -- Fetch wippy-meta.json over HTTP from an absolute base URL with trailing
 -- slash (as produced by `page_registry.resolve_base_url` /
@@ -328,47 +262,49 @@ end
 M._fetch = fetch
 
 -- Load wippy-meta.json for a base path (as declared) and its absolute base
--- URL: from a mount filesystem when one on this server has the file, else
--- over HTTP. Returns (meta | nil, error | nil, source, over_http).
-local function load(base_path: string, base_url: string): (any, string?, string?, boolean)
-    local open_error: string? = nil
-    local files = find_static_files(base_path)
-    if files then
-        local meta, err, source, done, open_err = read_static(files)
-        if done then
-            return meta, err, source, false
-        end
-        open_error = open_err
+-- URL: from the mount filesystem when the reader can use it, else over
+-- HTTP. Returns (meta | nil, error | nil, source, over_http, via), where
+-- `via` says why HTTP was used.
+local function load(base_path: string, base_url: string): (any, string?, string?, boolean, string?)
+    local result = read_from_mount(base_path)
+    if result.status == "found" then
+        local meta, decode_err = decode(result.body, "the file")
+        return meta, decode_err, result.source, false, nil
+    elseif result.status == "missing" then
+        return nil, nil, result.source, false, nil
+    elseif result.status == "error" then
+        return nil, tostring(result.err), result.source, false, nil
     end
     local meta, err, url = fetch(base_url)
-    if err and open_error then
-        err = err .. "; the mount filesystem could not be opened either: " .. open_error
-    end
-    return meta, err, url, true
+    return meta, err, url, true, result.reason
 end
 
 M._load = load
+M._claim_once = claim_once
+M._failure_key = failure_key
 
 -- Fetch bundled meta for a page (view.page or view.component) resolved via
--- page_registry. Returns (meta | nil, error | nil). Nil + nil means "no
--- bundle present — caller should fall back to YAML-synthesis". A one-time
--- per-worker warning is logged on the first miss for a given page id so
--- the synthesis fallback never goes silent. On a failed read the error is
--- the full operator message (logged once as an error).
+-- page_registry. Returns (meta | nil, error | nil, source). Nil + nil means
+-- "no bundle present — caller should fall back to YAML-synthesis"; the
+-- miss is logged at most once per hour per entry so the synthesis fallback
+-- never goes silent. On a failed read the full cause is logged, and the
+-- error returned is the short public message. `source` is the file or URL
+-- that was read.
 function M.fetch_for_page(page)
     if not page then
         return nil, "page is required"
     end
     local base_url = page_registry.resolve_base_url(page)
-    local meta, err, source, over_http = load(page_registry.resolve_base_path(page), base_url)
+    local meta, err, source, over_http, via = load(page_registry.resolve_base_path(page), base_url)
     local id = type(page.id) == "string" and (page.id :: string) or nil
     if err then
-        return nil, log_fetch_failure_once("page", id, source or "", err, over_http)
+        log_fetch_failure_once("page", id, source or "", err, over_http, via)
+        return nil, M.public_failure_message("page", id), source
     end
     if not meta then
         log_missing_once(id, "page", source or ((base_url or "") .. META_FILE))
     end
-    return meta, nil
+    return meta, nil, source
 end
 
 -- Fetch bundled meta for a component resolved via component_registry.
@@ -378,15 +314,16 @@ function M.fetch_for_component(component)
         return nil, "component is required"
     end
     local base_url = component_registry.resolve_base_url(component)
-    local meta, err, source, over_http = load(component_registry.resolve_base_path(component), base_url)
+    local meta, err, source, over_http, via = load(component_registry.resolve_base_path(component), base_url)
     local id = type(component.id) == "string" and (component.id :: string) or nil
     if err then
-        return nil, log_fetch_failure_once("component", id, source or "", err, over_http)
+        log_fetch_failure_once("component", id, source or "", err, over_http, via)
+        return nil, M.public_failure_message("component", id), source
     end
     if not meta then
         log_missing_once(id, "component", source or ((base_url or "") .. META_FILE))
     end
-    return meta, nil
+    return meta, nil, source
 end
 
 -- Local deep-merge: overlay wins on conflicts, recursive on nested tables.
