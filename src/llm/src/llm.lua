@@ -9,6 +9,8 @@ local output = require("output")
 local uuid = require("uuid")
 local time = require("time")
 local logger = require("logger")
+local json = require("json")
+local prompt = require("prompt")
 
 type Message = {
     role: string,
@@ -198,7 +200,7 @@ local llm = {}
 -- Contract constants
 local USAGE_TRACKER_CONTRACT = "wippy.llm:usage_tracker"
 local MODEL_RESOLVER_CONTRACT = "wippy.llm:model_resolver"
-local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms" })
+local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms", "checkpoint" })
 
 -- Dependency injection fields
 llm._models = nil
@@ -790,6 +792,145 @@ local function declares_capability(card: any, capability: string): boolean
     return false
 end
 
+-- Project supported media parts without their transport payload. Preserve text
+-- sources, captions and other fields; only binary data and resource references
+-- are excluded. The outgoing content is never modified.
+local function admission_content(content)
+    if type(content) ~= "table" or #content == 0 then return content, 0 end
+    local projected, unestimated = nil, 0
+    for index, part in pairs(content) do
+        local source = type(part) == "table" and part.source
+        local source_field = nil
+        if type(part) == "table" and (part.type == prompt.CONTENT_TYPE.IMAGE or part.type == prompt.CONTENT_TYPE.DOCUMENT)
+            and type(source) == "table" then
+            if source.type == "base64" then source_field = "data"
+            elseif source.type == "url" then source_field = "url" end
+        end
+        local replacement = nil
+        if source_field then
+            local copy, source_copy = {}, {}
+            for key, value in pairs(part) do copy[key] = value end
+            for key, value in pairs(source) do
+                if key ~= source_field then source_copy[key] = value end
+            end
+            copy.source = source_copy
+            replacement = copy
+        elseif type(part) == "table" and (part.type == "input_image" or part.type == "input_file") then
+            -- These native content parts are also accepted by the provider
+            -- mapper. Their references/data are not ordinary text either.
+            local copy = {}
+            for key, value in pairs(part) do
+                if key ~= "image_url" and key ~= "file_data" and key ~= "file_id" and key ~= "file_url" then
+                    copy[key] = value
+                end
+            end
+            replacement = copy
+        end
+        if replacement then
+            if not projected then
+                projected = {}
+                for key, value in pairs(content) do projected[key] = value end
+            end
+            projected[index] = replacement
+            unestimated = unestimated + 1
+        end
+    end
+    return projected or content, unestimated
+end
+
+-- Text and request structure use the existing four-bytes-per-token heuristic.
+-- Media costs are provider/model dependent and remain explicitly unestimated;
+-- providers retain their own validation and context limits.
+local function estimate_prompt(contract_args)
+    local messages = nil
+    local unestimated_media_parts = 0
+    if contract_args.messages then
+        messages = {}
+        for _, message in ipairs(contract_args.messages) do
+            if message.role ~= prompt.ROLE.CACHE_MARKER then
+                local content, media_parts = message.content, 0
+                -- Tool results are serialized data, even when that data looks
+                -- like an image part. Only message content is multimodal.
+                if message.role ~= prompt.ROLE.FUNCTION_RESULT and message.role ~= prompt.ROLE.FUNCTION_CALL then
+                    content, media_parts = admission_content(message.content)
+                end
+                local input = message
+                if message.metadata ~= nil or content ~= message.content then
+                    input = {}
+                    for key, value in pairs(message) do
+                        if key ~= "metadata" then input[key] = value end
+                    end
+                    input.content = content
+                    if type(message.metadata) == "table" and message.metadata.thinking_blocks then
+                        input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
+                    end
+                end
+                unestimated_media_parts = unestimated_media_parts + media_parts
+                table.insert(messages, input)
+            end
+        end
+    end
+    local encoded, err = json.encode({
+        messages = messages,
+        tools = contract_args.tools,
+        schema = contract_args.schema,
+        input = contract_args.input,
+        state = contract_args.state,
+        questions = contract_args.questions,
+    })
+    if not encoded then return nil, err end
+    return math.ceil(#encoded / 4), nil, unestimated_media_parts
+end
+
+local function rejected_usage(raw_result, contract_args, candidate, options, details)
+    local estimated, estimate_err, media_parts = estimate_prompt(contract_args)
+    if not estimated then return nil, estimate_err end
+    local metadata = {}
+    for key, value in pairs(options.metadata or {}) do metadata[key] = value end
+    metadata.outcome = "rejected"
+    metadata.estimated_prompt_tokens = estimated
+    metadata.unestimated_media_parts = media_parts > 0 and media_parts or nil
+    metadata.requested_output_tokens = tonumber(contract_args.options.max_tokens)
+    metadata.error_type = details and details.error_type
+    local _, err = llm.track_usage(raw_result, candidate.card and card_name(candidate.card) or options.model, {
+        context_id = options.context_id, timestamp = options.timestamp, metadata = metadata,
+    })
+    return true, err
+end
+
+local function admit_prompt(contract_args, card, checkpoint)
+    if not contract_args.messages then return true end
+    local window = card and tonumber(card.max_tokens)
+    local threshold = checkpoint and tonumber(checkpoint.token_threshold)
+    if not window and not threshold then return true end
+    local estimated, err, media_parts = estimate_prompt(contract_args)
+    if not estimated then return nil, err end
+    local reserved = tonumber(contract_args.options.max_tokens) or 0
+    local info = {
+        estimated_prompt_tokens = estimated, requested_output_tokens = reserved,
+        context_window = window, model = card and card_name(card),
+        unestimated_media_parts = media_parts > 0 and media_parts or nil,
+    }
+    if checkpoint and type(checkpoint.compact) == "function" and (
+        (threshold and threshold > 0 and estimated > threshold)
+        or (window and window > 0 and estimated + reserved > window)) then
+        local replacement, compact_err = checkpoint.compact(info)
+        if not replacement then return nil, compact_err or "Checkpoint returned no prompt" end
+        local prepared, prepare_err = prepare_messages(replacement)
+        if not prepared then return nil, prepare_err end
+        contract_args.messages = prepared
+        estimated, err, media_parts = estimate_prompt(contract_args)
+        if not estimated then return nil, err end
+        info.estimated_prompt_tokens = estimated
+        info.unestimated_media_parts = media_parts > 0 and media_parts or nil
+    end
+    if window and window > 0 and estimated + reserved > window then
+        info.error_type = output.ERROR_TYPE.CONTEXT_WINDOW
+        return nil, "Estimated prompt and output reservation exceed the model context window", info
+    end
+    return true
+end
+
 local function execute(spec, candidate: any, options, deadline_at: number?, providers_module)
     if spec.method == "generate" and options.cancel
         and not channel.select({ options.cancel:case_receive(), default = true }).default then
@@ -840,6 +981,22 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
         state = prepared
     end
 
+    local admitted, admission_err, admission_details = admit_prompt(contract_args, candidate.card,
+        spec.method == "generate" and options.checkpoint or nil)
+    if spec.prompt then spec.prompt.messages = contract_args.messages end
+    if not admitted then
+        if admission_details then
+            local _, usage_err = rejected_usage(nil, contract_args, candidate, options, admission_details)
+            if usage_err then admission_err = tostring(admission_err) .. "; usage tracking failed: " .. tostring(usage_err) end
+            admission_err = errors.new({ kind = errors.INVALID, retryable = false,
+                message = tostring(admission_err), details = admission_details })
+        else
+            admission_err = native_error(admission_err, errors.INVALID, false)
+        end
+        return nil, { preflight = admission_details == nil, error = admission_err, message = tostring(admission_err),
+            details = admission_details or { error_type = output.ERROR_TYPE.INVALID_REQUEST } }
+    end
+
     -- Each candidate gets fresh contract arguments; the messages table is
     -- shared, which is safe because a contract call hands the driver a copy.
     local raw_result, err, partial
@@ -854,12 +1011,13 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
     end
     if err then
         err = native_error(err, errors.UNKNOWN)
-        return nil, {
-            error = err,
-            message = fallback.error_message(err),
-            details = fallback.error_details(err),
-            stream = stream_target(contract_args)
-        }
+        local details = fallback.error_details(err)
+        local _, usage_err = rejected_usage(raw_result, contract_args, candidate, options, details)
+        if usage_err then
+            err = errors.new({ kind = err:kind(), retryable = err:retryable(), details = err:details(),
+                message = err:message() .. "; usage tracking failed: " .. tostring(usage_err) })
+        end
+        return nil, { error = err, message = err:message(), details = details, stream = stream_target(contract_args) }
     end
 
     local normalized = normalize_response(raw_result)
@@ -897,7 +1055,7 @@ local function call_direct(spec, options)
 
     emit_deferred_error(failure.stream, failure.details)
     log_failure(options, failure.message)
-    return nil, failure.error
+    return nil, failure.error, failure.details
 end
 
 local function fallback_references(spec, options, model_card): {string}
@@ -986,14 +1144,14 @@ local function fail_chain(options, failures: {FailureEntry}, last: any?)
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = message })
     end
     if #failures <= 1 then
-        return nil, last.error
+        return nil, last.error, last.details
     end
     return nil, errors.new({
         message = message,
         kind = last.error:kind(),
         retryable = last.error:retryable(),
         details = last.error:details()
-    })
+    }), last.details
 end
 
 local function run_chain(spec, options, model_card, first_routes: {any}, class_cards, initial_skip: string?)
@@ -1051,10 +1209,13 @@ local function run_chain(spec, options, model_card, first_routes: {any}, class_c
         end
 
         if failure.preflight then
+            if failure.details then
+                return nil, failure.error, failure.details
+            end
             if candidate.primary and not class_cards then
                 -- A primary route the call cannot use fails the call, as before fallback.
                 log_failure(options, failure.message)
-                return nil, failure.error
+                return nil, failure.error, failure.details
             end
             entry.skipped = true
             entry.message = failure.message
@@ -1184,8 +1345,9 @@ function llm.generate(prompt_input, options)
 
     options = options_for_actor(options)
 
-    local messages = nil
-    local result, err = call({
+    local request = { messages = {} }
+    local result, err, details = call({
+        prompt = request,
         method = "generate",
         exclude = { "model", "model_profile", "cancel" },
         direct_exclude = { "model", "provider_id", "cancel" },
@@ -1196,11 +1358,11 @@ function llm.generate(prompt_input, options)
             if not prepared then
                 return prepare_err
             end
-            messages = prepared
+            request.messages = prepared
             return nil
         end,
         build = function(wire_model, _card)
-            return { messages = messages, model = wire_model, options = {} }
+            return { messages = request.messages, model = wire_model, options = {} }
         end,
         prepare = function(contract_args, provider_info, call_options, providers_module, card)
             local adjusted, route_err = prepare_route(contract_args, provider_info, call_options, providers_module, card)
@@ -1219,10 +1381,10 @@ function llm.generate(prompt_input, options)
         end
     }, options)
 
-    return result :: GenerateResponse?, err
+    return result :: GenerateResponse?, err, details
 end
 
-function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, error?)
+function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, error?, table?)
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
@@ -1233,8 +1395,9 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
     options = options_for_actor(options)
 
-    local messages = nil
-    local result, err = call({
+    local request = { messages = {} }
+    local result, err, details = call({
+        prompt = request,
         method = "structured_output",
         exclude = { "model", "schema", "model_profile" },
         direct_exclude = { "model", "provider_id", "schema" },
@@ -1245,11 +1408,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
             if not prepared then
                 return prepare_err
             end
-            messages = prepared
+            request.messages = prepared
             return nil
         end,
         build = function(wire_model, _card)
-            return { messages = messages, model = wire_model, schema = schema, options = {} }
+            return { messages = request.messages, model = wire_model, schema = schema, options = {} }
         end,
         prepare = prepare_route_facts,
         finish = function(raw_result, state)
@@ -1257,7 +1420,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         end
     }, options)
 
-    return result :: GenerateResponse?, err
+    return result :: GenerateResponse?, err, details
 end
 
 function llm.embed(text, options)

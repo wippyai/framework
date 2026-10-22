@@ -43,6 +43,7 @@ local CANDIDATE_UNUSABLE = fallback.set_of({
     "authentication_error",
     "model_error",
     "context_length_exceeded",
+    "context_window",
 })
 
 function fallback.string_list(value: any): {string}?

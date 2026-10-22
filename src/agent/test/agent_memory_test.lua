@@ -1340,6 +1340,22 @@ local function define_tests()
                 test.not_nil(result.memory_recall_error:find("vector store offline", 1, true))
             end)
 
+
+            it("keeps recall diagnostics and native admission details when generation fails", function()
+                mock_contract._current_instance = recalling(nil, "vector store offline")
+                local details = { error_type = "context_window", context_window = 200 }
+                local cause = errors.new({ kind = errors.INVALID, retryable = false,
+                    message = "prompt exceeds context window", details = details })
+                agent._llm = { generate = function() return nil, cause, details end }
+
+                local result, err, admission = agent.new(recall_spec):step(conversation())
+
+                test.eq(err, cause)
+                test.eq(admission, details)
+                test.not_nil(result)
+                test.not_nil(result.memory_recall_error:find("vector store offline", 1, true))
+            end)
+
             it("keeps the recall error on truncated, cancelled and stopped steps", function()
                 mock_contract._current_instance = recalling(nil, "vector store offline")
 

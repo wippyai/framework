@@ -505,7 +505,7 @@ function agent.new(compiled_spec: any): (any, string?)
     return runner
 end
 
-function agent:step(prompt_builder: any, runtime_options: any): (table?, string?)
+function agent:step(prompt_builder: any, runtime_options: any): (table?, string?, table?)
     runtime_options = runtime_options or {}
     local llm_instance = get_llm()
 
@@ -557,47 +557,61 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.route = runtime_options.route
     end
 
-    -- Get ongoing conversation messages (no clone needed)
-    local conversation_messages = prompt_builder:get_messages()
-    local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
-    local final_messages = table.create(final_message_count, 0)
-
-    -- Prepend system message with cache marker
     local system_message = {
         role = prompt.ROLE.SYSTEM,
         content = { prompt.text(complete_system_prompt) }
     }
-    table.insert(final_messages, system_message)
-    table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = self.id })
+    local function build_messages(conversation_messages)
+        -- Get ongoing conversation messages (no clone needed)
+        local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
+        local final_messages = table.create(final_message_count, 0)
 
-    -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
-    -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
-    -- marker after the newest user/tool-result message lets the next turn read everything up to
-    -- here from cache. Trailing developer notes are per-step context (lifecycle messages the
-    -- host appends for this step), so the marker precedes them, as it precedes the memory
-    -- recall: content that changes step to step stays outside the cached prefix. Providers
-    -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
-    local tail_index = #conversation_messages
-    while tail_index > 0 and conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER do
-        tail_index = tail_index - 1
-    end
-    local tail = conversation_messages[tail_index]
-    if not (tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
-        and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM) then
-        tail_index = -1
-    end
+        -- Prepend system message with cache marker
+        table.insert(final_messages, system_message)
+        table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = self.id })
 
-    -- Add ongoing conversation
-    for index, msg in ipairs(conversation_messages) do
-        table.insert(final_messages, msg)
-        if index == tail_index then
-            table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
+        -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
+        -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
+        -- marker after the newest user/tool-result message lets the next turn read everything up to
+        -- here from cache. Trailing developer notes are per-step context (lifecycle messages the
+        -- host appends for this step), so the marker precedes them, as it precedes the memory
+        -- recall: content that changes step to step stays outside the cached prefix. Providers
+        -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
+        local tail_index = #conversation_messages
+        while tail_index > 0 and conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER do
+            tail_index = tail_index - 1
         end
-    end
+        local tail = conversation_messages[tail_index]
+        if not (tail and tail.role ~= prompt.ROLE.ASSISTANT and tail.role ~= prompt.ROLE.FUNCTION_CALL
+            and tail.role ~= prompt.ROLE.CACHE_MARKER and tail.role ~= prompt.ROLE.SYSTEM) then
+            tail_index = -1
+        end
 
-    -- Append memory recall after conversation
-    if memory_prompt then
-        table.insert(final_messages, memory_prompt)
+        -- Add ongoing conversation
+        for index, msg in ipairs(conversation_messages) do
+            table.insert(final_messages, msg)
+            if index == tail_index then
+                table.insert(final_messages, { role = prompt.ROLE.CACHE_MARKER, marker_id = "conversation_tail" })
+            end
+        end
+
+        -- Append memory recall after conversation
+        if memory_prompt then
+            table.insert(final_messages, memory_prompt)
+        end
+
+        return final_messages
+    end
+    local final_messages = build_messages(prompt_builder:get_messages())
+    if runtime_options.checkpoint then
+        options.checkpoint = {
+            token_threshold = runtime_options.checkpoint.token_threshold,
+            compact = function(info)
+                local replacement, compact_err = runtime_options.checkpoint.compact(info)
+                if not replacement then return nil, compact_err end
+                return build_messages(replacement:get_messages())
+            end,
+        }
     end
 
     if runtime_options.stream_target then
@@ -639,12 +653,17 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         return { stopped = true, memory_recall_error = memory_recall_error }, nil
     end
 
-    local result, err = llm_instance.generate(final_messages, options)
+    if runtime_options.checkpoint and not (llm_instance.ERROR_TYPE and llm_instance.ERROR_TYPE.CONTEXT_WINDOW) then
+        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Checkpoint callbacks require an LLM with context admission support"):build()
+    end
+
+    local result, err, details = llm_instance.generate(final_messages, options)
     if err then
         if memory_recall_error then
-            return { memory_recall_error = memory_recall_error }, err
+            return { memory_recall_error = memory_recall_error }, err, details
         end
-        return nil, err
+        return nil, err, details
     end
 
     if result.finish_reason == output.FINISH_REASON.CANCELLED then

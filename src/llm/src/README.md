@@ -782,3 +782,49 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 - `wippy.llm.discovery` - Model and provider discovery
 - `wippy.llm.util` - Utilities (text compression)
 - `wippy.llm.env` - Environment configuration
+
+### Context admission
+
+Resolved `generate` and `structured_output` calls estimate prompt text and request
+structure, including tools or the output schema, before dispatch. Admission uses the selected
+model card's `max_tokens` context window and reserves the effective configured
+`max_tokens` output budget. An omitted budget retains the provider defaults; the
+card's output ceiling does not become a requested budget.
+Cards without a context window and direct provider calls retain their existing
+behavior. Estimates use the existing four-bytes-per-token approximation; they are
+not provider tokenizer counts. Message metadata used by the host and cache marker
+identities do not count; reusable thinking blocks remain part of the estimate.
+The outgoing messages retain all their fields.
+
+Image/document base64 data and resource URLs are transport, so their byte lengths
+are excluded from the text estimate. Native `input_image` and `input_file` transport
+fields receive the same treatment. Text document sources and document context
+still count. Media token costs vary by provider and model; the current contracts
+do not expose a reliable estimate. When media costs are unknown, checkpoint/error
+details and rejected-usage metadata include `unestimated_media_parts` so the text
+estimate is not mistaken for the complete multimodal cost. Providers continue to
+enforce media and total-context limits; their errors remain unchanged.
+
+`generate` accepts an optional `checkpoint` with `token_threshold` and a
+`compact(info)` callback. When the estimate crosses that threshold or the context
+window, the callback returns a replacement prompt or `nil, error`. The replacement
+is checked once before dispatch. Agent steps accept the same optional runtime
+option, with a callback that returns a conversation prompt builder; Agent retains
+its system instructions, cache markers and recalled memory around that builder.
+Checkpoint callbacks require LLM admission support. With an older supported LLM,
+ordinary Agent calls keep working; requesting a checkpoint callback returns an
+explicit configuration error before provider dispatch.
+
+A prompt that still exceeds the window returns `nil, error, details` with
+`details.error_type = llm.ERROR_TYPE.CONTEXT_WINDOW` (`context_window`),
+`estimated_prompt_tokens`, `requested_output_tokens`, `context_window` and `model`.
+The native error preserves its kind, retryability, message and admission details.
+Existing class and configured model routing can select a candidate with a larger
+window; admission checks each candidate before dispatch. Checkpoint failures
+terminate the call.
+
+Admission and provider rejections use the existing usage tracker. Metadata adds
+`outcome = "rejected"`, the estimated prompt size, requested output size and the
+error type when available. Billable token fields contain only usage actually
+reported by the provider; absent usage remains zero. Caller metadata and the
+optional `context_id` are preserved. No schema migration is required.

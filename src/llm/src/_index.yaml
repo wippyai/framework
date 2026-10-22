@@ -322,6 +322,7 @@ entries:
         - providers
     source: file://llm.lua
     modules:
+      - json
       - security
       - uuid
       - time
@@ -329,6 +330,7 @@ entries:
     imports:
       contract: contract
       output: wippy.llm:output
+      prompt: wippy.llm:prompt
       models: wippy.llm.discovery:models
       providers: wippy.llm.discovery:providers
       evaluation: wippy.llm:evaluation

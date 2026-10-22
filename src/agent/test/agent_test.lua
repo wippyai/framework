@@ -1509,6 +1509,78 @@ local function define_tests()
             end)
         end)
 
+        describe("Context checkpoint prompt rebuilding", function()
+            it("keeps ordinary legacy calls working and rejects unsupported checkpoint callbacks before dispatch", function()
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                builder:add_user("ordinary conversation")
+                local calls, compacted = 0, false
+                agent._llm = {generate = function()
+                    calls = calls + 1
+                    return {result = "legacy response", metadata = {}}
+                end}
+                local ordinary, ordinary_err = runner:step(builder)
+                test.is_nil(ordinary_err)
+                test.eq(ordinary.result, "legacy response")
+                test.eq(calls, 1)
+
+                local result, err = runner:step(builder, {checkpoint = {compact = function()
+                    compacted = true
+                    error("unsupported callback must not run")
+                end}})
+                test.is_nil(result)
+                test.contains(err:message(), "context admission support")
+                test.is_false(err:retryable())
+                test.eq(calls, 1)
+                test.is_false(compacted)
+
+                local stopped, stop_err = runner:step(builder, {
+                    checkpoint = {compact = function() error("Stop must take priority") end},
+                    stop_check = function() return true end,
+                })
+                test.is_nil(stop_err)
+                test.is_true(stopped.stopped)
+                test.eq(calls, 1)
+            end)
+
+            it("preserves system instructions and memory around a compacted conversation", function()
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                builder:add_user("large conversation")
+                agent._llm = { ERROR_TYPE = { CONTEXT_WINDOW = "context_window" }, generate = function(messages, options)
+                    test.not_nil(options.checkpoint)
+                    test.eq(options.checkpoint.token_threshold, 50)
+                    local replacement, err = options.checkpoint.compact({ estimated_prompt_tokens = 100 })
+                    test.is_nil(err)
+                    test.eq(replacement[1], messages[1])
+                    test.eq(replacement[1].role, "system")
+                    test.eq(replacement[3].role, "user")
+                    test.eq(replacement[4].role, "cache_marker")
+                    test.eq(replacement[4].marker_id, "conversation_tail")
+                    test.eq(replacement[5].role, "developer")
+                    local task_found, old_found = false, false
+                    for _, message in ipairs(replacement) do
+                        for _, part in ipairs(type(message.content) == "table" and message.content or {}) do
+                            if part.text == "retained task" then task_found = true end
+                            if part.text == "large conversation" then old_found = true end
+                        end
+                    end
+                    test.is_true(task_found)
+                    test.is_false(old_found)
+                    return { result = "done", metadata = {} }
+                end }
+                local result, err = runner:step(builder, { checkpoint = { token_threshold = 50, compact = function(info)
+                    test.eq(info.estimated_prompt_tokens, 100)
+                    local replacement = mock_prompt.new()
+                    replacement:add_user("retained task")
+                    replacement:add_developer("Per-step lifecycle note")
+                    return replacement
+                end } })
+                test.is_nil(err)
+                test.eq(result.result, "done")
+            end)
+        end)
+
         describe("Runtime Options Integration", function()
             it("should pass through stream target", function()
                 local captured_options = nil
