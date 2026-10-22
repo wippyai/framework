@@ -239,6 +239,16 @@ local function define_tests()
             test.eq(conflicts(route("/ui/page/wippy-meta.json", "GET", "other.ns:root")), false)
         end)
 
+        test.it("skips unrelated literals without suppressing matching suffix or wildcard routes", function()
+            -- The prefix can supply the whole directory or only part of it.
+            local split = {['app:split'] = {id = 'app:split', meta = {server = 'gateway'},
+                data = {prefix = '/ui/pa'}}}
+            local matching = route('ge/wippy-meta.json', 'GET', 'split')
+            test.eq(static_meta.route_conflict({matching}, split, '/ui/page/', SERVER), true)
+            test.eq(conflicts(route('/unrelated.json', 'GET', 'missing')), false)
+            test.eq(conflicts(route('/{page}/wippy-meta.json', 'GET', 'ui')), true)
+        end)
+
         test.it("uses HTTP for unresolved, encoded or placeholder routing", function()
             for _, pattern in ipairs({"/ui/%70age/wippy-meta.json", "/ui/${env:PAGE}/wippy-meta.json"}) do
                 test.eq(conflicts(route(pattern, "GET")), true)

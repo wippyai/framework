@@ -227,9 +227,18 @@ end
 -- encoded pattern syntax is ambiguous, so it also goes through HTTP.
 local function may_match(pattern: string, path: string): boolean
     if pattern:sub(1, 1) ~= "/" or pattern:find("%", 1, true)
-        or pattern:find("${", 1, true) or M.clean_path(pattern) ~= pattern then
+        or pattern:find("${", 1, true) then
         return true
     end
+    -- Most endpoints are unrelated literal paths. Reject those before
+    -- allocating segment arrays or parsing wildcard syntax for every file.
+    local wildcard = pattern:find("{", 1, true)
+    local prefix = wildcard and pattern:sub(1, wildcard - 1) or pattern
+    if path:sub(1, #prefix) ~= prefix then return false end
+    if not wildcard and not pattern:find("}", 1, true) then
+        return pattern:sub(-1) == "/" or pattern == path
+    end
+    if M.clean_path(pattern) ~= pattern then return true end
     local segments, actual = {}, {}
     for segment in (pattern:sub(2) .. "/"):gmatch("(.-)/") do
         table.insert(segments, segment)
@@ -254,6 +263,17 @@ local function may_match(pattern: string, path: string): boolean
     return #actual == #segments
 end
 
+-- A literal endpoint path must be a suffix of prefix + path, regardless of
+-- which router declares it. Skip unrelated literals before resolving IDs.
+local function suffix_may_match(route: any, path: string): boolean
+    if type(route) ~= "string" or route == "" or route:sub(-1) == "/"
+        or route:find("{", 1, true) or route:find("}", 1, true)
+        or route:find("%", 1, true) then
+        return true
+    end
+    return path:sub(-#route) == route
+end
+
 -- Routers contribute their prefix, server and middleware to each endpoint;
 -- the runtime registers prefix + endpoint path directly in the server mux.
 -- A router prefix by itself does not mount a subtree. In particular, an
@@ -264,7 +284,8 @@ function M.route_conflict(endpoints: {any}, routers: {[string]: any}, base_path:
     for _, entry in ipairs(endpoints) do
         local data, meta = entry.data or {}, entry.meta or {}
         -- HEAD-only and other method-specific endpoints cannot handle a GET.
-        if data.method == nil or data.method == "" or data.method == "GET" then
+        if (data.method == nil or data.method == "" or data.method == "GET")
+            and suffix_may_match(data.path, path) then
             local router_id = meta.router
             if type(router_id) ~= "string" or router_id == "" then
                 return true, M.REASON.routing
