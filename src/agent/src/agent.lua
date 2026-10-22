@@ -653,6 +653,11 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         return { stopped = true, memory_recall_error = memory_recall_error }, nil
     end
 
+    if runtime_options.checkpoint and not (llm_instance.ERROR_TYPE and llm_instance.ERROR_TYPE.CONTEXT_WINDOW) then
+        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Checkpoint callbacks require an LLM with context admission support"):build()
+    end
+
     local result, err, details = llm_instance.generate(final_messages, options)
     if err then
         if memory_recall_error then

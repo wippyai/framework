@@ -1510,11 +1510,44 @@ local function define_tests()
         end)
 
         describe("Context checkpoint prompt rebuilding", function()
+            it("keeps ordinary legacy calls working and rejects unsupported checkpoint callbacks before dispatch", function()
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                builder:add_user("ordinary conversation")
+                local calls, compacted = 0, false
+                agent._llm = {generate = function()
+                    calls = calls + 1
+                    return {result = "legacy response", metadata = {}}
+                end}
+                local ordinary, ordinary_err = runner:step(builder)
+                test.is_nil(ordinary_err)
+                test.eq(ordinary.result, "legacy response")
+                test.eq(calls, 1)
+
+                local result, err = runner:step(builder, {checkpoint = {compact = function()
+                    compacted = true
+                    error("unsupported callback must not run")
+                end}})
+                test.is_nil(result)
+                test.contains(err:message(), "context admission support")
+                test.is_false(err:retryable())
+                test.eq(calls, 1)
+                test.is_false(compacted)
+
+                local stopped, stop_err = runner:step(builder, {
+                    checkpoint = {compact = function() error("Stop must take priority") end},
+                    stop_check = function() return true end,
+                })
+                test.is_nil(stop_err)
+                test.is_true(stopped.stopped)
+                test.eq(calls, 1)
+            end)
+
             it("preserves system instructions and memory around a compacted conversation", function()
                 local runner = agent.new(basic_compiled_spec)
                 local builder = mock_prompt.new()
                 builder:add_user("large conversation")
-                agent._llm = { generate = function(messages, options)
+                agent._llm = { ERROR_TYPE = { CONTEXT_WINDOW = "context_window" }, generate = function(messages, options)
                     test.not_nil(options.checkpoint)
                     test.eq(options.checkpoint.token_threshold, 50)
                     local replacement, err = options.checkpoint.compact({ estimated_prompt_tokens = 100 })
