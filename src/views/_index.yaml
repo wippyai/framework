@@ -262,6 +262,8 @@ entries:
           Chooses the mount the way the runtime's HTTP server routes the
           request (server, cleaned path, longest mount path, SPA mode) and
           refuses mounts whose middleware only the HTTP server applies.
+          Endpoint overlap or unresolved routing also falls back to HTTP,
+          which owns endpoint precedence and middleware.
           Opening the filesystem needs fs.get, which only
           wippy.views:read_static_meta has.
       source: file://static_meta.lua

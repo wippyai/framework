@@ -337,3 +337,47 @@ entries:
       test: wippy.test:test
     modules:
       - security
+
+  # A root-router endpoint overrides an existing file under /static-fixture.
+  - name: test_metadata_router
+    kind: http.router
+    meta:
+      scope: dev
+      server: gateway
+    prefix: /
+
+  - name: routed_metadata
+    kind: function.lua
+    meta:
+      scope: dev
+    source: file://routed_metadata.lua
+    method: handler
+    modules:
+      - http
+
+  - name: routed_metadata.endpoint
+    kind: http.endpoint
+    meta:
+      scope: dev
+      router: test_metadata_router
+    func: routed_metadata
+    method: GET
+    path: /static-fixture/shadow-page/wippy-meta.json
+
+  - name: denied_metadata
+    kind: function.lua
+    meta:
+      scope: dev
+    source: file://routed_metadata.lua
+    method: denied
+    modules:
+      - http
+
+  - name: denied_metadata.endpoint
+    kind: http.endpoint
+    meta:
+      scope: dev
+      router: test_metadata_router
+    func: denied_metadata
+    method: GET
+    path: /static-fixture/guarded-page/wippy-meta.json

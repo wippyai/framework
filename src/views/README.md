@@ -210,6 +210,10 @@ server would serve the same file without further checks:
   HTTP server must apply it;
 - an `http.static` path on the server uses a placeholder such as
   `${env:...}`, or the mount filesystem cannot be opened;
+- a GET or method-independent endpoint on the same server could handle the
+  metadata URL, including wildcard or subtree routes. Views conservatively
+  lets HTTP choose the handler and apply its middleware;
+- endpoint/router configuration cannot be resolved safely;
 - only the catch-all `/` mount matches and it has no such file, because a
   route on this server may serve the path instead.
 
@@ -223,9 +227,8 @@ themselves.
 
 Known limits:
 
-- A route on the server that matches a path more closely than an
-  `http.static` mount wins in the HTTP server, but views still reads the mount's
-  file. Only a deliberate setup does this.
+- Endpoint overlap is intentionally conservative: views may use HTTP even
+  when the static mount would win. It does not duplicate ServeMux precedence.
 - The runtime reports every filesystem error as "not found", so a permission or
   I/O error on the file looks like a missing file.
 

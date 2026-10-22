@@ -70,6 +70,32 @@ local function load_as(policy_ids: {string}, base_path: string, base_url: string
 end
 
 local function define_tests()
+    test.describe("metadata route precedence", function()
+        test.it("uses the metadata actually served when an endpoint shadows a static mount", function()
+            local url = GATEWAY .. "/static-fixture/shadow-page/"
+            local response, http_err = http_client.get(url .. "wippy-meta.json")
+            test.is_nil(http_err)
+            test.eq(response.status_code, 200)
+            local served = json.decode(response.body or "")
+            test.eq(served.name, "@test/routed-page")
+            local loaded = load_as(HANDLER_POLICIES, "/static-fixture/shadow-page/", url)
+            test.is_nil(loaded.err)
+            test.eq(loaded.meta.name, served.name)
+            test.eq(loaded.over_http, true)
+            test.eq(loaded.via, static_meta.REASON.route)
+        end)
+
+        test.it("does not read the backing file when its endpoint denies the HTTP request", function()
+            local path = "/static-fixture/guarded-page/"
+            local local_read = static_meta.load(path)
+            test.eq(local_read.status, "unavailable")
+            test.eq(local_read.reason, static_meta.REASON.route)
+            local loaded = load_as(HANDLER_POLICIES, path, GATEWAY .. path)
+            test.is_nil(loaded.meta)
+            test.eq(loaded.err, "HTTP 401")
+            test.eq(loaded.over_http, true)
+        end)
+    end)
     test.describe("bundled_meta.project_page_response", function()
         test.it("YAML wins for name + title even when bundled meta has its own", function()
             local meta = {

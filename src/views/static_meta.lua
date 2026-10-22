@@ -12,6 +12,8 @@
 --   `fs`. A `spa: true` mount serves the whole request path from its `fs`,
 --   and answers the index file when that file is missing.
 -- - The `directory` field of http.static is not used by the runtime.
+-- - An endpoint that could handle the metadata GET makes the choice
+--   ambiguous here; HTTP resolves its precedence and applies its middleware.
 --
 -- Views reads the file only when it can be sure the HTTP server would serve
 -- the same file without further checks. In every other case it reports a
@@ -56,6 +58,8 @@ M.REASON = {
     ambiguous = "more than one http.static mount could serve the path",
     middleware = "the http.static mount for the path uses middleware that only the HTTP server applies",
     catch_all = "only the catch-all / mount matches the path and it has no such file",
+    route = "an HTTP endpoint may handle the metadata path instead of the static mount",
+    routing = "HTTP endpoint routing could not be resolved safely",
 }
 
 -- Clean a URL path the way Go's ServeMux does before it routes a request:
@@ -183,7 +187,8 @@ function M.select_mount(entries: {any}, base_path: string, server: string?): (an
                     best_len = len
                     found = {}
                 end
-                table.insert(found, { id = id, fs = qualify_id(id, fs_id), data = data, len = len })
+                table.insert(found, { id = id, fs = qualify_id(id, fs_id), data = data, len = len,
+                    server = mount_server })
             end
         end
     end
@@ -207,12 +212,82 @@ function M.select_mount(entries: {any}, base_path: string, server: string?): (an
     return {
         id = mount.id,
         fs = mount.fs,
+        server = mount.server,
         -- The SPA handler serves the whole request path from its
         -- filesystem; a plain mount serves the path below the mount.
         file = (spa and path:sub(2) or path:sub(mount.len + 2)) .. META_FILE,
         catch_all = mount.len == 0,
         spa = spa,
     }, nil
+end
+
+-- A conservative path match, not a second implementation of ServeMux
+-- precedence. If an endpoint could answer this GET, let HTTP choose between
+-- it and the static mount and apply the endpoint's middleware. Unknown or
+-- encoded pattern syntax is ambiguous, so it also goes through HTTP.
+local function may_match(pattern: string, path: string): boolean
+    if pattern:sub(1, 1) ~= "/" or pattern:find("%", 1, true)
+        or pattern:find("${", 1, true) or M.clean_path(pattern) ~= pattern then
+        return true
+    end
+    local segments, actual = {}, {}
+    for segment in (pattern:sub(2) .. "/"):gmatch("(.-)/") do
+        table.insert(segments, segment)
+    end
+    for segment in (path:sub(2) .. "/"):gmatch("(.-)/") do
+        table.insert(actual, segment)
+    end
+    for index, segment in ipairs(segments) do
+        if segment == "" and index == #segments then
+            return true -- a trailing slash is a subtree pattern
+        elseif segment == "{$}" then
+            return index == #segments and actual[index] == "" and #actual == index
+        elseif segment:sub(1, 1) == "{" and segment:sub(-1) == "}" then
+            if segment:sub(-4) == "...}" then return true end
+            if actual[index] == nil or actual[index] == "" then return false end
+        elseif segment:find("{", 1, true) or segment:find("}", 1, true) then
+            return true
+        elseif segment ~= actual[index] then
+            return false
+        end
+    end
+    return #actual == #segments
+end
+
+-- Routers contribute their prefix, server and middleware to each endpoint;
+-- the runtime registers prefix + endpoint path directly in the server mux.
+-- A router prefix by itself does not mount a subtree. In particular, an
+-- endpoint on a root router can still override a deeply mounted static file.
+function M.route_conflict(endpoints: {any}, routers: {[string]: any}, base_path: string,
+    server: string?): (boolean, string?)
+    local path = M.clean_path(base_path .. "/" .. META_FILE)
+    for _, entry in ipairs(endpoints) do
+        local data, meta = entry.data or {}, entry.meta or {}
+        -- HEAD-only and other method-specific endpoints cannot handle a GET.
+        if data.method == nil or data.method == "" or data.method == "GET" then
+            local router_id = meta.router
+            if type(router_id) ~= "string" or router_id == "" then
+                return true, M.REASON.routing
+            end
+            local router = routers[qualify_id(tostring(entry.id), router_id)]
+            local router_server = router and router.meta and router.meta.server
+            if type(router_server) ~= "string" or router_server == "" then
+                return true, M.REASON.routing
+            end
+            router_server = qualify_id(tostring(router.id), router_server)
+            if server == nil or router_server == server then
+                local prefix = router.data and router.data.prefix or ""
+                if type(prefix) ~= "string" or type(data.path) ~= "string" then
+                    return true, M.REASON.routing
+                end
+                -- Match the runtime's buildPattern: remove one trailing slash
+                -- from the prefix, then concatenate the endpoint path.
+                local pattern = prefix:gsub("/$", "") .. data.path
+                if may_match(pattern, path) then return true, M.REASON.route end
+            end
+        end
+    end
+    return false, nil
 end
 
 -- Find the mount for a base path among this server's http.static entries.
@@ -224,7 +299,20 @@ function M.find_mount(base_path: string): (any, string?)
     if err or not entries then
         return nil, "the registry could not list http.static entries (" .. tostring(err or "no result") .. ")"
     end
-    return M.select_mount(entries, base_path, M.api_server())
+    local mount, reason = M.select_mount(entries, base_path, M.api_server())
+    if not mount then return nil, reason end
+
+    local endpoints, endpoint_err = registry.find({ [".kind"] = "http.endpoint" })
+    if endpoint_err or not endpoints then return nil, M.REASON.routing end
+    if #endpoints > 0 then
+        local router_entries, router_err = registry.find({ [".kind"] = "http.router" })
+        if router_err or not router_entries then return nil, M.REASON.routing end
+        local routers = {}
+        for _, router in ipairs(router_entries) do routers[tostring(router.id)] = router end
+        local conflict, routing_reason = M.route_conflict(endpoints, routers, base_path, mount.server)
+        if conflict then return nil, routing_reason end
+    end
+    return mount, nil
 end
 
 -- Read the mount's wippy-meta.json. Returns a table with `status`:

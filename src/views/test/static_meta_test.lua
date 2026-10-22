@@ -194,6 +194,60 @@ local function define_tests()
         end)
     end)
 
+    test.describe("static_meta endpoint routing", function()
+        local SERVER = "app:gateway"
+        local routers = {
+            ["app:root"] = {id = "app:root", meta = {server = "gateway"}, data = {prefix = "/"}},
+            ["app:ui"] = {id = "app:ui", meta = {server = "gateway"}, data = {prefix = "/ui/"}},
+            ["other.ns:root"] = {id = "other.ns:root", meta = {server = "gateway"}, data = {prefix = "/"}},
+        }
+        local function route(path: string, method: string?, router: string?): any
+            return {id = "app:metadata", meta = {router = router or "root"},
+                data = {path = path, method = method}}
+        end
+        local function conflicts(entry: any): (boolean, string?)
+            return static_meta.route_conflict({entry}, routers, "/ui/page/", SERVER)
+        end
+
+        test.it("detects a root-router endpoint that overrides a deeply mounted file", function()
+            local conflict, reason = conflicts(route("/ui/page/wippy-meta.json", "GET"))
+            test.eq(conflict, true)
+            test.eq(reason, static_meta.REASON.route)
+            test.eq(conflicts(route("/ui/page/wippy-meta.json", nil)), true)
+        end)
+
+        test.it("combines the relative router id and prefix with the endpoint path", function()
+            test.eq(conflicts(route("/page/wippy-meta.json", "GET", "ui")), true)
+            test.eq(conflicts(route("/different/wippy-meta.json", "GET", "ui")), false)
+        end)
+
+        test.it("recognizes single-segment, remainder, subtree and end-anchor patterns", function()
+            for _, pattern in ipairs({"/ui/{page}/wippy-meta.json", "/ui/{path...}", "/ui/page/"}) do
+                test.eq(conflicts(route(pattern, "GET")), true, pattern)
+            end
+            for _, pattern in ipairs({"/ui/{page}", "/ui/page/{id}/wippy-meta.json", "/ui/page/{$}",
+                "/ui/{page}/other.json", "/ui/pages/wippy-meta.json"}) do
+                test.eq(conflicts(route(pattern, "GET")), false, pattern)
+            end
+        end)
+
+        test.it("ignores routes on other servers and methods that cannot handle a GET", function()
+            for _, method in ipairs({"POST", "PUT", "HEAD", "OPTIONS", "DELETE"}) do
+                test.eq(conflicts(route("/ui/page/wippy-meta.json", method)), false)
+            end
+            test.eq(conflicts(route("/ui/page/wippy-meta.json", "GET", "other.ns:root")), false)
+        end)
+
+        test.it("uses HTTP for unresolved, encoded or placeholder routing", function()
+            for _, pattern in ipairs({"/ui/%70age/wippy-meta.json", "/ui/${env:PAGE}/wippy-meta.json"}) do
+                test.eq(conflicts(route(pattern, "GET")), true)
+            end
+            local conflict, reason = conflicts(route("/ui/page/wippy-meta.json", "GET", "missing"))
+            test.eq(conflict, true)
+            test.eq(reason, static_meta.REASON.routing)
+        end)
+    end)
+
     test.describe("static_meta mount filesystem reads", function()
         test.it("resolves the server of the views API router", function()
             test.eq(static_meta.api_server(), "app:gateway")
