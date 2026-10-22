@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.10](https://github.com/wippyai/framework/compare/llm-v0.5.9...llm-v0.5.10) (2026-10-22)
+
+
+### Bug Fixes
+
+* **llm:** preserve native errors and message text ([#207](https://github.com/wippyai/framework/issues/207)) ([ae16e07](https://github.com/wippyai/framework/commit/ae16e076ac9c4e2eac91a755600014b5f529b661))
+* **llm:** retain model lookup error details ([#213](https://github.com/wippyai/framework/issues/213)) ([07125c1](https://github.com/wippyai/framework/commit/07125c1c012a328695389e10ff7bb67b370f509b))
+
 ## [0.5.9](https://github.com/wippyai/framework/compare/llm-v0.5.8...llm-v0.5.9) (2026-10-21)
 
 

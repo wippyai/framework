@@ -39,6 +39,23 @@ local function define_tests()
             test.is_nil(read.normalize("attention_get_node", {node_id=string.rep("n",257)}))
             test.eq(read.normalize("attention_get_tree",{depth=0}).args.depth,0)
         end)
+        test.it("requires at least one semantic filter", function()
+            for _, args in ipairs({{}, {limit=3}, {continuation="next"}, {scope=ref("panel")}}) do
+                local result, err = read.normalize("attention_find_semantic", args)
+                test.is_nil(result)
+                test.eq(err, "semantic-filter-required")
+            end
+            for _, key in ipairs({"role", "name", "text", "resource_id"}) do
+                local search = read.normalize("attention_find_semantic", {[key]="value", limit=3, scope=ref("panel")})
+                test.not_nil(search, key)
+                test.eq(search.args.query[key], "value", key)
+            end
+            local query = read.normalize("attention_find_semantic", {role="button", name="Save", text="Save", resource_id="r"}).args.query
+            test.eq(query.role, "button")
+            test.eq(query.name, "Save")
+            test.eq(query.text, "Save")
+            test.eq(query.resource_id, "r")
+        end)
         test.it("bounds pages without restricting semantic traversal depth", function()
             for _, name in ipairs({"attention_get_cursor", "attention_get_focus", "attention_get_selection"}) do
                 test.eq(json.encode(read.normalize(name, {}).args), "{}")

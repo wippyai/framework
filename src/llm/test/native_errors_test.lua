@@ -73,6 +73,25 @@ return test.run_cases(function()
                 end)
             end
 
+            for _, lookup in ipairs({
+                { model = "class:unconfigured", message = "No models found for class: unconfigured" },
+                { model = "unconfigured", message = "Model or class not found: unconfigured" },
+            }) do
+                it("identifies an unconfigured " .. method .. " model: " .. lookup.model, function()
+                    llm._models = {
+                        get_by_class = function() return {} end,
+                        get_by_name = function() return nil end,
+                    }
+                    local result, err = call(method, { model = lookup.model })
+                    test.is_nil(result)
+                    test.eq(err:kind(), errors.NOT_FOUND)
+                    test.is_false(err:retryable())
+                    test.eq(err:message(), lookup.message)
+                    test.eq(err:details().error_type, "model_error")
+                    test.eq(err:details().model, lookup.model)
+                end)
+            end
+
             it("retains the exact text of untyped " .. method .. " provider failures", function()
                 llm._providers = {
                     driver_declares_legacy_reasoning_flag = function() return false end,

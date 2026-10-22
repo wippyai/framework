@@ -113,8 +113,8 @@ local function define_tests()
         test.it("preserves legacy policy for private and unrecognized hosts in auto mode", function()
             for _, url in ipairs({
                 "https://private.example/host",
-                "https://custom.example/webcomponents-1.0.66",
-                "https://web-host.wippy.ai/unrelated/webcomponents-1.0.66",
+                "https://custom.example/webcomponents-1.0.67",
+                "https://web-host.wippy.ai/unrelated/webcomponents-1.0.67",
             }) do
                 set_requirements({
                     fe_facade_url = url, host_policy_mode = "auto", allow_select_model = "false",

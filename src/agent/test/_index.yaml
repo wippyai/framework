@@ -315,6 +315,26 @@ entries:
       attention_guard: wippy.agent.traits:attention_guard
     method: run_tests
 
+  # app:tools_input_schema_root_test
+  - name: tools_input_schema_root_test
+    kind: function.lua
+    meta:
+      name: Tool Input Schema Root Test
+      type: test
+      comment: Every registered tool declares a provider-portable plain object root in its input schema
+      group: Agent Framework
+      tags:
+        - tools
+        - schema
+        - tests
+    source: file://tools/input_schema_root_test.lua
+    modules:
+      - json
+      - registry
+    imports:
+      test: wippy.test:test
+    method: run_tests
+
   # app:tools_delay_tool_test
   - name: tools_delay_tool_test
     kind: function.lua

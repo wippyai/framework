@@ -108,9 +108,9 @@ local function handler()
     if page.kind == "component" then
         local base_url = page_registry.resolve_base_url(page)
 
+        -- A failed fetch is already logged as an error by bundled_meta.
         local meta, meta_err = bundled_meta.fetch_for_page(page)
         if meta_err then
-            print("[views/render] bundled_meta fetch error for " .. tostring(page_id) .. ": " .. tostring(meta_err))
             meta = nil
         end
 
@@ -119,6 +119,11 @@ local function handler()
             body = bundled_meta.project_page_response(meta, page, base_url)
         else
             body = synthesize_from_registry(page, base_url)
+            -- The Host reports this in the browser console, so the missing
+            -- package settings (theme, custom CSS) are not silent there either.
+            if meta_err then
+                body.wippy.metaError = meta_err
+            end
         end
 
         res:set_content_type(http.CONTENT.JSON)
