@@ -344,13 +344,18 @@ test('falls back to the realm URL without a page base', () => {
   assert.equal(r.map.imports.local, 'http://app.test/@fragment/probe/p.js')
 })
 
-test('applies the Host map alone when the helper did not load', () => {
-  const r = runStub({ helper: false, pageMapText: JSON.stringify({ imports: { local: './p.js' } }), parent: hostWindow({ importMap: null }) })
-  assert.equal(r.maps.length, 1)
-  assert.deepEqual(r.raw, { imports: HOST_IMPORTS })
-  assert.deepEqual(r.proxies, [PROXY], 'the proxy still loads with the Host map')
-  assert.deepEqual(r.events, ['importmap', 'module'], 'the map is inserted before the proxy')
-  assert.equal(r.errors.length, 1)
-  assert.match(r.errors[0], /bootstrap is unavailable/)
-  assert.equal(r.ready, undefined)
-})
+for (const configuredMap of [null, { imports: { shared: 'https://configured.test/shared.js' } }]) {
+  test(`rejects modern bootstrap when the helper did not load (${configuredMap ? 'configured overrides' : 'page map'})`, async () => {
+    const r = runStub({ helper: false,
+      pageMapText: JSON.stringify({ imports: { local: './page.js' } }),
+      parent: hostWindow({ importMap: configuredMap }) })
+    assert.deepEqual(r.maps, [], 'must not register a different Host-only map')
+    assert.deepEqual(r.proxies, [], 'must not start the proxy after initialization failed')
+    assert.deepEqual(r.events, [], 'no module or import map starts')
+    const error = await rejection(r.ready)
+    assert.match(error.message, /import-map bootstrap is unavailable/)
+    assert.equal(r.errors.length, 1)
+    assert.match(r.alerts[0], /could not be initialized/)
+    assert.match(r.alerts[0], /import-map bootstrap is unavailable/)
+  })
+}

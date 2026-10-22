@@ -129,15 +129,10 @@ local REGISTER_SCRIPT = [[
     var hostMap = payload.hostMap || { imports: {} };
     var bootstrap = physicalWindow.WippyImportMapBootstrap;
     if (!bootstrap || typeof bootstrap.register !== "function") {
-      // The helper did not load (for example a network failure). Keep the page
-      // usable with the Host map alone, as on Hosts without the helper.
-      report("Fragment import map: the Web Host import-map bootstrap is unavailable, so only the Host import map is applied.");
-      var fallback = physicalCreateElement("script");
-      fallback.setAttribute("type", "importmap");
-      fallback.textContent = JSON.stringify(hostMap);
-      (physicalDocument.head || physicalDocument.documentElement).appendChild(fallback);
-      loadProxy(payload.proxyUrl);
-      return;
+      // This script is emitted only for a Host that serves the helper. A
+      // failed browser load must not run the page with different dependencies.
+      // Hosts without the capability use the separate legacy stub below.
+      throw new Error("Web Host import-map bootstrap is unavailable");
     }
     var pageMap;
     if (typeof payload.pageMapText === "string") {

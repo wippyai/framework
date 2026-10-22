@@ -136,11 +136,12 @@ local function define_tests()
             test.eq(contains(script, "new URL("), false)
         end)
 
-        test.it("rejects the ready promise on failure and falls back without the helper", function()
+        test.it("rejects the ready promise when the modern helper is unavailable", function()
             local script = register_script(fragment_bootstrap.build_stub(FBASE, { vue = "v" }, { bootstrap = true }))
             test.eq(contains(script, "var failed = Promise.reject(error);"), true)
             test.eq(contains(script, "physicalWindow.__WIPPY_IMPORT_MAP_READY__ = failed;"), true)
-            test.eq(contains(script, 'fallback.setAttribute("type", "importmap");'), true)
+            test.eq(contains(script, 'throw new Error("Web Host import-map bootstrap is unavailable")'), true)
+            test.eq(contains(script, 'fallback.setAttribute("type", "importmap");'), false)
         end)
 
         test.it("answers 500 without caching when the stub cannot be encoded", function()
@@ -163,14 +164,14 @@ local function define_tests()
             test.eq(loading_at < helper_at and helper_at < register_at, true)
 
             local script = register_script(html)
-            -- The proxy loads after a successful registration and after the Host-map
-            -- fallback, and not in the failure branch.
+            -- The modern proxy loads only after successful registration,
+            -- never in a failure branch.
             local proxy_after_register = at(script, "registerAtPageBase(bootstrap, pageMap, hostMap, configured.map, pageBase);")
             local proxy_load = script:find("loadProxy(payload.proxyUrl);", proxy_after_register, true)
             local failure_at = at(script, "} catch (error) {")
             test.eq(proxy_load ~= nil and failure_at ~= nil and proxy_load < failure_at, true)
             test.eq(script:find("loadProxy(", failure_at, true), nil)
-            test.eq(contains(script, "fallback.textContent = JSON.stringify(hostMap);"), true)
+            test.eq(contains(script, "fallback.textContent = JSON.stringify(hostMap);"), false)
             for _, async_marker in ipairs({ "await", "async", "waitForConfig", "postMessage", ".then(", "setTimeout" }) do
                 test.eq(contains(script, async_marker), false)
             end
