@@ -94,6 +94,7 @@ entries:
       agent_registry: wippy.agent.discovery:registry
       llm: wippy.llm:llm
       output: wippy.llm:output
+      claude_mapper: wippy.llm.claude:mapper
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
     method: run_tests

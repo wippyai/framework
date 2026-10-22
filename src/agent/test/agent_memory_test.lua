@@ -1219,6 +1219,151 @@ local function define_tests()
             end)
         end)
 
+        describe("Recall Diagnostics", function()
+            local recall_spec = {
+                id = "test-agent",
+                name = "Test Agent",
+                prompt = "Test agent",
+                tools = {},
+                memory_contract = {
+                    implementation_id = "test:memory",
+                    options = { min_conversation_length = 2 }
+                }
+            }
+
+            local function conversation()
+                local builder = mock_prompt.new()
+                builder:add_user("Message 1")
+                builder:add_assistant("Response 1")
+                builder:add_user("Message 2")
+                return builder
+            end
+
+            local function recalling(result, err)
+                return { recall = function() return result, err end }
+            end
+
+            local function memory_prompt_sent()
+                for _, msg in ipairs(test_messages) do
+                    if msg.role == "developer" and type(msg.content) == "table" and msg.content[1] and
+                        type(msg.content[1].text) == "string" and
+                        msg.content[1].text:find("Background context from memory", 1, true) then
+                        return true
+                    end
+                end
+                return false
+            end
+
+            it("reports a provider recall error and still generates", function()
+                mock_contract._current_instance = recalling(nil, "vector store offline")
+
+                local result, err = agent.new(recall_spec):step(conversation())
+
+                test.is_nil(err)
+                test.eq(result.result, "Mock LLM response")
+                test.not_nil(result.memory_recall_error)
+                test.not_nil(result.memory_recall_error:find("vector store offline", 1, true))
+                test.is_nil(result.memory_recall)
+                test.is_false(memory_prompt_sent())
+            end)
+
+            it("reports a provider that cannot be opened", function()
+                mock_contract._current_error = "binding not found"
+
+                local result, err = agent.new(recall_spec):step(conversation())
+
+                test.is_nil(err)
+                test.not_nil(result.memory_recall_error:find("binding not found", 1, true))
+            end)
+
+            it("reports a provider open that returns no instance", function()
+                mock_contract._current_instance = nil
+                mock_contract._current_error = nil
+
+                local result, err = agent.new(recall_spec):step(conversation())
+
+                test.is_nil(err)
+                test.not_nil(result.memory_recall_error)
+            end)
+
+            it("reports a memory contract that cannot be resolved", function()
+                agent._contract = { get = function() return nil, "contract registry unavailable" end }
+
+                local result, err = agent.new(recall_spec):step(conversation())
+
+                test.is_nil(err)
+                test.not_nil(result.memory_recall_error:find("contract registry unavailable", 1, true))
+            end)
+
+            it("reports malformed recall results", function()
+                local malformed = {
+                    { label = "no result" },
+                    { label = "no memories", value = { not_memories = true } },
+                    { label = "memories not a list", value = { memories = "text" } },
+                    { label = "item without content", value = { memories = { { id = "m1" } } } },
+                    { label = "item without id", value = { memories = { { content = "text" } } } },
+                }
+                for _, case in ipairs(malformed) do
+                    mock_contract._current_instance = recalling(case.value, nil)
+                    local result, err = agent.new(recall_spec):step(conversation())
+                    test.is_nil(err, case.label)
+                    test.not_nil(result.memory_recall_error, case.label)
+                    test.is_false(memory_prompt_sent(), case.label)
+                end
+            end)
+
+            it("reports no error for an empty recall or a skipped recall", function()
+                mock_contract._current_instance = recalling({ memories = {} }, nil)
+                local result = agent.new(recall_spec):step(conversation())
+                test.is_nil(result.memory_recall_error)
+
+                result = agent.new(recall_spec):step(conversation(), { disable_memory_recall = true })
+                test.is_nil(result.memory_recall_error)
+
+                local short = mock_prompt.new()
+                short:add_user("Only message")
+                result = agent.new(recall_spec):step(short)
+                test.is_nil(result.memory_recall_error)
+
+                result = agent.new({ id = "plain", name = "Plain", prompt = "p", tools = {} }):step(conversation())
+                test.is_nil(result.memory_recall_error)
+            end)
+
+            it("keeps the recall error when generation fails", function()
+                mock_contract._current_instance = recalling(nil, "vector store offline")
+                agent._llm = { generate = function() return nil, "provider overloaded" end }
+
+                local result, err = agent.new(recall_spec):step(conversation())
+
+                test.eq(err, "provider overloaded")
+                test.not_nil(result)
+                test.not_nil(result.memory_recall_error:find("vector store offline", 1, true))
+            end)
+
+            it("keeps the recall error on truncated, cancelled and stopped steps", function()
+                mock_contract._current_instance = recalling(nil, "vector store offline")
+
+                agent._llm = { generate = function()
+                    return { result = "", finish_reason = "length", tokens = {} }
+                end }
+                local truncated = agent.new(recall_spec):step(conversation())
+                test.is_true(truncated.truncated)
+                test.not_nil(truncated.memory_recall_error)
+
+                agent._llm = { generate = function()
+                    return { result = "partial", finish_reason = "cancelled", tokens = {} }
+                end }
+                local cancelled = agent.new(recall_spec):step(conversation())
+                test.is_true(cancelled.stopped)
+                test.not_nil(cancelled.memory_recall_error)
+
+                agent._llm = mock_llm
+                local stopped = agent.new(recall_spec):step(conversation(), { stop_check = function() return true end })
+                test.is_true(stopped.stopped)
+                test.not_nil(stopped.memory_recall_error)
+            end)
+        end)
+
         describe("Message Flow Integration", function()
             it("should maintain proper message order with memory injection at end", function()
                 local memory_contract = create_mock_memory_contract({
