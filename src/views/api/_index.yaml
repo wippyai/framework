@@ -210,10 +210,37 @@ entries:
         compress.min.length: "1024"
 
     # Web-Fragments gateway (EE2-2313, EXPERIMENTAL). Serves the reframing contract
-    # for a view.page rendered as a fragment: reframed stub (Sec-Fetch-Dest: iframe),
-    # the app HTML with the fragment proxy + <base> injected (empty/document),
-    # and asset proxying (everything else). Delivery-mode wrapper — render.lua
-    # is untouched. Auth-agnostic: the injected proxy handshakes the host for config.
+    # for a view.page rendered as a fragment: the realm stub (Sec-Fetch-Dest: iframe)
+    # that registers the page, Host and configured import maps before the stream,
+    # the app HTML transformed for the realm (empty/document), and asset proxying
+    # (everything else). Delivery-mode wrapper — render.lua is untouched.
+    # Auth-agnostic: the fragment proxy handshakes the host for config.
+    - name: fragment_bootstrap
+      kind: library.lua
+      meta:
+        comment: Safe iframe bootstrap for fragment-mode views
+        description: Builds and serves the Wippy Web Host fragment bootstrap
+      source: file://fragment_bootstrap.lua
+      modules:
+        - json
+
+    - name: fragment_html
+      kind: library.lua
+      meta:
+        comment: HTML tokenizer and byte-range document edits for fragment-mode views
+        description: Reads and edits view.page HTML for the fragment gateway without pattern matching
+      source: file://fragment_html.lua
+
+    - name: fragment_service
+      kind: library.lua
+      meta:
+        comment: Request handling for the fragment gateway, with its runtime dependencies passed in
+        description: Serves the realm stub, the transformed page document and page assets for fragment-mode views
+      source: file://fragment_service.lua
+      imports:
+        fragment_bootstrap: wippy.views.api:fragment_bootstrap
+        fragment_html: wippy.views.api:fragment_html
+
     - name: fragment_gateway
       kind: function.lua
       meta:
@@ -222,12 +249,16 @@ entries:
       source: file://fragment_gateway.lua
       imports:
         page_registry: wippy.views:page_registry
+        bundled_meta: wippy.views:bundled_meta
+        fragment_service: wippy.views.api:fragment_service
       method: handler
       modules:
         - http
         - http_client
         - registry
         - json
+        - time
+        - logger
       security:
         actor:
           id: wippy.views.api:fragment_gateway
@@ -236,11 +267,13 @@ entries:
           - wippy.views:public_metadata_reader_runtime
           # Required: page_registry.resolve_base_url reads PUBLIC_API_URL to turn a
           # page's relative url/base_path into an ABSOLUTE origin. Without this the
-          # read is denied, base_url stays relative, and the document fetch is then
-          # rejected by public_metadata_http_runtime (which only allows http(s)://*).
+          # read is denied, base_url stays relative, and the gateway answers 500.
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          # bundled_meta (the HTML entry of a page without a YAML entry_point)
+          # records its once-only warning in a memory store.
+          - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
         workers: 4

@@ -381,3 +381,44 @@ entries:
       test: wippy.test:test
     modules:
       - security
+
+  # app:fragment_gateway_bootstrap_test
+  - name: fragment_gateway_bootstrap_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway bootstrap response and loader contract
+    source: file://fragment_gateway_bootstrap_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      fragment_bootstrap: wippy.views.api:fragment_bootstrap
+
+  # app:fragment_html_test
+  - name: fragment_html_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway HTML tokenizer, import-map extraction and document edits
+    source: file://fragment_html_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      fragment_html: wippy.views.api:fragment_html
+
+  # app:fragment_service_test
+  - name: fragment_service_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway request handling with a fake runtime (branches, caches, paths)
+    source: file://fragment_service_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      fragment_service: wippy.views.api:fragment_service
+    modules:
+      - json
