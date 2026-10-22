@@ -9,7 +9,7 @@ any database-specific logic.
 The DSL includes the following functions:
 - migration(description, fn) - Define a migration with a description
 - database(type, fn) - Define database-specific implementation
-- up(fn) - Define the forward migration logic
+- up(fn, mode?) - Define forward logic; "batch" opts into resumable pages
 - after(fn) - Define post-migration steps
 - down(fn) - Define rollback logic
 ]]
@@ -17,6 +17,7 @@ The DSL includes the following functions:
 type DatabaseImpl = {
     type: string?,
     up: any?,
+    up_batch: any?,
     after: any?,
     down: any?,
 }
@@ -123,7 +124,7 @@ end
 
 -- Define primary migration function
 function migration_core.create_up_fn(context: MigrationContext): any
-    return function(fn: any)
+    return function(fn: any, mode: string?)
         if not context.current_database then
             error("up() must be called within a database block")
         end
@@ -132,7 +133,20 @@ function migration_core.create_up_fn(context: MigrationContext): any
             error("Up migration must be a function")
         end
 
-        context.current_database.up = fn
+        if mode ~= nil and mode ~= "batch" then
+            error("Up migration mode must be 'batch' or absent")
+        end
+        if mode == "batch" then
+            if context.current_database.up then
+                error("Atomic and batched up() callbacks cannot be combined")
+            end
+            context.current_database.up_batch = fn
+        else
+            if context.current_database.up_batch then
+                error("Atomic and batched up() callbacks cannot be combined")
+            end
+            context.current_database.up = fn
+        end
     end
 end
 
@@ -218,7 +232,7 @@ function migration_core.validate_implementation(implementation: MigrationItem, d
         return false, "No implementation for database type: " .. db_type
     end
 
-    if not impl.up or type(impl.up) ~= "function" then
+    if type(impl.up) ~= "function" and type(impl.up_batch) ~= "function" then
         return false, "Missing 'up' function for " .. db_type
     end
 

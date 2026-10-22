@@ -6,6 +6,18 @@
 
 * Label per-step recalled memory as background rather than a user message or new request. It supports the current user task without replacing it. After installing the release containing this fix, users can remove their local memory-label override; the companion Session fix preserves the task across mid-turn checkpoints. This change is not included in Agent 0.5.4.
 
+## [0.5.7](https://github.com/wippyai/framework/compare/agent-v0.5.6...agent-v0.5.7) (2026-10-22)
+
+
+### Features
+
+* **agent:** add after_persist lifecycle phase, persisted event refs and recall diagnostics ([fa607e6](https://github.com/wippyai/framework/commit/fa607e6de45a95253ef0f57c6700002b48c2a266))
+
+
+### Bug Fixes
+
+* **agent:** keep authority test database in memory ([a60a800](https://github.com/wippyai/framework/commit/a60a80034d27aa267b489b966ecf60dc87794a8d))
+
 ## [0.5.6](https://github.com/wippyai/framework/compare/agent-v0.5.5...agent-v0.5.6) (2026-10-21)
 
 

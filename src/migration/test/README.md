@@ -34,3 +34,13 @@ the built-in `pg_read_all_data` role without schema `CREATE` permission. The
 test service user must be able to assume that role (CI's disposable database
 uses the provisioned superuser). Discovery regressions distinguish real
 `run_next` errors from successful empty or already-applied migration plans.
+
+The batched migration suite runs on SQLite and, with the PostgreSQL option,
+PostgreSQL. It checks interrupted-page resume through a new connection, applied
+rerun skipping, final-hook rollback, invalid checkpoints, alias resume, rollback,
+checkpoint-write failure, competing runners, invalid IDs, forced replay refusal,
+and checkpoint ownership across PostgreSQL search paths. It also applies a
+100,000-row repair in 500 pages. A second resource pool reads
+each committed 200-row page and writes between commits; each page transaction
+must finish within two seconds. The atomic-default regression confirms that
+ordinary `up` callbacks still roll back their entire operation on failure.
