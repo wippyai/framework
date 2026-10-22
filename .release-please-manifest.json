@@ -1,11 +1,11 @@
 {
   "src/actor": "0.4.5",
-  "src/agent": "0.5.8",
+  "src/agent": "0.5.9",
   "src/bootloader": "0.3.18",
   "src/docs": "0.3.11",
   "src/embeddings": "0.3.17",
   "src/facade": "0.6.46",
-  "src/llm": "0.5.10",
+  "src/llm": "0.5.11",
   "src/migration": "0.3.25",
   "src/relay": "0.3.17",
   "src/security": "0.4.3",

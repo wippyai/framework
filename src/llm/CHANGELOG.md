@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.11](https://github.com/wippyai/framework/compare/llm-v0.5.10...llm-v0.5.11) (2026-10-22)
+
+
+### Bug Fixes
+
+* admit model prompts before provider dispatch ([#203](https://github.com/wippyai/framework/issues/203)) ([2ad866a](https://github.com/wippyai/framework/commit/2ad866a665248947d82b9e1f3eee341ad58c8bf3))
+
 ## [0.5.10](https://github.com/wippyai/framework/compare/llm-v0.5.9...llm-v0.5.10) (2026-10-22)
 
 
