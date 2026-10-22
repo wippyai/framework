@@ -79,7 +79,7 @@ database connection. This is crucial to understand as:
 
 1. The transaction automatically rolls back if any error occurs
 2. You must return an error explicitly to trigger a rollback
-3. All operations in the migration run in a single transaction
+3. Ordinary `up` migrations run in a single transaction; opt-in `up(fn, "batch")` migrations commit one page at a time
 
 ### Key Transaction Methods
 
@@ -168,7 +168,7 @@ end)
 
 All migrations run in transactions, which means:
 
-- All changes in a migration succeed or fail together
+- All changes in an ordinary migration succeed or fail together; batched migrations are atomic per page
 - Some DDL operations may implicitly commit in certain databases
 - Return errors explicitly to trigger a rollback:
 
@@ -364,6 +364,74 @@ up(function(db)
     return true
 end)
 ```
+
+## Bounded, Resumable Data Migrations
+
+Pass `"batch"` as the optional second argument to `up` for data repairs that need to release locks between
+pages. It is optional and supported on SQLite and PostgreSQL. Existing `up`,
+`down`, and `after` migrations keep their transaction behavior.
+
+```lua
+migration("Normalize item labels", function()
+    database("sqlite", function() -- Use the same pattern for "postgres".
+        up(function(tx, cursor)
+            local rows, err = tx:query([[
+                SELECT id FROM items WHERE id > $1 ORDER BY id LIMIT 200
+            ]], {tonumber(cursor) or 0})
+            if err then error(err) end
+            if #rows == 0 then return nil end
+
+            local last_id = rows[#rows].id
+            local _, update_err = tx:execute([[
+                UPDATE items SET label = trim(label) WHERE id > $1 AND id <= $2
+            ]], {tonumber(cursor) or 0, last_id})
+            if update_err then error(update_err) end
+            return tostring(last_id)
+        end, "batch")
+    end)
+end)
+```
+
+The callback receives a transaction and an opaque string checkpoint (`nil` on
+the first page). Return a non-empty string different from the previous checkpoint
+to commit this page and continue, or `nil` to commit the final page. A thrown error
+rolls back only the current page. The runner saves the checkpoint in the same
+transaction as the page's writes, so another invocation after an error, crash, or
+restart resumes from the last committed checkpoint. Callbacks must raise SQL
+errors with `error(err)`; callback return values are checkpoints, not errors.
+
+The runner creates `_migration_progress` only when executing an opt-in migration.
+It lives beside the active ledger, including when PostgreSQL resolves that ledger
+through `search_path`. It does not alter `_migrations` or existing application
+tables. Progress is keyed by the migration entry ID, with `meta.alias` honored when resuming a renamed entry.
+The applied ledger row appears only in the final page's transaction. An optional
+`after` hook runs in that same final transaction; if it fails, the final page and
+applied record roll back together. Completion removes the checkpoint. Re-running
+a completed migration skips it under the usual applied-ledger rules. Forced replay
+of an already-applied batch is refused before any page writes; use a new migration
+ID for a subsequent repair. IDs must contain 1 to 512 characters.
+
+Each page acquires the existing database migration lock before reading the ledger
+and checkpoint. Concurrent runners therefore process committed checkpoints in
+sequence, and a runner that finds the migration completed skips it. The lock
+releases at each page commit. Other writers can proceed between pages. `status()`
+continues to report an incomplete migration as pending; no partial migration is
+reported as applied.
+
+Choose a stable, indexed key and a bounded page size (for example 200 rows).
+Advance the checkpoint beyond every row examined, including rows needing no
+change. Design the update to be idempotent, and define which rows belong to the
+repair if concurrent inserts are possible. The library cannot bound the work
+inside your callback: avoid whole-table updates, unindexed scans, long-running
+hooks, network calls, and external side effects. Never commit or roll back the
+provided transaction yourself. Every callback and the final `after` hook must
+finish within the intended lock-time budget.
+
+Atomic and batched `up` callbacks cannot be combined within one database implementation. Schema
+changes belong in separate ordinary migrations. `down` keeps its existing
+single-transaction behavior. A forward error leaves
+committed pages in place and resumes on the next forward invocation. Prefer
+forward-only, idempotent repairs for data migrations.
 
 ## Renaming or Moving Migrations (`meta.alias`)
 
