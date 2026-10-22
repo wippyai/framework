@@ -1,0 +1,11 @@
+version: '1.0'
+namespace: app
+entries:
+  - name: native_errors_test
+    kind: function.lua
+    meta: {type: test, suite: native_errors}
+    source: file://native_errors_test.lua
+    method: run
+    imports:
+      llm: wippy.llm:llm
+      test: wippy.test:test
