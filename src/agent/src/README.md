@@ -275,9 +275,26 @@ When the model's first route fails and `llm` answers from a fallback model, the 
     finish_reason = "stop",
     route_pin = { model = "...", provider_id = "...", provider_model = "..." },  -- nil until a step fell back
     memory_recall = { memory_ids = { "mem_3" }, count = 1 },
-    memory_prompt = { ... }
+    memory_prompt = { ... },
+    memory_recall_error = nil       -- string when a configured recall failed
 }
 ```
+
+A configured recall that fails (the provider errors, cannot be opened, or
+returns no valid `memories` list) does not stop the step: generation runs
+without recalled memory and `memory_recall_error` describes the failure. It is
+kept on truncated, cancelled and stopped results; when generation fails,
+`step` returns `{ memory_recall_error = ... }` together with the generation
+error. Skipped recall and an empty `memories` list are not errors.
+
+### Prompt caching
+
+The runner marks two cache breakpoints: after the system prompt and after the
+newest user or tool-result message. Trailing developer messages in the builder
+(lifecycle messages the host appends for the current step) and the memory
+recall are placed after the conversation breakpoint, so the next step reuses
+the cached prefix. Prompt function output is part of the system prompt and must
+be deterministic across steps to keep the prefix cacheable.
 
 ### Token Tracking
 
@@ -414,6 +431,16 @@ control handlers and apply proposals only after the round's outcomes settle.
 `after_step` itself is before tools execute; `after_execute` is before host
 persistence. Returned `context` without `_control` is not a host configuration
 change. Legacy bindings do not acquire behavior controls implicitly.
+
+`after_persist` runs after the host commits the step's assistant/action record.
+`refs.event_id` is that record's `run_context` history id, so
+`get_history({ selector = { mode = "range", to_id = refs.event_id } })` includes
+it. The phase may precede tool execution, ignores returned messages and
+`_control`, and reaches only bindings that select it (`handles: [after_persist]`
+or an explicit legacy `phases` entry); bindings without a phase list keep the
+four original phases. Delivery is synchronous with no exactly-once guarantee.
+Hosts call `lifecycle_runtime.subscribed(bindings, "after_persist")` to make
+the extra work of acknowledged persistence conditional on a subscriber.
 
 Hosts explicitly collect these proposals from the lifecycle summary (`controls`)
 and from `caller:get_wrapper_controls()`. A host that persists proposals with

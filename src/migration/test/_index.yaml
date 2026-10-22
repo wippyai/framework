@@ -214,3 +214,16 @@ entries:
     imports:
       repository: wippy.migration:repository
       test: wippy.test:test
+
+  - name: batched_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-batched
+    source: file://batched_test.lua
+    method: run
+    modules: [sql, env, time, channel, registry, uuid]
+    imports:
+      migration_api: wippy.migration:migration
+      repository: wippy.migration:repository
+      test: wippy.test:test

@@ -69,7 +69,7 @@ entries:
       execution_authority: app.agent_authority:execution_authority
   - name: db
     kind: db.sql.sqlite
-    file: authority.sqlite
+    file: ":memory:"
   - name: tokens_storage
     kind: store.memory
     max_size: 1000

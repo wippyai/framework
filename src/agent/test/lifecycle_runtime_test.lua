@@ -272,6 +272,108 @@ local function define_tests()
             test.eq(result.applied, 0)
             test.eq(#calls, 0)
         end)
+
+        local function persisted_payload(event_id)
+            local out = payload("after_persist")
+            out.refs = { event_id = event_id }
+            out.outcome = { state = "completed", reason = "final_response" }
+            return out
+        end
+
+        it("delivers after_persist only to bindings that list it", function()
+            local bindings = {
+                { id = "absent", binding = "absent" },
+                { id = "empty", binding = "empty", phases = {} },
+                { id = "step", binding = "step", phases = { "before_step", "after_step" } },
+                { id = "persist", binding = "persist", phases = { "after_persist" } },
+            }
+
+            local result, err = lifecycle_runtime.apply(bindings, persisted_payload("msg-1"))
+
+            test.is_nil(err)
+            test.eq(result.applied, 1)
+            test.eq(result.skipped, 3)
+            test.eq(#calls, 1)
+            test.eq(calls[1].binding, "persist")
+            test.eq(calls[1].payload.phase, "after_persist")
+            test.eq(calls[1].payload.refs.event_id, "msg-1")
+            test.eq(calls[1].payload.outcome.state, "completed")
+        end)
+
+        it("keeps the four original phases for bindings without a phase list", function()
+            local bindings = {
+                { id = "absent", binding = "absent" },
+                { id = "empty", binding = "empty", phases = {} },
+            }
+
+            for _, phase in ipairs({ "activate", "before_step", "after_step", "deactivate" }) do
+                local result, err = lifecycle_runtime.apply(bindings, payload(phase))
+                test.is_nil(err)
+                test.eq(result.applied, 2, phase)
+            end
+            local result, err = lifecycle_runtime.apply(bindings, persisted_payload("msg-1"))
+            test.is_nil(err)
+            test.eq(result.applied, 0)
+            test.eq(#calls, 8)
+        end)
+
+        it("reports whether any binding selects a phase", function()
+            local bindings = {
+                { id = "absent", binding = "absent" },
+                { id = "step", binding = "step", phases = { "after_step" } },
+            }
+            test.is_true(lifecycle_runtime.subscribed(bindings, "after_step"))
+            test.is_true(lifecycle_runtime.subscribed(bindings, "activate"))
+            test.is_false(lifecycle_runtime.subscribed(bindings, "after_persist"))
+            test.is_false(lifecycle_runtime.subscribed(nil, "after_step"))
+
+            bindings[#bindings + 1] = { id = "persist", binding = "persist", phases = { "after_persist" } }
+            test.is_true(lifecycle_runtime.subscribed(bindings, "after_persist"))
+            test.is_true(lifecycle_runtime.subscribed({ lifecycle = bindings }, "after_persist"))
+            test.eq(#calls, 0)
+        end)
+
+        it("rejects after_persist without the persisted event id", function()
+            local bindings = { { id = "persist", binding = "persist", phases = { "after_persist" } } }
+
+            local result, err = lifecycle_runtime.apply(bindings, payload("after_persist"))
+
+            test.eq(err, "lifecycle after_persist requires refs.event_id")
+            test.eq(result.applied, 0)
+            test.eq(#calls, 0)
+        end)
+
+        it("collects no controls from after_persist handlers", function()
+            behaviors.persist = function()
+                return { _control = { config = { model = "next-model" } } }, nil
+            end
+
+            local result, err = lifecycle_runtime.apply({
+                { id = "persist", binding = "persist", source = "behavior", phases = { "after_persist" } },
+            }, persisted_payload("msg-1"))
+
+            test.is_nil(err)
+            test.eq(result.applied, 1)
+            test.eq(#result.controls, 0)
+        end)
+
+        it("reports after_persist handler errors by strictness", function()
+            behaviors.persist = function()
+                return nil, "index unavailable"
+            end
+            local spec = { id = "persist", binding = "persist", phases = { "after_persist" } }
+
+            local result, err = lifecycle_runtime.apply({ spec }, persisted_payload("msg-1"))
+            test.is_nil(err)
+            test.eq(#result.errors, 1)
+            test.eq(result.errors[1].phase, "after_persist")
+            test.eq(result.errors[1].strict, false)
+
+            spec.strict = true
+            result, err = lifecycle_runtime.apply({ spec }, persisted_payload("msg-1"))
+            test.eq(err, "index unavailable")
+            test.eq(result.errors[1].strict, true)
+        end)
     end)
 end
 

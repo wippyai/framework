@@ -25,7 +25,21 @@ type RunResult = {
     duration: number?,
 }
 
-local function execute_migration(migration_item: any, options: any): any
+local function execute_batch(tx: any, impl: any, progress_table: string, progress_ids: {string}, migration_id: string): string?
+    local cursor, progress_err = repository.get_progress(tx, progress_table, progress_ids)
+    if progress_err then error(progress_err) end
+    local next_cursor = impl.up_batch(tx, cursor)
+    if next_cursor ~= nil then
+        if type(next_cursor) ~= "string" or next_cursor == "" or next_cursor == cursor then
+            error("Batched migration checkpoint must be a non-empty string different from the previous checkpoint")
+        end
+        local saved, save_err = repository.record_progress(tx, progress_table, migration_id, next_cursor)
+        if not saved then error(save_err) end
+    end
+    return next_cursor
+end
+
+local function execute_page(migration_item: any, options: any): any
     if not migration_item or not options or not options.db or not options.db_type then
         return {
             status = "error",
@@ -57,7 +71,17 @@ local function execute_migration(migration_item: any, options: any): any
         }
     end
 
-    if direction == "up" and not impl.up then
+    if impl.up_batch and (migration_id == "" or #migration_id > 512) then
+        return {status = "error", description = migration_item.description,
+            name = migration_item.description, error = "Batched migration ID must contain 1 to 512 characters"}
+    end
+
+    if impl.up_batch and db_type ~= sql.type.SQLITE and db_type ~= sql.type.POSTGRES then
+        return {status = "error", description = migration_item.description,
+            name = migration_item.description, error = "Batched migrations support only SQLite and PostgreSQL"}
+    end
+
+    if direction == "up" and not impl.up and not impl.up_batch then
         return {
             status = "error",
             description = migration_item.description,
@@ -137,6 +161,12 @@ local function execute_migration(migration_item: any, options: any): any
             end
         end
 
+        if is_applied and options.force and impl.up_batch then
+            tx:rollback()
+            return {status = "error", description = migration_item.description,
+                name = migration_item.description, error = "Cannot force an applied batched migration"}
+        end
+
         if is_applied and not options.force then
             tx:rollback()
             return {
@@ -150,8 +180,29 @@ local function execute_migration(migration_item: any, options: any): any
 
     local start_time = time.now()
     local success, err
+    local more = false
+    local progress_ids: {string}? = nil
+    local progress_table = options.progress_table
+    if impl.up_batch then
+        progress_ids = {migration_id}
+        for _, alias in ipairs(options.aliases or {}) do
+            table.insert(progress_ids, tostring(alias))
+        end
+        if not progress_table then
+            local progress_err
+            progress_table, progress_err = repository.init_progress_table(tx, db_type)
+            if not progress_table then
+                tx:rollback()
+                return {status = "error", description = migration_item.description,
+                    name = migration_item.description, error = "Failed to initialize migration progress: " .. tostring(progress_err)}
+            end
+        end
+    end
 
-    if direction == "up" then
+    if direction == "up" and impl.up_batch then
+        success, err = pcall(execute_batch, tx, impl, progress_table, progress_ids :: {string}, migration_id)
+        more = success and err ~= nil
+    elseif direction == "up" then
         success, err = pcall(impl.up, tx)
     else
         success, err = pcall(impl.down, tx)
@@ -190,7 +241,7 @@ local function execute_migration(migration_item: any, options: any): any
         }
     end
 
-    if direction == "up" then
+    if direction == "up" and not more then
         local record_ok, record_err = repository.record_migration(
             tx,
             migration_id,
@@ -209,7 +260,7 @@ local function execute_migration(migration_item: any, options: any): any
         end
     end
 
-    if direction == "up" and impl.after then
+    if direction == "up" and not more and impl.after then
         local after_success, after_err = pcall(impl.after, tx)
         if not after_success then
             tx:rollback()
@@ -223,6 +274,15 @@ local function execute_migration(migration_item: any, options: any): any
         end
     end
 
+    if impl.up_batch and not more then
+        local removed, remove_err = repository.remove_progress(tx, progress_table, progress_ids :: {string})
+        if not removed then
+            tx:rollback()
+            return {status = "error", description = migration_item.description,
+                name = migration_item.description, error = "Failed to remove migration progress: " .. tostring(remove_err)}
+        end
+    end
+
     local commit_success, commit_err = tx:commit()
     if not commit_success then
         return {
@@ -233,11 +293,14 @@ local function execute_migration(migration_item: any, options: any): any
         }
     end
 
+    options.progress_table = progress_table
     local end_time = time.now()
     local duration = end_time:sub(start_time)
 
     local status
-    if direction == "up" then
+    if more then
+        status = "pending"
+    elseif direction == "up" then
         status = "applied"
     else
         status = "reverted"
@@ -249,6 +312,17 @@ local function execute_migration(migration_item: any, options: any): any
         duration = duration:milliseconds() / 1000,
         name = migration_item.description
     }
+end
+
+local function execute_batched_migration(migration_item: any, options: any): any
+    local started = time.now()
+    while true do
+        local result = execute_page(migration_item, options)
+        if result.status ~= "pending" then
+            result.duration = time.now():sub(started):milliseconds() / 1000
+            return result
+        end
+    end
 end
 
 function migration.run(fn: () -> (), options: RunOptions?): any
@@ -339,7 +413,11 @@ function migration.run(fn: () -> (), options: RunOptions?): any
 
     for _, m in ipairs(implementations) do
         if m.database_implementations[db_type] then
-            local result = execute_migration(m, {
+            local execute = execute_page
+            if opts.direction == "up" and m.database_implementations[db_type].up_batch then
+                execute = execute_batched_migration
+            end
+            local result = execute(m, {
                 db = db,
                 db_type = db_type,
                 direction = opts.direction,

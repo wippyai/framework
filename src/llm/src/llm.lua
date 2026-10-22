@@ -231,6 +231,13 @@ local function get_model_resolver(): any?
     return nil
 end
 
+local function native_error(err: any, kind: string, retryable: boolean?): error?
+    if type(err) == "string" then
+        return errors.new({ kind = kind, retryable = retryable, message = err })
+    end
+    return err
+end
+
 -- Cached input under the contract names, falling back to provider-specific names.
 local function cached_input_tokens(tokens: TokenUsage): (number, number)
     local read = tokens.cache_read_input_tokens or tokens.cache_read_tokens or 0
@@ -250,7 +257,7 @@ end
 -- Smart model resolution: name → class → error, plus "class:abc" syntax.
 -- An optional resolver contract takes precedence when bound; if it returns no
 -- card, resolution falls back to the built-in discovery below.
-local function resolve_model_cards(model_identifier: string): ({ModelCard}?, string?, boolean?)
+local function resolve_model_cards(model_identifier: string): ({ModelCard}?, error?, boolean?)
     local resolver = get_model_resolver()
     if resolver then
         local card, resolve_err = resolver:resolve({ model = model_identifier })
@@ -268,12 +275,12 @@ local function resolve_model_cards(model_identifier: string): ({ModelCard}?, str
     if class_name then
         local class_models, err = models_module.get_by_class(class_name)
         if err then
-            return nil, err
+            return nil, native_error(err, errors.INTERNAL, false)
         end
         if class_models and #class_models > 0 then
             return class_models, nil, true
         end
-        return nil, "No models found for class: " .. class_name
+        return nil, errors.new({ kind = errors.NOT_FOUND, retryable = false, message = "No models found for class: " .. class_name })
     end
 
     -- Try as model name first
@@ -281,17 +288,23 @@ local function resolve_model_cards(model_identifier: string): ({ModelCard}?, str
     if model_card then
         return { model_card :: ModelCard }
     end
+    if err and type(err) ~= "string" then
+        return nil, err
+    end
 
     -- Try as class name
     local class_models, class_err = models_module.get_by_class(model_identifier)
     if not class_err and class_models and #class_models > 0 then
         return class_models, nil, true
     end
+    if class_err and type(class_err) ~= "string" then
+        return nil, class_err
+    end
 
-    return nil, "Model or class not found: " .. model_identifier
+    return nil, errors.new({ kind = errors.NOT_FOUND, retryable = false, message = "Model or class not found: " .. model_identifier })
 end
 
-function llm.resolve_model(model_identifier: string): (ModelCard?, string?)
+function llm.resolve_model(model_identifier: string): (ModelCard?, error?)
     local cards, err = resolve_model_cards(model_identifier)
     if not cards then
         return nil, err
@@ -318,7 +331,7 @@ local function prepare_messages(prompt_input)
             }
         }
     else
-        return nil, "Invalid prompt input format"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Invalid prompt input format" })
     end
 end
 
@@ -440,8 +453,22 @@ local function provider_open_context(provider_info)
     return merged
 end
 
-local function open_provider(providers_module, provider_info)
-    return providers_module.open(provider_info.id, provider_open_context(provider_info))
+local function open_provider(providers_module, provider_info, context)
+    local instance, err = providers_module.open(provider_info.id, context or provider_open_context(provider_info))
+    if instance then
+        return instance
+    end
+
+    local message = "Failed to open provider: " .. tostring(err or "unknown error")
+    if type(err) == "string" or err == nil then
+        return nil, errors.new({ kind = errors.INTERNAL, retryable = false, message = message })
+    end
+    return nil, errors.new({
+        message = message,
+        kind = err:kind(),
+        retryable = err:retryable(),
+        details = err:details()
+    })
 end
 
 -- Merge user options into contract arguments. On resolved-model calls the
@@ -532,10 +559,12 @@ end
 
 local function prepare_route(contract_args, provider_info: any, options, providers_module, card: any?)
     local legacy_reasoning_flag, flag_err = providers_module.driver_declares_legacy_reasoning_flag(provider_info.id)
-    if flag_err then return nil, flag_err end
+    if flag_err then
+        return nil, native_error(flag_err, errors.INTERNAL, false)
+    end
     local accepts, err = route.accepts(provider_info :: table, options,
         options.provider_id and "direct" or "resolved", legacy_reasoning_flag :: boolean?)
-    if not accepts then return nil, err end
+    if not accepts then return nil, errors.new({ kind = errors.INVALID, retryable = false, message = err }) end
     contract_args.accepts = accepts
     contract_args.options = route.clean_options(contract_args.options)
     local strict = contract_args.options.strict == true
@@ -566,7 +595,7 @@ local function prepare_route(contract_args, provider_info: any, options, provide
     end
 
     local strict_err = route.strict_error(tostring(provider_info.id), strict, adjusted)
-    if strict_err then return nil, strict_err end
+    if strict_err then return nil, errors.new({ kind = errors.INVALID, retryable = false, message = strict_err }) end
 
     return adjusted, nil
 end
@@ -576,7 +605,7 @@ end
 -- name, unless the caller permits sending it as "auto" instead. Only
 -- llm.generate takes a caller tool_choice; structured output always forces
 -- its own extraction tool internally.
-local function apply_forced_tool_choice(contract_args): (table?, string?)
+local function apply_forced_tool_choice(contract_args): (table?, error?)
     local accepts = contract_args.accepts
     if not accepts or accepts.forced_tool_choice ~= false then return nil, nil end
     if not contract_args.tools or #contract_args.tools == 0 then return nil, nil end
@@ -588,8 +617,9 @@ local function apply_forced_tool_choice(contract_args): (table?, string?)
         return { requested = choice, sent = "auto" }, nil
     end
 
-    return nil, "Model does not accept a forced tool choice (forced_tool_choice = false): tool_choice '"
-        .. tostring(choice) .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself"
+    return nil, errors.new({ kind = errors.INVALID, retryable = false,
+        message = "Model does not accept a forced tool choice (forced_tool_choice = false): tool_choice '"
+            .. tostring(choice) .. "' needs tool_choice_fallback = \"auto\" from a caller that enforces tool use itself" })
 end
 
 local function merge_adjustments(raw_result, adjusted)
@@ -772,9 +802,9 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
         open_context.deadline_at = deadline_at
     end
 
-    local provider_instance, open_err = providers_module.open(route_info.id, open_context)
+    local provider_instance, open_err = open_provider(providers_module, route_info, open_context)
     if not provider_instance then
-        return nil, { preflight = true, message = "Failed to open provider: " .. (open_err or "unknown error") }
+        return nil, { preflight = true, error = open_err, message = open_err:message() }
     end
 
     local wire_model = candidate.direct and options.model or route_info.provider_model
@@ -801,7 +831,7 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
     if spec.prepare then
         local prepared, prepare_err = spec.prepare(contract_args, route_info, options, providers_module, candidate.card)
         if prepare_err ~= nil then
-            return nil, { preflight = true, message = tostring(prepare_err) }
+            return nil, { preflight = true, error = prepare_err, message = tostring(prepare_err) }
         end
         state = prepared
     end
@@ -819,7 +849,9 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
         spec.finish(raw_result, state)
     end
     if err then
+        err = native_error(err, errors.UNKNOWN)
         return nil, {
+            error = err,
             message = fallback.error_message(err),
             details = fallback.error_details(err),
             stream = stream_target(contract_args)
@@ -828,7 +860,8 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
 
     local normalized = normalize_response(raw_result)
     if not normalized then
-        return nil, { message = "Failed to normalize provider response" }
+        local err = errors.new({ kind = errors.INTERNAL, retryable = false, message = "Failed to normalize provider response" })
+        return nil, { error = err, message = err:message() }
     end
 
     if spec.complete then
@@ -860,7 +893,7 @@ local function call_direct(spec, options)
 
     emit_deferred_error(failure.stream, failure.details)
     log_failure(options, failure.message)
-    return nil, failure.message
+    return nil, failure.error
 end
 
 local function fallback_references(spec, options, model_card): {string}
@@ -945,7 +978,18 @@ local function fail_chain(options, failures: {FailureEntry}, last: any?)
     end
 
     log_failure(options, message)
-    return nil, message
+    if last == nil then
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = message })
+    end
+    if #failures <= 1 then
+        return nil, last.error
+    end
+    return nil, errors.new({
+        message = message,
+        kind = last.error:kind(),
+        retryable = last.error:retryable(),
+        details = last.error:details()
+    })
 end
 
 local function run_chain(spec, options, model_card, first_routes: {any}, class_cards, initial_skip: string?)
@@ -1006,7 +1050,7 @@ local function run_chain(spec, options, model_card, first_routes: {any}, class_c
             if candidate.primary and not class_cards then
                 -- A primary route the call cannot use fails the call, as before fallback.
                 log_failure(options, failure.message)
-                return nil, failure.message
+                return nil, failure.error
             end
             entry.skipped = true
             entry.message = failure.message
@@ -1033,7 +1077,7 @@ local function call_resolved(spec, options)
         local pin = options.route
         if type(pin) ~= "table" or type(pin.model) ~= "string" or pin.model == ""
             or type(pin.provider_id) ~= "string" or pin.provider_id == "" then
-            return nil, "options.route requires model and provider_id"
+            return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "options.route requires model and provider_id" })
         end
 
         local resolve_err
@@ -1049,7 +1093,7 @@ local function call_resolved(spec, options)
 
         local pinned = fallback.find_route(model_card, tostring(pin.provider_id), provider_model)
         if not pinned then
-            return nil, "Route not found: " .. pin.model .. " via " .. pin.provider_id
+            return nil, errors.new({ kind = errors.NOT_FOUND, retryable = false, message = "Route not found: " .. pin.model .. " via " .. pin.provider_id })
         end
         first_routes = { pinned }
     else
@@ -1067,7 +1111,7 @@ local function call_resolved(spec, options)
         local check_err = spec.check(model_card)
         if check_err then
             if not class_cards then
-                return nil, check_err
+                return nil, errors.new({ kind = errors.INVALID, retryable = false, message = check_err })
             end
             initial_skip = check_err
         end
@@ -1075,7 +1119,7 @@ local function call_resolved(spec, options)
 
     if not model_card.providers or #model_card.providers == 0 then
         if not class_cards then
-            return nil, "Model has no configured providers: " .. options.model
+            return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model has no configured providers: " .. options.model })
         end
         initial_skip = initial_skip or "no configured providers"
     end
@@ -1089,7 +1133,7 @@ local function call_resolved(spec, options)
     end
     if #first_routes == 0 then
         if not class_cards then
-            return nil, "Model has no configured providers: " .. options.model
+            return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model has no configured providers: " .. options.model })
         end
         initial_skip = initial_skip or "no configured providers"
     end
@@ -1121,7 +1165,7 @@ local function call(spec, options)
     if options.provider_id then
         -- A direct call bypasses the catalog, so a pin on a catalog route is a caller bug.
         if options.route ~= nil then
-            return nil, "options.route cannot be combined with provider_id"
+            return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "options.route cannot be combined with provider_id" })
         end
         return call_direct(spec, options)
     end
@@ -1131,7 +1175,7 @@ end
 
 function llm.generate(prompt_input, options)
     if not options or type(options.model) ~= "string" or options.model == "" then
-        return nil, "Model is required in options"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
 
     options = options_for_actor(options)
@@ -1143,7 +1187,7 @@ function llm.generate(prompt_input, options)
         direct_exclude = { "model", "provider_id", "cancel" },
         model_fallback = true,
         eligible = always_eligible,
-        before = function(): string?
+        before = function(): error?
             local prepared, prepare_err = prepare_messages(prompt_input)
             if not prepared then
                 return prepare_err
@@ -1174,13 +1218,13 @@ function llm.generate(prompt_input, options)
     return result :: GenerateResponse?, err
 end
 
-function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, string?)
+function llm.structured_output(schema, prompt_input, options): (GenerateResponse?, error?)
     if not options or type(options.model) ~= "string" or options.model == "" then
-        return nil, "Model is required in options"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
 
     if not schema then
-        return nil, "Schema is required"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Schema is required" })
     end
 
     options = options_for_actor(options)
@@ -1192,7 +1236,7 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
         direct_exclude = { "model", "provider_id", "schema" },
         model_fallback = true,
         eligible = always_eligible,
-        before = function(): string?
+        before = function(): error?
             local prepared, prepare_err = prepare_messages(prompt_input)
             if not prepared then
                 return prepare_err
@@ -1214,7 +1258,7 @@ end
 
 function llm.embed(text, options)
     if not options or type(options.model) ~= "string" or options.model == "" then
-        return nil, "Model is required in options"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
 
     options = options_for_actor(options)
@@ -1242,14 +1286,14 @@ function llm.embed(text, options)
     return result :: EmbedResponse?, err
 end
 
-function llm.evaluate(state, questions, options): (EvaluationResponse?, string?)
+function llm.evaluate(state, questions, options): (EvaluationResponse?, error?)
     if not options or type(options.model) ~= "string" or options.model == "" then
-        return nil, "Model is required in options"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
 
     local questions_err = evaluation.validate(state, questions, options.model)
     if questions_err then
-        return nil, questions_err
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = questions_err })
     end
 
     options = options_for_actor(options)
@@ -1281,7 +1325,7 @@ end
 
 function llm.status(options)
     if not options or type(options.model) ~= "string" or options.model == "" then
-        return nil, "Model is required in options"
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
 
     options = options_for_actor(options)
@@ -1299,7 +1343,7 @@ function llm.status(options)
 
         -- Get first provider (highest priority)
         if not model_card.providers or #model_card.providers == 0 then
-            return nil, "Model has no configured providers: " .. options.model
+            return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model has no configured providers: " .. options.model })
         end
         provider_info = model_card.providers[1] as any
         merge_provider_options(contract_args, provider_info)
@@ -1309,22 +1353,21 @@ function llm.status(options)
     local providers_module = llm._providers or providers
     local provider_instance, err = open_provider(providers_module, provider_info)
     if not provider_instance then
-        return nil, "Failed to open provider: " .. (err or "unknown error")
+        return nil, err
     end
 
     merge_user_options(contract_args, options, {"model", "provider_id"})
     hoist_transport_options(contract_args)
 
     local result, err = (provider_instance as any):status(contract_args)
-
-    return result :: StatusResponse, err
+    return result :: StatusResponse, native_error(err, errors.UNKNOWN)
 end
 
-function llm.available_models(capability: string?): ({ModelCard}?, string?)
+function llm.available_models(capability: string?): ({ModelCard}?, error?)
     local models_module = llm._models or models
     local all_models, err = models_module.get_all()
     if not all_models then
-        return nil, err
+        return nil, native_error(err, errors.INTERNAL, false)
     end
 
     if not capability then
@@ -1347,11 +1390,11 @@ function llm.available_models(capability: string?): ({ModelCard}?, string?)
     return filtered :: {ModelCard}
 end
 
-function llm.get_classes(): ({ModelClass}?, string?)
+function llm.get_classes(): ({ModelClass}?, error?)
     local models_module = llm._models or models
     local result, err = models_module.get_all_classes()
     if err then
-        return nil, err
+        return nil, native_error(err, errors.INTERNAL, false)
     end
     return result :: {ModelClass}
 end
