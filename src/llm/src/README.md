@@ -811,6 +811,8 @@ window, the callback returns a replacement prompt or `nil, error`. The replaceme
 is checked once before dispatch. Agent steps accept the same optional runtime
 option, with a callback that returns a conversation prompt builder; Agent retains
 its system instructions, cache markers and recalled memory around that builder.
+The Agent checkpoint wrapper requires LLM 0.5.11 or later; Agent's declared
+dependency and development locks require that capability-owning version.
 
 A prompt that still exceeds the window returns `nil, error, details` with
 `details.error_type = llm.ERROR_TYPE.CONTEXT_WINDOW` (`context_window`),

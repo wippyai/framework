@@ -797,7 +797,7 @@ end
 -- are excluded. The outgoing content is never modified.
 local function admission_content(content)
     if type(content) ~= "table" or #content == 0 then return content, 0 end
-    local projected, unestimated = {}, 0
+    local projected, unestimated = nil, 0
     for index, part in pairs(content) do
         local source = type(part) == "table" and part.source
         local source_field = nil
@@ -806,6 +806,7 @@ local function admission_content(content)
             if source.type == "base64" then source_field = "data"
             elseif source.type == "url" then source_field = "url" end
         end
+        local replacement = nil
         if source_field then
             local copy, source_copy = {}, {}
             for key, value in pairs(part) do copy[key] = value end
@@ -813,8 +814,7 @@ local function admission_content(content)
                 if key ~= source_field then source_copy[key] = value end
             end
             copy.source = source_copy
-            projected[index] = copy
-            unestimated = unestimated + 1
+            replacement = copy
         elseif type(part) == "table" and (part.type == "input_image" or part.type == "input_file") then
             -- These native content parts are also accepted by the provider
             -- mapper. Their references/data are not ordinary text either.
@@ -824,13 +824,18 @@ local function admission_content(content)
                     copy[key] = value
                 end
             end
-            projected[index] = copy
+            replacement = copy
+        end
+        if replacement then
+            if not projected then
+                projected = {}
+                for key, value in pairs(content) do projected[key] = value end
+            end
+            projected[index] = replacement
             unestimated = unestimated + 1
-        else
-            projected[index] = part
         end
     end
-    return projected, unestimated
+    return projected or content, unestimated
 end
 
 -- Text and request structure use the existing four-bytes-per-token heuristic.
@@ -843,20 +848,24 @@ local function estimate_prompt(contract_args)
         messages = {}
         for _, message in ipairs(contract_args.messages) do
             if message.role ~= prompt.ROLE.CACHE_MARKER then
-                local input = {}
-                for key, value in pairs(message) do
-                    if key ~= "metadata" then input[key] = value end
-                end
-                if type(message.metadata) == "table" and message.metadata.thinking_blocks then
-                    input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
-                end
+                local content, media_parts = message.content, 0
                 -- Tool results are serialized data, even when that data looks
                 -- like an image part. Only message content is multimodal.
                 if message.role ~= prompt.ROLE.FUNCTION_RESULT and message.role ~= prompt.ROLE.FUNCTION_CALL then
-                    local content, media_parts = admission_content(message.content)
-                    input.content = content
-                    unestimated_media_parts = unestimated_media_parts + media_parts
+                    content, media_parts = admission_content(message.content)
                 end
+                local input = message
+                if message.metadata ~= nil or content ~= message.content then
+                    input = {}
+                    for key, value in pairs(message) do
+                        if key ~= "metadata" then input[key] = value end
+                    end
+                    input.content = content
+                    if type(message.metadata) == "table" and message.metadata.thinking_blocks then
+                        input.metadata = { thinking_blocks = message.metadata.thinking_blocks }
+                    end
+                end
+                unestimated_media_parts = unestimated_media_parts + media_parts
                 table.insert(messages, input)
             end
         end
