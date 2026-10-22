@@ -80,7 +80,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.66` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.67` | CDN base URL for the Web Host frontend bundle |
 | `host_policy_mode` | `auto` | `auto` detects official CDN versions and preserves legacy policy for unknown hosts; `legacy` mirrors policy into `hostConfig`; `shared` keeps root-only policy for custom modern hosts. Invalid values fail the config endpoint. |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
@@ -407,10 +407,10 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.66",
-  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.66/schemas/wippy-context-2.1.json",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.67",
+  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.67/schemas/wippy-context-2.1.json",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.66/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.67/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {
