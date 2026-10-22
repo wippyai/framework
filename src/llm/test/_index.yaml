@@ -210,6 +210,8 @@ entries:
       llm: wippy.llm:llm
       models: wippy.llm.discovery:models
       decisions_handler: wippy.llm.openai:evaluate
+      openai_mapper: wippy.llm.openai:mapper
+      output: wippy.llm:output
       test: wippy.test:test
     method: run_tests
 
@@ -973,6 +975,7 @@ entries:
     source: file://openai/mapper_test.lua
     modules:
       - json
+      - registry
     imports:
       openai_mapper: wippy.llm.openai:mapper
       output: wippy.llm:output
@@ -1192,6 +1195,7 @@ entries:
     source: file://openai_compat/mapper_test.lua
     modules:
       - json
+      - registry
     imports:
       openai_mapper: wippy.llm.openai_compat:mapper
       output: wippy.llm:output

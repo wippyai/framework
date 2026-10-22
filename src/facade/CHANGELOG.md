@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.47](https://github.com/wippyai/framework/compare/facade-v0.6.46...facade-v0.6.47) (2026-10-22)
+
+- Target Web Host 1.0.67. The vendored `loading.js`, `import-map-bootstrap.js` and their source maps are unchanged from Web Host 1.0.66.
+
 ## [0.6.46](https://github.com/wippyai/framework/compare/facade-v0.6.45...facade-v0.6.46) (2026-10-20)
 
 - Grant the config and CSS variable handlers only the resolver contract permissions they use.

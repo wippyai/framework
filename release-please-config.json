@@ -3,6 +3,7 @@
   "release-type": "simple",
   "include-component-in-tag": true,
   "separate-pull-requests": false,
+  "commit-batch-size": 1,
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "last-release-sha": "aeaaea475f9834d6df60a165527d09fd9c07e819",

@@ -24,7 +24,7 @@ local REQ_NAMES: {string} = {
 
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
-        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.66",
+        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.67",
         host_policy_mode = "auto",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
@@ -189,7 +189,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.62"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.67"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -267,7 +267,7 @@ local function define_tests()
 
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
-                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.66")
+                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.67")
 
                 entry = registry.get(NS .. "fe_entry_path")
                 test.eq(entry.data.default, "/iframe.html")
@@ -489,9 +489,9 @@ local function define_tests()
 
             test.it("builds complete config object", function()
                 local config = {
-                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.66",
+                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.67",
                     iframe_origin = "https://web-host.wippy.ai",
-                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.66/iframe.html?waitForCustomConfig",
+                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.67/iframe.html?waitForCustomConfig",
                     login_path = "/login.html",
                     env = {
                         APP_API_URL = "http://localhost:8085",
@@ -552,7 +552,7 @@ local function define_tests()
 
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
-                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.66")
+                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.67")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
                 test.is_true(decoded.attention.enabled)

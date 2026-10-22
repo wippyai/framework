@@ -15,7 +15,12 @@ openai_mapper.CAPABILITY = {
 }
 
 -- Error type mapping from HTTP status codes and message content
-local function map_error_type(status_code, message)
+local function map_error_type(status_code, message, code, provider_type)
+    if status_code == 402 or (status_code == 429
+        and (code == "insufficient_quota" or provider_type == "insufficient_quota")) then
+        return output.ERROR_TYPE.PAYMENT_REQUIRED
+    end
+
     local error_type = output.ERROR_TYPE.SERVER_ERROR
 
     if status_code == 400 then
@@ -500,9 +505,14 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
     for i, tool_call in ipairs(openai_tool_calls) do
         if tool_call["function"] then
             local arguments = {}
+            local raw_arguments, arguments_error
             if tool_call["function"].arguments then
                 local parsed_args, parse_err = json.decode(tostring(tool_call["function"].arguments))
-                if not parse_err and parsed_args then
+                if parse_err then
+                    raw_arguments = tostring(tool_call["function"].arguments)
+                    arguments = raw_arguments
+                    arguments_error = tostring(parse_err)
+                elseif parsed_args then
                     arguments = parsed_args
                 end
             end
@@ -510,7 +520,9 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
             contract_tool_calls[i] = {
                 id = tool_call.id,
                 name = tool_call["function"].name,
-                arguments = arguments
+                arguments = arguments,
+                raw_arguments = raw_arguments,
+                arguments_error = arguments_error
             }
         end
     end
@@ -612,7 +624,7 @@ function openai_mapper.classify_error(openai_error: any?): (string, string, tabl
     end
 
     local message = openai_error.message or "OpenAI-compatible API error"
-    local kind    = map_error_type(openai_error.status_code, message)
+    local kind    = map_error_type(openai_error.status_code, message, openai_error.code, openai_error.type)
 
     local details = {
         status_code = openai_error.status_code,

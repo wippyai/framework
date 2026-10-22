@@ -232,6 +232,11 @@ if result.tool_calls and #result.tool_calls > 0 then
 end
 ```
 
+Tool calls with malformed JSON arguments retain the original string in `arguments` and
+`raw_arguments`, with the decoder diagnostic in `arguments_error`. These optional fields
+are absent on valid calls. Hosts must reject calls with `arguments_error` through their
+tool-result error path rather than execute them.
+
 ## Structured Output
 
 ```lua
@@ -506,14 +511,27 @@ llm.CAPABILITY = {
 ```lua
 local result, err = llm.generate("Hello", {model = "claude"})
 if err then
-    -- transport/system error
-end
-if result and result.error then
-    -- provider error
-    -- result.error: error type constant
-    -- result.error_message: human-readable message
+    print(err:message(), err:kind(), err:retryable())
+    local details = err:details()
 end
 ```
+
+Calls return failures as the second value, using native `errors` values. Provider
+errors retain their kind, retryability, and details. `tostring(err)` and
+`err:message()` contain the display message, including the route summary when
+several candidates fail. The summary retains the last provider error's metadata.
+Provider invocation failures without a summary return the original native error.
+Provider opening failures retain their metadata and the `Failed to open provider:`
+message prefix. Registry lookups, contract discovery, and binding opening preserve
+native causes through the actual discovery path, including their existing message
+prefixes. A native catalog failure is propagated rather than reported as a missing
+model or class.
+
+Invalid inputs and route configuration use `errors.INVALID`; missing models,
+classes, and pinned routes use `errors.NOT_FOUND`. Internal failures use
+`errors.INTERNAL`. These API-created failures are non-retryable. Provider
+implementations that return only a string produce `errors.UNKNOWN`, with that
+same message and no inferred retry policy.
 
 ### Error Types
 
@@ -522,6 +540,7 @@ llm.ERROR_TYPE = {
     INVALID_REQUEST = "invalid_request",
     AUTHENTICATION = "authentication_error",
     RATE_LIMIT = "rate_limit_exceeded",
+    PAYMENT_REQUIRED = "payment_required",
     SERVER_ERROR = "server_error",
     CONTEXT_LENGTH = "context_length_exceeded",
     CONTENT_FILTER = "content_filtered",
@@ -532,6 +551,8 @@ llm.ERROR_TYPE = {
 ```
 
 These are the types drivers report (`output.ERROR_TYPE`). A driver error keeps its type in `details.error_type`, which fallback decisions use; the stdlib error kind alone cannot tell `context_length_exceeded`, `content_filtered` and `invalid_request` apart.
+
+HTTP 402 and HTTP 429 with an `insufficient_quota` machine code or type report non-retryable `payment_required` errors. These errors still advance to the next fallback candidate by default. Ordinary HTTP 429 responses remain retryable `rate_limit_exceeded` errors; message text alone does not identify exhausted quota.
 
 ## Registering Models
 
@@ -655,14 +676,14 @@ An exact model name does not acquire fallback models from its class membership. 
       provider_model: us.anthropic.claude-sonnet-4-6
       priority: 50
   fallback: [gemini-pro, class:fast]          # other models, in order
-  fallback_on: [rate_limit_exceeded, server_error, timeout_error, network_error]
+  fallback_on: [rate_limit_exceeded, payment_required, server_error, timeout_error, network_error]
 ```
 
 Whether a failure moves the call on depends on its error type and on the candidate:
 
 | Error type | First candidate | Later candidates |
 |---|---|---|
-| `rate_limit_exceeded`, `server_error`, `timeout_error`, `network_error` | next (the default `fallback_on`) | next |
+| `rate_limit_exceeded`, `payment_required`, `server_error`, `timeout_error`, `network_error` | next (the default `fallback_on`) | next |
 | `authentication_error`, `model_error`, `context_length_exceeded` | next only when listed in `fallback_on` | next |
 | `invalid_request`, `content_filtered` | next only when listed in `fallback_on` | stop |
 | an error without a type | stop | stop |

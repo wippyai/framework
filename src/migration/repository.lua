@@ -47,11 +47,7 @@ migrations.schemas = {
 -- Queries to check if migration table exists
 migrations.table_exists_queries = {
     [sql.type.POSTGRES] = [[
-        SELECT EXISTS (
-            SELECT FROM pg_tables
-            WHERE schemaname = 'public'
-            AND tablename = '_migrations'
-        )
+        SELECT to_regclass('_migrations') IS NOT NULL AS exists
     ]],
 
     [sql.type.SQLITE] = [[
@@ -224,6 +220,47 @@ function migrations.is_applied(db: any, id: string): (any, string?)
     end
 
     return result[1] and result[1].count > 0, nil
+end
+
+-- Keep progress beside the active ledger even when it is found via search_path.
+function migrations.init_progress_table(tx: any, db_type: string): (any, string?)
+    local table_name = "_migration_progress"
+    if db_type == sql.type.POSTGRES then
+        local rows, err = tx:query([[SELECT quote_ident(n.nspname) AS schema_name
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.oid = to_regclass('_migrations')]])
+        if err then return nil, err end
+        if not rows[1] then return nil, "Migration ledger does not exist" end
+        table_name = rows[1].schema_name .. "." .. table_name
+    end
+    local ok, err = tx:execute("CREATE TABLE IF NOT EXISTS " .. table_name .. [[ (
+        id VARCHAR(512) PRIMARY KEY,
+        cursor TEXT NOT NULL
+    )]])
+    if not ok then return nil, err end
+    return table_name, nil
+end
+
+function migrations.get_progress(tx: any, table_name: string, ids: {string}): (any, string?)
+    for _, id in ipairs(ids) do
+        local rows, err = tx:query("SELECT cursor FROM " .. table_name .. " WHERE id = $1", {id})
+        if err then return nil, err end
+        if rows[1] then return rows[1].cursor, nil end
+    end
+    return nil, nil
+end
+
+function migrations.remove_progress(tx: any, table_name: string, ids: {string}): (any, string?)
+    for _, id in ipairs(ids) do
+        local ok, err = tx:execute("DELETE FROM " .. table_name .. " WHERE id = $1", {id})
+        if not ok then return nil, err end
+    end
+    return true, nil
+end
+
+function migrations.record_progress(tx: any, table_name: string, id: string, cursor: string): (any, string?)
+    return tx:execute("INSERT INTO " .. table_name .. [[ (id, cursor) VALUES ($1, $2)
+        ON CONFLICT (id) DO UPDATE SET cursor = excluded.cursor]], {id, cursor})
 end
 
 return migrations

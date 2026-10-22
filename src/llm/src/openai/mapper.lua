@@ -14,7 +14,12 @@ openai_mapper.CAPABILITY = {
 }
 
 -- Error type mapping from HTTP status codes and message content
-local function map_error_type(status_code, message)
+local function map_error_type(status_code, message, code, provider_type)
+    if status_code == 402 or (status_code == 429
+        and (code == "insufficient_quota" or provider_type == "insufficient_quota")) then
+        return output.ERROR_TYPE.PAYMENT_REQUIRED
+    end
+
     local error_type = output.ERROR_TYPE.SERVER_ERROR
 
     if status_code == 400 then
@@ -430,9 +435,14 @@ function openai_mapper.map_tool_calls(function_call_items)
     local result = {}
     for i, item in ipairs(function_call_items) do
         local arguments = {}
+        local raw_arguments, arguments_error
         if item.arguments then
             local parsed_args, parse_err = json.decode(tostring(item.arguments))
-            if not parse_err and parsed_args then
+            if parse_err then
+                raw_arguments = tostring(item.arguments)
+                arguments = raw_arguments
+                arguments_error = tostring(parse_err)
+            elseif parsed_args then
                 arguments = parsed_args
             end
         end
@@ -440,7 +450,9 @@ function openai_mapper.map_tool_calls(function_call_items)
         result[i] = {
             id = item.call_id or item.id,
             name = item.name,
-            arguments = arguments
+            arguments = arguments,
+            raw_arguments = raw_arguments,
+            arguments_error = arguments_error
         }
     end
     return result
@@ -562,7 +574,7 @@ function openai_mapper.classify_error(api_error: any?): (string, string, table?)
     end
 
     local message = api_error.message or "OpenAI API error"
-    local kind    = map_error_type(api_error.status_code, message)
+    local kind    = map_error_type(api_error.status_code, message, api_error.code, api_error.type)
 
     local details = {
         status_code = api_error.status_code,

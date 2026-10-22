@@ -3,17 +3,14 @@ directories:
     src: ..
 modules:
     - name: wippy/bootloader
-      version: 0.3.12
-      hash: 2b6d8eba7b46ef900024d3a7dbf06bd560fad645b8b2ac6296e2a8bad42f60b9
+      version: 0.3.18
+      hash: c7e71b358539b450b49b55e725f60f2dac8218e1c596cf3a473ce71e36b10a9b
     - name: wippy/security
-      version: 0.4.2
-      hash: 9020016afc9de612f5297d38ce99e8500c63a2986077e8b0e560d8636c506627
+      version: 0.4.3
+      hash: f636859979e88b23647a78fb9aa8a553799de18750b0fb5fb085cbe21542c86c
     - name: wippy/terminal
-      version: 0.4.2
-      hash: 34b99aac2eba9c5016fd02c783117fb2b0381ce14696c7b199265458b99a3271
+      version: 0.4.6
+      hash: aa0c92b85c0dc2c96f00119a7eaa1ced569a2ac8899514d432aef0c910e73e63
     - name: wippy/test
-      version: 0.4.18
-      hash: 048d88d2748ec6901fba703ed1317c27f7027650735f653a51d38c07741e1b99
-replacements:
-    - from: wippy/bootloader
-      to: ../../bootloader/src
+      version: 0.4.23
+      hash: 94878c4eeabac3337b795087d37ef6fe894458e26a5c7a1dd61012b43fcae366

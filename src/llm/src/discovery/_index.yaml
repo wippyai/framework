@@ -13,6 +13,7 @@ entries:
       - registry
     imports:
       fallback: wippy.llm.util:fallback
+      error_context: wippy.llm.util:error_context
 
   # wippy.llm.discovery:providers
   - name: providers
@@ -24,3 +25,5 @@ entries:
     modules:
       - registry
       - contract
+    imports:
+      error_context: wippy.llm.util:error_context

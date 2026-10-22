@@ -1,3 +1,4 @@
+local error_context = require("error_context")
 local registry = require("registry")
 local contract = require("contract")
 
@@ -22,7 +23,7 @@ function providers.get_all()
     })
 
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
 
     if not entries then
@@ -63,7 +64,7 @@ function providers.open(provider_id, context_overrides)
     -- Get the specific provider by ID directly
     local provider_entry, err = providers._registry.get(provider_id)
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
 
     if not provider_entry then
@@ -95,14 +96,14 @@ function providers.open(provider_id, context_overrides)
     -- Get the base provider contract using injected contract module
     local provider_contract, err = providers._contract.get(CONTRACT_ID)
     if err then
-        return nil, "Failed to get provider contract: " .. tostring(err)
+        return nil, error_context.prefix(err, "Failed to get provider contract: ")
     end
 
     -- Open the binding
     local instance, err = provider_contract:with_context(final_context):open(tostring(binding_id))
 
     if err then
-        return nil, "Failed to open provider binding: " .. tostring(err)
+        return nil, error_context.prefix(err, "Failed to open provider binding: ")
     end
 
     return instance
@@ -112,10 +113,10 @@ end
 -- reasoning_model_request meaning (contract.binding meta.legacy_reasoning_flag).
 -- Resolves the provider entry's data.driver.id the same way providers.open does,
 -- so a custom provider entry bound to a framework driver is covered too.
-function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?, string?)
+function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?, string | error | nil)
     local provider_entry, err = providers._registry.get(provider_id)
     if err then
-        return nil, "Registry error: " .. tostring(err)
+        return nil, error_context.prefix(err, "Registry error: ")
     end
     if not provider_entry then
         return nil, "Provider not found: " .. tostring(provider_id)
@@ -128,7 +129,7 @@ function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?
 
     local binding_entry, binding_err = providers._registry.get(tostring(driver.id))
     if binding_err then
-        return nil, "Registry error: " .. tostring(binding_err)
+        return nil, error_context.prefix(binding_err, "Registry error: ")
     end
     if not binding_entry then
         return nil, "Driver binding not found: " .. tostring(driver.id)

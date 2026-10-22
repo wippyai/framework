@@ -5,6 +5,7 @@ local json = require("json")
 local env = require("env")
 local time = require("time")
 local output = require("output")
+local claude_mapper = require("claude_mapper")
 
 local function define_tests()
     describe("Agent Runner with Tool Context Support and Memory Contracts", function()
@@ -546,6 +547,7 @@ local function define_tests()
             agent._llm = nil
             agent._prompt = nil
             agent._contract = nil
+            agent._funcs = nil
         end)
 
         describe("Agent Construction", function()
@@ -897,6 +899,20 @@ local function define_tests()
         end)
 
         describe("Delegate Handling", function()
+            it("keeps malformed delegate arguments in the tool error path", function()
+                mock_llm.generate = function()
+                    return { finish_reason = "tool_call", tool_calls = {
+                        { id = "bad", name = "to_data_specialist", arguments = '{"task":',
+                            raw_arguments = '{"task":', arguments_error = "unexpected end of JSON input" }
+                    } }
+                end
+                local result = agent.new(compiled_spec_with_delegates):step(mock_prompt.new())
+                test.is_nil(result.delegate_calls)
+                test.eq(#result.tool_calls, 1)
+                test.eq(result.tool_calls[1].raw_arguments, '{"task":')
+                test.eq(result.tool_calls[1].arguments_error, "unexpected end of JSON input")
+            end)
+
             it("should handle delegate calls correctly", function()
                 local test_agent = agent.new(compiled_spec_with_delegates)
                 local prompt_builder = mock_prompt.new()
@@ -1092,6 +1108,27 @@ local function define_tests()
         end)
 
         describe("Token Usage Tracking", function()
+            it("forwards each step context to the LLM without retaining it", function()
+                local seen = {}
+                agent._llm = {
+                    generate = function(messages, options)
+                        seen[#seen + 1] = options
+                        return { result = "done", tokens = { prompt_tokens = 10, completion_tokens = 5 },
+                            finish_reason = "stop" }
+                    end
+                }
+                local runner = agent.new(basic_compiled_spec)
+                local builder = mock_prompt.new()
+                for _, options in ipairs({ { context_id = "first-context" }, { context_id = "second-context" }, {} }) do
+                    local result, err = runner:step(builder, options)
+                    test.is_nil(err)
+                    test.not_nil(result)
+                end
+                test.eq(seen[1].context_id, "first-context")
+                test.eq(seen[2].context_id, "second-context")
+                test.is_nil(seen[3].context_id)
+            end)
+
             it("should track token usage correctly", function()
                 local test_agent = agent.new(basic_compiled_spec)
                 local prompt_builder = mock_prompt.new()
@@ -1180,6 +1217,161 @@ local function define_tests()
                 test.not_nil(messages)
                 for _, msg in ipairs(messages) do
                     test.is_true(msg.marker_id ~= "conversation_tail")
+                end
+            end)
+
+            it("places the conversation tail marker before trailing per-step developer notes", function()
+                local builder = prompt.new()
+                builder:add_user("First message")
+                builder:add_developer("Per-step lifecycle note")
+
+                local messages = capture(builder)
+                local n = #messages
+                test.eq(messages[n].role, prompt.ROLE.DEVELOPER)
+                test.eq(messages[n - 1].role, prompt.ROLE.CACHE_MARKER)
+                test.eq(messages[n - 1].marker_id, "conversation_tail")
+                test.eq(messages[n - 2].role, prompt.ROLE.USER)
+            end)
+
+            -- Canonical encoding with sorted keys and cache_control removed, so
+            -- prefixes compare by the bytes a provider hashes for its cache.
+            local function canonical(value)
+                if type(value) ~= "table" then
+                    return json.encode(value)
+                end
+                if value[1] ~= nil or next(value) == nil then
+                    local parts = {}
+                    for _, item in ipairs(value) do parts[#parts + 1] = canonical(item) end
+                    return "[" .. table.concat(parts, ",") .. "]"
+                end
+                local keys = {}
+                for key in pairs(value) do
+                    if key ~= "cache_control" then keys[#keys + 1] = tostring(key) end
+                end
+                table.sort(keys)
+                local parts = {}
+                for _, key in ipairs(keys) do
+                    parts[#parts + 1] = json.encode(key) .. ":" .. canonical(value[key])
+                end
+                return "{" .. table.concat(parts, ",") .. "}"
+            end
+
+            -- Every block the previous request marked for caching, as the
+            -- canonical prefix ending at that block.
+            local function cached_prefixes(mapped)
+                local prefixes = {}
+                local system = mapped.system or {}
+                for index, block in ipairs(system) do
+                    if block.cache_control then
+                        prefixes[#prefixes + 1] = { system = index, messages = 0 }
+                    end
+                end
+                for m, message in ipairs(mapped.messages) do
+                    for b, block in ipairs(message.content or {}) do
+                        if block.cache_control then
+                            prefixes[#prefixes + 1] = { system = #system, messages = m, block = b }
+                        end
+                    end
+                end
+                return prefixes
+            end
+
+            local function prefix_text(mapped, system_count, message_count, block_count)
+                local blocks = {}
+                for i = 1, system_count do blocks[i] = (mapped.system or {})[i] end
+                local messages = {}
+                for m = 1, message_count do
+                    local message = mapped.messages[m]
+                    if not message then return nil end
+                    local content = message.content or {}
+                    if m == message_count and block_count then
+                        local partial = {}
+                        for b = 1, block_count do partial[b] = content[b] end
+                        content = partial
+                    end
+                    messages[m] = { role = message.role, content = content }
+                end
+                return canonical({ system = blocks, messages = messages })
+            end
+
+            it("keeps the previous step's cached prefix byte-identical with per-step context attached", function()
+                local recalls = 0
+                agent._contract = {
+                    get = function(contract_id)
+                        test.eq(contract_id, "wippy.agent:memory")
+                        return {
+                            open = function()
+                                return {
+                                    recall = function()
+                                        recalls = recalls + 1
+                                        return { memories = { { id = "m" .. recalls, content = "Recalled fact " .. recalls } } }
+                                    end
+                                }
+                            end
+                        }
+                    end
+                }
+                agent._funcs = {
+                    new = function()
+                        return {
+                            with_context = function(self) return self end,
+                            call = function() return "Workspace: release planning" end
+                        }
+                    end
+                }
+
+                local requests = {}
+                local replies = {
+                    {
+                        result = "",
+                        tool_calls = { { id = "call_1", name = "calculator", arguments = { expression = "2+2" }, registry_id = "test:calculator" } },
+                        tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                        finish_reason = "tool_call"
+                    },
+                    {
+                        result = "Done",
+                        tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                        finish_reason = "stop"
+                    },
+                }
+                agent._llm = {
+                    generate = function(messages)
+                        requests[#requests + 1] = messages
+                        return replies[#requests]
+                    end
+                }
+
+                local spec = {}
+                for k, v in pairs(basic_compiled_spec) do spec[k] = v end
+                spec.prompt_funcs = { { trait_id = "workspace", func_id = "test:workspace_prompt", context = {} } }
+                spec.memory_contract = { implementation_id = "test:memory", options = { min_conversation_length = 1 } }
+                local runner = agent.new(spec)
+
+                local step1 = prompt.new()
+                step1:add_user("Plan the release")
+                step1:add_developer("Lifecycle note for step 1")
+                local _, err1 = runner:step(step1, { context = {} })
+                test.is_nil(err1)
+
+                local step2 = prompt.new()
+                step2:add_user("Plan the release")
+                step2:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
+                step2:add_function_result("calculator", "4", "call_1")
+                step2:add_developer("Lifecycle note for step 2")
+                local _, err2 = runner:step(step2, { context = {} })
+                test.is_nil(err2)
+
+                test.eq(#requests, 2)
+                test.eq(recalls, 2)
+
+                local first = claude_mapper.map_messages(requests[1])
+                local second = claude_mapper.map_messages(requests[2])
+                local prefixes = cached_prefixes(first)
+                test.gt(#prefixes, 1, "system and conversation breakpoints are both marked")
+                for _, prefix in ipairs(prefixes) do
+                    local before = prefix_text(first, prefix.system, prefix.messages, prefix.block)
+                    local after = prefix_text(second, prefix.system, prefix.messages, prefix.block)
+                    test.eq(after, before, "prefix through message " .. tostring(prefix.messages))
                 end
             end)
         end)

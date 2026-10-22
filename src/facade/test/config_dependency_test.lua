@@ -9,7 +9,7 @@ local function define_tests()
             local entry = registry.get(NS .. "fe_facade_url")
             test.not_nil(entry)
             test.not_nil(entry.data)
-            test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.66")
+            test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.67")
 
             entry = registry.get(NS .. "app_title")
             test.not_nil(entry)

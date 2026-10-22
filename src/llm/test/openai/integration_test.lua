@@ -195,8 +195,9 @@ local function define_tests()
                 test.is_true(#response.result.tool_calls > 0, "Expected at least one tool call")
                 assert(response.result.tool_calls[1])
                 test.eq(response.result.tool_calls[1].name, "calculate")
-                test.contains(tostring(response.result.tool_calls[1].arguments.expression), "15")
-                test.contains(tostring(response.result.tool_calls[1].arguments.expression), "7")
+                local arguments = test.is_table(response.result.tool_calls[1].arguments)
+                test.contains(tostring(arguments.expression), "15")
+                test.contains(tostring(arguments.expression), "7")
                 -- Forced tool_choice returns "stop" from OpenAI API
                 test.is_true(
                     response.finish_reason == "tool_call" or response.finish_reason == "stop",
@@ -558,7 +559,8 @@ local function define_tests()
                 local tool_call = response.result.tool_calls[1]
                 assert(tool_call)
                 test.eq(tool_call.name, "calculate")
-                test.not_nil(tool_call.arguments.expression, "No expression in tool call")
+                local arguments = test.is_table(tool_call.arguments)
+                test.not_nil(arguments.expression, "No expression in tool call")
 
                 -- Verify streaming events
                 local tool_call_events = 0
