@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.25](https://github.com/wippyai/framework/compare/migration-v0.3.24...migration-v0.3.25) (2026-10-22)
+
+
+### Bug Fixes
+
+* support bounded resumable data migrations ([28820f0](https://github.com/wippyai/framework/commit/28820f00870104b10adac7eee94387df0cdb4e2b))
+
 ## [0.3.24](https://github.com/wippyai/framework/compare/migration-v0.3.23...migration-v0.3.24) (2026-10-21)
 
 
