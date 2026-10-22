@@ -252,8 +252,8 @@ The views module reports each failure:
 - in the page response as `wippy.metaError`, a short message that names the
   page and what it loses and points to the server log. It contains no files,
   URLs or network errors, because the page response can reach anonymous
-  visitors. Web Host prints it in the browser console from the release that
-  includes estimation-engine/wippy-web-host!43.
+  visitors. Newer Web Host releases print it in the browser console; Web Host
+  1.0.66 and older ignore it.
 
 To fix a failed HTTP fetch, serve the files from an `http.static` mount on this
 server, or make `{PUBLIC_API_URL}/<page path>/wippy-meta.json` return HTTP 200
