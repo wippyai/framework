@@ -830,7 +830,6 @@ local function rejected_usage(raw_result, contract_args, candidate, options, det
     metadata.outcome = "rejected"
     metadata.estimated_prompt_tokens = estimated
     metadata.requested_output_tokens = tonumber(contract_args.options.max_tokens)
-        or output_limit(candidate.card) or 0
     metadata.error_type = details and details.error_type
     local _, err = llm.track_usage(raw_result, candidate.card and card_name(candidate.card) or options.model, {
         context_id = options.context_id, timestamp = options.timestamp, metadata = metadata,
@@ -845,7 +844,7 @@ local function admit_prompt(contract_args, card, checkpoint)
     if not window and not threshold then return true end
     local estimated, err = estimate_prompt(contract_args)
     if not estimated then return nil, err end
-    local reserved = tonumber(contract_args.options.max_tokens) or output_limit(card) or 0
+    local reserved = tonumber(contract_args.options.max_tokens) or 0
     local info = {
         estimated_prompt_tokens = estimated, requested_output_tokens = reserved,
         context_window = window, model = card and card_name(card),

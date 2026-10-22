@@ -787,7 +787,9 @@ In ECS/EKS pods, AWS credentials are resolved automatically from the container m
 
 Resolved `generate` and `structured_output` calls estimate the complete prompt,
 including tools or the output schema, before dispatch. Admission uses the selected
-model card's `max_tokens` context window and reserves the effective output limit.
+model card's `max_tokens` context window and reserves the effective configured
+`max_tokens` output budget. An omitted budget retains the provider defaults; the
+card's output ceiling does not become a requested budget.
 Cards without a context window and direct provider calls retain their existing
 behavior. Estimates use the existing four-bytes-per-token approximation; they are
 not provider tokenizer counts. Message metadata used by the host and cache marker

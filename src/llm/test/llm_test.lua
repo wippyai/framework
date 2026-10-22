@@ -471,6 +471,15 @@ local function define_tests()
                 test.eq(records[1].options.metadata.estimated_prompt_tokens, details.estimated_prompt_tokens)
             end)
 
+            it("keeps an unspecified output budget distinct from the card output ceiling", function()
+                card.output_tokens = 180
+                local result, err = llm.generate(string.rep("x", 150), { model = "small" })
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(#calls, 1)
+                test.is_nil(calls[1].options.max_tokens)
+            end)
+
             it("does not charge internal message metadata against the context window", function()
                 local metadata = { note = string.rep("x", 1600), preserve_position = true }
                 local messages = { { role = "user", content = "hi", metadata = metadata } }
