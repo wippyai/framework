@@ -51,6 +51,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_fs_runtime
           - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
@@ -85,6 +86,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_fs_runtime
           - wippy.views:public_metadata_store_runtime
       pool:
         size: 4
@@ -121,6 +123,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_fs_runtime
           - wippy.views:public_metadata_store_runtime
           - wippy.views:public_data_func_runtime
       pool:

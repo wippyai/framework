@@ -40,6 +40,12 @@ local function run()
             test.eq(decision("wippy.views:public_metadata_store_runtime", "store.get", "app:cache"), "undefined")
         end)
 
+        test.it("grants opening mount filesystems and nothing else", function()
+            test.eq(decision("wippy.views:public_metadata_fs_runtime", "fs.get", "keeper.components:ui_static_fs"), "allow")
+            test.eq(decision("wippy.views:public_metadata_fs_runtime", "http_client.request", "http://localhost:8085/"), "undefined")
+            test.eq(decision("wippy.views:public_metadata_fs_runtime", "registry.apply", "app.views:main"), "undefined")
+        end)
+
         test.it("grants template data function calls without process primitives", function()
             test.eq(decision("wippy.views:public_data_func_runtime", "funcs.call", "kickside.oauth.views:oauth_callback.data"), "allow")
             test.eq(decision("wippy.views:public_data_func_runtime", "funcs.call", "app.views:main.data"), "allow")

@@ -173,18 +173,44 @@ On the first request that observes an entry without a bundled
 `wippy-meta.json`, the views module logs (once per `wippy.views`
 process via a shared memory store):
 
-> `[wippy.views] {kind} '{entry-id}' has no wippy-meta.json at {url} — falling back to YAML synthesis. Adopt @wippy-fe/vite-plugin so the consumer's package.json wippy block is the canonical source.`
+> `[wippy.views] {kind} '{entry-id}' has no wippy-meta.json at {file or url} — falling back to YAML synthesis. Adopt @wippy-fe/vite-plugin so the consumer's package.json wippy block is the canonical source.`
 
 The synthesis fallback is preserved indefinitely for legacy entries,
 but the warning is your signal to migrate the consumer.
 
+### Where `wippy-meta.json` is read from
+
+For an entry whose `meta.url` (plus `meta.base_path`) is a path on this server,
+views finds the `http.static` mount that serves that path, the same way the
+HTTP server routes a request: the mount with the longest matching `path` wins.
+It then reads `<rest of the path>/wippy-meta.json` directly from that mount's
+`fs`. For `meta.url: /app/keeper` served by an `http.static` with
+`path: /app/keeper`, that is `wippy-meta.json` at the root of its filesystem.
+
+- File present: its settings are used.
+- File missing under a mount for that path: the entry has not adopted
+  `wippy-meta.json` yet. It is served from YAML and the deprecation warning
+  above is logged. This is not an error.
+
+Views fetches the file over HTTP only when the file cannot come from a mount:
+
+- the entry is remote (`meta.url` is an absolute `http(s)://` URL); it is
+  fetched from that URL;
+- no `http.static` mount serves the path, or its filesystem cannot be opened;
+- only the catch-all `/` mount matches and it has no such file, because a
+  route on this server may serve the path instead.
+
+A local path is then fetched from `{PUBLIC_API_URL}{path}/wippy-meta.json`.
+An HTTP 404 means the entry has no `wippy-meta.json`.
+
 ### When `wippy-meta.json` cannot be read
 
-The server reads `wippy-meta.json` over HTTP from `{PUBLIC_API_URL}{meta.url}/`.
-`PUBLIC_API_URL` is the address browsers use, so the request fails when the
+A read fails when the file in the mount is not a JSON object or cannot be read,
+or when the HTTP fetch gets no answer or a status other than 200 or 404.
+`PUBLIC_API_URL` is the address browsers use, so the HTTP fetch fails when the
 server cannot reach that address: an empty or relative value, a port mapping, a
 reverse proxy, a WAF or bot check, an SSO edge, or a public domain the server
-cannot resolve. The page is then served from its YAML entry. It still renders,
+cannot resolve. The entry is then served from its YAML entry. It still renders,
 but without the settings in its `package.json` `wippy` block, such as
 `configOverrides` (theme variables and custom CSS), proxy injections and
 `renderEngine`. The usual symptom is a page in the host's theme instead of its
@@ -193,11 +219,12 @@ own.
 The views module reports each failure once per entry and reason:
 
 - as an error in the runtime log, under the `wippy.views` logger, with the entry
-  id, the URL it tried, the reason (for example `HTTP 403`) and the fix;
+  id, the file or URL it tried, the reason (for example `HTTP 403`) and the fix;
 - in the page response as `wippy.metaError`, which Web Host prints to the
   browser console.
 
-To fix it, make `{PUBLIC_API_URL}/<page path>/wippy-meta.json` return HTTP 200
+To fix a failed HTTP fetch, serve the files from an `http.static` mount on this
+server, or make `{PUBLIC_API_URL}/<page path>/wippy-meta.json` return HTTP 200
 to a request from the server itself: set `PUBLIC_API_URL` to an absolute
 http(s) URL that both browsers and the server can reach, or let the server's
 requests for `wippy-meta.json` through the proxy or edge in front of it.

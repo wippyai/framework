@@ -1,4 +1,6 @@
 local test = require("test")
+local funcs = require("funcs")
+local security = require("security")
 local bundled_meta = require("bundled_meta")
 
 -- Tests for the projection helpers in bundled_meta.lua. These are pure
@@ -14,6 +16,39 @@ local bundled_meta = require("bundled_meta")
 local function field(value: any, key: string): any
     if type(value) ~= "table" then return nil end
     return value[key]
+end
+
+-- The policies of the /pages/content handler (wippy.views.api:render)
+-- that bundled_meta needs, without the template data-function grant.
+local HANDLER_POLICIES = {
+    "wippy.views:public_registry_runtime",
+    "wippy.views:public_env_runtime",
+    "wippy.views:public_metadata_http_runtime",
+    "wippy.views:public_metadata_private_ip_runtime",
+    "wippy.views:public_metadata_fs_runtime",
+    "wippy.views:public_metadata_store_runtime",
+}
+
+-- Run bundled_meta._load through app:bundled_meta_probe under a scope made
+-- of `policy_ids`, as a handler with that security block would.
+local function load_as(policy_ids: {string}, base_path: string, base_url: string): any
+    local scope = security.new_scope()
+    for _, id in ipairs(policy_ids) do
+        local policy, err = security.policy(id)
+        if err then
+            error(err)
+        end
+        scope = scope:with(policy)
+    end
+
+    local result, err = funcs.new()
+        :with_actor(security.new_actor("wippy.views.api:render"))
+        :with_scope(scope)
+        :call("app:bundled_meta_probe", base_path, base_url)
+    if err then
+        error(err)
+    end
+    return result
 end
 
 local function define_tests()
@@ -339,10 +374,136 @@ local function define_tests()
                 "http://edge.example/app/keeper/wippy-meta.json",
                 "HTTP 403",
                 "configOverrides",
-                "Set PUBLIC_API_URL",
+                "set PUBLIC_API_URL",
             }) do
                 test.ok(message:find(part, 1, true) ~= nil, "message contains '" .. part .. "': " .. message)
             end
+        end)
+
+        test.it("points at the file, not PUBLIC_API_URL, when a mount filesystem had a bad file", function()
+            local message = bundled_meta.describe_fetch_failure(
+                "page", "keeper:main", "keeper.components:ui_static_fs/wippy-meta.json",
+                "the file is not JSON", false)
+            test.ok(message:find("keeper.components:ui_static_fs/wippy-meta.json", 1, true) ~= nil, message)
+            test.ok(message:find("http.static", 1, true) ~= nil, message)
+            test.eq(message:find("PUBLIC_API_URL", 1, true), nil)
+        end)
+    end)
+
+    -- Fixtures (test/_index.yaml): app:test_static mounts fixtures/static at
+    -- /static-fixture, app:test_root_static mounts fixtures/root at /.
+    test.describe("bundled_meta reads wippy-meta.json from the mount filesystem", function()
+        test.it("picks the mount with the longest matching path, like the HTTP server", function()
+            local files = bundled_meta._find_static_files("/static-fixture/meta-page/")
+            test.ok(files ~= nil, "a mount serves /static-fixture/")
+            test.eq(#files, 1)
+            test.eq(files[1].fs, "app:test_static_fs")
+            test.eq(files[1].file, "meta-page/wippy-meta.json")
+            test.eq(files[1].catch_all, false)
+        end)
+
+        test.it("matches a mount path only on a whole path segment", function()
+            local files = bundled_meta._find_static_files("/static-fixture-other/page/")
+            test.ok(files ~= nil, "the catch-all mount serves it")
+            test.eq(files[1].fs, "app:test_root_fs")
+            test.eq(files[1].file, "static-fixture-other/page/wippy-meta.json")
+            test.eq(files[1].catch_all, true)
+        end)
+
+        test.it("cleans the path like the HTTP server before matching", function()
+            -- An entry with only `base_path: /static-fixture/meta-page` resolves to "//...".
+            for _, path in ipairs({ "//static-fixture/meta-page/", "/static-fixture/./x/../meta-page/" }) do
+                local files = bundled_meta._find_static_files(path)
+                test.ok(files ~= nil, "a mount serves " .. path)
+                test.eq(files[1].fs, "app:test_static_fs")
+                test.eq(files[1].file, "meta-page/wippy-meta.json")
+            end
+        end)
+
+        test.it("has no mount for a remote URL", function()
+            test.eq(bundled_meta._find_static_files("https://cdn.example/app/"), nil)
+            test.eq(bundled_meta._find_static_files(""), nil)
+        end)
+
+        test.it("reads and decodes the file without HTTP", function()
+            local meta, err, source, over_http = bundled_meta._load("/static-fixture/meta-page/", "")
+            test.eq(err, nil)
+            test.eq(over_http, false)
+            test.eq(source, "app:test_static_fs/meta-page/wippy-meta.json")
+            test.eq(meta.name, "@test/meta-page")
+            test.eq(meta.wippy.configOverrides.customization.cssVariables["--fixture-color"], "#123456")
+        end)
+
+        test.it("treats a missing file under a dedicated mount as an entry without bundled meta", function()
+            local meta, err, source, over_http = bundled_meta._load("/static-fixture/legacy-page/", "")
+            test.eq(meta, nil)
+            test.eq(err, nil)
+            test.eq(over_http, false)
+            test.eq(source, "app:test_static_fs/legacy-page/wippy-meta.json")
+        end)
+
+        test.it("reports a file that is not JSON instead of fetching over HTTP", function()
+            local meta, err, _, over_http = bundled_meta._load("/static-fixture/bad-page/", "http://unused.invalid/")
+            test.eq(meta, nil)
+            test.eq(over_http, false)
+            test.ok(type(err) == "string" and err:find("the file is not JSON", 1, true) ~= nil, tostring(err))
+        end)
+
+        test.it("reads a file served by the catch-all mount", function()
+            local meta, err, source, over_http = bundled_meta._load("/root-page/", "")
+            test.eq(err, nil)
+            test.eq(over_http, false)
+            test.eq(source, "app:test_root_fs/root-page/wippy-meta.json")
+            test.eq(meta.name, "@test/root-page")
+        end)
+
+        test.it("falls back to HTTP when only the catch-all mount matches and lacks the file", function()
+            -- A relative base URL proves the HTTP path ran without a request.
+            local meta, err, url, over_http = bundled_meta._load("/no-such-page/", "/no-such-page/")
+            test.eq(meta, nil)
+            test.eq(over_http, true)
+            test.eq(url, "/no-such-page/wippy-meta.json")
+            test.ok(type(err) == "string" and err:find("PUBLIC_API_URL", 1, true) ~= nil, tostring(err))
+        end)
+
+        test.it("fetch_for_page resolves the page url and base_path to the mount file", function()
+            local meta, err = bundled_meta.fetch_for_page({ id = "app:fixture_page", url = "/static-fixture", base_path = "meta-page" })
+            test.eq(err, nil)
+            test.eq(meta.name, "@test/meta-page")
+        end)
+
+        test.it("fetch_for_component reads from the mount filesystem too", function()
+            local meta, err = bundled_meta.fetch_for_component({ id = "app:fixture_component", url = "/static-fixture/meta-page" })
+            test.eq(err, nil)
+            test.eq(meta.name, "@test/meta-page")
+        end)
+
+        test.it("fetch_for_component handles a component with only base_path", function()
+            local meta, err = bundled_meta.fetch_for_component({ id = "app:fixture_component", base_path = "/static-fixture/meta-page" })
+            test.eq(err, nil)
+            test.eq(meta.name, "@test/meta-page")
+        end)
+
+        test.it("the handler policies allow opening the mount filesystem", function()
+            local result = load_as(HANDLER_POLICIES, "/static-fixture/meta-page/", "")
+            test.eq(result.err, nil)
+            test.eq(result.over_http, false)
+            test.eq(field(result.meta, "name"), "@test/meta-page")
+        end)
+
+        test.it("without the filesystem grant it falls back to HTTP and says why", function()
+            local policies: {string} = {}
+            for _, id in ipairs(HANDLER_POLICIES) do
+                if id ~= "wippy.views:public_metadata_fs_runtime" then
+                    table.insert(policies, id)
+                end
+            end
+            local result = load_as(policies, "/static-fixture/meta-page/", "/static-fixture/meta-page/")
+            test.eq(result.meta, nil)
+            test.eq(result.over_http, true)
+            test.ok(type(result.err) == "string"
+                and result.err:find("the mount filesystem could not be opened either: app:test_static_fs", 1, true) ~= nil,
+                tostring(result.err))
         end)
     end)
 

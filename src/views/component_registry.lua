@@ -131,29 +131,38 @@ function components.find_by_tag_name(tag_name)
     return extract_component_info(entries[1])
 end
 
--- Resolve a component URL to an absolute base URL with trailing slash.
--- When base_path is set, it is appended to the URL to form the project root.
--- Entry point paths are relative to this resolved base.
-function components.resolve_base_url(component)
-    local base_url = component.url or ""
+-- Resolve a component URL to its project root with trailing slash, as
+-- declared: a path on this server (e.g. "/app/wc/wippy-monaco/") or an
+-- absolute URL of a remote component. When base_path is set, it is appended.
+function components.resolve_base_path(component)
+    local base = component.url or ""
 
     -- Append base_path to get the project root
     local base_path = component.base_path or ""
     if base_path ~= "" then
-        if not base_url:match("/$") then
-            base_url = base_url .. "/"
+        if not base:match("/$") then
+            base = base .. "/"
         end
-        base_url = base_url .. base_path
+        base = base .. base_path
     end
+
+    if base ~= "" and not base:match("/$") then
+        base = base .. "/"
+    end
+
+    return base
+end
+
+-- Resolve a component URL to an absolute base URL with trailing slash.
+-- When base_path is set, it is appended to the URL to form the project root.
+-- Entry point paths are relative to this resolved base.
+function components.resolve_base_url(component)
+    local base_url = components.resolve_base_path(component)
 
     local origin = env.get("PUBLIC_API_URL") or ""
 
     if origin ~= "" and base_url ~= "" and not base_url:match("^https?://") then
         base_url = origin .. base_url
-    end
-
-    if base_url ~= "" and not base_url:match("/$") then
-        base_url = base_url .. "/"
     end
 
     return base_url

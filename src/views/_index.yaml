@@ -235,6 +235,9 @@ entries:
           consumer's app.html / index.js. Used by /pages/content/{id},
           /components/list, and /components/by-tag/{tag} as the single source
           of truth for view.page / view.component metadata when present.
+          Reads the file from the filesystem of the http.static mount that
+          serves the entry URL; fetches it over HTTP only for remote entries
+          or URLs no mount on this server has the file for.
           Callers fall back to YAML-synthesis when fetch returns nil + nil.
           A process-wide deprecation warning fires the FIRST time an entry is
           seen without bundled meta (deduplicated via the shared `bundled_meta_warn`
@@ -244,9 +247,11 @@ entries:
         page_registry: wippy.views:page_registry
         component_registry: wippy.views:component_registry
       modules:
+        - fs
         - http_client
         - json
         - logger
+        - registry
         - store
     - name: bundled_meta_warn
       kind: store.memory
@@ -288,6 +293,15 @@ entries:
           - https://*
         actions:
           - http_client.request
+        effect: allow
+    - name: public_metadata_fs_runtime
+      kind: security.policy
+      meta:
+        comment: Public view API handlers may open the filesystem behind an http.static mount to read the wippy-meta.json it serves. Any volume can back a mount, so the resource is not narrowed; bundled_meta only reads wippy-meta.json under the mount path from it.
+      policy:
+        resources: '*'
+        actions:
+          - fs.get
         effect: allow
     - name: public_metadata_private_ip_runtime
       kind: security.policy
