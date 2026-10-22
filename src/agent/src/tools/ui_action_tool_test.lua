@@ -86,6 +86,24 @@ local function define_tests()
             test.not_nil(err)
         end)
 
+        test.it("answers a semantic find without a filter with a repairable receipt", function()
+            for _, args in ipairs({ {}, { limit = 3 } }) do
+                local result, err = funcs.new():with_context({
+                    call_id = "call-semantic-unfiltered",
+                    attention_inspection_runtime = {
+                        broker_pid = "unused", delivery_handle = "unused",
+                        session_id = "session-read", host_instance_id = "host-read",
+                    },
+                }):call("wippy.agent.tools:attention_find_semantic", args)
+                test.is_nil(err)
+                test.eq(result.status, "rejected")
+                test.eq(result.reason, "semantic-filter-required")
+                test.eq(result.original_registry_id, "wippy.agent.tools:attention_find_semantic")
+                test.is_true(result.invalid)
+                test.contains(result.instruction, "Correct the arguments")
+            end
+        end)
+
         test.it("does not register the removed unrestricted attention_inspect tool", function()
             local result, err = funcs.new():with_context({
                 call_id = "call-removed-inspect",
