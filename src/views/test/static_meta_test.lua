@@ -25,6 +25,7 @@ local HANDLER_IDS = {
     "wippy.views.api:render",
     "wippy.views.api:list_components",
     "wippy.views.api:find_by_tag",
+    "wippy.views.api:fragment_gateway",
 }
 
 -- Call `target` under a scope made of `policy_ids`, as a handler with that

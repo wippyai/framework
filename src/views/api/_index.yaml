@@ -240,6 +240,7 @@ entries:
           - wippy.views:public_env_runtime
           - wippy.views:public_metadata_http_runtime
           - wippy.views:public_metadata_private_ip_runtime
+          - wippy.views:public_metadata_reader_runtime
       pool:
         size: 4
         workers: 4
