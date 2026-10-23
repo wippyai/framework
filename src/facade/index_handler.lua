@@ -70,7 +70,12 @@ local function handler()
         res:write("<!doctype html><meta charset=\"utf-8\"><title>Wippy</title>Failed to load shell template set: " .. tostring(get_err))
         return nil, get_err
     end
+    local title = get_req("app_title")
+    if title == "" then
+        title = "Wippy"
+    end
     local html, err = set:render("index", {
+        title = title,
         hasTheme = has_theme,
         themeClass = theme_class,
         colorScheme = color_scheme,
