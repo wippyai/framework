@@ -72,6 +72,35 @@ local function define_tests()
     end)
 
     test.describe("batched definitions", function()
+        test.it("accepts an opt-in external batch implementation", function()
+            local implementations = core.define(function()
+                migration("external repair", function()
+                    database("sqlite", function()
+                        up(function(db, cursor) return nil end, "external_batch")
+                        down(function() end)
+                    end)
+                end)
+            end)
+            test.is_function(implementations[1].database_implementations.sqlite.up_external_batch)
+            test.is_true(core.validate_implementation(implementations[1], "sqlite"))
+        end)
+        for _, other in ipairs({"atomic", "batch"}) do
+            for _, external_first in ipairs({false, true}) do
+                test.it("rejects external batch mixed with " .. other .. "/" .. tostring(external_first), function()
+                    local ok = pcall(core.define, function()
+                        migration("mixed repair", function()
+                            database("sqlite", function()
+                                if external_first then up(function() end, "external_batch") end
+                                if other == "atomic" then up(function() end) else up(function() end, "batch") end
+                                if not external_first then up(function() end, "external_batch") end
+                            end)
+                        end)
+                    end)
+                    test.is_false(ok)
+                end)
+            end
+        end
+
         test.it("accepts a batched implementation without adding a DSL global", function()
             local implementations = core.define(function()
                 migration("paged update", function()

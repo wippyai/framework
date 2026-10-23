@@ -227,3 +227,16 @@ entries:
       migration_api: wippy.migration:migration
       repository: wippy.migration:repository
       test: wippy.test:test
+
+  - name: external_batch_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: migration-external-batched
+    source: file://external_batch_test.lua
+    method: run
+    modules: [sql, env, uuid]
+    imports:
+      migration_api: wippy.migration:migration
+      repository: wippy.migration:repository
+      test: wippy.test:test

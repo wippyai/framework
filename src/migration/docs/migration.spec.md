@@ -523,3 +523,28 @@ Common issues to watch for:
 
 By following these guidelines, you'll create robust, maintainable database migrations that can be confidently applied
 and rolled back when needed.
+
+### Idempotent work outside the page transaction
+
+Use `up(fn, "external_batch")` only when a repair must call another service or
+commit through another connection. The callback receives the **connection** and
+an optional checkpoint; it runs with no migration transaction or ledger lock
+open. It returns a new non-empty checkpoint or `nil` when all work, including
+any final notification, has succeeded. A raised error or non-nil second return
+value stops the page without recording its checkpoint.
+
+The framework snapshots progress under its ledger lock, releases that lock,
+runs the callback, and reacquires the lock to compare the observed checkpoint
+before recording progress or completion. A concurrent winner cannot have its
+checkpoint overwritten. A failed callback or checkpoint commit leaves the page
+replayable. Therefore **all caller work must be idempotent**; this mode does not
+provide exactly-once execution or roll back external effects. Use the existing
+transactional `"batch"` mode for writes that must be atomic with the checkpoint.
+
+SQLite page-lock contention is retried at most five times with bounded backoff.
+Applied IDs and aliases are skipped before calling the callback; force cannot
+replay an applied batch. New repair behavior for an applied migration requires
+a new forward migration ID. The optional `after()` hook still runs inside the
+final ledger transaction and must not call independently committing services.
+Atomic, transactional batch, and external batch callbacks cannot be combined
+in one database implementation. Existing migration modes are unchanged.
