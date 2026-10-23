@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.26](https://github.com/wippyai/framework/compare/migration-v0.3.25...migration-v0.3.26) (2026-10-23)
+
+
+### Features
+
+* **migration:** support idempotent work outside page transactions ([#215](https://github.com/wippyai/framework/issues/215)) ([bbaf745](https://github.com/wippyai/framework/commit/bbaf7451b835ac0e97ec3b647d15bd030126e2d4))
+
 ## [0.3.25](https://github.com/wippyai/framework/compare/migration-v0.3.24...migration-v0.3.25) (2026-10-22)
 
 
