@@ -530,7 +530,8 @@ Use `up(fn, "external_batch")` only when a repair must call another service or
 commit through another connection. The callback receives the **connection** and
 an optional checkpoint; it runs with no migration transaction or ledger lock
 open. It returns a new non-empty checkpoint or `nil` when all work, including
-any final notification, has succeeded.
+any final notification, has succeeded. A raised error or non-nil second return
+value stops the page without recording its checkpoint.
 
 The framework snapshots progress under its ledger lock, releases that lock,
 runs the callback, and reacquires the lock to compare the observed checkpoint

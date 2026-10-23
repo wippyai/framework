@@ -80,6 +80,18 @@ local function define_tests(): ()
                 end)
             end)
 
+            test.it("does not interpret a returned service error as successful completion", function()
+                fixture(database_id, function(db, observer, dialect, id)
+                    local result=migration_api.run(definition(dialect,function()
+                        checked(observer:execute("UPDATE external_batch_work SET value=1 WHERE id=$1",{id}))
+                        return nil,"external service unavailable"
+                    end),{db=db,id=id})
+                    test.eq(result.status,"error")
+                    test.contains(result.error,"external service unavailable")
+                    test.is_false(checked(repository.is_applied(db,id)))
+                end)
+            end)
+
             test.it("discards a stale checkpoint after an interleaved runner advances", function()
                 fixture(database_id, function(db, observer, dialect, id)
                     local observed = {}

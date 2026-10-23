@@ -356,8 +356,8 @@ local function execute_batched_migration(migration_item: any, options: any): any
     while true do
         local result = execute_page(migration_item, options)
         if result.status == "prepared" then
-            local success, next_cursor = pcall(external, options.db, result.cursor)
-            if success then
+            local success, next_cursor, callback_err = pcall(external, options.db, result.cursor)
+            if success and callback_err == nil then
                 options.external_ready = true
                 options.external_cursor = result.cursor
                 options.external_next_cursor = next_cursor
@@ -366,7 +366,8 @@ local function execute_batched_migration(migration_item: any, options: any): any
                 options.external_cursor = nil
                 options.external_next_cursor = nil
             else
-                result = {status = "error", name = migration_item.description, error = tostring(next_cursor)}
+                result = {status = "error", name = migration_item.description,
+                    error = tostring(success and callback_err or next_cursor)}
             end
         end
         -- Only the opt-in external mode can replay committed caller work.
