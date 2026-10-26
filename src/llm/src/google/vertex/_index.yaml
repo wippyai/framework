@@ -74,5 +74,6 @@ entries:
     imports:
       google_client: wippy.llm.google:client
       google_config: wippy.llm.google:config
+      google_oauth2: wippy.llm.google.oauth2:oauth2
       transport: wippy.llm.util:transport
     method: request

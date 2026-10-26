@@ -2,10 +2,12 @@ local client = require("google_client")
 local config = require("google_config")
 local json = require("json")
 local transport = require("transport")
+local oauth2 = require("google_oauth2")
 
 local vertex_client = {
     _client = client,
-    _config = config
+    _config = config,
+    _oauth2 = oauth2
 }
 
 local PROJECT_REQUIRED_ENDPOINTS = {
@@ -48,9 +50,12 @@ function vertex_client.request(contract_args)
     contract_args.options = contract_args.options or {}
     contract_args.options.method = contract_args.options.method or "POST"
 
-    local token = vertex_client._config.get_oauth2_token()
+    local token, token_err = vertex_client._config.get_oauth2_token()
+    if not token and not token_err then
+        token, token_err = vertex_client._oauth2.refresh_token()
+    end
     if not token then
-        return {status_code = 401, message = "Google OAuth2 token is missing"}
+        return {status_code = 401, message = tostring(token_err or "Google OAuth2 token is missing")}
     end
 
     local options = {

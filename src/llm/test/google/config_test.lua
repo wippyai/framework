@@ -202,130 +202,95 @@ local function define_tests()
         end)
 
         describe("OAuth2 Token", function()
-            it("should retrieve token from cache store", function()
-                local mock_store_instance = {
-                    get = function(self, key)
-                        if key == config.OAUTH2_TOKEN_CACHE_KEY then
-                            return {
-                                access_token = "cached_token_123",
-                                expires_at = 1234567890
-                            }
-                        end
-                        return nil
+            local function profile(email, issuer, key_id)
+                config._ctx = {get = function(key)
+                    if key == "google_credentials" then
+                        return base64.encode(json.encode({
+                            client_email = email or "a@example.invalid",
+                            token_uri = issuer or "https://issuer.invalid/token",
+                            private_key_id = key_id or "test-key",
+                            private_key = "private-key-must-not-appear",
+                        }))
                     end
-                }
+                end}
+            end
 
-                config._store = {
-                    get = function(cache_id)
-                        return mock_store_instance, nil
-                    end
-                }
+            before_each(function()
+                profile()
+                config._env = {get = function() return nil end}
+            end)
 
-                config._env = {
-                    get = function(key)
-                        return nil
-                    end
-                }
-
-                local token, err = config.get_oauth2_token()
-
+            it("isolates profiles, issuers and key rotations without exposing identity", function()
+                local a, err = config.get_oauth2_cache_key()
                 tests.is_nil(err)
-                assert(token)
-                tests.eq(token.access_token, "cached_token_123")
-                tests.eq(token.expires_at, 1234567890)
+                tests.eq(a, config.get_oauth2_cache_key())
+                tests.is_true(string.find(a, "example", 1, true) == nil)
+                tests.is_true(string.find(a, "private-key", 1, true) == nil)
+                profile("b@example.invalid")
+                tests.is_true(a ~= config.get_oauth2_cache_key())
+                profile(nil, "https://other.invalid/token")
+                tests.is_true(a ~= config.get_oauth2_cache_key())
+                profile(nil, nil, "rotated-key")
+                tests.is_true(a ~= config.get_oauth2_cache_key())
             end)
 
-            it("should use custom cache ID from APP_CACHE env", function()
-                local custom_cache_id = "custom:cache:id"
-                local mock_store_instance = {
-                    get = function(self, key)
-                        return { access_token = "token" }
-                    end
+            it("reads only the selected profile and releases its store handle", function()
+                local a = config.get_oauth2_cache_key()
+                profile("b@example.invalid")
+                local b = config.get_oauth2_cache_key()
+                local entries = {
+                    [a] = {access_token = "token-a"}, [b] = {access_token = "token-b"},
+                    [config.OAUTH2_TOKEN_CACHE_KEY] = {access_token = "legacy-token"},
                 }
-
-                config._store = {
-                    get = function(cache_id)
-                        tests.eq(cache_id, custom_cache_id)
-                        return mock_store_instance, nil
-                    end
-                }
-
-                config._env = {
-                    get = function(key)
-                        if key == "APP_CACHE" then
-                            return custom_cache_id
-                        end
-                        return nil
-                    end
-                }
-
-                config.get_oauth2_token()
-            end)
-
-            it("should use default cache ID when APP_CACHE is not set", function()
-                local mock_store_instance = {
-                    get = function(self, key)
-                        return { access_token = "token" }
-                    end
-                }
-
-                config._store = {
-                    get = function(cache_id)
-                        tests.eq(cache_id, config.DEFAULT_CACHE_ID)
-                        return mock_store_instance, nil
-                    end
-                }
-
-                config._env = {
-                    get = function(key)
-                        return nil
-                    end
-                }
-
-                config.get_oauth2_token()
-            end)
-
-            it("should return error when store fails", function()
-                config._store = {
-                    get = function(cache_id)
-                        return nil, "Store connection failed"
-                    end
-                }
-
-                config._env = {
-                    get = function(key)
-                        return nil
-                    end
-                }
-
+                local released = 0
+                config._store = {get = function(cache_id)
+                    tests.eq(cache_id, config.DEFAULT_CACHE_ID)
+                    return {
+                        get = function(_, key) return entries[key] end,
+                        release = function() released = released + 1 end,
+                    }
+                end}
+                tests.eq(config.get_oauth2_token().access_token, "token-b")
+                profile()
+                tests.eq(config.get_oauth2_token().access_token, "token-a")
+                entries[a] = nil
                 local token, err = config.get_oauth2_token()
+                tests.is_nil(token)
+                tests.is_nil(err)
+                tests.eq(released, 3)
+            end)
 
+            it("uses the configured cache and releases it after a read error", function()
+                config._env = {get = function(key) if key == "APP_CACHE" then return "custom:cache" end end}
+                local released = false
+                config._store = {get = function(cache_id)
+                    tests.eq(cache_id, "custom:cache")
+                    return {
+                        get = function() return nil, "read failed" end,
+                        release = function() released = true end,
+                    }
+                end}
+                local token, err = config.get_oauth2_token()
+                tests.is_nil(token)
+                tests.eq(err, "read failed")
+                tests.is_true(released)
+            end)
+
+            it("returns cache access errors", function()
+                config._store = {get = function() return nil, "Store connection failed" end}
+                local token, err = config.get_oauth2_token()
                 tests.is_nil(token)
                 tests.contains(tostring(err), "Failed to access cache store")
             end)
 
-            it("should return nil when token is not in cache", function()
-                local mock_store_instance = {
-                    get = function(self, key)
-                        return nil
-                    end
-                }
-
-                config._store = {
-                    get = function(cache_id)
-                        return mock_store_instance, nil
-                    end
-                }
-
-                config._env = {
-                    get = function(key)
-                        return nil
-                    end
-                }
-
-                local token, err = config.get_oauth2_token()
-
-                tests.is_nil(token)
+            it("rejects unavailable, scalar and incomplete credentials before cache lookup", function()
+                config._store = {get = function() error("must not open cache") end}
+                for _, value in ipairs({"", base64.encode("42"), base64.encode("{}"), base64.encode('{"client_email":"a"}')}) do
+                    config._ctx = {get = function(key) if key == "google_credentials" then return value end end}
+                    local token, err = config.get_oauth2_token()
+                    tests.is_nil(token)
+                    tests.is_true(type(err) == "string")
+                end
             end)
         end)
 
