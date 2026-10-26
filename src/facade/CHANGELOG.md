@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.48](https://github.com/wippyai/framework/compare/facade-v0.6.46...facade-v0.6.48) (2026-10-26)
+
+
+### Bug Fixes
+
+* **facade:** show the app title while the shell loads ([#217](https://github.com/wippyai/framework/issues/217)) ([9f5cdec](https://github.com/wippyai/framework/commit/9f5cdecbaae1ed9deb8b1365e5c1eaa7b6fb9323))
+
 ## [0.6.47](https://github.com/wippyai/framework/compare/facade-v0.6.46...facade-v0.6.47) (2026-10-22)
 
 - Target Web Host 1.0.67. The vendored `loading.js`, `import-map-bootstrap.js` and their source maps are unchanged from Web Host 1.0.66.
