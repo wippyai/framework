@@ -23,13 +23,15 @@ entries:
   - name: router
     kind: ns.requirement
     meta:
-      description: Public API router for config, CSS variable, and theme-persist endpoints
+      description: Public API router for config, CSS variable, theme-persist, and title endpoints
     targets:
       - entry: wippy.facade:config_endpoint
         path: .meta.router
       - entry: wippy.facade:css_vars_endpoint
         path: .meta.router
       - entry: wippy.facade:theme_persist_endpoint
+        path: .meta.router
+      - entry: wippy.facade:title_endpoint
         path: .meta.router
 
   - name: fe_facade_url
@@ -708,6 +710,30 @@ entries:
     method: GET
     path: /facade/theme-persist.js
     func: theme_persist_handler
+
+  - name: title_handler
+    kind: function.lua
+    meta:
+      comment: Serves /facade/title.js — sets the tab title to app_title on the SPA fallback page
+    source: file://title_handler.lua
+    method: handler
+    modules:
+      - http
+      - registry
+      - json
+    security:
+      actor:
+        id: wippy.facade:title_handler
+      policies:
+        - wippy.facade:config_read_runtime
+
+  - name: title_endpoint
+    kind: http.endpoint
+    meta:
+      router: router
+    method: GET
+    path: /facade/title.js
+    func: title_handler
 
   - name: config_read_runtime
     kind: security.policy
