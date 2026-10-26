@@ -101,7 +101,7 @@ local modules={
 }
 require=function(name) return modules[name] end
 coroutine.spawn=function() end
-process={pid=function() return "parent" end,listen=new_channel,
+process={pid=function() return "parent" end,inbox=new_channel,listen=new_channel,
  spawn=function(_,_,args) current_id=args.entry_id;launch_entry();return "child" end,
  send=function() request_cancel();return true end,terminate=function() return true end}
 `); err != nil {

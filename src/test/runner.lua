@@ -99,9 +99,9 @@ local function run_tests(): number
     display.info(total_tests .. " tests in " .. total_suites .. " suites")
     display.info("")
 
-    -- Subscribe to test case events before launching tests
-    local inbox = process.listen("test:update", { message = true })
-    local control_inbox = process.listen("runner:control", { message = true })
+    -- Case events and the owned process result share one mailbox. The result
+    -- follows the function future, so all preceding events are processed first.
+    local inbox = process.inbox()
 
     -- Coordination channels
     local done_ch = channel.new()
@@ -112,7 +112,8 @@ local function run_tests(): number
     local all_failures: {Failure} = {}
     local declared_cases: {[string]: number} = {}
     local entry_status: {[string]: string} = {}
-    local completion_channels: {[string]: any} = {}
+    local completions: {[string]: any} = {}
+    local completion_counts: {[string]: number} = {}
     local control_channels: {[string]: any} = {}
     local current_running_entry_id: string? = nil
 
@@ -121,7 +122,6 @@ local function run_tests(): number
         while true do
             local result = channel.select {
                 inbox:case_receive(),
-                control_inbox:case_receive(),
                 done_ch:case_receive(),
             }
 
@@ -130,12 +130,12 @@ local function run_tests(): number
             end
 
             local raw = result.value
-            if result.channel == control_inbox then
+            if raw and raw:topic() == "runner:control" then
                 local payload = raw and raw:payload()
                 local data = payload and payload:data()
                 local ch = type(data) == "table" and control_channels[tostring(data.ref_id or "")] or nil
                 if ch then ch:send(raw) end
-            else
+            elseif raw and raw:topic() == "test:update" then
                 local event_data: any = nil
 
                 if raw then
@@ -183,8 +183,8 @@ local function run_tests(): number
                         display.case_skip(tostring(data.suite or ""), tostring(data.test or ""))
 
                     elseif msg_type == "test:complete" then
-                        local ch = completion_channels[ref_id]
-                        if ch then ch:send(msg) end
+                        completions[ref_id] = data
+                        completion_counts[ref_id] = (completion_counts[ref_id] or 0) + 1
                     end
                 end
             end
@@ -245,7 +245,6 @@ local function run_tests(): number
             else
                 entry_status[entry_id] = "running"
                 current_running_entry_id = entry_id
-                completion_channels[entry_id] = channel.new(1)
                 control_channels[entry_id] = channel.new(2)
 
                 local entry_pid: string?, spawn_err: any = process.spawn("wippy.test:runner_entry", "wippy.test:runner_host", {
@@ -311,8 +310,7 @@ local function run_tests(): number
                         display.case_fail(suite.name, test_name, error_msg, 0)
                         if cancel_error then error(cancel_error) end
                     else
-                        -- Function completed; a missing completion is itself a failure.
-                        local completion: any = wait_for(completion_channels[entry_id], "1s")
+                        -- The result is ordered after the function's case events.
                         entry_status[entry_id] = "completed"
                         current_running_entry_id = nil
 
@@ -326,7 +324,8 @@ local function run_tests(): number
                             declared = declared_cases[entry_id],
                             observed = case_count,
                             cases = cs,
-                            completed = completion and completion.data or nil,
+                            completed = completions[entry_id],
+                            completion_count = completion_counts[entry_id],
                             result_error = result_err,
                             returned_false = value == false or (type(value) == "table" and value.status == "error"
                                 and not (cs and cs.failed > 0)),
@@ -350,7 +349,8 @@ local function run_tests(): number
                     end
                 end
 
-                completion_channels[entry_id] = nil
+                completions[entry_id] = nil
+                completion_counts[entry_id] = nil
                 control_channels[entry_id] = nil
             end
             completed_tests = completed_tests + 1
@@ -391,8 +391,6 @@ local function run_tests(): number
 end
 
 local function main(): number
-    time.sleep(500 * time.MILLISECOND)
-
     local ok, result = pcall(run_tests)
 
     display.finish()

@@ -29,6 +29,14 @@ local function define_tests()
             test.not_nil(verdict.check({require_cases = true, observed = 0}))
         end)
 
+        test.it("rejects duplicate completion even when its counts agree", function()
+            local err = verdict.check({observed = 1, declared = 1, completion_count = 2,
+                cases = {passed = 1, failed = 0, skipped = 0},
+                completed = {total = 1, passed = 1, failed = 0, skipped = 0}})
+            test.not_nil(err)
+            test.contains(err.message, "more than one completion")
+        end)
+
         test.it("rejects completion without a plan", function()
             local err = verdict.check({observed = 0,
                 completed = {total = 1, passed = 0, failed = 1, skipped = 0}})

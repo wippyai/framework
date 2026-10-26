@@ -6,6 +6,7 @@ type RunState = {
     observed: number,
     cases: {passed: number, failed: number, skipped: number}?,
     completed: any?,
+    completion_count: number?,
     result_error: any?,
     returned_false: boolean?,
     timed_out: boolean?,
@@ -41,6 +42,9 @@ local function check(state: RunState): RunnerError?
     end
     if state.timed_out then
         return fail("test timed out")
+    end
+    if state.completion_count and state.completion_count > 1 then
+        return fail("test process reported more than one completion")
     end
     if state.result_error then
         return fail("test process failed: " .. tostring(state.result_error))
