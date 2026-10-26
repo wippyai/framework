@@ -74,7 +74,7 @@ local modules={
 }
 require=function(name) return modules[name] end
 coroutine.spawn=function() end
-process={listen=new_channel,pid=function() return "parent" end,spawn=function(_,_,args) record_spawn(); current_id=args.entry_id; return "child" end,send=function() cancel_sent=true; return true end,terminate=function() return true end}
+process={inbox=new_channel,listen=new_channel,pid=function() return "parent" end,spawn=function(_,_,args) record_spawn(); current_id=args.entry_id; return "child" end,send=function() cancel_sent=true; return true end,terminate=function() return true end}
 `)
 	if err != nil {
 		t.Fatal(err)

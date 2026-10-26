@@ -21,12 +21,13 @@ planned_error_status|test returned false
 replaced_plan|test process reported more than one plan
 completion_without_plan|test process did not report a plan
 missing_completion|test process did not report completion
+duplicate_completion|test process reported more than one completion
 conflicting_completion|test completion counts disagree
 empty_completion|test completion counts disagree
 failing_case|expected case failure
 SCENARIOS
 
-for scenario in returns_true returns_nil skipped_case; do
+for scenario in returns_true returns_nil skipped_case burst_completion; do
   if ! output=$("$wippy_bin" test --config .wippy.yaml test -- "app:$scenario" 2>&1) ||
      ! grep -Fq 'PASSED' <<< "$output"; then
     printf 'runner rejected valid %s:\n%s\n' "$scenario" "$output"

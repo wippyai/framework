@@ -44,6 +44,16 @@ entries:
     meta: {type: test, suite: runner-results}
     source: file://results.lua
     method: missing_completion
+  - name: duplicate_completion
+    kind: function.lua
+    meta: {type: test, suite: runner-results, timeout: 5s}
+    source: file://results.lua
+    method: duplicate_completion
+  - name: burst_completion
+    kind: function.lua
+    meta: {type: test, suite: runner-results, timeout: 5s}
+    source: file://results.lua
+    method: burst_completion
   - name: conflicting_completion
     kind: function.lua
     meta: {type: test, suite: runner-results}
