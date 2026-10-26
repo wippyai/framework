@@ -128,6 +128,7 @@ entries:
         - google
     source: file://config.lua
     modules:
+      - hash
       - base64
       - json
       - env

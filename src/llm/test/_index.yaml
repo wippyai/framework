@@ -22,6 +22,24 @@ entries:
     max_size: 100
     cleanup_interval: "1m"
 
+  - name: cache
+    kind: store.memory
+    max_size: 100
+
+  - name: google_oauth2_test
+    kind: function.lua
+    meta:
+      type: test
+      name: Google OAuth2 profile refresh tests
+      group: LLM / Drivers / Google
+    source: file://google/oauth2_test.lua
+    modules: [base64, json, store, env]
+    imports:
+      test: wippy.test:test
+      google_config: wippy.llm.google:config
+      google_oauth2: wippy.llm.google.oauth2:oauth2
+    method: run_tests
+
   # Flaky generate: fails first 2 times, succeeds on 3rd
   - name: flaky_generate
     kind: function.lua

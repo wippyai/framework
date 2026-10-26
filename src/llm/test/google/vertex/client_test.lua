@@ -5,7 +5,12 @@ local tests = require("test")
 local function define_tests()
     describe("Google Vertex AI Client", function()
 
+        before_each(function()
+            client._oauth2 = {refresh_token = function() return nil end}
+        end)
+
         after_each(function()
+            client._oauth2 = nil
             client._client = nil
             client._config = nil
         end)
@@ -25,7 +30,45 @@ local function define_tests()
                 tests.eq(response.message, "Google OAuth2 token is missing")
             end)
 
+            it("warms a cold profile before sending the Vertex request", function()
+                local refreshed = 0
+                client._config = {
+                    get_oauth2_token = function() return nil end,
+                    get_retry = function() return nil end,
+                    get_deadline_at = function() return nil end,
+                }
+                client._oauth2 = {refresh_token = function()
+                    refreshed = refreshed + 1
+                    return {access_token = "profile-token"}
+                end}
+                client._client = {request = function(_, _, options)
+                    tests.eq(options.headers.Authorization, "Bearer profile-token")
+                    return {status_code = 200}
+                end}
+                local result = client.request({options = {method = "GET", base_url = "https://vertex.invalid", timeout = 1}})
+                tests.eq(result.status_code, 200)
+                tests.eq(refreshed, 1)
+            end)
+
+            it("does not dispatch Vertex requests after a refresh failure", function()
+                client._config = {get_oauth2_token = function() return nil end}
+                client._oauth2 = {refresh_token = function() return nil, "issuer unavailable" end}
+                client._client = {request = function() error("must not dispatch") end}
+                local result = client.request({})
+                tests.eq(result.status_code, 401)
+                tests.eq(result.message, "issuer unavailable")
+            end)
+
+            it("does not refresh on cache errors", function()
+                client._config = {get_oauth2_token = function() return nil, "cache unavailable" end}
+                client._oauth2 = {refresh_token = function() error("must not refresh") end}
+                local result = client.request({})
+                tests.eq(result.status_code, 401)
+                tests.eq(result.message, "cache unavailable")
+            end)
+
             it("should use OAuth2 token from config", function()
+                client._oauth2 = {refresh_token = function() error("warm cache must not refresh") end}
                 client._config = {
                     get_deadline_at = function() return nil end,
                     get_retry = function()

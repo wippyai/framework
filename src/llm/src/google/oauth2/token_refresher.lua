@@ -1,43 +1,15 @@
 local time = require("time")
-local store = require("store")
 local oauth2 = require("google_oauth2")
-local env = require("env")
 local config = require("google_config")
 
 local REFRESH_INTERVAL = "50m"
 
 local function refresh_token()
-    local time_now = time.now()
-
-    local store_instance, err = store.get(env.get("APP_CACHE") or config.DEFAULT_CACHE_ID)
-    if err then
-        print("Failed to access cache store: " .. tostring(err))
-        return
-    end
-
-    local response, err = oauth2.get_token()
+    local _, err = oauth2.refresh_token()
     if err then
         print("Failed to refresh token: " .. tostring(err))
-        store_instance:release()
         return
     end
-
-    local access_token = response and response.access_token
-    local expires_in = (response and tonumber(response.expires_in)) or 3600
-
-    local token = {
-        access_token = access_token,
-        expires_at = (time_now:unix() + expires_in) - 300
-    }
-
-    local _, err = store_instance:set(config.OAUTH2_TOKEN_CACHE_KEY, token, expires_in)
-    if err then
-        print("Failed to store token in cache: " .. tostring(err))
-        store_instance:release()
-        return
-    end
-
-    store_instance:release()
 
     print("Token refreshed, next refresh in 50 minutes")
 end

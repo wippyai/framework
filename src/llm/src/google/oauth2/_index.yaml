@@ -17,8 +17,11 @@ entries:
       - time
       - crypto
       - json
+      - store
+      - env
     imports:
       google_config: wippy.llm.google:config
+      transport: wippy.llm.util:transport
 
   # wippy.llm.google.oauth2:token_refresher
   - name: token_refresher
@@ -29,8 +32,6 @@ entries:
     source: file://token_refresher.lua
     modules:
       - time
-      - store
-      - env
     imports:
       google_oauth2: wippy.llm.google.oauth2:oauth2
       google_config: wippy.llm.google:config

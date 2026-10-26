@@ -4,6 +4,7 @@ local json = require("json")
 local store = require("store")
 local ctx = require("ctx")
 local transport = require("transport")
+local hash = require("hash")
 
 local config = {
     _env = env,
@@ -84,13 +85,34 @@ function config.get_private_key()
     return get_credentials().private_key
 end
 
+function config.get_oauth2_cache_key(): (string?, string?)
+    local ok, credentials = pcall(get_credentials)
+    if not ok or type(credentials) ~= "table" then return nil, "Google OAuth2 credentials are unavailable" end
+    if type(credentials.client_email) ~= "string" or credentials.client_email == ""
+        or type(credentials.token_uri) ~= "string" or credentials.token_uri == ""
+        or (credentials.private_key_id ~= nil and type(credentials.private_key_id) ~= "string") then
+        return nil, "Google OAuth2 credentials require client_email and token_uri"
+    end
+    -- Hash public credential identity only. Private key material never becomes
+    -- a cache key; key rotation and a changed issuer select a fresh entry.
+    local identity = json.encode({credentials.client_email, credentials.token_uri, credentials.private_key_id or ""})
+    local digest, digest_err = hash.sha256(identity)
+    if digest_err then return nil, tostring(digest_err) end
+    return config.OAUTH2_TOKEN_CACHE_KEY .. ":v2:" .. digest, nil
+end
+
 function config.get_oauth2_token()
+    local key, key_err = config.get_oauth2_cache_key()
+    if not key then return nil, key_err end
     local store_instance, err = config._store.get(config._env.get("APP_CACHE") or config.DEFAULT_CACHE_ID)
     if err then
         return nil, "Failed to access cache store: " .. tostring(err)
     end
 
-    return store_instance:get(config.OAUTH2_TOKEN_CACHE_KEY)
+    local token, read_err = store_instance:get(key)
+    store_instance:release()
+    if read_err and errors.is(read_err, errors.NOT_FOUND) then return nil, nil end
+    return token, read_err
 end
 
 function config.get_gemini_api_key()
