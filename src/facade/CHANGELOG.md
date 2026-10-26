@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.49](https://github.com/wippyai/framework/compare/facade-v0.6.48...facade-v0.6.49) (2026-10-26)
+
+
+### Bug Fixes
+
+* **facade:** report theme configuration fallback failures ([2fa105d](https://github.com/wippyai/framework/commit/2fa105d261b93612b2f5550367fdb01d1763bb51))
+* **facade:** report theme configuration fallback failures ([d6635c7](https://github.com/wippyai/framework/commit/d6635c7759be3e6ebdb45e4a1635188f48b21e4c))
+
 ## [0.6.48](https://github.com/wippyai/framework/compare/facade-v0.6.46...facade-v0.6.48) (2026-10-26)
 
 

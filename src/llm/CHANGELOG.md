@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.12](https://github.com/wippyai/framework/compare/llm-v0.5.11...llm-v0.5.12) (2026-10-26)
+
+
+### Bug Fixes
+
+* **llm:** isolate Google OAuth tokens by credential profile ([c22fe13](https://github.com/wippyai/framework/commit/c22fe1359bfafbb6a21a221881a259afe1f51f2e))
+* **llm:** isolate Google OAuth tokens by credential profile ([fa928d2](https://github.com/wippyai/framework/commit/fa928d2553df95c04a49f323d5e5ec2e860024ab))
+
 ## [0.5.11](https://github.com/wippyai/framework/compare/llm-v0.5.10...llm-v0.5.11) (2026-10-22)
 
 
