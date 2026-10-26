@@ -275,6 +275,56 @@ local function define_tests()
         end)
 
         -- ------------------------------------------------------------------ --
+        test.describe("configured theme diagnostics", function()
+            local warnings
+            test.before_each(function()
+                warnings = {}
+                helpers._logger = {warn = function(_, message, fields)
+                    warnings[#warnings + 1] = {message = message, fields = fields}
+                end}
+            end)
+            test.after_each(function() helpers._logger = nil end)
+
+            test.it("keeps absent optional configuration quiet", function()
+                test.is_nil(helpers.get_fs(""))
+                test.eq(helpers.resolve_css("", nil), "")
+                test.eq(next(helpers.resolve_json("", nil)), nil)
+                test.eq(#warnings, 0)
+            end)
+
+            test.it("warns when a configured filesystem cannot be opened", function()
+                test.is_nil(helpers.get_fs("app:missing-theme-filesystem"))
+                test.eq(#warnings, 1)
+                test.eq(warnings[1].message, "facade content filesystem unavailable")
+                test.eq(warnings[1].fields.entry_id, "app:missing-theme-filesystem")
+            end)
+
+            test.it("warns and preserves CSS fallback for missing filesystems and read failures", function()
+                test.eq(helpers.resolve_css("fs://theme.css", nil), "")
+                test.eq(helpers.resolve_css("fs://theme.css", {readfile = function() return nil, "missing" end}), "")
+                test.eq(helpers.resolve_css("fs://theme.css", {readfile = function() error("unreadable") end}), "")
+                test.eq(#warnings, 3)
+            end)
+
+            test.it("warns and preserves JSON fallback without logging configuration contents", function()
+                test.eq(next(helpers.resolve_json('{"secret-value":', nil)), nil)
+                test.eq(next(helpers.resolve_json("fs://theme.json", nil)), nil)
+                test.eq(next(helpers.resolve_json("fs://theme.json", {readfile = function() return nil, "missing" end})), nil)
+                test.eq(next(helpers.resolve_json("fs://theme.json", {readfile = function() return "not-json" end})), nil)
+                test.eq(#warnings, 4)
+                test.eq(warnings[1].message, "facade theme JSON is invalid")
+                test.is_nil(warnings[1].fields)
+            end)
+
+            test.it("keeps valid inline and file configuration quiet", function()
+                test.eq(helpers.resolve_css("body{}", nil), "body{}")
+                test.eq(helpers.resolve_css("fs://theme.css", {readfile = function() return "body{}" end}), "body{}")
+                test.eq(helpers.resolve_json('{"theme":"blue"}', nil).theme, "blue")
+                test.eq(helpers.resolve_json("fs://theme.json", {readfile = function() return '{"theme":"blue"}' end}).theme, "blue")
+                test.eq(#warnings, 0)
+            end)
+        end)
+
         test.describe("resolve_overrides", function()
             local logged
             local opened
