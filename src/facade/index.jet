@@ -14,7 +14,7 @@
          then shifts once the host injects the real theme. Same link the login
          page uses. Must follow theme-persist, which sets the theme class. -->
     <link rel="stylesheet" href="/api/public/facade/variables.css">
-    <title>Wippy</title>
+    <title>{{ title }}</title>
     <script src="/@wippy-fe/loading.js"></script>
     <style>
         #facade-overlay {

@@ -96,6 +96,20 @@ entries:
       - json
       - registry
 
+  - name: shell_title_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: The rendered shell takes its page title from the app_title requirement
+    source: file://shell_title_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - http_client
+      - registry
+
   - name: config_handler_test
     kind: function.lua
     meta:
