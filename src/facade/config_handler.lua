@@ -1,6 +1,7 @@
 local http = require("http")
 local json = require("json")
 local env = require("env")
+local logger = require("logger"):named("facade")
 local theming = require("theming_helpers")
 local config_contributors = require("config_contributors")
 
@@ -86,6 +87,7 @@ local function handler()
         end
         local val, err = json.decode(raw)
         if err then
+            logger:warn("facade requirement JSON is invalid", {requirement = name})
             return {}
         end
         return (val :: {[string]: any}) or {}

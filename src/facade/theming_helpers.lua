@@ -21,10 +21,11 @@ function helpers.get_fs(entry_id: string): any
     if entry_id == "" then
         return nil
     end
-    local ok, result = pcall(function()
+    local ok, result, err = pcall(function()
         return fs.get(entry_id)
     end)
-    if not ok then
+    if not ok or not result then
+        get_logger():warn("facade content filesystem unavailable", {entry_id = entry_id, error = tostring(err or result)})
         return nil
     end
     return result
@@ -60,12 +61,14 @@ function helpers.resolve_css(value: string, file_sys: any): string
         return value
     end
     if not file_sys then
+        get_logger():warn("facade CSS filesystem unavailable", {path = path})
         return ""
     end
     local ok, content = pcall(function()
         return (file_sys :: any):readfile(path :: string)
     end)
     if not ok or content == nil then
+        get_logger():warn("facade CSS file unreadable", {path = path})
         return ""
     end
     return (content :: string)
@@ -82,21 +85,25 @@ function helpers.resolve_json(value: string, file_sys: any): {[string]: any}
         end
         local decoded, err = json.decode(value)
         if err then
+            get_logger():warn("facade theme JSON is invalid")
             return {}
         end
         return (decoded :: {[string]: any}) or {}
     end
     if not file_sys then
+        get_logger():warn("facade JSON filesystem unavailable", {path = path})
         return {}
     end
     local ok, content = pcall(function()
         return (file_sys :: any):readfile(path :: string)
     end)
     if not ok or content == nil then
+        get_logger():warn("facade JSON file unreadable", {path = path})
         return {}
     end
     local decoded, err = json.decode(content :: string)
     if err then
+        get_logger():warn("facade theme JSON is invalid", {path = path})
         return {}
     end
     return (decoded :: {[string]: any}) or {}
@@ -210,7 +217,10 @@ function helpers.requirement(name: string, overrides: {[string]: any}?): string
             return ov :: string
         end
     end
-    local entry, _ = registry.get(NS .. name)
+    local entry, entry_err = registry.get(NS .. name)
+    if entry_err and not errors.is(entry_err, errors.NOT_FOUND) then
+        get_logger():warn("facade requirement unavailable", {requirement = name, error = tostring(entry_err)})
+    end
     if entry and entry.data then
         return entry.data.default or ""
     end
