@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.24](https://github.com/wippyai/framework/compare/test-v0.4.23...test-v0.4.24) (2026-10-26)
+
+
+### Bug Fixes
+
+* **test:** coordinate runner completion without timing delays ([0fe1f18](https://github.com/wippyai/framework/commit/0fe1f181446eec6c4858cbf92845b761bca1cd23))
+* **test:** coordinate runner completion without timing delays ([7844d52](https://github.com/wippyai/framework/commit/7844d52537183c4b4c383069c7c18ef76e160b9d))
+
 ## [0.4.23](https://github.com/wippyai/framework/compare/test-v0.4.22...test-v0.4.23) (2026-10-19)
 
 
