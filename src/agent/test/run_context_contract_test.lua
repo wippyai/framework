@@ -60,6 +60,15 @@ local function define_tests()
             test.is_true(valid)
             test.is_nil(err)
         end)
+
+        test.it("accepts document provenance without claiming an importing identity", function()
+            local schema = assert(json.decode(methods.get_history.output_schemas[1].definition))
+            local valid, err = json.validate(schema, { events = {
+                { id = "document-1", role = "document", author = { kind = "document" } },
+            } })
+            test.is_true(valid)
+            test.is_nil(err)
+        end)
     end)
 end
 

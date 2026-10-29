@@ -274,7 +274,7 @@ entries:
 
         Every history event supplies author independently of its prompt role:
         user with the human principal id, agent with the producing agent id,
-        system for workflow and tool input, or unknown when authoritative
+        document for imported content, system for workflow and tool input, or unknown when authoritative
         persisted provenance is absent. An agent may receive a user-role message
         authored by its parent. Producers use persisted authorship and
         authoritative input sources, never the prompt role alone. Existing
@@ -391,7 +391,7 @@ entries:
                         "author": {
                           "type": "object",
                           "properties": {
-                            "kind": { "type": "string", "enum": ["user", "agent", "system", "unknown"] },
+                            "kind": { "type": "string", "enum": ["user", "agent", "document", "system", "unknown"] },
                             "id": { "type": "string", "minLength": 1 }
                           },
                           "required": ["kind"],
