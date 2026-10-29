@@ -87,6 +87,20 @@ local function define_tests()
             test.eq(#calls, 0)
         end)
 
+        it("forwards an arbitrary runner identity through every lifecycle phase", function()
+            for _, phase in ipairs({"activate", "before_step", "after_persist", "deactivate"}) do
+                local event = payload(phase)
+                event.host = {kind = "automation", id = "opaque-run"}
+                event.run_context.host = event.host
+                if phase == "after_persist" then event.refs = {event_id = "persisted-action"} end
+                local result, err = lifecycle_runtime.apply({{id = "inspect", binding = "inspect", phases = {phase}}}, event)
+                test.is_nil(err)
+                test.eq(result.applied, 1)
+                test.eq(calls[#calls].payload.host.id, "opaque-run")
+                test.eq(calls[#calls].payload.run_context.host.kind, "automation")
+            end
+        end)
+
         it("filters handlers by phase and keeps priority order", function()
             local bindings = {
                 {

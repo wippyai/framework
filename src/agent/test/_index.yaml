@@ -2,6 +2,16 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: run_context_contract_test
+    kind: function.lua
+    meta:
+      type: test
+    source: file://run_context_contract_test.lua
+    modules: [registry, json]
+    imports:
+      test: wippy.test:test
+    method: run_tests
+
   - name: dep.wippy.test
     kind: ns.dependency
     meta:

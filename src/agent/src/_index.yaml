@@ -267,6 +267,18 @@ entries:
         a bounded selector; implementations return normalized data and range
         metadata instead of exposing internal repositories.
 
+        host.kind is an open runner name. host.id is the runner's stable opaque
+        identity across every step and iteration; delegated children have distinct
+        identities. Existing runner locator fields remain available to bindings.
+        Identity references do not grant access or establish the acting principal.
+
+        Every history event supplies author independently of its prompt role:
+        user with the human principal id, agent with the producing agent id, or
+        system for workflow and tool input. An agent may receive a user-role
+        message authored by its parent. Producers use persisted authorship and
+        authoritative input sources, never the prompt role alone. Existing
+        execution identity supplies the acting principal.
+
         Selector semantics are intentionally provider-neutral:
         - all: full chronological history.
         - window: last N events in chronological order; omitted N defaults to 20.
@@ -289,7 +301,8 @@ entries:
                   "host": {
                     "type": "object",
                     "properties": {
-                      "kind": { "type": "string", "enum": ["session", "dataflow"] },
+                      "kind": { "type": "string", "minLength": 1 },
+                      "id": { "type": "string", "minLength": 1 },
                       "session_id": { "type": "string" },
                       "dataflow_id": { "type": "string" },
                       "node_id": { "type": "string" },
@@ -355,7 +368,21 @@ entries:
                 "properties": {
                   "events": {
                     "type": "array",
-                    "items": { "type": "object" }
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "role": { "type": "string" },
+                        "author": {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "enum": ["user", "agent", "system"] },
+                            "id": { "type": "string" }
+                          },
+                          "required": ["kind"]
+                        }
+                      }
+                    }
                   },
                   "range": {
                     "type": "object",
@@ -594,7 +621,8 @@ entries:
                   "host": {
                     "type": "object",
                     "properties": {
-                      "kind": { "type": "string", "enum": ["session", "dataflow"] },
+                      "kind": { "type": "string", "minLength": 1 },
+                      "id": { "type": "string", "minLength": 1 },
                       "session_id": { "type": "string" },
                       "dataflow_id": { "type": "string" },
                       "node_id": { "type": "string" },
