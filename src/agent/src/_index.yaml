@@ -273,9 +273,10 @@ entries:
         Identity references do not grant access or establish the acting principal.
 
         Every history event supplies author independently of its prompt role:
-        user with the human principal id, agent with the producing agent id, or
-        system for workflow and tool input. An agent may receive a user-role
-        message authored by its parent. Producers use persisted authorship and
+        user with the human principal id, agent with the producing agent id,
+        system for workflow and tool input, or unknown when authoritative
+        persisted provenance is absent. An agent may receive a user-role message
+        authored by its parent. Producers use persisted authorship and
         authoritative input sources, never the prompt role alone. Existing
         execution identity supplies the acting principal.
 
@@ -309,7 +310,7 @@ entries:
                       "run_id": { "type": "string" },
                       "iteration": { "type": "integer" }
                     },
-                    "required": ["kind"]
+                    "required": ["kind", "id"]
                   },
                   "agent": {
                     "type": "object",
@@ -328,7 +329,14 @@ entries:
                 "type": "object",
                 "properties": {
                   "context": { "type": "object" },
-                  "host": { "type": "object" },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "minLength": 1 },
+                      "id": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["kind", "id"]
+                  },
                   "agent": { "type": "object" }
                 },
                 "required": ["context"]
@@ -341,7 +349,14 @@ entries:
               {
                 "type": "object",
                 "properties": {
-                  "host": { "type": "object" },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "minLength": 1 },
+                      "id": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["kind", "id"]
+                  },
                   "selector": {
                     "type": "object",
                     "properties": {
@@ -376,12 +391,22 @@ entries:
                         "author": {
                           "type": "object",
                           "properties": {
-                            "kind": { "type": "string", "enum": ["user", "agent", "system"] },
-                            "id": { "type": "string" }
+                            "kind": { "type": "string", "enum": ["user", "agent", "system", "unknown"] },
+                            "id": { "type": "string", "minLength": 1 }
                           },
-                          "required": ["kind"]
+                          "required": ["kind"],
+                          "allOf": [
+                            {
+                              "if": {
+                                "properties": { "kind": { "enum": ["user", "agent"] } },
+                                "required": ["kind"]
+                              },
+                              "then": { "required": ["id"] }
+                            }
+                          ]
                         }
-                      }
+                      },
+                      "required": ["author"]
                     }
                   },
                   "range": {
@@ -405,7 +430,14 @@ entries:
               {
                 "type": "object",
                 "properties": {
-                  "host": { "type": "object" },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "minLength": 1 },
+                      "id": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["kind", "id"]
+                  },
                   "selector": { "type": "object" },
                   "format": {
                     "type": "string",
