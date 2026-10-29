@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.18](https://github.com/wippyai/framework/compare/relay-v0.3.17...relay-v0.3.18) (2026-10-29)
+
+
+### Bug Fixes
+
+* **relay:** preserve authenticated composed scopes ([#224](https://github.com/wippyai/framework/issues/224)) ([aeed650](https://github.com/wippyai/framework/commit/aeed650066fafa8c155b50744e2ceff4104501e6))
+
 ## [0.3.17](https://github.com/wippyai/framework/compare/relay-v0.3.16...relay-v0.3.17) (2026-10-14)
 
 
