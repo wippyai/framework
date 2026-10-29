@@ -90,6 +90,53 @@ local function define_tests()
         end)
     end)
     test.describe("relay central identity", function()
+        test.it("preserves the authenticated composed scope instead of its group name", function()
+            local calls = {}
+            local fake = fake_security(calls)
+            fake.policy = function(id)
+                calls.policy_id = id
+                return {id = function() return id end}, nil
+            end
+            fake.new_scope = function(policies) return {policies = policies} end
+            central._set_security_for_test(fake)
+            local _, scope, _, err = central._identity_from_metadata(config("app:user"), "member", {
+                scope_id = "app:user", scope_policy_ids = {"app:composed_module_access"},
+            })
+            central._set_security_for_test(nil)
+            test.is_nil(err, tostring(err))
+            test.is_nil(calls.scope_id, "a named group drops composed policies")
+            test.eq(calls.policy_id, "app:composed_module_access")
+            test.eq(scope.policies[1].id(), "app:composed_module_access")
+        end)
+        test.it("preserves an empty authenticated scope", function()
+            local calls = {}
+            local fake = fake_security(calls)
+            fake.new_scope = function(policies) return {policies = policies} end
+            central._set_security_for_test(fake)
+            local _, scope, _, err = central._identity_from_metadata(config("app:user"), "member", {
+                scope_id = "app:user", scope_policy_ids = {},
+            })
+            central._set_security_for_test(nil)
+            test.is_nil(err, tostring(err))
+            test.is_nil(calls.scope_id)
+            test.eq(#scope.policies, 0)
+        end)
+        test.it("refuses an unreadable composed policy without selecting another scope", function()
+            local calls = {}
+            local fake = fake_security(calls)
+            local failure = errors.new({kind = errors.PERMISSION_DENIED, message = "policy access denied"})
+            fake.policy = function() return nil, failure end
+            central._set_security_for_test(fake)
+            local actor, scope, _, err = central._identity_from_metadata(config("app:user"), "member", {
+                scope_id = "app:user", scope_policy_ids = {"app:composed_module_access"},
+            })
+            central._set_security_for_test(nil)
+            test.is_nil(actor)
+            test.is_nil(scope)
+            test.is_nil(calls.scope_id)
+            test.is_true(errors.is(err, errors.PERMISSION_DENIED), tostring(err))
+        end)
+
         test.after_each(function() central._set_security_for_test(nil) end)
         test.it("uses the authenticated scope id when relay metadata carries it", function()
             local calls = {}

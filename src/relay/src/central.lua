@@ -129,15 +129,42 @@ local function restore_hubs(snapshot: CentralUpgradeState): {[string]: UserHubIn
     return user_hubs
 end
 
-local function identity_from_metadata(config: ValidatedConfig, user_id: string, metadata: any): (any?, any?, any?, string?)
+local function identity_from_metadata(config: ValidatedConfig, user_id: string, metadata: any): (any?, any?, any?, any?)
     local user_metadata = type(metadata.user_metadata) == "table" and metadata.user_metadata or {}
     local scope_id = type(metadata.scope_id) == "string" and metadata.scope_id ~= "" and metadata.scope_id or config.user_security_scope
     local user_actor = security_mod.new_actor(user_id, user_metadata)
 
-    local user_scope, scope_err = security_mod.named_scope(tostring(scope_id))
-    if scope_err then
-        return nil, nil, nil, "Failed to get user security scope: " .. scope_err
+    local user_scope, scope_err
+    if metadata.scope_policy_ids ~= nil then
+        if type(metadata.scope_policy_ids) ~= "table" then
+            return nil, nil, nil, errors.new({kind = errors.INVALID, message = "scope_policy_ids must be an array"})
+        end
+        local policies = {}
+        local count = #metadata.scope_policy_ids
+        local present = 0
+        for index, id in pairs(metadata.scope_policy_ids) do
+            if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > count
+                or type(id) ~= "string" or id == "" then
+                return nil, nil, nil, errors.new({kind = errors.INVALID, message = "scope_policy_ids must contain policy ids"})
+            end
+            present = present + 1
+        end
+        if present ~= count then
+            return nil, nil, nil, errors.new({kind = errors.INVALID, message = "scope_policy_ids must be dense"})
+        end
+        for _, id in ipairs(metadata.scope_policy_ids) do
+            local policy, policy_err = security_mod.policy(id)
+            if policy_err then return nil, nil, nil, policy_err end
+            if not policy then
+                return nil, nil, nil, errors.new({kind = errors.INTERNAL, message = "authenticated policy is unavailable"})
+            end
+            policies[#policies + 1] = policy
+        end
+        user_scope = security_mod.new_scope(policies)
+    else
+        user_scope, scope_err = security_mod.named_scope(tostring(scope_id))
     end
+    if scope_err then return nil, nil, nil, scope_err end
 
     return user_actor, user_scope, user_metadata, nil
 end
