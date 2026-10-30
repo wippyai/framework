@@ -7,6 +7,12 @@ local plugin_discovery = require("plugin_discovery")
 local logger = require("logger"):named("relay")
 local security_mod = security
 
+type HubIdentity = {
+    actor_id: string,
+    actor_meta: any,
+    policy_ids: {[string]: boolean},
+}
+
 type UserHubInfo = {
     hub_pid: string,
     created_at: time.Time,
@@ -14,6 +20,7 @@ type UserHubInfo = {
     client_count: number,
     terminating?: boolean,
     termination_started_at?: time.Time,
+    identity?: HubIdentity,
 }
 
 type ValidatedConfig = {
@@ -41,6 +48,7 @@ type UserHubUpgradeInfo = {
     client_count: number,
     terminating: boolean?,
     termination_started_at: string?,
+    identity?: HubIdentity,
 }
 
 type CentralUpgradeState = {
@@ -79,6 +87,7 @@ local function snapshot_state(state: CentralState): CentralUpgradeState
             client_count = hub.client_count,
             terminating = hub.terminating,
             termination_started_at = encode_time(hub.termination_started_at),
+            identity = hub.identity,
         }
     end
     local snapshot: CentralUpgradeState = {
@@ -124,6 +133,7 @@ local function restore_hubs(snapshot: CentralUpgradeState): {[string]: UserHubIn
             client_count = tonumber(hub.client_count) or 0,
             terminating = hub.terminating == true,
             termination_started_at = decode_time(hub.termination_started_at, "termination_started_at"),
+            identity = hub.identity,
         }
     end
     return user_hubs
@@ -169,14 +179,38 @@ local function identity_from_metadata(config: ValidatedConfig, user_id: string, 
     return user_actor, user_scope, user_metadata, nil
 end
 
-local function get_or_create_user_hub(state: CentralState, user_id: string, metadata: any): string?
-    local hub = state.user_hubs[user_id]
-    if hub then
-        return hub.hub_pid
+local function same_identity(left: any, right: any): boolean
+    if type(left) ~= type(right) then return false end
+    if type(left) ~= "table" then return left == right end
+    for key, value in pairs(left) do
+        if not same_identity(value, right[key]) then return false end
     end
+    for key in pairs(right) do
+        if left[key] == nil then return false end
+    end
+    return true
+end
 
+local function get_or_create_user_hub(state: CentralState, user_id: string, metadata: any): string?
     local user_actor, user_scope, user_metadata, identity_err = identity_from_metadata(state.config, user_id, metadata or {})
     if identity_err then error(identity_err) end
+
+    local policy_ids: {[string]: boolean} = {}
+    for _, policy in ipairs(user_scope:policies()) do policy_ids[policy:id()] = true end
+    local identity = {actor_id = user_actor:id(), actor_meta = user_actor:meta(), policy_ids = policy_ids}
+    local hub = state.user_hubs[user_id]
+    if hub and same_identity(hub.identity, identity) then return hub.hub_pid end
+
+    local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. user_id
+    if hub then
+        -- Central owns admission and the canonical name; the old frame only drains.
+        local _, unregister_err = process.registry.unregister(registry_name)
+        if unregister_err then error(unregister_err) end
+        local sent, retire_err = process.send(hub.hub_pid, consts.HUB_CONTROL.RETIRE, {})
+        if not sent then error(retire_err) end
+        state.user_hubs[user_id] = nil
+        state.total_hubs = state.total_hubs - 1
+    end
 
     local hub_pid, err = process.with_context({})
         :with_scope(user_scope)
@@ -198,11 +232,14 @@ local function get_or_create_user_hub(state: CentralState, user_id: string, meta
         return nil
     end
 
+    local registered, register_err = process.registry.register(registry_name, hub_pid)
+    if not registered then error(register_err) end
     state.user_hubs[user_id] = {
         hub_pid = hub_pid,
         created_at = time.now(),
         last_activity = time.now(),
-        client_count = 0
+        client_count = 0,
+        identity = identity,
     }
 
     state.total_hubs = state.total_hubs + 1
@@ -451,4 +488,6 @@ return {
     _decode_upgrade_state = decode_upgrade_state,
     _check_inactive_hubs = check_inactive_hubs,
     _handle_activity_update = handle_activity_update,
+    _get_or_create_user_hub = get_or_create_user_hub,
+    _handle_process_event = handle_process_event,
 }

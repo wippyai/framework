@@ -24,11 +24,24 @@
 The last client leaving requests session-plugin shutdown. Sessions finish their
 accepted work before exiting. The central inactivity sweep asks the user hub to
 retire and waits for its monitored session plugin to exit before hub cleanup.
-Reconnect cancels pending retirement and resumes the same plugin. Empty hubs
-exit immediately; retirement adds no timers or background coroutines.
+Reconnect with unchanged authority cancels pending inactivity retirement and
+resumes the same plugin. Empty hubs exit immediately; retirement adds no timers
+or background coroutines.
 
 Use this with a session release that drains lifecycle finishes. Explicit service
 cancellation remains a forced shutdown and follows the session recovery path.
+
+## Authenticated reconnects
+
+The central hub resolves the authenticated actor and scope before reusing a user
+hub. Equivalent actor metadata and scope policy sets reuse the same hub, regardless
+of policy order. Changed authority retires the earlier hub and starts a new frame;
+the canonical `user.<id>` registry name points to the replacement.
+
+Connections on the retired hub receive the existing `hub_creation_failed` error
+and stop submitting work. Accepted session work drains through the existing
+shutdown protocol before the earlier hub exits. A new connection uses the newly
+authenticated scope for its hub and plugins.
 
 [wippy-documentation]: https://docs.wippy.ai
 [releases-page]: https://github.com/wippyai/module-relay/releases

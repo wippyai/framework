@@ -6,47 +6,52 @@ local user = require("user")
 
 local function define_tests()
     test.describe("relay user hub", function()
-        test.it("sends a legacy-compatible welcome payload on join", function()
-            local actor = security.new_actor("relay-user-test@wippy.local", {})
-            local scope, scope_err = security.named_scope("app:user")
-            test.is_nil(scope_err)
+        for _, parent in ipairs({false, true}) do
+            test.it("sends a legacy-compatible welcome payload on join, custom parent " .. tostring(parent), function()
+                local user_id = "relay-user-test-" .. tostring(parent) .. "@wippy.local"
+                local actor = security.new_actor(user_id, {})
+                local scope, scope_err = security.named_scope("app:user")
+                test.is_nil(scope_err)
 
-            local config = consts.get_config()
-            local hub_host = assert(config.user_hub_host, "relay application_host is not configured")
-            local hub_pid, spawn_err = process.with_context({})
-                :with_actor(actor)
-                :with_scope(scope)
-                :spawn_linked_monitored(
-                    consts.USER_HUB_PROCESS_ID,
-                    hub_host,
-                    {
-                        user_id = "relay-user-test@wippy.local",
-                        user_metadata = {},
-                        plugins = {},
-                        config = config,
-                    }
-                )
+                local config = consts.get_config()
+                local hub_host = assert(config.user_hub_host, "relay application_host is not configured")
+                local hub_pid, spawn_err = process.with_context({})
+                    :with_actor(actor)
+                    :with_scope(scope)
+                    :spawn_linked_monitored(
+                        consts.USER_HUB_PROCESS_ID,
+                        hub_host,
+                        {
+                            user_id = user_id,
+                            user_metadata = {},
+                            plugins = {},
+                            config = config,
+                            central_hub_pid = parent and process.pid() or nil,
+                        }
+                    )
 
-            test.is_nil(spawn_err)
-            test.not_nil(hub_pid)
+                test.is_nil(spawn_err)
+                test.not_nil(hub_pid)
 
-            local welcome = process.listen(consts.CLIENT_TOPICS.WELCOME)
-            local send_ok, send_err = process.send(hub_pid :: string, consts.WS_TOPICS.JOIN, { client_pid = process.pid() })
-            test.is_nil(send_err)
+                local welcome = process.listen(consts.CLIENT_TOPICS.WELCOME)
+                local send_ok, send_err = process.send(hub_pid :: string, consts.WS_TOPICS.JOIN, { client_pid = process.pid() })
+                test.is_nil(send_err)
 
-            local timer = time.after(3000 * time.MILLISECOND)
-            local res = channel.select({ welcome:case_receive(), timer:case_receive() })
+                local timer = time.after(3000 * time.MILLISECOND)
+                local res = channel.select({ welcome:case_receive(), timer:case_receive() })
 
-            test.is_false(res.channel == timer)
-            test.not_nil(res.value)
-            test.eq(res.value.user_id, "relay-user-test@wippy.local")
-            test.eq(type(res.value.plugins), "table")
-            test.eq(type(res.value.active_session_ids), "table")
-            test.eq(#res.value.active_session_ids, 0)
-            test.eq(res.value.active_sessions, 0)
+                test.is_false(res.channel == timer)
+                test.not_nil(res.value)
+                test.eq(res.value.user_id, user_id)
+                test.eq(process.registry.lookup(consts.USER_HUB_REGISTRY_PREFIX .. user_id), hub_pid)
+                test.eq(type(res.value.plugins), "table")
+                test.eq(type(res.value.active_session_ids), "table")
+                test.eq(#res.value.active_session_ids, 0)
+                test.eq(res.value.active_sessions, 0)
 
-            process.cancel(hub_pid :: string, consts.CANCEL_TIMEOUT)
-        end)
+                process.cancel(hub_pid :: string, consts.CANCEL_TIMEOUT)
+            end)
+        end
     end)
 
     test.describe("relay user hot upgrade state", function()

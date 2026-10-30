@@ -300,9 +300,26 @@ local function route_to_plugin(state: UserState, prefix: string, plugin_config: 
     return false, "Plugin not available"
 end
 
+local function registered_pid(name: string): string?
+    local current, lookup_err = process.registry.lookup(name)
+    if lookup_err and not errors.is(lookup_err, errors.NOT_FOUND) then error(lookup_err) end
+    return current
+end
+
+local function is_current_hub(state: UserState): boolean
+    return registered_pid(consts.USER_HUB_REGISTRY_PREFIX .. state.user_id) == process.pid()
+end
+
 local function handle_client_join(state: UserState, payload_data: any)
     local client_pid = payload_data.client_pid :: string?
     if client_pid then
+        if state.retiring and not is_current_hub(state) then
+            process.send(client_pid, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.HUB_CREATION_FAILED,
+                message = "User hub has retired",
+            })
+            return
+        end
         if not state.connected_clients[client_pid] then
             state.connected_clients[client_pid] = true
             state.client_count = state.client_count + 1
@@ -517,7 +534,7 @@ local function run(args: any): any
         active_plugins = active_plugins,
         connected_clients = connected_clients,
         client_count = client_count,
-        retiring = resumed and client_count == 0 and args.retiring == true,
+        retiring = resumed and args.retiring == true,
         pg_scopes = {},
         pg_groups = {},
         routes = {},
@@ -526,7 +543,7 @@ local function run(args: any): any
     }
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. state.user_id
-    if not resumed then
+    if not resumed and (not central_hub_pid or central_hub_pid ~= registered_pid(consts.CENTRAL_HUB_REGISTRY_NAME)) then
         local registered, register_err = process.registry.register(registry_name)
         if not registered then
             error("Failed to register user hub " .. registry_name .. ": " .. (register_err or "unknown error"))
@@ -607,12 +624,24 @@ local function run(args: any): any
                 logger:info("received cancel signal")
                 break
             elseif topic == consts.HUB_CONTROL.RETIRE then
-                -- Only the owning central hub can request collection. JOIN
-                -- may already have overtaken an old inactivity observation.
-                if from_pid == state.central_hub_pid and state.client_count == 0 then
-                    state.retiring = true
-                    local session = state.active_plugins["session_"]
-                    if session and session.pid then process.send(session.pid, "shutdown", {}) end
+                if from_pid == state.central_hub_pid then
+                    local current = is_current_hub(state)
+                    -- A current hub ignores an inactivity observation overtaken
+                    -- by JOIN. A superseded frame admits no more client work.
+                    if state.client_count == 0 or not current then
+                        if not current then
+                            broadcast_to_clients(state, consts.CLIENT_TOPICS.ERROR, {
+                                error = consts.ERROR_CODES.HUB_CREATION_FAILED,
+                                message = "User hub has retired",
+                            })
+                            state.connected_clients = {}
+                            state.client_count = 0
+                            state.disconnect_started_at = nil
+                        end
+                        state.retiring = true
+                        local session = state.active_plugins["session_"]
+                        if session and session.pid then process.send(session.pid, "shutdown", {}) end
+                    end
                 end
             elseif topic == consts.HUB_CONTROL.PG_SUBSCRIBE then
                 handle_pg_subscribe(state, payload:data())
