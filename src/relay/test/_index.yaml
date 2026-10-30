@@ -145,7 +145,26 @@ entries:
       test: wippy.test:test
     modules:
       - time
+      - json
+      - security
     method: run
+
+  - name: authority_session
+    kind: process.lua
+    meta:
+      type: relay.plugin
+      command_prefix: session_
+      default_host: app:processes
+    source: file://authority_session.lua
+    modules: [security]
+    method: run
+
+  - name: authority_write
+    kind: security.policy
+    policy:
+      resources: [app:resource]
+      actions: [relay.authority.write]
+      effect: allow
 
   - name: runtime_plugin_policy
     kind: security.policy
