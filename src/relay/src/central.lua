@@ -202,16 +202,6 @@ local function get_or_create_user_hub(state: CentralState, user_id: string, meta
     if hub and same_identity(hub.identity, identity) then return hub.hub_pid end
 
     local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. user_id
-    if hub then
-        -- Central owns admission and the canonical name; the old frame only drains.
-        local _, unregister_err = process.registry.unregister(registry_name)
-        if unregister_err then error(unregister_err) end
-        local sent, retire_err = process.send(hub.hub_pid, consts.HUB_CONTROL.RETIRE, {})
-        if not sent then error(retire_err) end
-        state.user_hubs[user_id] = nil
-        state.total_hubs = state.total_hubs - 1
-    end
-
     local hub_pid, err = process.with_context({})
         :with_scope(user_scope)
         :with_actor(user_actor)
@@ -232,8 +222,42 @@ local function get_or_create_user_hub(state: CentralState, user_id: string, meta
         return nil
     end
 
-    local registered, register_err = process.registry.register(registry_name, hub_pid)
-    if not registered then error(register_err) end
+    -- Stage the new frame before moving the canonical name. Until handover
+    -- succeeds, the old frame and cached admission remain authoritative.
+    local unregistered, registered = false, false
+    local admitted, admission_err = pcall(function()
+        if hub then
+            local _, unregister_err = process.registry.unregister(registry_name)
+            if unregister_err then error(unregister_err) end
+            unregistered = true
+        end
+        local register_ok, register_err = process.registry.register(registry_name, hub_pid)
+        if not register_ok then error(register_err) end
+        registered = true
+        if hub then
+            local sent, retire_err = process.send(hub.hub_pid, consts.HUB_CONTROL.RETIRE, {})
+            if not sent then error(retire_err) end
+        end
+    end)
+    if not admitted then
+        if registered then
+            local _, cleanup_err = process.registry.unregister(registry_name)
+            if cleanup_err then
+                logger:error("failed to remove unadmitted hub registration", {user_id = user_id, error = cleanup_err})
+            end
+        end
+        if hub and unregistered then
+            local restored, restore_err = process.registry.register(registry_name, hub.hub_pid)
+            if not restored then
+                logger:error("failed to restore user hub registration", {user_id = user_id, error = restore_err})
+            end
+        end
+        local cancelled, cancel_err = process.cancel(hub_pid, consts.CANCEL_TIMEOUT)
+        if not cancelled then
+            logger:error("failed to cancel unadmitted user hub", {user_id = user_id, hub_pid = hub_pid, error = cancel_err})
+        end
+        error(admission_err)
+    end
     state.user_hubs[user_id] = {
         hub_pid = hub_pid,
         created_at = time.now(),
@@ -242,7 +266,7 @@ local function get_or_create_user_hub(state: CentralState, user_id: string, meta
         identity = identity,
     }
 
-    state.total_hubs = state.total_hubs + 1
+    if not hub then state.total_hubs = state.total_hubs + 1 end
 
     logger:info("user hub created", { user_id = user_id, hub_pid = hub_pid, total_hubs = state.total_hubs })
 
@@ -272,9 +296,9 @@ local function handle_client_connection(state: CentralState, client_pid: any, me
         return
     end
 
-    local user_hub_pid = get_or_create_user_hub(state, user_id, metadata)
-    if not user_hub_pid then
-        logger:error("user hub creation failed", { user_id = user_id })
+    local admitted, user_hub_pid = pcall(get_or_create_user_hub, state, user_id, metadata)
+    if not admitted or not user_hub_pid then
+        logger:error("user hub creation failed", { user_id = user_id, error = not admitted and tostring(user_hub_pid) or nil })
         process.send(pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.HUB_CREATION_FAILED,
             message = "Failed to create user hub"
@@ -489,5 +513,6 @@ return {
     _check_inactive_hubs = check_inactive_hubs,
     _handle_activity_update = handle_activity_update,
     _get_or_create_user_hub = get_or_create_user_hub,
+    _handle_client_connection = handle_client_connection,
     _handle_process_event = handle_process_event,
 }

@@ -54,6 +54,50 @@ local function define_tests()
         end
     end)
 
+    test.describe("relay user rolling upgrade", function()
+        test.it("retires a superseded frame even when the older version missed RETIRE", function()
+            local user_id = "relay-resume-" .. process.pid()
+            local name = consts.USER_HUB_REGISTRY_PREFIX .. user_id
+            assert(process.registry.register(name))
+            local failures = process.listen(consts.CLIENT_TOPICS.ERROR)
+            local events = process.events()
+            local scope = assert(security.named_scope("app:user"))
+            local config = consts.get_config()
+            local pid = assert(process.with_context({}):with_actor(security.new_actor(user_id, {}))
+                :with_scope(scope):spawn_monitored(consts.USER_HUB_PROCESS_ID, assert(config.user_hub_host),
+                    user._encode_upgrade_state({
+                        relay_user_upgrade = true, user_id = user_id, user_metadata = {}, plugins = {},
+                        config = config, central_hub_pid = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME)),
+                        active_plugins = {}, connected_clients = {[process.pid()] = true}, client_count = 1,
+                        pg_groups = {},
+                    })))
+            local ok, err = pcall(function()
+                local timer = time.timer(3 * time.SECOND)
+                local event
+                repeat
+                    local res = channel.select({events:case_receive(), timer:channel():case_receive()})
+                    if res.channel == timer:channel() then
+                        timer:stop()
+                        error("a superseded resumed frame must not await another retirement request")
+                    end
+                    event = res.value
+                until event.from == pid and event.kind == process.event.EXIT
+                timer:stop()
+                test.is_nil(event.result.error)
+                local deadline = time.timer(3 * time.SECOND)
+                local failure = channel.select({failures:case_receive(), deadline:channel():case_receive()})
+                deadline:stop()
+                test.eq(failure.channel, failures)
+                test.eq(failure.value.error, consts.ERROR_CODES.HUB_CREATION_FAILED)
+                test.eq(process.registry.lookup(name), (process.pid()), "retirement must preserve the current binding")
+            end)
+            process.cancel(pid, consts.CANCEL_TIMEOUT)
+            assert(process.registry.unregister(name))
+            process.unlisten(failures)
+            if not ok then error(err) end
+        end)
+    end)
+
     test.describe("relay user hot upgrade state", function()
         test.it("preserves clients, child plugins, and group declarations without carrying handles", function()
             local snapshot = user._snapshot_state({

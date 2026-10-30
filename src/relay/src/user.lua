@@ -310,6 +310,25 @@ local function is_current_hub(state: UserState): boolean
     return registered_pid(consts.USER_HUB_REGISTRY_PREFIX .. state.user_id) == process.pid()
 end
 
+-- Current idle hubs may be collected; superseded frames stop admitting work
+-- and let their session plugin drain before exiting.
+local function retire_hub(state: UserState, current: boolean)
+    if state.client_count == 0 or not current then
+        if not current then
+            broadcast_to_clients(state, consts.CLIENT_TOPICS.ERROR, {
+                error = consts.ERROR_CODES.HUB_CREATION_FAILED,
+                message = "User hub has retired",
+            })
+            state.connected_clients = {}
+            state.client_count = 0
+            state.disconnect_started_at = nil
+        end
+        state.retiring = true
+        local session = state.active_plugins["session_"]
+        if session and session.pid then process.send(session.pid, "shutdown", {}) end
+    end
+end
+
 local function handle_client_join(state: UserState, payload_data: any)
     local client_pid = payload_data.client_pid :: string?
     if client_pid then
@@ -554,6 +573,10 @@ local function run(args: any): any
 
     if resumed then
         restore_pg(state, upgrade_groups)
+        if central_hub_pid and central_hub_pid == registered_pid(consts.CENTRAL_HUB_REGISTRY_NAME) and not is_current_hub(state) then
+            -- A prior user implementation may have ignored RETIRE while connected.
+            retire_hub(state, false)
+        end
         logger:info("user hub upgraded", {
             user_id = state.user_id,
             client_count = state.client_count,
@@ -573,6 +596,10 @@ local function run(args: any): any
     local timer_started_at: string? = nil
 
     while true do
+        if state.retiring and state.client_count == 0 then
+            local session = state.active_plugins["session_"]
+            if not session or not session.pid then break end
+        end
         if timer_started_at ~= state.disconnect_started_at then
             if disconnect_timer then disconnect_timer:stop() end
             disconnect_timer = nil
@@ -626,22 +653,7 @@ local function run(args: any): any
             elseif topic == consts.HUB_CONTROL.RETIRE then
                 if from_pid == state.central_hub_pid then
                     local current = is_current_hub(state)
-                    -- A current hub ignores an inactivity observation overtaken
-                    -- by JOIN. A superseded frame admits no more client work.
-                    if state.client_count == 0 or not current then
-                        if not current then
-                            broadcast_to_clients(state, consts.CLIENT_TOPICS.ERROR, {
-                                error = consts.ERROR_CODES.HUB_CREATION_FAILED,
-                                message = "User hub has retired",
-                            })
-                            state.connected_clients = {}
-                            state.client_count = 0
-                            state.disconnect_started_at = nil
-                        end
-                        state.retiring = true
-                        local session = state.active_plugins["session_"]
-                        if session and session.pid then process.send(session.pid, "shutdown", {}) end
-                    end
+                    retire_hub(state, current)
                 end
             elseif topic == consts.HUB_CONTROL.PG_SUBSCRIBE then
                 handle_pg_subscribe(state, payload:data())
@@ -666,10 +678,6 @@ local function run(args: any): any
             else
                 handle_process_event(state, event)
             end
-        end
-        if state.retiring and state.client_count == 0 then
-            local session = state.active_plugins["session_"]
-            if not session or not session.pid then break end
         end
     end
 

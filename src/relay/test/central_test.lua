@@ -148,9 +148,10 @@ local function define_tests()
         local spawned: any
         local sent: any
         local names: any
+        local cancelled: any
         test.before_each(function()
             state = {config = config("app:user"), plugins = {}, user_hubs = {}, total_hubs = 0}
-            spawned, sent, names = {}, {}, {}
+            spawned, sent, names, cancelled = {}, {}, {}, {}
             local fake = fake_security({})
             fake.policy = function(id)
                 return {id = function() return id end}, nil
@@ -177,6 +178,7 @@ local function define_tests()
                 sent[#sent + 1] = {pid = pid, topic = topic, payload = payload}
                 return true
             end)
+            mock("process.cancel", function(pid) cancelled[#cancelled + 1] = pid; return true end)
             local registry = {}
             for key, value in pairs(process.registry) do registry[key] = value end
             registry.register = function(name, pid) names[name] = pid; return true end
@@ -235,15 +237,58 @@ local function define_tests()
             test.eq(#spawned, 1)
             test.eq(#sent, 0)
         end)
-        test.it("does not replace a hub when retirement delivery fails", function()
-            local old = central._get_or_create_user_hub(state, "member", {scope_policy_ids = {"app:read"}})
-            mock("process.send", function() return false, "unavailable" end)
-            local ok, err = pcall(central._get_or_create_user_hub, state, "member", {scope_policy_ids = {"app:write"}})
-            test.is_false(ok)
-            test.contains(tostring(err), "unavailable")
-            test.eq(state.user_hubs.member.hub_pid, old)
-            test.eq(#spawned, 1)
+        test.it("contains a failed admission and continues serving another user", function()
+            local ok = pcall(central._handle_client_connection, state, "bad-client", {user_id = "bad", scope_policy_ids = "invalid"})
+            test.is_true(ok, "one failed login must not escape the central message handler")
+            test.eq(sent[1].pid, "bad-client")
+            test.eq(sent[1].payload.error, consts.ERROR_CODES.HUB_CREATION_FAILED)
+            central._handle_client_connection(state, "good-client", {user_id = "good"})
+            test.eq(sent[2].pid, "good-client")
+            test.eq(sent[2].payload.target_pid, state.user_hubs.good.hub_pid)
         end)
+        for _, failure in ipairs({"spawn", "unregister", "register", "retire"}) do
+            test.it("preserves the admitted hub when replacement fails at " .. failure, function()
+                local old = central._get_or_create_user_hub(state, "member", {scope_policy_ids = {"app:read"}})
+                if failure == "spawn" then
+                    mock("process.with_context", function()
+                        local builder = {}
+                        function builder:with_actor(_) return self end
+                        function builder:with_scope(_) return self end
+                        function builder:spawn_linked_monitored() return nil, "unavailable" end
+                        return builder
+                    end)
+                elseif failure == "retire" then
+                    mock("process.send", function() return false, "unavailable" end)
+                else
+                    local registry = {}
+                    for key, value in pairs(process.registry) do registry[key] = value end
+                    if failure == "unregister" then
+                        registry.unregister = function() return false, "unavailable" end
+                    else
+                        registry.register = function(name, pid)
+                            if pid ~= old then return false, "unavailable" end
+                            names[name] = pid
+                            return true
+                        end
+                    end
+                    mock("process.registry", registry)
+                end
+                local ok, result = pcall(central._get_or_create_user_hub, state, "member", {scope_policy_ids = {"app:write"}})
+                if failure == "spawn" then
+                    test.is_true(ok)
+                    test.is_nil(result)
+                    test.eq(#cancelled, 0)
+                else
+                    test.is_false(ok)
+                    test.contains(tostring(result), "unavailable")
+                    test.eq(cancelled[1], "hub-2", "only the unadmitted replacement may be cancelled")
+                end
+                test.eq(state.user_hubs.member.hub_pid, old)
+                test.eq(state.total_hubs, 1)
+                test.eq(names[consts.USER_HUB_REGISTRY_PREFIX .. "member"], old,
+                    "failed replacement must preserve the admitted hub's canonical binding")
+            end)
+        end
         test.it("retires a restored hub whose original identity is unknown", function()
             local now = time.now()
             state.user_hubs.member = {hub_pid = "earlier-hub", created_at = now, last_activity = now, client_count = 0}
