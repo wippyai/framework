@@ -45,6 +45,72 @@ end
 
 local function define_tests()
     test.describe("relay authenticated session authority", function()
+        test.it("keeps both authenticated clients on one hub across independent logins", function()
+            local central_pid = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME))
+            local user_id = "same-user-" .. process.pid()
+            local observations = process.listen("test.isolation")
+            local session = process.listen("relay.authority.session")
+            local children, hubs, receipts = {}, {}, {}
+            local function client_event(pid, topic)
+                while true do
+                    for index, receipt in ipairs(receipts) do
+                        if receipt.client_pid == pid and receipt.topic == topic then
+                            table.remove(receipts, index)
+                            return receipt
+                        end
+                    end
+                    local receipt = receive(observations)
+                    receipts[#receipts + 1] = receipt
+                    if receipt.kind == "client" then
+                        if receipt.topic == consts.WS_TOPICS.CONTROL then
+                            hubs[receipt.hub_pid] = true
+                        end
+                        test.neq(receipt.topic, consts.CLIENT_TOPICS.ERROR,
+                            "an equivalent login must not retire a connected client's hub: " .. assert(json.encode(receipt)))
+                    end
+                end
+            end
+            local ok, err = pcall(function()
+                local clients = {}
+                local scope = assert(security.named_scope("app:user"))
+                local policies = {}
+                for _, policy in ipairs(scope:policies()) do policies[#policies + 1] = policy:id() end
+                local first_hub
+                for index = 1, 2 do
+                    local pid = assert(process.spawn_linked_monitored("app:isolation_client", "app:processes", {
+                        central_pid = central_pid, observer_pid = process.pid(), user_id = user_id,
+                        scope_id = "app:user", scope_policy_ids = policies,
+                        token_id = "token-" .. index, session_id = "session-" .. index,
+                        user_metadata = {observer_pid = process.pid(), groups = {"reader"},
+                            session = {login_time = "2026-01-01T00:00:0" .. index .. "Z",
+                                token_id = "token-" .. index, session_id = "session-" .. index,
+                                user_agent = "browser-" .. index}},
+                    }))
+                    children[#children + 1] = pid
+                    clients[index] = pid
+                    local hub = client_event(pid, consts.WS_TOPICS.CONTROL).hub_pid
+                    if not first_hub then first_hub = hub end
+                    test.eq(hub, first_hub, "equal grants must reuse the current hub across logins")
+                    assert(process.send(pid, "test.join", {}))
+                    test.eq(client_event(pid, consts.CLIENT_TOPICS.WELCOME).payload.client_count, index)
+                    if index == 1 then
+                        assert(process.send(pid, "test.send", {topic = consts.WS_TOPICS.MESSAGE,
+                            data = assert(json.encode({type = "session_hold"}))}))
+                        test.is_true(receive(session).busy)
+                    end
+                end
+                assert(process.send(first_hub, "test.same-user-update", {value = "fresh"}))
+                for _, pid in ipairs(clients) do
+                    test.eq(client_event(pid, "test.same-user-update").payload.value, "fresh")
+                end
+                test.eq(process.registry.lookup(consts.USER_HUB_REGISTRY_PREFIX .. user_id), first_hub)
+            end)
+            for _, pid in ipairs(children) do assert(process.cancel(pid, consts.CANCEL_TIMEOUT)) end
+            for pid in pairs(hubs) do assert(process.cancel(pid, consts.CANCEL_TIMEOUT)) end
+            process.unlisten(observations)
+            process.unlisten(session)
+            if not ok then error(err) end
+        end)
         for _, connected in ipairs({false, true}) do
             test.it("refreshes composed authority while earlier work drains, connected " .. tostring(connected), function()
                 local central_pid = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME))
@@ -187,7 +253,7 @@ local function define_tests()
         end)
         test.after_each(function() central._set_security_for_test(nil) end)
 
-        for _, change in ipairs({"grant", "revoke", "actor metadata", "named scope"}) do
+        for _, change in ipairs({"grant", "revoke", "actor metadata", "top-level metadata", "named scope"}) do
             test.it("retires the earlier frame after a change to " .. change, function()
                 local first = {scope_policy_ids = {"app:read"}, user_metadata = {groups = {"reader"}}}
                 local second = {scope_policy_ids = {"app:read", "app:write"}, user_metadata = {groups = {"reader"}}}
@@ -195,6 +261,12 @@ local function define_tests()
                 if change == "actor metadata" then
                     second.scope_policy_ids = {"app:read"}
                     second.user_metadata.groups = {"editor"}
+                elseif change == "top-level metadata" then
+                    second.scope_policy_ids = {"app:read"}
+                    first.user_metadata.role = "reader"
+                    second.user_metadata.role = "editor"
+                    first.user_metadata.session = {id = "first"}
+                    second.user_metadata.session = {id = "second"}
                 elseif change == "named scope" then
                     first = {scope_id = "app:reader"}
                     second = {scope_id = "app:editor"}
@@ -228,6 +300,52 @@ local function define_tests()
             test.eq(current, old)
             test.eq(#spawned, 1)
             test.eq(#sent, 0)
+        end)
+        test.it("stores only authority metadata while preserving the full spawned actor", function()
+            local metadata = {groups = {"reader"}, session = {id = "first", login_time = "2026-01-01T00:00:01Z"},
+                nested = {session = "principal attribute"}}
+            local old = central._get_or_create_user_hub(state, "member", {user_metadata = metadata})
+            test.eq(spawned[1].actor:meta(), metadata)
+            test.eq(spawned[1].args.user_metadata, metadata)
+            test.eq(metadata.session.id, "first", "identity normalization must not mutate actor metadata")
+            test.is_nil(state.user_hubs.member.identity.actor_meta.session)
+            test.eq(state.user_hubs.member.identity.actor_meta.nested.session, "principal attribute")
+            local snapshot = central._snapshot_state(state)
+            test.is_nil(snapshot.user_hubs.member.identity.actor_meta.session)
+            state.user_hubs = central._restore_hubs(central._decode_upgrade_state(central._encode_upgrade_state(snapshot)))
+            local current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {groups = {"reader"}, session = {id = "second"}, nested = {session = "principal attribute"}},
+            })
+            test.eq(current, old)
+            test.eq(#spawned, 1)
+            test.eq(#sent, 0)
+            current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {groups = {"reader"}, nested = {session = "principal attribute"}},
+            })
+            test.eq(current, old, "absent per-login context preserves authority")
+            test.eq(#spawned, 1)
+            test.eq(#sent, 0)
+        end)
+        test.it("normalizes per-login metadata in legacy upgrade identities", function()
+            local old = central._get_or_create_user_hub(state, "member", {user_metadata = {role = "reader"}})
+            local snapshot = central._snapshot_state(state)
+            snapshot.user_hubs.member.identity.actor_meta.session = {id = "earlier-login"}
+            state.user_hubs = central._restore_hubs(central._decode_upgrade_state(central._encode_upgrade_state(snapshot)))
+            test.is_nil(state.user_hubs.member.identity.actor_meta.session)
+            local current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {role = "reader", session = {id = "new-login"}},
+            })
+            test.eq(current, old)
+            test.eq(#spawned, 1)
+            test.eq(#sent, 0)
+            current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {role = "editor", session = {id = "new-login"}},
+            })
+            test.neq(current, old, "restored authority metadata still participates in comparison")
+            test.eq(#spawned, 2)
+            test.eq(#sent, 1)
+            test.eq(sent[1].pid, old)
+            test.eq(sent[1].topic, consts.HUB_CONTROL.RETIRE)
         end)
         test.it("validates new login metadata before reusing the cached hub", function()
             local old = central._get_or_create_user_hub(state, "member", {})

@@ -38,6 +38,12 @@ hub. Equivalent actor metadata and scope policy sets reuse the same hub, regardl
 of policy order. Changed authority retires the earlier hub and starts a new frame;
 the canonical `user.<id>` registry name points to the replacement.
 
+The `session` key of actor metadata is reserved for per-login context, such as
+login time, client address, and user agent. Applications place login facts there;
+relay never uses this key for authority comparison. All other actor metadata
+remains part of authority. The spawned hub receives the full actor metadata,
+including `session`.
+
 Connections on the retired hub receive the existing `hub_creation_failed` error
 and stop submitting work. Accepted session work drains through the existing
 shutdown protocol before the earlier hub exits. A new connection uses the newly

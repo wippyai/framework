@@ -63,6 +63,19 @@ local function table_length(t: any): number
     return count
 end
 
+local function authority_identity(identity: HubIdentity?): HubIdentity?
+    if not identity then return nil end
+    local actor_meta = {}
+    for key, value in pairs(identity.actor_meta) do
+        if key ~= "session" then actor_meta[key] = value end
+    end
+    return {
+        actor_id = identity.actor_id,
+        actor_meta = actor_meta,
+        policy_ids = identity.policy_ids,
+    }
+end
+
 local function encode_time(value: time.Time?): string?
     if not value then return nil end
     return value:format_rfc3339()
@@ -87,7 +100,7 @@ local function snapshot_state(state: CentralState): CentralUpgradeState
             client_count = hub.client_count,
             terminating = hub.terminating,
             termination_started_at = encode_time(hub.termination_started_at),
-            identity = hub.identity,
+            identity = authority_identity(hub.identity),
         }
     end
     local snapshot: CentralUpgradeState = {
@@ -133,7 +146,7 @@ local function restore_hubs(snapshot: CentralUpgradeState): {[string]: UserHubIn
             client_count = tonumber(hub.client_count) or 0,
             terminating = hub.terminating == true,
             termination_started_at = decode_time(hub.termination_started_at, "termination_started_at"),
-            identity = hub.identity,
+            identity = authority_identity(hub.identity),
         }
     end
     return user_hubs
@@ -197,7 +210,7 @@ local function get_or_create_user_hub(state: CentralState, user_id: string, meta
 
     local policy_ids: {[string]: boolean} = {}
     for _, policy in ipairs(user_scope:policies()) do policy_ids[policy:id()] = true end
-    local identity = {actor_id = user_actor:id(), actor_meta = user_actor:meta(), policy_ids = policy_ids}
+    local identity = authority_identity({actor_id = user_actor:id(), actor_meta = user_actor:meta(), policy_ids = policy_ids})
     local hub = state.user_hubs[user_id]
     if hub and same_identity(hub.identity, identity) then return hub.hub_pid end
 
