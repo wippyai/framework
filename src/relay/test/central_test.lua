@@ -45,6 +45,70 @@ end
 
 local function define_tests()
     test.describe("relay authenticated session authority", function()
+        test.it("keeps both authenticated clients on one hub across independent logins", function()
+            local central_pid = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME))
+            local user_id = "same-user-" .. process.pid()
+            local observations = process.listen("test.isolation")
+            local session = process.listen("relay.authority.session")
+            local children, hubs, receipts = {}, {}, {}
+            local function client_event(pid, topic)
+                while true do
+                    for index, receipt in ipairs(receipts) do
+                        if receipt.client_pid == pid and receipt.topic == topic then
+                            table.remove(receipts, index)
+                            return receipt
+                        end
+                    end
+                    local receipt = receive(observations)
+                    receipts[#receipts + 1] = receipt
+                    if receipt.kind == "client" then
+                        if receipt.topic == consts.WS_TOPICS.CONTROL then
+                            hubs[receipt.hub_pid] = true
+                        end
+                        test.neq(receipt.topic, consts.CLIENT_TOPICS.ERROR,
+                            "an equivalent login must not retire a connected client's hub: " .. assert(json.encode(receipt)))
+                    end
+                end
+            end
+            local ok, err = pcall(function()
+                local clients = {}
+                local scope = assert(security.named_scope("app:user"))
+                local policies = {}
+                for _, policy in ipairs(scope:policies()) do policies[#policies + 1] = policy:id() end
+                local first_hub
+                for index = 1, 2 do
+                    local pid = assert(process.spawn_linked_monitored("app:isolation_client", "app:processes", {
+                        central_pid = central_pid, observer_pid = process.pid(), user_id = user_id,
+                        scope_id = "app:user", scope_policy_ids = policies,
+                        token_id = "token-" .. index, session_id = "session-" .. index,
+                        user_metadata = {observer_pid = process.pid(), groups = {"reader"},
+                            login_time = "2026-01-01T00:00:0" .. index .. "Z"},
+                    }))
+                    children[#children + 1] = pid
+                    clients[index] = pid
+                    local hub = client_event(pid, consts.WS_TOPICS.CONTROL).hub_pid
+                    if not first_hub then first_hub = hub end
+                    test.eq(hub, first_hub, "equal grants must reuse the current hub across logins")
+                    assert(process.send(pid, "test.join", {}))
+                    test.eq(client_event(pid, consts.CLIENT_TOPICS.WELCOME).payload.client_count, index)
+                    if index == 1 then
+                        assert(process.send(pid, "test.send", {topic = consts.WS_TOPICS.MESSAGE,
+                            data = assert(json.encode({type = "session_hold"}))}))
+                        test.is_true(receive(session).busy)
+                    end
+                end
+                assert(process.send(first_hub, "test.same-user-update", {value = "fresh"}))
+                for _, pid in ipairs(clients) do
+                    test.eq(client_event(pid, "test.same-user-update").payload.value, "fresh")
+                end
+                test.eq(process.registry.lookup(consts.USER_HUB_REGISTRY_PREFIX .. user_id), first_hub)
+            end)
+            for _, pid in ipairs(children) do assert(process.cancel(pid, consts.CANCEL_TIMEOUT)) end
+            for pid in pairs(hubs) do assert(process.cancel(pid, consts.CANCEL_TIMEOUT)) end
+            process.unlisten(observations)
+            process.unlisten(session)
+            if not ok then error(err) end
+        end)
         for _, connected in ipairs({false, true}) do
             test.it("refreshes composed authority while earlier work drains, connected " .. tostring(connected), function()
                 local central_pid = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME))
