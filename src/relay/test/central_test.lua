@@ -82,7 +82,9 @@ local function define_tests()
                         scope_id = "app:user", scope_policy_ids = policies,
                         token_id = "token-" .. index, session_id = "session-" .. index,
                         user_metadata = {observer_pid = process.pid(), groups = {"reader"},
-                            login_time = "2026-01-01T00:00:0" .. index .. "Z"},
+                            session = {login_time = "2026-01-01T00:00:0" .. index .. "Z",
+                                token_id = "token-" .. index, session_id = "session-" .. index,
+                                user_agent = "browser-" .. index}},
                     }))
                     children[#children + 1] = pid
                     clients[index] = pid
@@ -251,7 +253,7 @@ local function define_tests()
         end)
         test.after_each(function() central._set_security_for_test(nil) end)
 
-        for _, change in ipairs({"grant", "revoke", "actor metadata", "named scope"}) do
+        for _, change in ipairs({"grant", "revoke", "actor metadata", "top-level metadata", "named scope"}) do
             test.it("retires the earlier frame after a change to " .. change, function()
                 local first = {scope_policy_ids = {"app:read"}, user_metadata = {groups = {"reader"}}}
                 local second = {scope_policy_ids = {"app:read", "app:write"}, user_metadata = {groups = {"reader"}}}
@@ -259,6 +261,12 @@ local function define_tests()
                 if change == "actor metadata" then
                     second.scope_policy_ids = {"app:read"}
                     second.user_metadata.groups = {"editor"}
+                elseif change == "top-level metadata" then
+                    second.scope_policy_ids = {"app:read"}
+                    first.user_metadata.role = "reader"
+                    second.user_metadata.role = "editor"
+                    first.user_metadata.session = {id = "first"}
+                    second.user_metadata.session = {id = "second"}
                 elseif change == "named scope" then
                     first = {scope_id = "app:reader"}
                     second = {scope_id = "app:editor"}
@@ -292,6 +300,52 @@ local function define_tests()
             test.eq(current, old)
             test.eq(#spawned, 1)
             test.eq(#sent, 0)
+        end)
+        test.it("stores only authority metadata while preserving the full spawned actor", function()
+            local metadata = {groups = {"reader"}, session = {id = "first", login_time = "2026-01-01T00:00:01Z"},
+                nested = {session = "principal attribute"}}
+            local old = central._get_or_create_user_hub(state, "member", {user_metadata = metadata})
+            test.eq(spawned[1].actor:meta(), metadata)
+            test.eq(spawned[1].args.user_metadata, metadata)
+            test.eq(metadata.session.id, "first", "identity normalization must not mutate actor metadata")
+            test.is_nil(state.user_hubs.member.identity.actor_meta.session)
+            test.eq(state.user_hubs.member.identity.actor_meta.nested.session, "principal attribute")
+            local snapshot = central._snapshot_state(state)
+            test.is_nil(snapshot.user_hubs.member.identity.actor_meta.session)
+            state.user_hubs = central._restore_hubs(central._decode_upgrade_state(central._encode_upgrade_state(snapshot)))
+            local current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {groups = {"reader"}, session = {id = "second"}, nested = {session = "principal attribute"}},
+            })
+            test.eq(current, old)
+            test.eq(#spawned, 1)
+            test.eq(#sent, 0)
+            current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {groups = {"reader"}, nested = {session = "principal attribute"}},
+            })
+            test.eq(current, old, "absent per-login context preserves authority")
+            test.eq(#spawned, 1)
+            test.eq(#sent, 0)
+        end)
+        test.it("normalizes per-login metadata in legacy upgrade identities", function()
+            local old = central._get_or_create_user_hub(state, "member", {user_metadata = {role = "reader"}})
+            local snapshot = central._snapshot_state(state)
+            snapshot.user_hubs.member.identity.actor_meta.session = {id = "earlier-login"}
+            state.user_hubs = central._restore_hubs(central._decode_upgrade_state(central._encode_upgrade_state(snapshot)))
+            test.is_nil(state.user_hubs.member.identity.actor_meta.session)
+            local current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {role = "reader", session = {id = "new-login"}},
+            })
+            test.eq(current, old)
+            test.eq(#spawned, 1)
+            test.eq(#sent, 0)
+            current = central._get_or_create_user_hub(state, "member", {
+                user_metadata = {role = "editor", session = {id = "new-login"}},
+            })
+            test.neq(current, old, "restored authority metadata still participates in comparison")
+            test.eq(#spawned, 2)
+            test.eq(#sent, 1)
+            test.eq(sent[1].pid, old)
+            test.eq(sent[1].topic, consts.HUB_CONTROL.RETIRE)
         end)
         test.it("validates new login metadata before reusing the cached hub", function()
             local old = central._get_or_create_user_hub(state, "member", {})
