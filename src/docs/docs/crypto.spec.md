@@ -156,24 +156,25 @@ Creates and signs a JWT.
 
 Parameters:
 
-- `payload`: JWT claims as a table. Can include a special `_header` field to set custom header values.
-- `key`: Signing key. For HMAC algorithms, this is the secret key. For RS256, this should be the RSA private key in PEM format.
-- `alg`: (Optional) Algorithm ('HS256', 'HS384', 'HS512', 'RS256', default: 'HS256').
+- `payload`: JWT claims as a table. Can include a special `_header` table to set custom header values. If `_header` sets `alg`, it must equal `alg`.
+- `key`: Signing key. For HMAC algorithms, this is the secret key. For RS256, this should be the RSA private key in PEM format. For ES256, this should be the EC P-256 private key in PEM format (SEC1 or PKCS#8).
+- `alg`: (Optional) Algorithm ('HS256', 'HS384', 'HS512', 'RS256', 'ES256', default: 'HS256'). An unsupported value returns an error.
 
 Returns:
 
 - `token`: JWT token (or nil on error).
 - `error`: Error message string (or nil on success).
 
-##### crypto.jwt.verify(token: string, key: string, alg: string)
+##### crypto.jwt.verify(token: string, key: string, alg: string, require_exp: boolean)
 
 Verifies and decodes a JWT.
 
 Parameters:
 
 - `token`: JWT to verify.
-- `key`: Verification key. For HMAC algorithms, this is the secret key. For RS256, this should be the RSA public key in PEM format.
-- `alg`: (Optional) Expected algorithm ('HS256', 'HS384', 'HS512', 'RS256', default: 'HS256').
+- `key`: Verification key. For HMAC algorithms, this is the secret key. For RS256, this should be the RSA public key in PEM format. For ES256, this should be the EC P-256 public key in PEM format.
+- `alg`: (Optional) Expected algorithm ('HS256', 'HS384', 'HS512', 'RS256', 'ES256', default: 'HS256'). An unsupported value returns an error.
+- `require_exp`: (Optional) Require an `exp` claim (default: true). Setting this to false permits a missing `exp`; an `exp` that is present is always validated.
 
 Returns:
 
@@ -248,9 +249,9 @@ local verified, err = crypto.jwt.verify("invalid.token", "key") -- verified: nil
 3. **JWT Handling**
     - `jwt.encode` validates the payload and signs with the specified algorithm.
     - Custom header fields can be set using the special `_header` table field in the payload.
-    - For RS256, private keys must be in PEM format.
+    - For RS256 and ES256, private keys must be in PEM format. ES256 requires a P-256 key.
     - `jwt.verify` validates the token signature and returns the payload.
-    - For RS256, public keys must be in PEM format.
+    - For RS256 and ES256, public keys must be in PEM format.
 
 ## Thread Safety
 
