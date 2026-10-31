@@ -15,7 +15,10 @@ local function client(args)
         metadata = {
             user_id = args.user_id,
             scope_id = args.scope_id,
-            user_metadata = { observer_pid = args.observer_pid },
+            scope_policy_ids = args.scope_policy_ids,
+            token_id = args.token_id,
+            session_id = args.session_id,
+            user_metadata = args.user_metadata or { observer_pid = args.observer_pid },
         },
     })
     local inbox = process.inbox()
@@ -41,7 +44,7 @@ local function client(args)
                 send(target, consts.WS_TOPICS.LEAVE, { client_pid = process.pid() })
             end
             send(args.observer_pid, "test.isolation", {
-                kind = "client", user_id = args.user_id,
+                kind = "client", user_id = args.user_id, client_pid = process.pid(),
                 topic = topic, payload = payload, hub_pid = hub_pid,
             })
         end

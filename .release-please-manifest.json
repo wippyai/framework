@@ -7,7 +7,7 @@
   "src/facade": "0.6.49",
   "src/llm": "0.5.12",
   "src/migration": "0.3.26",
-  "src/relay": "0.3.18",
+  "src/relay": "0.3.20",
   "src/security": "0.4.3",
   "src/terminal": "0.4.6",
   "src/test": "0.4.24",

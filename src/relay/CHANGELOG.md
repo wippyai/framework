@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.20](https://github.com/wippyai/framework/compare/relay-v0.3.19...relay-v0.3.20) (2026-10-30)
+
+
+### Bug Fixes
+
+* **relay:** exclude per-login session metadata from hub authority ([#230](https://github.com/wippyai/framework/issues/230)) ([885c818](https://github.com/wippyai/framework/commit/885c8180a4677cb8913335ac2623df3e86680d41))
+
+## [0.3.19](https://github.com/wippyai/framework/compare/relay-v0.3.18...relay-v0.3.19) (2026-10-30)
+
+
+### Bug Fixes
+
+* **relay:** refresh hub authority on authenticated reconnect ([#227](https://github.com/wippyai/framework/issues/227)) ([e5c1bc1](https://github.com/wippyai/framework/commit/e5c1bc11c4f08a10fecff94634f74306881daf5f))
+
 ## [0.3.18](https://github.com/wippyai/framework/compare/relay-v0.3.17...relay-v0.3.18) (2026-10-29)
 
 

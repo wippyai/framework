@@ -7,6 +7,12 @@ local plugin_discovery = require("plugin_discovery")
 local logger = require("logger"):named("relay")
 local security_mod = security
 
+type HubIdentity = {
+    actor_id: string,
+    actor_meta: any,
+    policy_ids: {[string]: boolean},
+}
+
 type UserHubInfo = {
     hub_pid: string,
     created_at: time.Time,
@@ -14,6 +20,7 @@ type UserHubInfo = {
     client_count: number,
     terminating?: boolean,
     termination_started_at?: time.Time,
+    identity?: HubIdentity,
 }
 
 type ValidatedConfig = {
@@ -41,6 +48,7 @@ type UserHubUpgradeInfo = {
     client_count: number,
     terminating: boolean?,
     termination_started_at: string?,
+    identity?: HubIdentity,
 }
 
 type CentralUpgradeState = {
@@ -53,6 +61,19 @@ local function table_length(t: any): number
     local count = 0
     for _ in pairs(t) do count = count + 1 end
     return count
+end
+
+local function authority_identity(identity: HubIdentity?): HubIdentity?
+    if not identity then return nil end
+    local actor_meta = {}
+    for key, value in pairs(identity.actor_meta) do
+        if key ~= "session" then actor_meta[key] = value end
+    end
+    return {
+        actor_id = identity.actor_id,
+        actor_meta = actor_meta,
+        policy_ids = identity.policy_ids,
+    }
 end
 
 local function encode_time(value: time.Time?): string?
@@ -79,6 +100,7 @@ local function snapshot_state(state: CentralState): CentralUpgradeState
             client_count = hub.client_count,
             terminating = hub.terminating,
             termination_started_at = encode_time(hub.termination_started_at),
+            identity = authority_identity(hub.identity),
         }
     end
     local snapshot: CentralUpgradeState = {
@@ -124,6 +146,7 @@ local function restore_hubs(snapshot: CentralUpgradeState): {[string]: UserHubIn
             client_count = tonumber(hub.client_count) or 0,
             terminating = hub.terminating == true,
             termination_started_at = decode_time(hub.termination_started_at, "termination_started_at"),
+            identity = authority_identity(hub.identity),
         }
     end
     return user_hubs
@@ -169,15 +192,29 @@ local function identity_from_metadata(config: ValidatedConfig, user_id: string, 
     return user_actor, user_scope, user_metadata, nil
 end
 
-local function get_or_create_user_hub(state: CentralState, user_id: string, metadata: any): string?
-    local hub = state.user_hubs[user_id]
-    if hub then
-        return hub.hub_pid
+local function same_identity(left: any, right: any): boolean
+    if type(left) ~= type(right) then return false end
+    if type(left) ~= "table" then return left == right end
+    for key, value in pairs(left) do
+        if not same_identity(value, right[key]) then return false end
     end
+    for key in pairs(right) do
+        if left[key] == nil then return false end
+    end
+    return true
+end
 
+local function get_or_create_user_hub(state: CentralState, user_id: string, metadata: any): string?
     local user_actor, user_scope, user_metadata, identity_err = identity_from_metadata(state.config, user_id, metadata or {})
     if identity_err then error(identity_err) end
 
+    local policy_ids: {[string]: boolean} = {}
+    for _, policy in ipairs(user_scope:policies()) do policy_ids[policy:id()] = true end
+    local identity = authority_identity({actor_id = user_actor:id(), actor_meta = user_actor:meta(), policy_ids = policy_ids})
+    local hub = state.user_hubs[user_id]
+    if hub and same_identity(hub.identity, identity) then return hub.hub_pid end
+
+    local registry_name = consts.USER_HUB_REGISTRY_PREFIX .. user_id
     local hub_pid, err = process.with_context({})
         :with_scope(user_scope)
         :with_actor(user_actor)
@@ -198,14 +235,51 @@ local function get_or_create_user_hub(state: CentralState, user_id: string, meta
         return nil
     end
 
+    -- Stage the new frame before moving the canonical name. Until handover
+    -- succeeds, the old frame and cached admission remain authoritative.
+    local unregistered, registered = false, false
+    local admitted, admission_err = pcall(function()
+        if hub then
+            local _, unregister_err = process.registry.unregister(registry_name)
+            if unregister_err then error(unregister_err) end
+            unregistered = true
+        end
+        local register_ok, register_err = process.registry.register(registry_name, hub_pid)
+        if not register_ok then error(register_err) end
+        registered = true
+        if hub then
+            local sent, retire_err = process.send(hub.hub_pid, consts.HUB_CONTROL.RETIRE, {})
+            if not sent then error(retire_err) end
+        end
+    end)
+    if not admitted then
+        if registered then
+            local _, cleanup_err = process.registry.unregister(registry_name)
+            if cleanup_err then
+                logger:error("failed to remove unadmitted hub registration", {user_id = user_id, error = cleanup_err})
+            end
+        end
+        if hub and unregistered then
+            local restored, restore_err = process.registry.register(registry_name, hub.hub_pid)
+            if not restored then
+                logger:error("failed to restore user hub registration", {user_id = user_id, error = restore_err})
+            end
+        end
+        local cancelled, cancel_err = process.cancel(hub_pid, consts.CANCEL_TIMEOUT)
+        if not cancelled then
+            logger:error("failed to cancel unadmitted user hub", {user_id = user_id, hub_pid = hub_pid, error = cancel_err})
+        end
+        error(admission_err)
+    end
     state.user_hubs[user_id] = {
         hub_pid = hub_pid,
         created_at = time.now(),
         last_activity = time.now(),
-        client_count = 0
+        client_count = 0,
+        identity = identity,
     }
 
-    state.total_hubs = state.total_hubs + 1
+    if not hub then state.total_hubs = state.total_hubs + 1 end
 
     logger:info("user hub created", { user_id = user_id, hub_pid = hub_pid, total_hubs = state.total_hubs })
 
@@ -235,9 +309,9 @@ local function handle_client_connection(state: CentralState, client_pid: any, me
         return
     end
 
-    local user_hub_pid = get_or_create_user_hub(state, user_id, metadata)
-    if not user_hub_pid then
-        logger:error("user hub creation failed", { user_id = user_id })
+    local admitted, user_hub_pid = pcall(get_or_create_user_hub, state, user_id, metadata)
+    if not admitted or not user_hub_pid then
+        logger:error("user hub creation failed", { user_id = user_id, error = not admitted and tostring(user_hub_pid) or nil })
         process.send(pid, consts.CLIENT_TOPICS.ERROR, {
             error = consts.ERROR_CODES.HUB_CREATION_FAILED,
             message = "Failed to create user hub"
@@ -451,4 +525,7 @@ return {
     _decode_upgrade_state = decode_upgrade_state,
     _check_inactive_hubs = check_inactive_hubs,
     _handle_activity_update = handle_activity_update,
+    _get_or_create_user_hub = get_or_create_user_hub,
+    _handle_client_connection = handle_client_connection,
+    _handle_process_event = handle_process_event,
 }

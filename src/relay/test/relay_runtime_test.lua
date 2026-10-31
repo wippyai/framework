@@ -20,7 +20,7 @@ local function receive(ch: any): any
     return result.value
 end
 
-local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?, hub_source: string?, drain_fixture: boolean?): any
+local function with_hub(plugin_id: string, body: any, active_pid: string?, session_pid: string?, saved_client_count: number?, hub_source: string?, drain_fixture: boolean?, saved_retiring: boolean?): any
     sequence = sequence + 1
     local user_id = "relay-runtime-" .. process.pid() .. "-" .. sequence
     local actor = security.new_actor(user_id, {})
@@ -47,7 +47,7 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
         args.plugins.session_.prefix = "session_"
         args.plugins.runtime_ = nil
     end
-    if active_pid or session_pid then
+    if active_pid or session_pid or saved_retiring then
         args.relay_user_upgrade = true
         args.active_plugins = {}
         if active_pid then
@@ -58,6 +58,7 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
         end
         args.connected_clients = {}
         args.client_count = 0
+        args.retiring = saved_retiring
         if saved_client_count ~= nil then
             args.connected_clients[process.pid()] = true
             args.client_count = saved_client_count
@@ -68,6 +69,9 @@ local function with_hub(plugin_id: string, body: any, active_pid: string?, sessi
     local pid, err = process.with_context({}):with_actor(actor):with_scope(scope):spawn_monitored(
         hub_source or consts.USER_HUB_PROCESS_ID, assert(config.user_hub_host), args)
     assert(pid, tostring(err))
+    if drain_fixture then
+        assert(process.registry.register(consts.USER_HUB_REGISTRY_PREFIX .. user_id, pid))
+    end
     local function join()
         assert(process.send(pid, consts.WS_TOPICS.JOIN, { client_pid = process.pid() }))
         return receive(welcome)
@@ -227,6 +231,22 @@ local function define_tests()
                 assert(process.send(pid, consts.HUB_CONTROL.RETIRE, {}))
                 await_exit(pid)
             end, nil, nil, nil, nil, true)
+        end)
+        test.it("preserves retirement with connected clients through a hot upgrade", function()
+            with_hub("app:relay_runtime_plugin", function(pid, user_id, _, _, _, errors, _, await_exit)
+                local name = consts.USER_HUB_REGISTRY_PREFIX .. user_id
+                assert(process.registry.unregister(name))
+                assert(process.registry.register(name))
+                local ok, err = pcall(function()
+                    assert(process.send(pid, consts.WS_TOPICS.JOIN, {client_pid = process.pid()}))
+                    test.eq(receive(errors).error, consts.ERROR_CODES.HUB_CREATION_FAILED)
+                    assert(process.send(pid, consts.WS_TOPICS.LEAVE, {client_pid = process.pid()}))
+                    await_exit(pid)
+                    test.eq(process.registry.lookup(name), (process.pid()))
+                end)
+                assert(process.registry.unregister(name))
+                if not ok then error(err) end
+            end, nil, nil, 1, nil, true, true)
         end)
         test.it("does not forward incoming retirement through the central hub", function()
             local central = assert(process.registry.lookup(consts.CENTRAL_HUB_REGISTRY_NAME))
