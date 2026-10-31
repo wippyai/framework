@@ -2,7 +2,7 @@
   "src/actor": "0.4.5",
   "src/agent": "0.5.9",
   "src/bootloader": "0.3.18",
-  "src/docs": "0.3.11",
+  "src/docs": "0.3.12",
   "src/embeddings": "0.3.17",
   "src/facade": "0.6.49",
   "src/llm": "0.5.12",
