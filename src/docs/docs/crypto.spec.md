@@ -165,7 +165,7 @@ Returns:
 - `token`: JWT token (or nil on error).
 - `error`: Error message string (or nil on success).
 
-##### crypto.jwt.verify(token: string, key: string, alg: string)
+##### crypto.jwt.verify(token: string, key: string, alg: string, require_exp: boolean)
 
 Verifies and decodes a JWT.
 
@@ -174,6 +174,7 @@ Parameters:
 - `token`: JWT to verify.
 - `key`: Verification key. For HMAC algorithms, this is the secret key. For RS256, this should be the RSA public key in PEM format. For ES256, this should be the EC P-256 public key in PEM format.
 - `alg`: (Optional) Expected algorithm ('HS256', 'HS384', 'HS512', 'RS256', 'ES256', default: 'HS256'). An unsupported value returns an error.
+- `require_exp`: (Optional) Require an `exp` claim (default: true). Setting this to false permits a missing `exp`; an `exp` that is present is always validated.
 
 Returns:
 
