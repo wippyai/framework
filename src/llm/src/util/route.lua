@@ -79,6 +79,10 @@ function route.accepts(provider_ref: table?, caller_options: table?, mode: strin
         if caller.accepts ~= nil then
             return nil, "route " .. id .. " accepts is only allowed on direct provider calls"
         end
+        if caller.request ~= nil then
+            return nil, "route " .. id .. " options.request is only allowed on direct provider calls; "
+                .. "a resolved call takes it from the route's catalog options"
+        end
         local err = canonical(facts, ref, id, false)
         if err then return nil, err end
     else

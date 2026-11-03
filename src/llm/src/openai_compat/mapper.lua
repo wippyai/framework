@@ -14,6 +14,9 @@ openai_mapper.CAPABILITY = {
     }
 }
 
+-- Wire body keys the driver builds structurally; options.request cannot set them.
+openai_mapper.REQUEST_KEYS = { "model", "messages", "tools", "tool_choice", "stream", "stream_options" }
+
 -- Error type mapping from HTTP status codes and message content
 local function map_error_type(status_code, message, code, provider_type)
     if status_code == 402 or (status_code == 429

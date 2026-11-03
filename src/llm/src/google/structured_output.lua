@@ -1,6 +1,7 @@
 local contract = require("contract")
 local mapper = require("google_mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 local json = require("json")
 local hash = require("hash")
 local config = require("google_config")
@@ -94,6 +95,11 @@ function structured_output.handler(contract_args)
         if value ~= nil then
             payload.generationConfig[key] = value
         end
+    end
+
+    local overlay_err = wire_request.apply(payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local client_contract, contract_err = structured_output._contract.get(config.CLIENT_CONTRACT_ID)

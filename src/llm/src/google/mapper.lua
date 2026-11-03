@@ -14,6 +14,9 @@ mapper.CAPABILITY = {
     }
 }
 
+-- Wire body keys the driver builds structurally; options.request cannot set them.
+mapper.REQUEST_KEYS = { "contents", "systemInstruction", "tools", "toolConfig" }
+
 -- Remove elements that are not supported by Google
 local function filter_tool_schema(schema)
     local function recursive_filter(obj)
