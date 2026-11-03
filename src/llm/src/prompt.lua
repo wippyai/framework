@@ -52,7 +52,7 @@ type PromptBuilder = {
     add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?) -> PromptBuilder,
     add_function_result: (self: any, name: string, content: any, function_call_id: string?, options: FunctionResultOptions?) -> PromptBuilder,
     add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
-    bind_thinking: (self: any, is_current: (msg: Message) -> boolean) -> (PromptBuilder?, string?),
+    drop_stale_thinking: (self: any, is_current: (msg: Message) -> boolean) -> (PromptBuilder?, string?),
     get_messages: (self: any) -> {Message},
     build: (self: any) -> {messages: {Message}},
     clone: (self: any) -> PromptBuilder,
@@ -374,9 +374,11 @@ function prompt.new(messages: {Message}?)
 
     -- Remove thinking blocks the current request can no longer replay.
     -- Providers bind each block to the exact prefix before it and chain it to
-    -- the previous block, so only a leading run of blocks may be dropped, and
-    -- an assistant turn whose tool calls still await results keeps its blocks.
-    builder.bind_thinking = function(self: any, is_current: (msg: Message) -> boolean): (PromptBuilder?, string?)
+    -- the previous block, so blocks may be dropped only from the front: every
+    -- block up to the last stale one goes. An assistant turn (a run of
+    -- assistant and function call messages) whose calls still await results
+    -- keeps its blocks, because the provider needs them to continue the round.
+    builder.drop_stale_thinking = function(self: any, is_current: (msg: Message) -> boolean): (PromptBuilder?, string?)
         local messages: {Message} = self.messages :: {Message}
         local resolved: {[string]: boolean} = {}
         for _, msg in ipairs(messages) do
@@ -385,27 +387,70 @@ function prompt.new(messages: {Message}?)
             end
         end
 
-        local stale: {Message} = {}
-        local kept_index: integer? = nil
+        local function in_turn(msg: Message): boolean
+            return msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL
+        end
+
+        local function carries(msg: Message): boolean
+            if not in_turn(msg) or type(msg.metadata) ~= "table" then return false end
+            local blocks = msg.metadata.thinking_blocks
+            return type(blocks) == "table" and #blocks > 0
+        end
+
+        -- First unanswered call of each assistant turn, keyed by message index.
+        local open_call: {[integer]: string} = {}
+        local turn_start: integer? = nil
         for index, msg in ipairs(messages) do
-            local carries = (msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL)
-                and msg.metadata ~= nil and msg.metadata.thinking_blocks ~= nil
-            if carries then
-                if is_current(msg) then
-                    kept_index = kept_index or index
-                elseif kept_index then
-                    return nil, string.format(
-                        "thinking blocks can be removed only as a leading run: message %d is not current but follows current message %d",
-                        index, kept_index)
+            if in_turn(msg) then
+                turn_start = turn_start or index
+            else
+                turn_start = nil
+            end
+            if turn_start then
+                local ids: {any} = {}
+                if msg.role == prompt.ROLE.FUNCTION_CALL then
+                    table.insert(ids, msg.function_call and msg.function_call.id or false)
                 else
-                    local call_id = msg.function_call and msg.function_call.id
-                    if msg.role == prompt.ROLE.FUNCTION_CALL and not (call_id and resolved[call_id]) then
-                        return nil, string.format(
-                            "thinking blocks of open tool call %s must stay until its result is present",
-                            tostring(call_id))
+                    for _, part in ipairs(msg.content or {}) do
+                        if (part :: any).type == "function_call" then
+                            table.insert(ids, (part :: any).id or false)
+                        end
                     end
-                    table.insert(stale, msg)
                 end
+                for _, id in ipairs(ids) do
+                    if not open_call[turn_start] and not (id and resolved[id]) then
+                        open_call[turn_start] = id and tostring(id) or "without id"
+                    end
+                end
+            end
+        end
+
+        local last_stale: integer? = nil
+        for index, msg in ipairs(messages) do
+            if carries(msg) and not is_current(msg) then
+                last_stale = index
+            end
+        end
+        if not last_stale then
+            return self, nil
+        end
+
+        local stale: {Message} = {}
+        turn_start = nil
+        for index = 1, last_stale do
+            local msg = messages[index]
+            if in_turn(msg) then
+                turn_start = turn_start or index
+            else
+                turn_start = nil
+            end
+            if carries(msg) then
+                local open = turn_start and open_call[turn_start]
+                if open then
+                    return nil, string.format(
+                        "thinking blocks of message %d must stay: its turn has open tool call %s", index, open)
+                end
+                table.insert(stale, msg)
             end
         end
 

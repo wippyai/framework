@@ -280,6 +280,26 @@ local function process_content_array(content)
     return content
 end
 
+local function note_blocks(content): {any}
+    local blocks: {any} = {}
+    if type(content) == "string" then
+        if content ~= "" then
+            table.insert(blocks, { type = "text", text = content })
+        end
+    elseif type(content) == "table" then
+        for _, part in ipairs(content) do
+            if part.type == "text" then
+                if part.text and part.text ~= "" then
+                    table.insert(blocks, { type = "text", text = part.text })
+                end
+            else
+                table.insert(blocks, convert_image_content(part))
+            end
+        end
+    end
+    return blocks
+end
+
 local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
 
@@ -350,21 +370,27 @@ function mapper.map_messages(contract_messages)
     local in_system_phase = true
 
     for i, msg in ipairs(contract_messages) do
-        if prompt.is_positional_note(msg) then
-            -- A positional note joins the user turn it follows, as blocks after
-            -- that turn's content, so the system prompt and every earlier
-            -- block stay byte-identical when the note changes.
+        if prompt.is_positional_note(msg) or msg.role == prompt.ROLE.DEVELOPER then
+            -- Notes join the user turn they follow as blocks after that turn's
+            -- content. Existing blocks are never edited, so the rendering does
+            -- not depend on where cache markers sit and every earlier block
+            -- stays byte-identical across requests.
             in_system_phase = false
+            local blocks = note_blocks(msg.content)
             local last_msg = claude_messages[#claude_messages]
             if not last_msg or last_msg.role ~= "user" then
-                return nil, string.format("positional %s note at message %d must follow a user message", msg.role, i)
-            end
-            local note_content: any = process_content_array(msg.content)
-            if type(note_content) == "string" then
-                table.insert(last_msg.content, { type = "text", text = note_content })
-            elseif type(note_content) == "table" then
-                for _, part in ipairs(note_content) do
-                    table.insert(last_msg.content, part)
+                if prompt.is_positional_note(msg) then
+                    return nil, string.format("positional %s note at message %d must follow a user message", msg.role, i)
+                end
+                -- Developer guidance after an assistant turn opens a user turn:
+                -- the request never ends on an assistant turn (a prefill that
+                -- current models reject) and model output is never amended.
+                if #blocks > 0 then
+                    table.insert(claude_messages, { role = "user", content = blocks })
+                end
+            else
+                for _, block in ipairs(blocks) do
+                    table.insert(last_msg.content, block)
                 end
             end
         elseif msg.role == prompt.ROLE.SYSTEM then
@@ -391,73 +417,6 @@ function mapper.map_messages(contract_messages)
                 local position = last_cacheable_message_position(claude_messages)
                 if position then
                     table.insert(message_cache_positions, position)
-                end
-            end
-        elseif msg.role == prompt.ROLE.DEVELOPER then
-            in_system_phase = false
-            local dev_text = type(msg.content) == "string" and msg.content or
-                (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
-
-            if dev_text ~= "" then
-                -- Developer guidance merges only into a preceding plain user
-                -- message. Anywhere else it opens a new user message: gluing
-                -- it into an assistant message would attribute text the model
-                -- never produced and leave the request ending on an assistant
-                -- turn, which the API treats as a prefill and current models
-                -- reject; after a tool_result it stays a separate message.
-                local should_create_new_message = false
-
-                if #claude_messages == 0 then
-                    should_create_new_message = true
-                else
-                    local last_msg = claude_messages[#claude_messages]
-                    if last_msg.role ~= "user" then
-                        should_create_new_message = true
-                    elseif last_msg.content and last_msg.content[1] and
-                       last_msg.content[1].type == "tool_result" then
-                        should_create_new_message = true
-                    else
-                        -- A later developer note must not alter a prefix already
-                        -- selected for caching by a preceding marker.
-                        for _, position in ipairs(message_cache_positions) do
-                            if position.message == #claude_messages then
-                                should_create_new_message = true
-                                break
-                            end
-                        end
-                    end
-                end
-
-                if should_create_new_message then
-                    -- Create new user message for developer content
-                    table.insert(claude_messages, {
-                        role = "user",
-                        content = {
-                            {
-                                type = "text",
-                                text = dev_text
-                            }
-                        }
-                    })
-                else
-                    -- Try to merge into previous message (existing logic)
-                    local last_msg = claude_messages[#claude_messages]
-                    local merged = false
-                    for j = #last_msg.content, 1, -1 do
-                        local part = last_msg.content[j] :: any
-                        if part.type == "text" then
-                            part.text = part.text ..
-                                "\n<developer-instruction>" .. dev_text .. "</developer-instruction>"
-                            merged = true
-                            break
-                        end
-                    end
-                    if not merged then
-                        table.insert(last_msg.content, {
-                            type = "text",
-                            text = "<developer-instruction>" .. dev_text .. "</developer-instruction>"
-                        })
-                    end
                 end
             end
         elseif msg.role == prompt.ROLE.FUNCTION_RESULT then

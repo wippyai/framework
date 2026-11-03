@@ -218,7 +218,9 @@ A system or developer message with `metadata.preserve_position = true` is a posi
 - Google sends it as a user turn; `systemInstruction` holds only ordinary system messages.
 - OpenAI Responses keeps it in `input`; OpenAI-compatible keeps it as a `system` message in place.
 
-Per-turn context (current time, recalled memory, lifecycle notes) belongs in positional notes written once and kept in the history. Changing the top-level system prompt, the tools or any earlier message changes the provider prefix, which restarts the prompt cache and invalidates every later thinking block.
+A positional note travels with the user turn it follows. Slicing a history (compaction, windowing) must keep or drop the note together with that turn: a slice that keeps the note but drops its user turn is `invalid_request` on Claude and Bedrock.
+
+Per-turn and per-step context (current time, recalled memory, lifecycle notes) belongs in positional notes written once and persisted in the history. A note that is sent once and then removed, rebuilt or moved, and any change to the top-level system prompt, the tools or an earlier message, changes the provider prefix: the prompt cache restarts from that point and every later thinking block is invalidated (the provider rejects or drops it), not only cached.
 
 ```lua
 builder:add_user("What is on my calendar?")
@@ -226,19 +228,21 @@ builder:add_system("The current date and time is Tuesday, November 3, 2026 at 09
     { preserve_position = true })
 ```
 
-Bedrock renders ordinary developer messages as user text at their position, like Claude.
+Ordinary developer messages render the same way on Claude and Bedrock: as their own text blocks after the content of the user turn they follow, or as a new user turn after an assistant turn. Existing blocks are never edited, so the rendering does not depend on where cache markers sit.
+
+Bedrock sends developer messages as user text instead of `system` blocks. A Bedrock conversation stored before this change therefore renders a different prefix once after upgrading: its cache restarts and its earlier thinking blocks no longer match. The provider rejects such blocks unless the request lets it drop them; hosts that keep thinking blocks across the upgrade strip them with `drop_stale_thinking`.
 
 ### Thinking Blocks
 
-Assistant and function call messages carry provider reasoning in `metadata.thinking_blocks`. Each block is bound to the prefix before it and chained to the previous block, so blocks can be dropped only from the front of the history. `bind_thinking` removes the blocks of every message the predicate reports as not current and keeps the rest:
+Assistant and function call messages carry provider reasoning in `metadata.thinking_blocks`. Each block is bound to the prefix before it and chained to the previous block, so blocks can be dropped only from the front of the history. `drop_stale_thinking` takes a predicate that reports whether a message's blocks are still valid and removes the blocks of every message up to and including the last one the predicate rejects:
 
 ```lua
-local bound, err = builder:bind_thinking(function(msg)
-    return msg.metadata.turn_id == current_turn_id
+local builder, err = builder:drop_stale_thinking(function(msg)
+    return msg.metadata.prefix_fingerprint == current_fingerprint
 end)
 ```
 
-It fails, leaving the history unchanged, when a non-current message follows a current one, or when a non-current function call has no result in the history yet. Messages without thinking blocks are not consulted.
+An empty `thinking_blocks` list counts as no blocks; messages without blocks are not consulted. An assistant turn is the run of consecutive assistant and function call messages. If a turn whose blocks would be removed still has a function call without a result (a function call message or a `function_call` content part), the call fails and leaves the history unchanged: the provider needs those blocks to continue the tool round.
 
 ### Builder Operations
 

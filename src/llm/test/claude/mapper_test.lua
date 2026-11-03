@@ -88,6 +88,25 @@ local function define_tests()
                 test.is_nil(content[2].cache_control)
             end)
 
+            it("keeps a persisted positional note block unchanged when a developer note follows", function()
+                local function build(with_developer)
+                    local messages = {
+                        { role = "user", content = text("Question") },
+                        note("system", "The current date and time is Tuesday."),
+                    }
+                    if with_developer then
+                        table.insert(messages, { role = "developer", content = text("Attached: report.pdf") })
+                    end
+                    return assert(mapper.map_messages(messages))
+                end
+                local before, after = build(false), build(true)
+                test.eq(#after.messages, 1)
+                test.eq(after.messages[1].content[2].text, before.messages[1].content[2].text)
+                test.eq(after.messages[1].content[2].text, "The current date and time is Tuesday.")
+                test.eq(#after.messages[1].content, 3)
+                test.eq(after.messages[1].content[3].text, "Attached: report.pdf")
+            end)
+
             it("rejects a positional note that has no preceding user message", function()
                 for _, history in ipairs({
                     { { role = "system", content = text("Base") }, note("system", "Orphan") },
@@ -374,13 +393,14 @@ local function define_tests()
                     { role = prompt.ROLE.DEVELOPER, content = "Be concise" }
                 }
 
-                local result = mapper.map_messages(contract_messages)
+                local result = assert(mapper.map_messages(contract_messages))
                 test.eq(#result.messages, 1)
                 local user_msg = result.messages[1]
                 test.eq(user_msg.role, "user")
-                local first_content = user_msg.content[1] :: any
-                test.contains(tostring(first_content.text), "Hello")
-                test.contains(tostring(first_content.text), "<developer-instruction>Be concise</developer-instruction>")
+                test.eq(#user_msg.content, 2)
+                test.eq(tostring((user_msg.content[1] :: any).text), "Hello")
+                test.eq((user_msg.content[2] :: any).type, "text")
+                test.eq(tostring((user_msg.content[2] :: any).text), "Be concise")
             end)
 
             it("should append developer messages to an image-only previous message", function()
@@ -398,14 +418,9 @@ local function define_tests()
                 local result = mapper.map_messages(contract_messages)
                 local last_msg = result.messages[#result.messages] :: any
 
-                local found = false
-                for _, part in ipairs(last_msg.content) do
-                    if (part :: any).type == "text" and
-                       tostring((part :: any).text):find("<developer-instruction>Be concise</developer-instruction>", 1, true) then
-                        found = true
-                    end
-                end
-                test.is_true(found, "developer instruction must survive an image-only previous message")
+                test.eq(#last_msg.content, 2, "developer instruction must survive an image-only previous message")
+                test.eq((last_msg.content[2] :: any).type, "text")
+                test.eq(tostring((last_msg.content[2] :: any).text), "Be concise")
 
                 -- The image itself must still be there.
                 test.eq((last_msg.content[1] :: any).type, "image")
@@ -615,8 +630,57 @@ local function define_tests()
 
                 test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
                 test.not_nil((second.messages[1].content[1] :: any).cache_control)
-                test.eq(second.messages[2].role, "user")
-                test.eq(second.messages[2].content[1].text, "Changing memory recall")
+                test.eq(#second.messages, 1)
+                test.eq(second.messages[1].content[2].text, "Changing memory recall")
+                test.is_nil((second.messages[1].content[2] :: any).cache_control)
+            end)
+
+            it("renders a developer note identically wherever the rolling cache marker sits", function()
+                local function history(marker_on_question)
+                    local messages = {
+                        { role = "system", content = {{ type = "text", text = "Base" }} },
+                        { role = "user", content = {{ type = "text", text = "Summarize the file" }} },
+                    }
+                    if marker_on_question then
+                        table.insert(messages, { role = "cache_marker", marker_id = "conversation_tail" })
+                    end
+                    table.insert(messages, { role = "developer", content = {{ type = "text", text = "Attached: report.pdf" }} })
+                    table.insert(messages, { role = "function_call", content = {},
+                        function_call = { id = "call_1", name = "read", arguments = "{}" } })
+                    table.insert(messages, { role = "function_result", name = "read", function_call_id = "call_1",
+                        content = {{ type = "text", text = "contents" }} })
+                    if not marker_on_question then
+                        table.insert(messages, { role = "cache_marker", marker_id = "conversation_tail" })
+                    end
+                    return assert(mapper.map_messages(messages))
+                end
+                local function strip(value)
+                    if type(value) ~= "table" then return value end
+                    local copy = {}
+                    for k, v in pairs(value) do
+                        if k ~= "cache_control" then copy[k] = strip(v) end
+                    end
+                    return copy
+                end
+                local earlier, later = history(true), history(false)
+                test.not_nil((earlier.messages[1].content[1] :: any).cache_control)
+                test.not_nil((later.messages[3].content[1] :: any).cache_control)
+                test.eq(#later.messages, #earlier.messages)
+                for m, message in ipairs(earlier.messages) do
+                    local other = later.messages[m]
+                    test.eq(other.role, message.role)
+                    test.eq(#other.content, #message.content)
+                    for b, block in ipairs(message.content) do
+                        local left, right = strip(block), strip(other.content[b])
+                        local keys = {}
+                        for key in pairs(left) do keys[key] = true end
+                        for key in pairs(right) do keys[key] = true end
+                        for key in pairs(keys) do
+                            test.eq((json.encode(right[key])), (json.encode(left[key])), "message " .. m .. " block " .. b .. " " .. key)
+                        end
+                    end
+                end
+                test.eq(earlier.messages[1].content[2].text, "Attached: report.pdf")
             end)
 
             it("should handle empty messages gracefully", function()
