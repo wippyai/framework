@@ -225,6 +225,8 @@ local response, err = runner:step(builder, {
     tool_call = "auto",
     disable_memory_recall = false,
     persist_context_notes = true,  -- the host persists response.context_notes in place
+    drop_stale_thinking = true,    -- strip blocks bound to another prefix before the request
+    thinking_is_current = nil,     -- optional function(msg, fingerprint) -> boolean
     previous_memory_ids = { "mem_1", "mem_2" },
     stop_check = function() return stop_requested end,
     cancel = turn_cancel,
@@ -318,12 +320,41 @@ system, and each tool's name, description, schema and native definition
 not reach the provider and are not part of it. It is stable across steps while
 the sent system text and tools stay the same.
 
+The projection is the Claude and Bedrock prefix. Other drivers bind a different
+one: OpenAI moves developer messages into `instructions`, and Google filters tool
+schemas, so equal fingerprints there are necessary but not sufficient for an
+identical prefix.
+
 The model is not part of the fingerprint. Switching models needs no stripping:
 the provider drops thinking blocks the target model cannot read, and some models
 read each other's blocks. The fingerprint covers only the system and tools
-prefix; edits to earlier messages are not detected by it. Hosts store it on
-persisted rows and strip the thinking blocks of rows whose fingerprint differs
-from the current step's with `builder:drop_stale_thinking`.
+prefix; edits to earlier messages are not detected by it.
+
+### Stale thinking
+
+The fingerprint is computed before the request, so the agent strips stale
+thinking blocks itself:
+
+1. The host stores `response.prefix_fingerprint` as `metadata.prefix_fingerprint`
+   on the assistant and function call rows it persists from that step.
+2. On later steps the host passes `drop_stale_thinking = true`. Before the
+   request, the agent removes the blocks of every message up to and including the
+   last one whose `metadata.prefix_fingerprint` differs from the current
+   fingerprint; a message with blocks and no stored fingerprint counts as stale.
+3. A host with its own epoch (a checkpoint id, a compaction boundary) passes
+   `thinking_is_current = function(msg, fingerprint) ... end`, which replaces the
+   default comparison.
+
+Stripping works on copies: the host's message tables keep their blocks, and the
+stored fingerprint never reaches the provider. When a stale turn still has a
+function call without a result, the step fails with that error and sends no
+request. The same stripping applies to a checkpoint replacement history.
+
+The Claude API can drop mismatched blocks itself
+(`thinking.block_binding.prefix_mismatch_behavior = "drop_block"`). That covers
+what the host cannot know, such as an edit to an earlier message; stripping by
+fingerprint keeps known-stale blocks out of the request so they are not dropped,
+re-billed and reported on every request.
 
 A configured recall that fails (the provider errors, cannot be opened, or
 returns no valid `memories` list) does not stop the step: generation runs
@@ -350,7 +381,10 @@ persists instead (see Turn context).
 
 `agent_options.turn_context` declares per-turn context the host adds to each
 user turn. The `time_aware` trait sets
-`turn_context.time = { timezone = <context.timezone>, format = <context.format> }`.
+`turn_context.time = { timezone = <context.timezone>, format = <context.time_format> }`.
+The layout key is `time_format` because the trait context is merged with the
+agent context, where a generic `format` key belongs to other features;
+`timezone` keeps its existing meaning.
 When a user message arrives, the host renders the note once and persists it as a
 positional note right after that message:
 
@@ -575,7 +609,7 @@ return { execute = execute }
 
 ### Built-in Traits
 
-- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `format` (optional Go time layout). It contributes no prompt text; a `time_interval` setting is rejected.
+- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `time_format` (optional Go time layout). It contributes no prompt text; a `time_interval` setting is rejected.
 
 A trait build function that returns an error fails `compiler.compile` with an
 error naming the trait and the function.

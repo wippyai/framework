@@ -1503,7 +1503,8 @@ local function define_tests()
                                 with_context = function(self) return self end,
                                 call = function()
                                     return nil, errors.new({ message = "workspace store unavailable",
-                                        kind = errors.UNAVAILABLE, retryable = true })
+                                        kind = errors.UNAVAILABLE, retryable = true,
+                                        details = { store = "workspace", attempt = 2 } })
                                 end
                             }
                         end
@@ -1519,7 +1520,123 @@ local function define_tests()
                     test.contains(tostring(err), "workspace store unavailable")
                     test.eq(err:kind(), errors.UNAVAILABLE)
                     test.is_true(err:retryable())
+                    test.eq(err:details().store, "workspace")
+                    test.eq(err:details().attempt, 2)
                     test.eq(#requests, 0)
+                end)
+
+                describe("Stale thinking", function()
+                    local function blocks(name)
+                        return { { type = "thinking", thinking = name, signature = "sig-" .. name } }
+                    end
+
+                    local function current_fingerprint()
+                        agent._llm = recording_llm({})
+                        local builder = prompt.new()
+                        builder:add_user("Hello")
+                        return assert(agent.new(copy_spec()):step(builder)).prefix_fingerprint
+                    end
+
+                    local function history(answer_metadata)
+                        local answer = { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Earlier answer") },
+                            metadata = answer_metadata }
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Earlier question") } },
+                            answer,
+                            { role = prompt.ROLE.USER, content = { prompt.text("New question") } },
+                        })
+                        return builder, answer
+                    end
+
+                    local function sent_answer(requests)
+                        for _, message in ipairs(requests[#requests]) do
+                            if message.role == prompt.ROLE.ASSISTANT then return message end
+                        end
+                        return nil
+                    end
+
+                    it("strips blocks bound to another prefix before the request", function()
+                        local builder, answer = history({ thinking_blocks = blocks("old"), prefix_fingerprint = "previous" })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        local result, err = agent.new(copy_spec()):step(builder, { drop_stale_thinking = true })
+                        test.is_nil(err)
+                        test.not_nil(result)
+                        local sent = assert(sent_answer(requests))
+                        test.is_nil(sent.metadata.thinking_blocks)
+                        test.eq(sent.metadata.prefix_fingerprint, "previous")
+                        test.eq(#answer.metadata.thinking_blocks, 1)
+                    end)
+
+                    it("treats blocks without a stored fingerprint as stale", function()
+                        local builder = history({ thinking_blocks = blocks("old") })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        test.is_nil(assert(sent_answer(requests)).metadata.thinking_blocks)
+                    end)
+
+                    it("keeps blocks bound to the current prefix", function()
+                        local fingerprint = current_fingerprint()
+                        local builder = history({ thinking_blocks = blocks("kept"), prefix_fingerprint = fingerprint })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        test.eq(assert(sent_answer(requests)).metadata.thinking_blocks[1].thinking, "kept")
+                    end)
+
+                    it("leaves blocks alone when the host does not ask for stripping", function()
+                        local builder = history({ thinking_blocks = blocks("old"), prefix_fingerprint = "previous" })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder))
+                        test.eq(assert(sent_answer(requests)).metadata.thinking_blocks[1].thinking, "old")
+                    end)
+
+                    it("honours a host predicate", function()
+                        local fingerprint = current_fingerprint()
+                        local builder = history({ thinking_blocks = blocks("epoch"), prefix_fingerprint = fingerprint,
+                            checkpoint = "before" })
+                        local requests = {}
+                        local seen = nil
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, {
+                            drop_stale_thinking = true,
+                            thinking_is_current = function(msg, current)
+                                seen = current
+                                return msg.metadata.prefix_fingerprint == current and msg.metadata.checkpoint == "after"
+                            end,
+                        }))
+                        test.eq(seen, fingerprint)
+                        test.is_nil(assert(sent_answer(requests)).metadata.thinking_blocks)
+                    end)
+
+                    it("fails the step without a request when a stale turn has an open call", function()
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Question") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Looking") },
+                                metadata = { thinking_blocks = blocks("open"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.FUNCTION_CALL, content = {},
+                                function_call = { id = "call_open", name = "calculator", arguments = "{}" } },
+                        })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        local result, err = agent.new(copy_spec()):step(builder, { drop_stale_thinking = true })
+                        test.is_nil(result)
+                        test.contains(tostring(err), "call_open")
+                        test.eq(#requests, 0)
+                    end)
+
+                    it("never sends the stored fingerprint to the provider", function()
+                        local fingerprint = current_fingerprint()
+                        local builder = history({ thinking_blocks = blocks("kept"), prefix_fingerprint = fingerprint })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        local mapped = assert(claude_mapper.map_messages(requests[1]))
+                        test.is_nil(canonical(mapped):find(fingerprint, 1, true))
+                        test.is_nil(canonical(mapped):find("prefix_fingerprint", 1, true))
+                    end)
                 end)
 
                 it("sends the same system message on every step", function()

@@ -15,7 +15,9 @@ local function execute(base_prompt: string?): (TimeAwareResult?, string?)
         return nil, "time_aware no longer rounds the time: remove time_interval; hosts render the exact minute "
             .. "from agent_options.turn_context with wippy.agent:turn_context"
     end
-    local format = ctx.get("format")
+    -- The trait context merges with the agent context, so the layout key is
+    -- namespaced: a generic "format" there belongs to someone else.
+    local format = ctx.get("time_format")
     return {
         agent_options = {
             turn_context = {

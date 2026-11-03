@@ -148,6 +148,7 @@ local function execute_prompt_functions(self: any, runtime_context: any): (strin
                 message = "prompt function " .. tostring(prompt_func.func_id) .. " failed: " .. tostring(err),
                 kind = err:kind(),
                 retryable = err:retryable(),
+                details = err:details(),
             })
         end
 
@@ -651,14 +652,52 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
         return final_messages
     end
-    local final_messages = build_messages(prompt_builder:get_messages())
+    local conversation = prompt_builder:get_messages()
+    local projected = { system_message }
+    for _, message in ipairs(conversation) do table.insert(projected, message) end
+    local fingerprint, fingerprint_err = hash.sha256(canonical.encode(prefix_projection(projected, options.tools)))
+    if fingerprint_err then
+        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Prefix fingerprint failed: " .. tostring(fingerprint_err)):build()
+    end
+
+    -- Thinking blocks are bound to the prefix they were produced under. With
+    -- drop_stale_thinking the request carries only blocks the host's rows mark
+    -- with the current fingerprint (or that the host predicate accepts); the
+    -- host's message tables keep theirs.
+    local function current_thinking(messages: {any}): ({any}?, any)
+        if not runtime_options.drop_stale_thinking then
+            return messages, nil
+        end
+        local is_current = runtime_options.thinking_is_current
+        local working = prompt.new(messages)
+        local _, strip_err = working:drop_stale_thinking(function(msg)
+            if is_current then
+                return is_current(msg, fingerprint) == true
+            end
+            return msg.metadata.prefix_fingerprint == fingerprint
+        end)
+        if strip_err then
+            return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+                :message(tostring(strip_err)):build()
+        end
+        return working:get_messages(), nil
+    end
+
+    local current, thinking_err = current_thinking(conversation)
+    if not current then
+        return nil, thinking_err
+    end
+    local final_messages = build_messages(current)
     if runtime_options.checkpoint then
         options.checkpoint = {
             token_threshold = runtime_options.checkpoint.token_threshold,
             compact = function(info)
                 local replacement, compact_err = runtime_options.checkpoint.compact(info)
                 if not replacement then return nil, compact_err end
-                return build_messages(replacement:get_messages())
+                local retained, retained_err = current_thinking(replacement:get_messages())
+                if not retained then return nil, retained_err end
+                return build_messages(retained)
             end,
         }
     end
@@ -698,11 +737,6 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     --end
 
 
-    local fingerprint, fingerprint_err = hash.sha256(canonical.encode(prefix_projection(final_messages, options.tools)))
-    if fingerprint_err then
-        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
-            :message("Prefix fingerprint failed: " .. tostring(fingerprint_err)):build()
-    end
     local context_notes = memory_prompt and { memory_prompt } or nil
 
     if runtime_options.stop_check and runtime_options.stop_check() then
