@@ -17,9 +17,12 @@ mapper.CAPABILITY = {
 -- Wire body keys the driver builds structurally; options.request cannot set them.
 mapper.REQUEST_KEYS = { "contents", "systemInstruction", "tools", "toolConfig" }
 -- Structured output also owns the schema it sends.
+-- Gemini accepts both field casings and a JSON-schema variant of the schema field.
 mapper.STRUCTURED_REQUEST_KEYS = {
     "contents", "systemInstruction", "tools", "toolConfig",
-    "generationConfig.responseSchema", "generationConfig.response_mime_type"
+    "generationConfig.responseSchema", "generationConfig.response_schema",
+    "generationConfig.responseJsonSchema", "generationConfig.response_json_schema",
+    "generationConfig.response_mime_type", "generationConfig.responseMimeType"
 }
 
 -- Remove elements that are not supported by Google

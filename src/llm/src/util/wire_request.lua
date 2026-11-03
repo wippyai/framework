@@ -29,10 +29,12 @@ local function merged(base: any, overlay: any): table
     return out
 end
 
+-- A request names a reserved path when it sets the field itself or replaces
+-- any parent of it with a value that is not a map.
 local function names_path(request: table, path: string): boolean
     local node: any = request
     for segment in string.gmatch(path, "[^.]+") do
-        if type(node) ~= "table" then return false end
+        if not is_map(node) then return true end
         node = node[segment]
         if node == nil then return false end
     end

@@ -37,6 +37,15 @@ local function define_tests()
             test.eq(body.text.format.type, "json_schema")
         end)
 
+        it("rejects a request replacing the parent of a reserved path", function()
+            for _, value in ipairs({ "low", { "x" }, false, 5 }) do
+                local body = { text = { format = { type = "json_schema" } } }
+                local err = wire_request.apply(body, { text = value }, { "text.format" })
+                test.contains(err, "text.format")
+                test.eq(body.text.format.type, "json_schema")
+            end
+        end)
+
         it("keeps an empty object an object on the wire", function()
             local body = { model = "m" }
             test.is_nil(wire_request.apply(body, json.decode('{"metadata":{}}'), reserved))
