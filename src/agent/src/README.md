@@ -336,7 +336,9 @@ The fingerprint is computed before the request, so the agent strips stale
 thinking blocks itself:
 
 1. The host stores `response.prefix_fingerprint` as `metadata.prefix_fingerprint`
-   on the assistant and function call rows it persists from that step.
+   on every row it persists from that step that carries `thinking_blocks` (the
+   assistant row; function call messages built through `add_function_call` carry
+   no metadata, so blocks for a tool round live on its assistant row).
 2. On later steps the host passes `drop_stale_thinking = true`. Before the
    request, the agent removes the blocks of every message up to and including the
    last one whose `metadata.prefix_fingerprint` differs from the current

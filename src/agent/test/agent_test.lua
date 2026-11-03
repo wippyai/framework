@@ -1627,6 +1627,68 @@ local function define_tests()
                         test.eq(#requests, 0)
                     end)
 
+                    local function compacting_llm(captured)
+                        return {
+                            ERROR_TYPE = { CONTEXT_WINDOW = "context_window" },
+                            generate = function(_, options)
+                                local replacement, err = options.checkpoint.compact({ estimated_prompt_tokens = 10 })
+                                captured.replacement, captured.err = replacement, err
+                                return { result = "done", finish_reason = "stop" }
+                            end
+                        }
+                    end
+
+                    local function compaction()
+                        local replacement = prompt.new()
+                        replacement:add_user("Retained task")
+                        replacement:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Retained answer") }, nil,
+                            { thinking_blocks = blocks("retained"), prefix_fingerprint = "previous" })
+                        replacement:add_user("Next question")
+                        return replacement
+                    end
+
+                    local function retained_answer(messages)
+                        for _, message in ipairs(messages) do
+                            if message.role == prompt.ROLE.ASSISTANT then return message end
+                        end
+                        return nil
+                    end
+
+                    it("strips stale blocks from a checkpoint replacement history", function()
+                        local captured = {}
+                        agent._llm = compacting_llm(captured)
+                        local builder = prompt.new()
+                        builder:add_user("Large conversation")
+                        local result, err = agent.new(copy_spec()):step(builder, {
+                            drop_stale_thinking = true,
+                            checkpoint = { token_threshold = 1, compact = function() return compaction() end },
+                        })
+                        test.is_nil(err)
+                        test.not_nil(result)
+                        test.is_nil(captured.err)
+                        local answer = assert(retained_answer(captured.replacement))
+                        test.is_nil(answer.metadata.thinking_blocks)
+                    end)
+
+                    it("consults the host predicate for checkpoint replacement messages", function()
+                        local captured = {}
+                        local consulted = {}
+                        agent._llm = compacting_llm(captured)
+                        local builder = prompt.new()
+                        builder:add_user("Large conversation")
+                        assert(agent.new(copy_spec()):step(builder, {
+                            drop_stale_thinking = true,
+                            thinking_is_current = function(msg)
+                                table.insert(consulted, msg.content[1].text)
+                                return true
+                            end,
+                            checkpoint = { token_threshold = 1, compact = function() return compaction() end },
+                        }))
+                        test.eq(#consulted, 1)
+                        test.eq(consulted[1], "Retained answer")
+                        test.eq(assert(retained_answer(captured.replacement)).metadata.thinking_blocks[1].thinking, "retained")
+                    end)
+
                     it("never sends the stored fingerprint to the provider", function()
                         local fingerprint = current_fingerprint()
                         local builder = history({ thinking_blocks = blocks("kept"), prefix_fingerprint = fingerprint })

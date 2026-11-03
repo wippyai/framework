@@ -32,6 +32,17 @@ local function define_tests()
             test.is_nil(result.agent_options.turn_context.time.format)
         end)
 
+        it("rejects a time_format that is not a non-empty string", function()
+            for _, layout in ipairs({ 42, true, "" }) do
+                local result, err = funcs.new()
+                    :with_context({ timezone = "UTC", time_format = layout })
+                    :call("wippy.agent.traits:init_time_aware", "base prompt")
+
+                test.is_nil(result)
+                test.contains(tostring(err), "time_format")
+            end
+        end)
+
         it("rejects the removed time_interval setting and names its replacement", function()
             local result, err = funcs.new()
                 :with_context({ timezone = "UTC", time_interval = 15 })
