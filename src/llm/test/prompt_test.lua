@@ -217,6 +217,46 @@ local function define_tests()
                 test.eq(thinking_of(processed:get_messages(), 2), "round")
             end)
 
+            local function answered()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer") }, nil,
+                    { thinking_blocks = block("stale") })
+                return builder
+            end
+
+            it("strips a stale text-only turn that a developer note follows", function()
+                local builder = answered()
+                builder:add_developer("Lifecycle note")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
+            end)
+
+            it("strips a stale text-only turn that a positional system note follows", function()
+                local builder = answered()
+                builder:add_system("Stopped by the user", { preserve_position = true })
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
+            end)
+
+            it("keeps the round when a developer note follows its tool results", function()
+                local builder = current_round()
+                builder:add_developer("Reminder")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(thinking_of(builder:get_messages(), 4), "round")
+            end)
+
+            it("keeps the last turn current when only a hoisted system message follows", function()
+                local builder = answered()
+                builder:add_system("Mode: review")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(thinking_of(builder:get_messages(), 2), "stale")
+            end)
+
             it("strips a stale text-only turn that a user message follows", function()
                 local builder = prompt.new()
                 builder:add_user("first")

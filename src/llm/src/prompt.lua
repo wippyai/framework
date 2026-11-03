@@ -437,9 +437,11 @@ function prompt.new(messages: {Message}?)
 
         -- The current round is the last assistant turn while the request still
         -- continues it: the provider requires the final assistant turn of a
-        -- tool round to keep its thinking. A user message after the round's
-        -- tool results joins that tool-result turn (steering, tool images), so
-        -- only a user message with no tool result after the turn ends it. The
+        -- tool round to keep its thinking. User content (user, developer and
+        -- positional notes) after the round's tool results joins that
+        -- tool-result turn (steering, tool images, reminders), so only user
+        -- content with no tool result after the turn ends it. System messages
+        -- that drivers hoist into the top-level system do not. The
         -- round's blocks are never stripped here; a provider that can drop
         -- mismatched blocks handles them.
         local current_round = #messages + 1
@@ -448,7 +450,10 @@ function prompt.new(messages: {Message}?)
         while index >= 1 and not in_turn(messages[index]) do
             local role = messages[index].role
             if role == prompt.ROLE.FUNCTION_RESULT then seen_result = true end
-            if role == prompt.ROLE.USER then seen_user = true end
+            if role == prompt.ROLE.USER or role == prompt.ROLE.DEVELOPER
+                or prompt.is_positional_note(messages[index]) then
+                seen_user = true
+            end
             index = index - 1
         end
         if index >= 1 and not (seen_user and not seen_result) then
