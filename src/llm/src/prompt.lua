@@ -435,8 +435,27 @@ function prompt.new(messages: {Message}?)
             end
         end
 
+        -- The current round is the last assistant turn when no user message
+        -- follows it: the request continues that round, and the provider
+        -- requires the final assistant turn to keep its thinking. Its blocks
+        -- are never stripped here; a provider that can drop mismatched blocks
+        -- handles them.
+        local current_round = #messages + 1
+        for index = #messages, 1, -1 do
+            local role = messages[index].role
+            if role == prompt.ROLE.USER then
+                break
+            end
+            if in_turn(messages[index]) then
+                current_round = index
+            elseif current_round <= #messages then
+                break
+            end
+        end
+
         local last_stale: integer? = nil
-        for index, msg in ipairs(messages) do
+        for index = 1, current_round - 1 do
+            local msg = messages[index]
             if carries(msg) and not is_current(msg) then
                 last_stale = index
             end

@@ -242,7 +242,7 @@ local builder, err = builder:drop_stale_thinking(function(msg)
 end)
 ```
 
-An empty `thinking_blocks` list counts as no blocks; messages without blocks are not consulted. An assistant turn is the run of consecutive assistant and function call messages. If a turn whose blocks would be removed still has a function call without a result (a function call message or a `function_call` content part), the call fails and leaves the history unchanged: the provider needs those blocks to continue the tool round.
+An empty `thinking_blocks` list counts as no blocks; messages without blocks are not consulted. The current round, the last assistant turn when no user message follows it (the history ends with its function results, or its calls are still pending), is never stripped and never consulted: the provider requires the final assistant turn of a tool round to keep its thinking. Stale blocks there are left to the provider's own drop-on-mismatch handling; once a later user turn exists, the turn is strippable like any other. An assistant turn is the run of consecutive assistant and function call messages. If a turn whose blocks would be removed still has a function call without a result (a function call message or a `function_call` content part), the call fails and leaves the history unchanged: the provider needs those blocks to continue the tool round.
 
 ### Builder Operations
 
