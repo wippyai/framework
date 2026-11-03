@@ -347,6 +347,11 @@ thinking blocks itself:
    `thinking_is_current = function(msg, fingerprint) ... end`, which replaces the
    default comparison.
 
+The current tool round (the last assistant turn when no user message follows it)
+keeps its blocks even when they are stale: the provider requires the final
+assistant turn of a tool round to keep its thinking, so those blocks are left to
+the provider's drop-on-mismatch handling, and only earlier turns are stripped.
+
 Stripping works on copies: the host's message tables keep their blocks, and the
 stored fingerprint never reaches the provider. When a stale turn still has a
 function call without a result, the step fails with that error and sends no

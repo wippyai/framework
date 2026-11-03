@@ -1618,6 +1618,7 @@ local function define_tests()
                                 metadata = { thinking_blocks = blocks("open"), prefix_fingerprint = "previous" } },
                             { role = prompt.ROLE.FUNCTION_CALL, content = {},
                                 function_call = { id = "call_open", name = "calculator", arguments = "{}" } },
+                            { role = prompt.ROLE.USER, content = { prompt.text("Never mind") } },
                         })
                         local requests = {}
                         agent._llm = recording_llm(requests)
@@ -1625,6 +1626,31 @@ local function define_tests()
                         test.is_nil(result)
                         test.contains(tostring(err), "call_open")
                         test.eq(#requests, 0)
+                    end)
+
+                    it("keeps the current tool round's blocks and strips earlier stale turns", function()
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Earlier question") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Earlier answer") },
+                                metadata = { thinking_blocks = blocks("earlier"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.USER, content = { prompt.text("Compute it") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Computing") },
+                                metadata = { thinking_blocks = blocks("round"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.FUNCTION_CALL, content = {},
+                                function_call = { id = "call_1", name = "calculator", arguments = "{}" } },
+                            { role = prompt.ROLE.FUNCTION_RESULT, name = "calculator", function_call_id = "call_1",
+                                content = { prompt.text("4") } },
+                        })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        local assistants = {}
+                        for _, message in ipairs(requests[1]) do
+                            if message.role == prompt.ROLE.ASSISTANT then table.insert(assistants, message) end
+                        end
+                        test.eq(#assistants, 2)
+                        test.is_nil(assistants[1].metadata.thinking_blocks)
+                        test.eq(assistants[2].metadata.thinking_blocks[1].thinking, "round")
                     end)
 
                     local function compacting_llm(captured)
