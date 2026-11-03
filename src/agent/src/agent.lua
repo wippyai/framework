@@ -121,9 +121,11 @@ local function merge_agent_and_context(agent_ctx: any, delegate_ctx: any): any
     return merged
 end
 
-local function execute_prompt_functions(self: any, runtime_context: any): string
+-- A prompt function's text is part of the system prompt, so a failure fails
+-- the step: sending the prompt without it would change the prefix.
+local function execute_prompt_functions(self: any, runtime_context: any): (string?, any)
     if not self.prompt_funcs or #self.prompt_funcs == 0 then
-        return ""
+        return "", nil
     end
 
     local prompt_parts = {}
@@ -141,17 +143,20 @@ local function execute_prompt_functions(self: any, runtime_context: any): string
 
         local executor = funcs_module.new()
         local prompt_text, err = executor:with_context(merged_context):call(tostring(prompt_func.func_id))
-
-        if not err and prompt_text and prompt_text ~= "" then
-            table.insert(prompt_parts, prompt_text)
+        if err then
+            return nil, errors.new({
+                message = "prompt function " .. tostring(prompt_func.func_id) .. " failed: " .. tostring(err),
+                kind = err:kind(),
+                retryable = err:retryable(),
+            })
         end
 
-        if err then
-            print(err)
+        if prompt_text and prompt_text ~= "" then
+            table.insert(prompt_parts, prompt_text)
         end
     end
 
-    return table.concat(prompt_parts, "\n\n")
+    return table.concat(prompt_parts, "\n\n"), nil
 end
 
 local function extract_memory_ids_from_messages(messages: any, scan_limit: any): any
@@ -447,6 +452,37 @@ local function has_tools_with_schemas(tools: any): boolean
     return false
 end
 
+-- What providers bind cached prefixes and thinking blocks to, as drivers send
+-- it: the system text (the compiled prompt plus conversation system messages,
+-- which Claude and Bedrock hoist into the top-level system) and each tool's
+-- name, description, schema and native definition. Registry ids and registry
+-- metadata never reach the provider. The model is left out: providers drop
+-- blocks a different model cannot read on their own.
+local function prefix_projection(messages: {any}, tools: {any}?): table
+    local system = {}
+    for _, message in ipairs(messages) do
+        if message.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(message) then
+            if type(message.content) == "string" then
+                table.insert(system, message.content)
+            elseif type(message.content) == "table" then
+                for _, part in ipairs(message.content) do
+                    table.insert(system, part.type == "text" and part.text or part)
+                end
+            end
+        end
+    end
+    local projected_tools = {}
+    for _, tool in ipairs(tools or {}) do
+        table.insert(projected_tools, {
+            name = tool.name,
+            description = tool.description,
+            schema = tool.schema,
+            native = type(tool.meta) == "table" and tool.meta.claude or nil,
+        })
+    end
+    return { system = system, tools = projected_tools }
+end
+
 local function route_pin(current: any, metadata: any): any?
     if current ~= nil then
         return current
@@ -518,7 +554,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     runtime_options = runtime_options or {}
     local llm_instance = get_llm()
 
-    local dynamic_prompt = execute_prompt_functions(self, runtime_options.context)
+    local dynamic_prompt, prompt_err = execute_prompt_functions(self, runtime_options.context)
+    if prompt_err then
+        return nil, prompt_err
+    end
     local complete_system_prompt = self.system_prompt
     if dynamic_prompt and dynamic_prompt ~= "" then
         complete_system_prompt = complete_system_prompt .. "\n\n" .. dynamic_prompt
@@ -659,11 +698,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     --end
 
 
-    local fingerprint, fingerprint_err = hash.sha256(canonical.encode({
-        system = complete_system_prompt,
-        tools = options.tools or {},
-        model = self.model,
-    }))
+    local fingerprint, fingerprint_err = hash.sha256(canonical.encode(prefix_projection(final_messages, options.tools)))
     if fingerprint_err then
         return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
             :message("Prefix fingerprint failed: " .. tostring(fingerprint_err)):build()

@@ -1454,6 +1454,12 @@ local function define_tests()
             end)
 
             describe("Stable prefix", function()
+                it("requires an llm package that provides positional notes", function()
+                    if type(prompt.is_positional_note) ~= "function" then
+                        test.fail("wippy/llm >= 0.5.13 is required: prompt.is_positional_note is missing")
+                    end
+                end)
+
                 local function without_markers(messages)
                     local result = {}
                     for _, message in ipairs(messages) do
@@ -1487,6 +1493,34 @@ local function define_tests()
                     for k, v in pairs(overrides or {}) do spec[k] = v end
                     return spec
                 end
+
+                it("fails the step when a prompt function fails", function()
+                    local requests = {}
+                    agent._llm = recording_llm(requests)
+                    agent._funcs = {
+                        new = function()
+                            return {
+                                with_context = function(self) return self end,
+                                call = function()
+                                    return nil, errors.new({ message = "workspace store unavailable",
+                                        kind = errors.UNAVAILABLE, retryable = true })
+                                end
+                            }
+                        end
+                    }
+                    local runner = agent.new(copy_spec({
+                        prompt_funcs = { { trait_id = "workspace", func_id = "test:workspace_prompt", context = {} } }
+                    }))
+                    local builder = prompt.new()
+                    builder:add_user("First")
+                    local result, err = runner:step(builder, { context = {} })
+                    test.is_nil(result)
+                    test.contains(tostring(err), "test:workspace_prompt")
+                    test.contains(tostring(err), "workspace store unavailable")
+                    test.eq(err:kind(), errors.UNAVAILABLE)
+                    test.is_true(err:retryable())
+                    test.eq(#requests, 0)
+                end)
 
                 it("sends the same system message on every step", function()
                     local requests = {}
@@ -1582,29 +1616,58 @@ local function define_tests()
                     test.eq(rebuilt.prefix_fingerprint, first.prefix_fingerprint)
                 end)
 
-                it("changes the prefix fingerprint when system, tools or model change", function()
+                local function fingerprint_of(spec, extend)
                     agent._llm = recording_llm({})
-                    local function fingerprint(spec)
-                        local builder = prompt.new()
-                        builder:add_user("Hello")
-                        return assert(agent.new(spec):step(builder)).prefix_fingerprint
-                    end
-                    local base = fingerprint(copy_spec())
+                    local builder = prompt.new()
+                    builder:add_user("Hello")
+                    if extend then extend(builder) end
+                    return assert(agent.new(spec):step(builder)).prefix_fingerprint
+                end
+
+                it("changes the prefix fingerprint when the sent system text or tools change", function()
+                    local base = fingerprint_of(copy_spec())
                     local fewer_tools = copy_spec()
                     fewer_tools.tools.weather = nil
                     local described = copy_spec()
                     described.tools.calculator.description = "Evaluate arithmetic"
                     local reshaped = copy_spec()
                     reshaped.tools.calculator.schema.required = { "expression" }
+                    local renamed = copy_spec()
+                    renamed.tools.calculate = renamed.tools.calculator
+                    renamed.tools.calculator = nil
+                    local native = copy_spec()
+                    native.tools.calculator.meta = { claude = { type = "code_execution_20250522" } }
                     for label, spec in pairs({
                         system = copy_spec({ prompt = "You are a different agent." }),
-                        model = copy_spec({ model = "gpt-4o" }),
                         tool_removed = fewer_tools,
+                        tool_renamed = renamed,
                         tool_description = described,
                         tool_schema = reshaped,
+                        tool_native_type = native,
                     }) do
-                        test.neq(fingerprint(spec), base, label)
+                        test.neq(fingerprint_of(spec), base, label)
                     end
+                end)
+
+                it("includes conversation system messages that drivers hoist into the system prompt", function()
+                    local base = fingerprint_of(copy_spec())
+                    local hoisted = fingerprint_of(copy_spec(), function(builder)
+                        builder:add_system("Mode: review")
+                    end)
+                    local positional = fingerprint_of(copy_spec(), function(builder)
+                        builder:add_system("The current date and time is Tuesday.", { preserve_position = true })
+                    end)
+                    test.neq(hoisted, base)
+                    test.eq(positional, base)
+                end)
+
+                it("keeps the prefix fingerprint across model and registry metadata changes", function()
+                    local base = fingerprint_of(copy_spec())
+                    local commented = copy_spec()
+                    commented.tools.calculator.meta = { comment = "Renamed in the registry", tags = { "math" }, title = "Calc" }
+                    commented.tools.calculator.registry_id = "other:calculator"
+                    test.eq(fingerprint_of(commented), base)
+                    test.eq(fingerprint_of(copy_spec({ model = "gpt-4o" })), base)
                 end)
             end)
         end)

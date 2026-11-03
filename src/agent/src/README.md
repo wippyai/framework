@@ -237,7 +237,11 @@ conversation independently of the agent's prompt and tool execution `context`.
 
 `stop_check` runs after prompt functions and memory recall, immediately before
 provider generation. When it returns true, `step` returns `{ stopped = true }`
-without a provider request.
+without a provider request; that result carries no `prefix_fingerprint` and no
+`context_notes`, since nothing was sent.
+
+A prompt function that fails fails the step with an error naming the function,
+keeping its error kind and retryability; the request is not sent without its text.
 
 `cancel` is a channel the host closes to cancel the in-flight provider call (see
 `llm.generate`). The step then returns `{ stopped = true, result = <text streamed
@@ -277,7 +281,7 @@ When the model's first route fails and `llm` answers from a fallback model, the 
     route_pin = { model = "...", provider_id = "...", provider_model = "..." },  -- nil until a step fell back
     memory_recall = { memory_ids = { "mem_3" }, count = 1 },
     context_notes = { ... },        -- positional notes sent after the conversation; nil if none
-    prefix_fingerprint = "9f2c...", -- sha256 of system prompt, tools and model
+    prefix_fingerprint = "9f2c...", -- sha256 of the sent system text and tools
     memory_recall_error = nil       -- string when a configured recall failed
 }
 ```
@@ -292,6 +296,12 @@ function calls). The next step then replays them at the position they were sent,
 so the provider prefix, the prompt cache and earlier thinking blocks stay valid.
 When the host discards the step output, it discards the notes with it.
 
+Lifecycle notes the host builds per step (before_step, activation messages) follow
+the same rule: persist each one as a positional note where it was sent. A per-step
+note that is sent once and then dropped or rebuilt changes the prefix before the
+output it produced; that restarts the prompt cache and invalidates every later
+thinking block, not only the cache.
+
 Memory recall runs only when the host sets `persist_context_notes = true`. A host
 that does not persist the notes would send a note once and drop it from the next
 request, which edits the history before the output it produced; such a host gets
@@ -300,12 +310,20 @@ notes.
 
 ### Prefix fingerprint
 
-`prefix_fingerprint` identifies what providers bind cached prefixes and thinking
-blocks to: the final system prompt, the name-sorted tool schemas and the model.
-It is the same on every step of one agent configuration and changes when any of
-them changes. Hosts store it on persisted rows; a row whose fingerprint differs
-from the current step's has thinking blocks the provider will no longer accept,
-which `prompt` `builder:bind_thinking` strips as a leading run.
+`prefix_fingerprint` is a sha256 over the system text and tools as drivers send
+them: the compiled system prompt together with ordinary (non-positional) system
+messages in the conversation, which Claude and Bedrock hoist into the top-level
+system, and each tool's name, description, schema and native definition
+(`meta.claude`). Registry ids and registry metadata (comment, tags, title) do
+not reach the provider and are not part of it. It is stable across steps while
+the sent system text and tools stay the same.
+
+The model is not part of the fingerprint. Switching models needs no stripping:
+the provider drops thinking blocks the target model cannot read, and some models
+read each other's blocks. The fingerprint covers only the system and tools
+prefix; edits to earlier messages are not detected by it. Hosts store it on
+persisted rows and strip the thinking blocks of rows whose fingerprint differs
+from the current step's with `builder:drop_stale_thinking`.
 
 A configured recall that fails (the provider errors, cannot be opened, or
 returns no valid `memories` list) does not stop the step: generation runs
@@ -346,10 +364,13 @@ if note then
 end
 ```
 
-`render` returns nil when the agent declares no time context and an error for an
-unknown timezone. `format` is an optional Go time layout that replaces the
-default wording after "The current date and time is". The note carries the exact
-minute and is never rebuilt; the framework does not inject it per step.
+The note ends with "Use this temporal context when relevant to your responses."
+`render` returns nil when the agent declares no time context, and an error for an
+empty or unknown timezone or a `format` that is not a non-empty string. `format`
+is an optional Go time layout for the date and time part. The note carries the
+exact minute and is never rebuilt; the framework does not inject it per step.
+The removed `time_interval` setting fails compilation with an error naming
+`turn_context`.
 
 ### Token Tracking
 
@@ -554,7 +575,10 @@ return { execute = execute }
 
 ### Built-in Traits
 
-- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `format` (optional Go time layout). It contributes no prompt text.
+- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `format` (optional Go time layout). It contributes no prompt text; a `time_interval` setting is rejected.
+
+A trait build function that returns an error fails `compiler.compile` with an
+error naming the trait and the function.
 
 ## Delegation
 

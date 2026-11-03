@@ -12,20 +12,23 @@ local function define_tests()
         it("renders the exact current minute in the configured timezone", function()
             local text, err = turn_context.render(options({ timezone = "UTC" }), now)
             test.is_nil(err)
-            test.eq(text, "The current date and time is Tuesday, November 3, 2026 at 09:44 UTC.")
+            test.eq(text, "The current date and time is Tuesday, November 3, 2026 at 09:44 UTC. "
+                .. "Use this temporal context when relevant to your responses.")
         end)
 
         it("converts the time into a named timezone", function()
             local text, err = turn_context.render(options({ timezone = "America/New_York" }), now)
             test.is_nil(err)
-            test.eq(text, "The current date and time is Tuesday, November 3, 2026 at 04:44 America/New_York.")
+            test.eq(text, "The current date and time is Tuesday, November 3, 2026 at 04:44 America/New_York. "
+                .. "Use this temporal context when relevant to your responses.")
         end)
 
         it("formats the time with a configured layout", function()
             local text, err = turn_context.render(
                 options({ timezone = "America/New_York", format = "2006-01-02 15:04 MST" }), now)
             test.is_nil(err)
-            test.eq(text, "The current date and time is 2026-11-03 04:44 EST.")
+            test.eq(text, "The current date and time is 2026-11-03 04:44 EST. "
+                .. "Use this temporal context when relevant to your responses.")
         end)
 
         it("renders identical text for the same instant", function()
@@ -39,6 +42,20 @@ local function define_tests()
                 local text, err = turn_context.render(agent_options, now)
                 test.is_nil(text)
                 test.is_nil(err)
+            end
+        end)
+
+        it("rejects an empty timezone", function()
+            local text, err = turn_context.render(options({ timezone = "" }), now)
+            test.is_nil(text)
+            test.contains(tostring(err), "timezone")
+        end)
+
+        it("rejects a format that is not a non-empty string", function()
+            for _, format in ipairs({ "", 42, true }) do
+                local text, err = turn_context.render(options({ timezone = "UTC", format = format }), now)
+                test.is_nil(text)
+                test.contains(tostring(err), "format")
             end
         end)
 

@@ -22,6 +22,16 @@ local function define_tests()
             test.eq(result.agent_options.turn_context.time.timezone, "Europe/Berlin")
             test.eq(result.agent_options.turn_context.time.format, "2006-01-02 15:04")
         end)
+
+        it("rejects the removed time_interval setting and names its replacement", function()
+            local result, err = funcs.new()
+                :with_context({ timezone = "UTC", time_interval = 15 })
+                :call("wippy.agent.traits:init_time_aware", "base prompt")
+
+            test.is_nil(result)
+            test.contains(tostring(err), "time_interval")
+            test.contains(tostring(err), "turn_context")
+        end)
     end)
 end
 
