@@ -224,6 +224,7 @@ local response, err = runner:step(builder, {
     stream_target = { reply_to = process.self(), topic = "stream" },
     tool_call = "auto",
     disable_memory_recall = false,
+    persist_context_notes = true,  -- the host persists response.context_notes in place
     previous_memory_ids = { "mem_1", "mem_2" },
     stop_check = function() return stop_requested end,
     cancel = turn_cancel,
@@ -275,10 +276,36 @@ When the model's first route fails and `llm` answers from a fallback model, the 
     finish_reason = "stop",
     route_pin = { model = "...", provider_id = "...", provider_model = "..." },  -- nil until a step fell back
     memory_recall = { memory_ids = { "mem_3" }, count = 1 },
-    memory_prompt = { ... },
+    context_notes = { ... },        -- positional notes sent after the conversation; nil if none
+    prefix_fingerprint = "9f2c...", -- sha256 of system prompt, tools and model
     memory_recall_error = nil       -- string when a configured recall failed
 }
 ```
+
+### Context notes
+
+A step can send notes after the conversation, such as recalled memory. Each
+note is a developer message with `metadata.preserve_position = true` and is
+returned in `context_notes`. The host persists the notes, in order, after the
+messages it passed to the step and before the step output (assistant text or
+function calls). The next step then replays them at the position they were sent,
+so the provider prefix, the prompt cache and earlier thinking blocks stay valid.
+When the host discards the step output, it discards the notes with it.
+
+Memory recall runs only when the host sets `persist_context_notes = true`. A host
+that does not persist the notes would send a note once and drop it from the next
+request, which edits the history before the output it produced; such a host gets
+no recall. The recall cooldown reads `metadata.memory_ids` from the persisted
+notes.
+
+### Prefix fingerprint
+
+`prefix_fingerprint` identifies what providers bind cached prefixes and thinking
+blocks to: the final system prompt, the name-sorted tool schemas and the model.
+It is the same on every step of one agent configuration and changes when any of
+them changes. Hosts store it on persisted rows; a row whose fingerprint differs
+from the current step's has thinking blocks the provider will no longer accept,
+which `prompt` `builder:bind_thinking` strips as a leading run.
 
 A configured recall that fails (the provider errors, cannot be opened, or
 returns no valid `memories` list) does not stop the step: generation runs
@@ -290,11 +317,39 @@ error. Skipped recall and an empty `memories` list are not errors.
 ### Prompt caching
 
 The runner marks two cache breakpoints: after the system prompt and after the
-newest user or tool-result message. Trailing developer messages in the builder
-(lifecycle messages the host appends for the current step) and the memory
-recall are placed after the conversation breakpoint, so the next step reuses
-the cached prefix. Prompt function output is part of the system prompt and must
-be deterministic across steps to keep the prefix cacheable.
+newest user or tool-result message. Trailing developer messages and positional
+notes in the builder (lifecycle messages, turn context) and the memory recall
+are placed after the conversation breakpoint, so the next step reuses the cached
+prefix.
+
+Prompt function output is part of the system prompt. Prompt functions must
+return the same text on every step of a conversation: anything that changes per
+step or per turn (the current time, recalled facts, status) changes the prefix
+before every earlier message. Put such context in positional notes the host
+persists instead (see Turn context).
+
+### Turn context
+
+`agent_options.turn_context` declares per-turn context the host adds to each
+user turn. The `time_aware` trait sets
+`turn_context.time = { timezone = <context.timezone>, format = <context.format> }`.
+When a user message arrives, the host renders the note once and persists it as a
+positional note right after that message:
+
+```lua
+local turn_context = require("turn_context")  -- wippy.agent:turn_context
+
+local note, err = turn_context.render(runner.agent_options, time.now())
+-- "The current date and time is Tuesday, November 3, 2026 at 09:41 UTC."
+if note then
+    builder:add_system(note, { preserve_position = true })
+end
+```
+
+`render` returns nil when the agent declares no time context and an error for an
+unknown timezone. `format` is an optional Go time layout that replaces the
+default wording after "The current date and time is". The note carries the exact
+minute and is never rebuilt; the framework does not inject it per step.
 
 ### Token Tracking
 
@@ -357,7 +412,6 @@ entries:
         context:
           timezone: UTC
     context:
-      time_interval: 15
       timezone: UTC
 ```
 
@@ -483,23 +537,24 @@ local function execute(base_prompt, context)
         prompt = "Additional prompt text...",
         tools = { { id = "my_ns:dynamic_tool" } },
         delegates = { { id = "other_ns:agent", name = "helper" } },
-        context = { extra_key = "value" }
+        context = { extra_key = "value" },
+        agent_options = { turn_context = { time = { timezone = "UTC" } } }
     }
 end
 return { execute = execute }
 ```
 
 ```lua
--- Prompt function: called at each agent:step(), returns dynamic prompt text
+-- Prompt function: called at each agent:step(); must return the same text on every step
 local function execute(base_prompt)
-    return "Current time: Thursday, February 12, 2026 at 14:00 UTC"
+    return "Workspace: " .. ctx.get("workspace_name")
 end
 return { execute = execute }
 ```
 
 ### Built-in Traits
 
-- `wippy.agent.traits:time_aware` -- Injects rounded current time via `build_func_id`. Configurable via context: `time_interval` (minutes, default 15), `timezone` (default UTC).
+- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `format` (optional Go time layout). It contributes no prompt text.
 
 ## Delegation
 

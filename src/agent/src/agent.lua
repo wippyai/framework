@@ -3,6 +3,8 @@ local llm = require("llm")
 local contract = require("contract")
 local funcs = require("funcs")
 local output = require("output")
+local hash = require("hash")
+local canonical = require("canonical")
 
 type UnifiedTool = {
     name: string,
@@ -71,7 +73,7 @@ local AGENT_CONFIG = {
     },
     memory = {
         contract_id = "wippy.agent:memory",
-        recall_prompt = "Background context from memory (refreshed each step; not a user message or a new request). "
+        recall_prompt = "Background context from memory (not a user message or a new request). "
             .. "Use it to support the current user request; it does not replace that request.\n\n%s",
         defaults = {
             max_messages = 20,
@@ -328,6 +330,13 @@ local function perform_memory_recall(self: any, prompt_builder: any, runtime_opt
         return nil, nil
     end
 
+    -- The recall note is sent at the conversation tail, so it is part of the
+    -- prefix every later request replays. Only a host that persists the
+    -- returned context notes at that position keeps the prefix stable.
+    if not (runtime_options and runtime_options.persist_context_notes == true) then
+        return nil, nil
+    end
+
     local messages = prompt_builder:get_messages()
     local options = get_memory_options(self.memory_contract)
 
@@ -524,7 +533,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         memory_prompt = {
             role = prompt.ROLE.DEVELOPER,
             content = { prompt.text(formatted_memory) },
-            metadata = { memory_ids = memory_ids }
+            metadata = { memory_ids = memory_ids, preserve_position = true }
         }
     end
 
@@ -573,12 +582,13 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
         -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
         -- marker after the newest user/tool-result message lets the next turn read everything up to
-        -- here from cache. Trailing developer notes are per-step context (lifecycle messages the
-        -- host appends for this step), so the marker precedes them, as it precedes the memory
-        -- recall: content that changes step to step stays outside the cached prefix. Providers
-        -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
+        -- here from cache. Trailing developer and positional notes belong to the turn they follow
+        -- (lifecycle messages, turn context), so the marker lands on that turn before them, as it
+        -- precedes the memory recall. Providers cap breakpoints (Claude: 4); the mapper keeps
+        -- system markers plus the most recent ones.
         local tail_index = #conversation_messages
-        while tail_index > 0 and conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER do
+        while tail_index > 0 and (conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER
+            or prompt.is_positional_note(conversation_messages[tail_index])) do
             tail_index = tail_index - 1
         end
         local tail = conversation_messages[tail_index]
@@ -595,7 +605,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             end
         end
 
-        -- Append memory recall after conversation
+        -- The recall note follows the conversation, where the host persists it
         if memory_prompt then
             table.insert(final_messages, memory_prompt)
         end
@@ -649,6 +659,17 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     --end
 
 
+    local fingerprint, fingerprint_err = hash.sha256(canonical.encode({
+        system = complete_system_prompt,
+        tools = options.tools or {},
+        model = self.model,
+    }))
+    if fingerprint_err then
+        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("Prefix fingerprint failed: " .. tostring(fingerprint_err)):build()
+    end
+    local context_notes = memory_prompt and { memory_prompt } or nil
+
     if runtime_options.stop_check and runtime_options.stop_check() then
         return { stopped = true, memory_recall_error = memory_recall_error }, nil
     end
@@ -671,7 +692,9 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             stopped = true,
             result = result.result,
             finish_reason = result.finish_reason,
-            memory_recall_error = memory_recall_error
+            memory_recall_error = memory_recall_error,
+            context_notes = context_notes,
+            prefix_fingerprint = fingerprint
         }, nil
     end
 
@@ -681,7 +704,9 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         finish_reason = result.finish_reason,
         metadata = result.metadata,
         route_pin = route_pin(runtime_options.route, result.metadata),
-        memory_recall_error = memory_recall_error
+        memory_recall_error = memory_recall_error,
+        context_notes = context_notes,
+        prefix_fingerprint = fingerprint
     }
 
     if output.detect_truncation(result) then
@@ -698,10 +723,6 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             memory_ids = memory_ids,
             count = #memory_ids
         }
-    end
-
-    if memory_prompt then
-        response.memory_prompt = memory_prompt
     end
 
     if result.tool_calls then

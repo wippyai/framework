@@ -50,10 +50,32 @@ entries:
       - json
       - contract
       - funcs
+      - hash
     imports:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
       output: wippy.llm:output
+      canonical: wippy.agent:canonical
+
+  # wippy.agent:canonical
+  - name: canonical
+    kind: library.lua
+    meta:
+      type: library
+      comment: Order-independent JSON serialization for comparing and hashing values
+    source: file://canonical.lua
+    modules:
+      - json
+
+  # wippy.agent:turn_context
+  - name: turn_context
+    kind: library.lua
+    meta:
+      type: library
+      comment: Renders the per-turn context note a host persists with each user turn
+    source: file://turn_context.lua
+    modules:
+      - time
 
   # wippy.agent:context
   - name: context

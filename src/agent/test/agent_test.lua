@@ -974,13 +974,72 @@ local function define_tests()
                 prompt_builder:add_assistant("Of course!")
                 prompt_builder:add_user("What's 2 + 2?")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
 
                 test.not_nil(result)
                 test.not_nil(result.memory_recall)
                 test.not_nil(result.memory_recall.memory_ids)
                 test.gt(result.memory_recall.count, 0)
-                test.not_nil(result.memory_prompt)
+                test.eq(#result.context_notes, 1)
+                local note = result.context_notes[1]
+                test.eq(note.role, prompt.ROLE.DEVELOPER)
+                test.is_true(note.metadata.preserve_position)
+                test.eq(note.metadata.memory_ids, result.memory_recall.memory_ids)
+                test.is_nil(result.memory_prompt)
+            end)
+
+            it("does not consult memory when the host does not persist context notes", function()
+                local opened = 0
+                agent._contract = {
+                    get = function()
+                        return { open = function() opened = opened + 1 end }
+                    end
+                }
+                local sent: any = nil
+                agent._llm = {
+                    generate = function(messages)
+                        sent = messages
+                        return { result = "ok", finish_reason = "stop" }
+                    end
+                }
+                local test_agent = agent.new(compiled_spec_with_memory)
+                local prompt_builder = prompt.new()
+                prompt_builder:add_user("Hello")
+                prompt_builder:add_assistant("Hi there!")
+                prompt_builder:add_user("Can you help me calculate something?")
+
+                local result = test_agent:step(prompt_builder)
+
+                test.eq(opened, 0)
+                test.is_nil(result.memory_recall)
+                test.is_nil(result.context_notes)
+                for _, message in ipairs(sent) do
+                    test.is_true(message.role ~= prompt.ROLE.DEVELOPER)
+                end
+            end)
+
+            it("sends the recall note at the conversation tail where the host persists it", function()
+                local sent: any = nil
+                agent._llm = {
+                    generate = function(messages)
+                        sent = messages
+                        return { result = "ok", finish_reason = "stop" }
+                    end
+                }
+                local test_agent = agent.new(compiled_spec_with_memory)
+                local prompt_builder = prompt.new()
+                prompt_builder:add_user("Hello")
+                prompt_builder:add_assistant("Hi there!")
+                prompt_builder:add_user("Can you help me calculate something?")
+
+                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
+
+                test.eq(#result.context_notes, 1)
+                local n = #sent
+                test.eq(sent[n], result.context_notes[1])
+                test.eq(sent[n - 1].role, prompt.ROLE.CACHE_MARKER)
+                test.eq(sent[n - 1].marker_id, "conversation_tail")
+                test.eq(sent[n - 2].role, prompt.ROLE.USER)
             end)
 
             it("should skip memory recall when conversation is too short", function()
@@ -990,11 +1049,11 @@ local function define_tests()
                 -- Only one message - below min_conversation_length
                 prompt_builder:add_user("Hello")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should skip memory recall when disabled", function()
@@ -1009,11 +1068,11 @@ local function define_tests()
                 prompt_builder:add_user("What's 2 + 2?")
 
                 -- Disable memory recall via runtime options
-                local result = test_agent:step(prompt_builder, { disable_memory_recall = true })
+                local result = test_agent:step(prompt_builder, { disable_memory_recall = true, persist_context_notes = true })
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should handle memory contract errors gracefully", function()
@@ -1037,7 +1096,7 @@ local function define_tests()
                 prompt_builder:add_user("Test memory")
 
                 -- Should not fail, just skip memory recall
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1059,7 +1118,7 @@ local function define_tests()
                 -- Add only one more message (cooldown = 2, so should not trigger)
                 prompt_builder:add_user("New question")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall) -- Should not recall due to cooldown
@@ -1077,7 +1136,7 @@ local function define_tests()
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should include session context in memory recall", function()
@@ -1093,6 +1152,7 @@ local function define_tests()
 
                 -- Pass session context via runtime options
                 local result = test_agent:step(prompt_builder, {
+                    persist_context_notes = true,
                     context = {
                         user_id = "test_user_123",
                         session_id = "session_456"
@@ -1233,6 +1293,21 @@ local function define_tests()
                 test.eq(messages[n - 2].role, prompt.ROLE.USER)
             end)
 
+            it("places the conversation tail marker before trailing positional notes", function()
+                local builder = prompt.new()
+                builder:add_user("First message")
+                builder:add_system("The current date and time is Tuesday.", { preserve_position = true })
+                builder:add_developer("Recalled memory", { preserve_position = true })
+
+                local messages = capture(builder)
+                local n = #messages
+                test.eq(messages[n].role, prompt.ROLE.DEVELOPER)
+                test.eq(messages[n - 1].role, prompt.ROLE.SYSTEM)
+                test.eq(messages[n - 2].role, prompt.ROLE.CACHE_MARKER)
+                test.eq(messages[n - 2].marker_id, "conversation_tail")
+                test.eq(messages[n - 3].role, prompt.ROLE.USER)
+            end)
+
             -- Canonical encoding with sorted keys and cache_control removed, so
             -- prefixes compare by the bytes a provider hashes for its cache.
             local function canonical(value)
@@ -1350,15 +1425,18 @@ local function define_tests()
                 local step1 = prompt.new()
                 step1:add_user("Plan the release")
                 step1:add_developer("Lifecycle note for step 1")
-                local _, err1 = runner:step(step1, { context = {} })
+                local result1, err1 = runner:step(step1, { context = {}, persist_context_notes = true })
                 test.is_nil(err1)
 
                 local step2 = prompt.new()
                 step2:add_user("Plan the release")
+                for _, note in ipairs(result1.context_notes) do
+                    step2:add_message(note.role, note.content, nil, note.metadata)
+                end
                 step2:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
                 step2:add_function_result("calculator", "4", "call_1")
                 step2:add_developer("Lifecycle note for step 2")
-                local _, err2 = runner:step(step2, { context = {} })
+                local _, err2 = runner:step(step2, { context = {}, persist_context_notes = true })
                 test.is_nil(err2)
 
                 test.eq(#requests, 2)
@@ -1373,6 +1451,161 @@ local function define_tests()
                     local after = prefix_text(second, prefix.system, prefix.messages, prefix.block)
                     test.eq(after, before, "prefix through message " .. tostring(prefix.messages))
                 end
+            end)
+
+            describe("Stable prefix", function()
+                local function without_markers(messages)
+                    local result = {}
+                    for _, message in ipairs(messages) do
+                        if message.role ~= prompt.ROLE.CACHE_MARKER then
+                            result[#result + 1] = message
+                        end
+                    end
+                    return result
+                end
+
+                local function recording_llm(requests, replies)
+                    return {
+                        generate = function(messages)
+                            requests[#requests + 1] = messages
+                            return replies and replies[#requests] or { result = "ok", finish_reason = "stop" }
+                        end
+                    }
+                end
+
+                local function copy_spec(overrides)
+                    local spec = {}
+                    for k, v in pairs(basic_compiled_spec) do spec[k] = v end
+                    local tools = {}
+                    for name, tool in pairs(basic_compiled_spec.tools) do
+                        local copied = {}
+                        for k, v in pairs(tool) do copied[k] = v end
+                        copied.schema = json.decode((json.encode(tool.schema)))
+                        tools[name] = copied
+                    end
+                    spec.tools = tools
+                    for k, v in pairs(overrides or {}) do spec[k] = v end
+                    return spec
+                end
+
+                it("sends the same system message on every step", function()
+                    local requests = {}
+                    agent._llm = recording_llm(requests)
+                    agent._funcs = {
+                        new = function()
+                            return {
+                                with_context = function(self) return self end,
+                                call = function() return "Workspace: release planning" end
+                            }
+                        end
+                    }
+                    local spec = copy_spec({
+                        prompt_funcs = { { trait_id = "workspace", func_id = "test:workspace_prompt", context = {} } }
+                    })
+                    local runner = agent.new(spec)
+                    local builder = prompt.new()
+                    builder:add_user("First")
+                    runner:step(builder, { context = {} })
+                    builder:add_assistant("Answer")
+                    builder:add_user("Second")
+                    runner:step(builder, { context = {} })
+
+                    test.eq(#requests, 2)
+                    test.eq(requests[1][1].role, prompt.ROLE.SYSTEM)
+                    test.eq(requests[2][1].content[1].text, requests[1][1].content[1].text)
+                end)
+
+                it("keeps each request a prefix of the next once the host persists context notes", function()
+                    agent._contract = {
+                        get = function()
+                            return {
+                                open = function()
+                                    return {
+                                        recall = function(_, options)
+                                            return { memories = { { id = "m" .. #options.recent_actions, content = "Fact" } } }
+                                        end
+                                    }
+                                end
+                            }
+                        end
+                    }
+                    local requests = {}
+                    agent._llm = recording_llm(requests, {
+                        {
+                            result = "",
+                            tool_calls = { { id = "call_1", name = "calculator", arguments = { expression = "2+2" } } },
+                            metadata = { thinking_blocks = { { type = "thinking", thinking = "plan", signature = "sig" } } },
+                            finish_reason = "tool_call"
+                        },
+                        { result = "Done", finish_reason = "stop" },
+                    })
+                    local runner = agent.new(copy_spec({
+                        memory_contract = { implementation_id = "test:memory", options = { min_conversation_length = 1 } }
+                    }))
+
+                    local history = prompt.new()
+                    history:add_user("Plan the release")
+                    local first = assert(runner:step(history, { context = {}, persist_context_notes = true }))
+                    test.eq(#first.context_notes, 1)
+                    for _, note in ipairs(first.context_notes) do
+                        history:add_message(note.role, note.content, nil, note.metadata)
+                    end
+                    history:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
+                    history.messages[#history.messages].metadata = { thinking_blocks = first.metadata.thinking_blocks }
+                    history:add_function_result("calculator", "4", "call_1")
+                    local second = assert(runner:step(history, { context = {}, persist_context_notes = true }))
+                    test.eq(#second.context_notes, 1)
+
+                    local before = without_markers(requests[1])
+                    local after = without_markers(requests[2])
+                    test.gt(#after, #before)
+                    for index, message in ipairs(before) do
+                        test.eq(canonical(after[index]), canonical(message), "message " .. tostring(index))
+                    end
+                end)
+
+                it("returns a prefix fingerprint that is stable across steps", function()
+                    local requests = {}
+                    agent._llm = recording_llm(requests)
+                    local runner = agent.new(copy_spec())
+                    local builder = prompt.new()
+                    builder:add_user("First")
+                    local first = assert(runner:step(builder))
+                    builder:add_assistant("Answer")
+                    builder:add_user("Second")
+                    local second = assert(runner:step(builder))
+                    local rebuilt = assert(agent.new(copy_spec()):step(builder))
+
+                    test.eq(type(first.prefix_fingerprint), "string")
+                    test.eq(#first.prefix_fingerprint, 64)
+                    test.eq(second.prefix_fingerprint, first.prefix_fingerprint)
+                    test.eq(rebuilt.prefix_fingerprint, first.prefix_fingerprint)
+                end)
+
+                it("changes the prefix fingerprint when system, tools or model change", function()
+                    agent._llm = recording_llm({})
+                    local function fingerprint(spec)
+                        local builder = prompt.new()
+                        builder:add_user("Hello")
+                        return assert(agent.new(spec):step(builder)).prefix_fingerprint
+                    end
+                    local base = fingerprint(copy_spec())
+                    local fewer_tools = copy_spec()
+                    fewer_tools.tools.weather = nil
+                    local described = copy_spec()
+                    described.tools.calculator.description = "Evaluate arithmetic"
+                    local reshaped = copy_spec()
+                    reshaped.tools.calculator.schema.required = { "expression" }
+                    for label, spec in pairs({
+                        system = copy_spec({ prompt = "You are a different agent." }),
+                        model = copy_spec({ model = "gpt-4o" }),
+                        tool_removed = fewer_tools,
+                        tool_description = described,
+                        tool_schema = reshaped,
+                    }) do
+                        test.neq(fingerprint(spec), base, label)
+                    end
+                end)
             end)
         end)
 

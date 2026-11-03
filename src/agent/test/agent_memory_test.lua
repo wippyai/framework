@@ -3,6 +3,9 @@ local prompt = require("prompt")
 local json = require("json")
 local time = require("time")
 
+-- Recall runs only for hosts that persist the context notes a step returns.
+local HOST = { persist_context_notes = true }
+
 local function define_tests()
     describe("Agent Memory Processing - Detailed Logic", function()
         local mock_llm
@@ -207,7 +210,7 @@ local function define_tests()
             local builder = mock_prompt.new()
             builder:add_user("first")
             builder:add_assistant("second")
-            local result, err = instance:step(builder)
+            local result, err = instance:step(builder, HOST)
             test.is_nil(err)
             test.not_nil(result)
             test.eq(#mock_contract._open_calls, 0)
@@ -239,7 +242,7 @@ local function define_tests()
                 prompt_builder:add_function_result("calculator", "Result: 4", "call_123")
                 prompt_builder:add_user("What about 3 + 3?")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 -- Inspect what was passed to memory contract
                 local call_log = memory_contract:get_call_log()
@@ -279,7 +282,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 2")
                 prompt_builder:add_user("Message 3")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 local recent_actions = (call_log[1] :: any).recent_actions
@@ -316,7 +319,7 @@ local function define_tests()
                 prompt_builder:add_user("User message 2")
                 prompt_builder:add_assistant("Assistant response 2")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 local recent_actions = (call_log[1] :: any).recent_actions
@@ -353,7 +356,7 @@ local function define_tests()
                 table.insert(messages, { role = "assistant", content = {} }) -- Empty content
                 table.insert(messages, { role = "user", content = {{ type = "text", text = "" }} }) -- Empty text
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 local recent_actions = (call_log[1] :: any).recent_actions
@@ -397,7 +400,7 @@ local function define_tests()
                     { type = "image", source = { type = "url", url = "https://example.com/a.png" } }
                 }))
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 test.eq(#call_log, 1)
@@ -441,7 +444,7 @@ local function define_tests()
 
                 prompt_builder:add_user("Current message")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 local previous_memories = (call_log[1] :: any).previous_memories
@@ -481,7 +484,7 @@ local function define_tests()
                     messages[#messages].metadata = { memory_ids = { "mem_" .. i } }
                 end
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
 
@@ -523,6 +526,7 @@ local function define_tests()
 
                 -- Pass runtime previous_memory_ids - FIXED: Use correct 2-parameter signature
                 local runtime_options = {
+                    persist_context_notes = true,
                     previous_memory_ids = { "mem_from_runtime_1", "mem_from_runtime_2" }
                 }
 
@@ -570,7 +574,7 @@ local function define_tests()
                     prompt_builder:add_user("Message " .. i)
                 end
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 local constraints = (call_log[1] :: any).constraints
@@ -622,7 +626,7 @@ local function define_tests()
                     prompt_builder:add_user("Message " .. i)
                 end
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
                 test.not_nil(result)
 
                 local call_log = memory_contract:get_call_log()
@@ -662,7 +666,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 1")
                 prompt_builder:add_user("Message 2")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.not_nil(result.memory_recall)
                 test.not_nil(memory_contract:get_call_log())
@@ -691,7 +695,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 1")
                 prompt_builder:add_assistant("Response 1")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.is_nil(result.memory_recall)
                 test.eq(#memory_contract:get_call_log(), 0)
@@ -731,7 +735,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 2")
                 prompt_builder:add_assistant("Response 2")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.is_nil(result.memory_recall) -- Should not recall due to cooldown
                 test.eq(#memory_contract:get_call_log(), 0)
@@ -768,7 +772,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 2")
                 prompt_builder:add_assistant("Response 2")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.not_nil(result.memory_recall) -- Should recall after cooldown
                 test.eq(#memory_contract:get_call_log(), 1)
@@ -797,7 +801,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 2")
 
                 -- Disable memory recall via runtime options - FIXED: Use correct 2-parameter signature
-                local result = test_agent:step(prompt_builder, { disable_memory_recall = true })
+                local result = test_agent:step(prompt_builder, { disable_memory_recall = true, persist_context_notes = true })
 
                 test.is_nil(result.memory_recall)
                 test.eq(#memory_contract:get_call_log(), 0)
@@ -817,7 +821,7 @@ local function define_tests()
                 builder:add_user("Rebuild the Word handout and finish every edit.")
                 builder:add_assistant("The first edit is complete.")
                 builder:add_function_result("edit_document", "Second edit stored", "edit-2")
-                assert(instance:step(builder))
+                assert(instance:step(builder, HOST))
 
                 local recall = test_messages[#test_messages]
                 test.eq(recall.role, "developer")
@@ -863,13 +867,14 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 1")
                 prompt_builder:add_user("Message 2")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.not_nil(result.memory_recall)
-                test.not_nil(result.memory_prompt)
+                test.eq(#result.context_notes, 1)
 
-                local memory_prompt = result.memory_prompt
+                local memory_prompt = result.context_notes[1]
                 test.eq(memory_prompt.role, "developer")
+                test.is_true(memory_prompt.metadata.preserve_position)
                 local memory_text = memory_prompt.content[1].text
                 test.contains(memory_text, "Background context from memory")
                 test.contains(memory_text, "- First memory")
@@ -903,10 +908,10 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 1")
                 prompt_builder:add_user("Message 2")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.is_nil(result.memory_recall) -- No memories returned
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should inject memory into internal message flow", function()
@@ -935,7 +940,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 1")
                 prompt_builder:add_user("Trigger memory")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 -- Check that memory was injected into LLM messages
                 local llm_messages = test_messages
@@ -986,6 +991,7 @@ local function define_tests()
 
                 -- Pass runtime context - FIXED: Use correct 2-parameter signature
                 local runtime_options = {
+                    persist_context_notes = true,
                     context = {
                         session_id = "test_session_123",
                         shared_key = "from_runtime_context" -- Should override contract context
@@ -1028,7 +1034,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 1")
                 prompt_builder:add_user("Message 2")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 local call_log = memory_contract:get_call_log()
                 test.eq(#call_log, 1)
@@ -1055,7 +1061,7 @@ local function define_tests()
                 }) do
                     local builder = mock_prompt.new()
                     builder:add_user("Recall this run's memories")
-                    local result, err = instance:step(builder, { context = identity })
+                    local result, err = instance:step(builder, { context = identity, persist_context_notes = true })
                     test.is_nil(err)
                     test.not_nil(result)
                     local opened = mock_contract._open_calls[#mock_contract._open_calls]
@@ -1095,7 +1101,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 2")
 
                 -- Should not crash, just skip memory recall
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1127,7 +1133,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 2")
 
                 -- Should not crash, just skip memory recall
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1162,7 +1168,7 @@ local function define_tests()
                 prompt_builder:add_user("Message 2")
 
                 -- Should handle gracefully
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1206,7 +1212,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Response 1")
                 prompt_builder:add_user("Message 2")
 
-                local result = test_agent:step(prompt_builder)
+                local result = test_agent:step(prompt_builder, HOST)
 
                 -- Should handle large dataset
                 test.not_nil(result)
@@ -1257,7 +1263,7 @@ local function define_tests()
             it("reports a provider recall error and still generates", function()
                 mock_contract._current_instance = recalling(nil, "vector store offline")
 
-                local result, err = agent.new(recall_spec):step(conversation())
+                local result, err = agent.new(recall_spec):step(conversation(), HOST)
 
                 test.is_nil(err)
                 test.eq(result.result, "Mock LLM response")
@@ -1270,7 +1276,7 @@ local function define_tests()
             it("reports a provider that cannot be opened", function()
                 mock_contract._current_error = "binding not found"
 
-                local result, err = agent.new(recall_spec):step(conversation())
+                local result, err = agent.new(recall_spec):step(conversation(), HOST)
 
                 test.is_nil(err)
                 test.not_nil(result.memory_recall_error:find("binding not found", 1, true))
@@ -1280,7 +1286,7 @@ local function define_tests()
                 mock_contract._current_instance = nil
                 mock_contract._current_error = nil
 
-                local result, err = agent.new(recall_spec):step(conversation())
+                local result, err = agent.new(recall_spec):step(conversation(), HOST)
 
                 test.is_nil(err)
                 test.not_nil(result.memory_recall_error)
@@ -1289,7 +1295,7 @@ local function define_tests()
             it("reports a memory contract that cannot be resolved", function()
                 agent._contract = { get = function() return nil, "contract registry unavailable" end }
 
-                local result, err = agent.new(recall_spec):step(conversation())
+                local result, err = agent.new(recall_spec):step(conversation(), HOST)
 
                 test.is_nil(err)
                 test.not_nil(result.memory_recall_error:find("contract registry unavailable", 1, true))
@@ -1305,7 +1311,7 @@ local function define_tests()
                 }
                 for _, case in ipairs(malformed) do
                     mock_contract._current_instance = recalling(case.value, nil)
-                    local result, err = agent.new(recall_spec):step(conversation())
+                    local result, err = agent.new(recall_spec):step(conversation(), HOST)
                     test.is_nil(err, case.label)
                     test.not_nil(result.memory_recall_error, case.label)
                     test.is_false(memory_prompt_sent(), case.label)
@@ -1314,18 +1320,18 @@ local function define_tests()
 
             it("reports no error for an empty recall or a skipped recall", function()
                 mock_contract._current_instance = recalling({ memories = {} }, nil)
-                local result = agent.new(recall_spec):step(conversation())
+                local result = agent.new(recall_spec):step(conversation(), HOST)
                 test.is_nil(result.memory_recall_error)
 
-                result = agent.new(recall_spec):step(conversation(), { disable_memory_recall = true })
+                result = agent.new(recall_spec):step(conversation(), { disable_memory_recall = true, persist_context_notes = true })
                 test.is_nil(result.memory_recall_error)
 
                 local short = mock_prompt.new()
                 short:add_user("Only message")
-                result = agent.new(recall_spec):step(short)
+                result = agent.new(recall_spec):step(short, HOST)
                 test.is_nil(result.memory_recall_error)
 
-                result = agent.new({ id = "plain", name = "Plain", prompt = "p", tools = {} }):step(conversation())
+                result = agent.new({ id = "plain", name = "Plain", prompt = "p", tools = {} }):step(conversation(), HOST)
                 test.is_nil(result.memory_recall_error)
             end)
 
@@ -1333,7 +1339,7 @@ local function define_tests()
                 mock_contract._current_instance = recalling(nil, "vector store offline")
                 agent._llm = { generate = function() return nil, "provider overloaded" end }
 
-                local result, err = agent.new(recall_spec):step(conversation())
+                local result, err = agent.new(recall_spec):step(conversation(), HOST)
 
                 test.eq(err, "provider overloaded")
                 test.not_nil(result)
@@ -1348,7 +1354,7 @@ local function define_tests()
                     message = "prompt exceeds context window", details = details })
                 agent._llm = { generate = function() return nil, cause, details end }
 
-                local result, err, admission = agent.new(recall_spec):step(conversation())
+                local result, err, admission = agent.new(recall_spec):step(conversation(), HOST)
 
                 test.eq(err, cause)
                 test.eq(admission, details)
@@ -1362,19 +1368,19 @@ local function define_tests()
                 agent._llm = { generate = function()
                     return { result = "", finish_reason = "length", tokens = {} }
                 end }
-                local truncated = agent.new(recall_spec):step(conversation())
+                local truncated = agent.new(recall_spec):step(conversation(), HOST)
                 test.is_true(truncated.truncated)
                 test.not_nil(truncated.memory_recall_error)
 
                 agent._llm = { generate = function()
                     return { result = "partial", finish_reason = "cancelled", tokens = {} }
                 end }
-                local cancelled = agent.new(recall_spec):step(conversation())
+                local cancelled = agent.new(recall_spec):step(conversation(), HOST)
                 test.is_true(cancelled.stopped)
                 test.not_nil(cancelled.memory_recall_error)
 
                 agent._llm = mock_llm
-                local stopped = agent.new(recall_spec):step(conversation(), { stop_check = function() return true end })
+                local stopped = agent.new(recall_spec):step(conversation(), { stop_check = function() return true end, persist_context_notes = true })
                 test.is_true(stopped.stopped)
                 test.not_nil(stopped.memory_recall_error)
             end)
@@ -1408,7 +1414,7 @@ local function define_tests()
                 prompt_builder:add_assistant("First response")
                 prompt_builder:add_user("Second message")
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 -- Verify message order in LLM input
                 local llm_messages = test_messages
@@ -1462,7 +1468,7 @@ local function define_tests()
 
                 local original_message_count = #prompt_builder:get_messages()
 
-                test_agent:step(prompt_builder)
+                test_agent:step(prompt_builder, HOST)
 
                 -- Original prompt builder should be unchanged
                 test.eq(#prompt_builder:get_messages(), original_message_count)
