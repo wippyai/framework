@@ -206,7 +206,11 @@ end
 -- Converse: POST /model/{modelId}/converse
 function bedrock_client.converse(model_id, payload, options)
     local path = "/model/" .. model_id .. "/converse"
-    return signed_request(path, payload, options)
+    local response, err = signed_request(path, payload, options)
+    if response and response.additionalModelResponseFields then
+        response.metadata.input_transformations = response.additionalModelResponseFields.input_transformations
+    end
+    return response, err
 end
 
 -- ConverseStream: POST /model/{modelId}/converse-stream (returns eventstream)
@@ -410,6 +414,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     local usage = {}
     local content_blocks = {}
     local error_reported = false
+    local metadata = stream_response.metadata or {}
 
     local function handle_event(event): string?
         -- Converse stream events use top-level keys instead of a "type" field
@@ -489,6 +494,10 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             end
         elseif event.messageStop then
             finish_reason = event.messageStop.stopReason
+            local response_fields = event.messageStop.additionalModelResponseFields
+            if response_fields then
+                metadata.input_transformations = response_fields.input_transformations
+            end
         elseif event.metadata then
             if event.metadata.usage then
                 usage = event.metadata.usage
@@ -525,7 +534,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
         thinking = final_thinking_blocks,
         finish_reason = finish_reason,
         usage = usage,
-        metadata = stream_response.metadata or {}
+        metadata = metadata
     }
 
     on_done(result)

@@ -137,6 +137,8 @@ function structured_output_handler.handler(contract_args)
         converse_payload.additionalModelRequestFields = additional_fields
     end
 
+    structured_output_handler._mapper.bind_thinking(converse_payload)
+
     local response, request_err = structured_output_handler._client.converse(
         contract_args.model,
         converse_payload,

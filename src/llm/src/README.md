@@ -99,6 +99,20 @@ Legacy forms remain supported through the normalizer:
 
 Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
 
+### Thinking block binding
+
+The Claude driver stores each response's `thinking` and `redacted_thinking` blocks in `metadata.thinking_blocks`, in response order and in the shape the API returned them, and replays them verbatim on later turns; Bedrock does the same for signed `reasoningContent` text. A Claude thinking block is bound to the conversation that produced it: the top-level system prompt, the tools, and every earlier message. After an agent handoff, a prompt or tool change, or a history edit, models that enforce the check reject a request that replays such a block with a 400.
+
+When a request replays at least one thinking block and sends a thinking object of type `adaptive` or `enabled` (a positive thinking_effort), the driver sets `thinking.block_binding.prefix_mismatch_behavior = "drop_block"` and adds the `thinking-binding-controls-2026-08-01` beta. The API then drops the first mismatched block and every later thinking block instead of rejecting the request. The Claude driver appends the beta to the `anthropic-beta` header after the configured `beta_features`, each named once. Bedrock sends it in the `anthropic_beta` field of `additionalModelRequestFields` and requests `/input_transformations` through `additionalModelResponseFieldPaths`. Plain generation and structured output behave the same.
+
+A request without a thinking object (zero or absent effort, or `thinking = "none"`) carries no binding: `block_binding` exists only inside an adaptive or enabled thinking object, and the driver never turns thinking on to carry it, since on several models an omitted thinking object means no thinking. Such a request replays its blocks unbound, so keep that conversation append-only. Claude Sonnet 5.5 `thinking.type = "between_tools"` rejects `block_binding` the same way.
+
+Responses to a bound request report each dropped block in `metadata.input_transformations`, for example `{ type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }`. `prefix_binding_mismatch` means the conversation before the block changed; `model_binding_mismatch` means the conversation moved to a model that cannot read the block. An empty array means nothing was dropped. Streaming Claude responses report the array from `message_start`; Bedrock reports it from `messageStop`. Ignore entry types and reasons you do not recognize.
+
+Model switches and fallbacks need no client-side handling: the API drops blocks the target model cannot read, so the drivers pass every block back unchanged.
+
+The binding controls are a beta on the Claude API, Claude Platform on AWS, Amazon Bedrock and Google Cloud Vertex AI; Microsoft Foundry is unconfirmed. An endpoint that rejects the beta fails the request with its own error.
+
 ### Retry
 
 Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.

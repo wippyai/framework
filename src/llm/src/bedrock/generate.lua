@@ -76,7 +76,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
         context.name_to_id_map,
         final_usage,
         finish_reason,
-        stream_response.metadata
+        stream_result.metadata
     )
 end
 
@@ -126,6 +126,8 @@ function generate_handler.handler(contract_args)
     if next(additional_fields) then
         converse_payload.additionalModelRequestFields = additional_fields
     end
+
+    generate_handler._mapper.bind_thinking(converse_payload)
 
     if contract_args.tools and #contract_args.tools > 0 then
         local converse_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)

@@ -126,6 +126,34 @@ local function define_tests()
             end)
         end)
 
+        describe("Thinking block binding", function()
+            it("reports input_transformations returned in additionalModelResponseFields", function()
+                use_context({})
+                bedrock_client._http_client = {
+                    post = function()
+                        return {
+                            status_code = 200,
+                            headers = {},
+                            body = json.encode({
+                                stopReason = "end_turn",
+                                additionalModelResponseFields = {
+                                    input_transformations = {
+                                        { type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }
+                                    }
+                                }
+                            })
+                        }
+                    end
+                }
+
+                local response, err = bedrock_client.converse("test-model", { messages = {} })
+
+                test.is_nil(err)
+                test.eq(#response.metadata.input_transformations, 1)
+                test.eq(response.metadata.input_transformations[1].path, "messages.1.content.0")
+            end)
+        end)
+
         describe("ConverseStream", function()
             -- Eventstream message with zeroed CRCs; the client does not verify them.
             local function header(name: string, type_id: number, value_bytes: string): string
@@ -201,6 +229,24 @@ local function define_tests()
                 })
                 return content, err, result, seen, source
             end
+
+            it("reports input_transformations from messageStop in stream metadata", function()
+                local events = conversation()
+                events[6] = event("messageStop", {
+                    stopReason = "end_turn",
+                    additionalModelResponseFields = {
+                        input_transformations = {
+                            { type = "thinking_dropped", path = "messages.1.content.0", reason = "model_binding_mismatch" }
+                        }
+                    }
+                })
+
+                local _, err, result = run(events)
+
+                test.is_nil(err)
+                test.eq(result.finish_reason, "end_turn")
+                test.eq(result.metadata.input_transformations[1].reason, "model_binding_mismatch")
+            end)
 
             it("should dispatch each delta as soon as its message arrives", function()
                 local content, err, result, seen, source = run(conversation())

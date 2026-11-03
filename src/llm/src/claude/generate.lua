@@ -77,7 +77,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
         context.name_to_id_map,
         final_usage,
         finish_reason,
-        stream_response.metadata
+        stream_result.metadata
     )
 end
 
@@ -149,7 +149,8 @@ function generate_handler.handler(contract_args)
 
     local request_options = {
         timeout = contract_args.timeout or 600,
-        retry = contract_args.retry
+        retry = contract_args.retry,
+        beta_features = generate_handler._mapper.bind_thinking(claude_payload)
     }
 
     local stream_config = nil

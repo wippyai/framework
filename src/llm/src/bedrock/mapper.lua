@@ -530,6 +530,35 @@ function mapper.map_options(contract_options, accepts): (table, table, table, st
     return inference_config, additional_fields, adjusted
 end
 
+local function replays_reasoning(messages): boolean
+    for _, message in ipairs(messages or {}) do
+        if message.role == "assistant" and type(message.content) == "table" then
+            for _, block in ipairs(message.content) do
+                if block.reasoningContent then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Binds the reasoning a Converse payload replays to drop_block. Bedrock takes the beta in
+-- the anthropic_beta model field and returns input_transformations only when the payload
+-- names it in additionalModelResponseFieldPaths.
+function mapper.bind_thinking(payload)
+    if not replays_reasoning(payload.messages) then
+        return
+    end
+    local fields = payload.additionalModelRequestFields
+    local beta = thinking.bind_replayed_blocks(fields and fields.thinking)
+    if not beta then
+        return
+    end
+    fields.anthropic_beta = { beta }
+    payload.additionalModelResponseFieldPaths = { "/input_transformations" }
+end
+
 -- Try to parse a text block as an embedded tool call.
 -- Some models (Llama 3.3 on Bedrock, etc.) return tool calls as JSON inside a
 -- text content block instead of using native Converse toolUse blocks.

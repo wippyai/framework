@@ -680,6 +680,32 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
     return claude_options, adjusted
 end
 
+local function replays_thinking(messages): boolean
+    for _, message in ipairs(messages or {}) do
+        if message.role == "assistant" and type(message.content) == "table" then
+            for _, block in ipairs(message.content) do
+                if block.type == "thinking" or block.type == "redacted_thinking" then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Binds the thinking blocks a Messages payload replays to drop_block and returns the
+-- request betas the binding requires, or nil when the payload carries no binding.
+function mapper.bind_thinking(payload): {string}?
+    if not replays_thinking(payload.messages) then
+        return nil
+    end
+    local beta = thinking.bind_replayed_blocks(payload.thinking)
+    if not beta then
+        return nil
+    end
+    return { beta }
+end
+
 function mapper.extract_response_content(claude_response)
     local content_text = ""
     local tool_calls = {}
@@ -702,14 +728,14 @@ function mapper.extract_response_content(claude_response)
                 name = block.name or "",
                 arguments = block.input or {}
             })
-        elseif block.type == "thinking" or block.type == "redacted_thinking" then
-            local thinking_block = {
-                type = block.type,
-                thinking = block.type == "thinking" and (block.thinking or "") or "",
-                data = block.type == "redacted_thinking" and block.data or nil,
+        elseif block.type == "thinking" then
+            table.insert(thinking_blocks, {
+                type = "thinking",
+                thinking = block.thinking or "",
                 signature = block.signature or ""
-            }
-            table.insert(thinking_blocks, thinking_block)
+            })
+        elseif block.type == "redacted_thinking" then
+            table.insert(thinking_blocks, { type = "redacted_thinking", data = block.data })
         end
     end
 

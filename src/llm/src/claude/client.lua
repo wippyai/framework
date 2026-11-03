@@ -110,6 +110,21 @@ local function parse_error_response(http_response: transport.HttpResponse): tran
     return error_info
 end
 
+-- Configured betas first, then request betas, each named once.
+local function merge_betas(configured: {string}?, requested: {string}?): {string}
+    local merged: {string} = {}
+    local seen: {[string]: boolean} = {}
+    for _, list in ipairs({ configured or {}, requested or {} }) do
+        for _, beta in ipairs(list) do
+            if not seen[beta] then
+                seen[beta] = true
+                table.insert(merged, beta)
+            end
+        end
+    end
+    return merged
+end
+
 local function prepare_headers(api_key, api_version, beta_features, method, additional_headers): {[string]: string}
     local headers: {[string]: string} = {}
     headers["x-api-key"] = tostring(api_key)
@@ -147,7 +162,8 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     end
 
     local full_url = config.base_url .. endpoint_path
-    local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, config.beta_features, method, config.headers)
+    local beta_features = merge_betas(config.beta_features, options.beta_features)
+    local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, beta_features, method, config.headers)
 
     local http_options: {[string]: any} = {
         headers = headers,
@@ -197,7 +213,40 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     end
 
     parsed.metadata = extract_response_metadata(response)
+    parsed.metadata.input_transformations = parsed.input_transformations
     return parsed
+end
+
+-- Stream indices start at 0 and leave gaps for other block types; blocks keep response order.
+local function in_index_order(blocks: {[number]: any}): {any}
+    local indices: {number} = {}
+    for index in pairs(blocks) do
+        table.insert(indices, index)
+    end
+    table.sort(indices)
+    local ordered: {any} = {}
+    for _, index in ipairs(indices) do
+        table.insert(ordered, blocks[index])
+    end
+    return ordered
+end
+
+local function stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
+    local final_tool_calls = {}
+    for _, tool_call in ipairs(in_index_order(tool_calls)) do
+        if type(tool_call) == "table" and tool_call.id then
+            table.insert(final_tool_calls, tool_call)
+        end
+    end
+
+    return {
+        content = full_content,
+        tool_calls = final_tool_calls,
+        thinking = in_index_order(thinking_blocks),
+        finish_reason = finish_reason,
+        usage = usage,
+        metadata = metadata
+    }
 end
 
 function claude_client.process_stream(stream_response, callbacks)
@@ -219,6 +268,7 @@ function claude_client.process_stream(stream_response, callbacks)
     local usage = {}
     local content_blocks = {}
     local leftover = ""
+    local metadata = stream_response.metadata or {}
 
     while true do
         local chunk, err = stream_response.stream:read()
@@ -270,6 +320,9 @@ function claude_client.process_stream(stream_response, callbacks)
                 if data.message and data.message.usage then
                     usage = data.message.usage
                 end
+                if data.message then
+                    metadata.input_transformations = data.message.input_transformations
+                end
             elseif event_type == "content_block_start" then
                 if data.index ~= nil and data.content_block then
                     content_blocks[data.index] = data.content_block
@@ -279,6 +332,11 @@ function claude_client.process_stream(stream_response, callbacks)
                             type = "thinking",
                             thinking = data.content_block.thinking or "",
                             signature = data.content_block.signature or ""
+                        }
+                    elseif data.content_block.type == "redacted_thinking" then
+                        thinking_blocks[data.index] = {
+                            type = "redacted_thinking",
+                            data = data.content_block.data
                         }
                     end
                 end
@@ -345,29 +403,7 @@ function claude_client.process_stream(stream_response, callbacks)
                     end
                 end
             elseif event_type == "message_stop" then
-                local final_tool_calls = {}
-                for _, tool_call in pairs(tool_calls) do
-                    if type(tool_call) == "table" and tool_call.id then
-                        table.insert(final_tool_calls, tool_call)
-                    end
-                end
-
-                local final_thinking_blocks = {}
-                for _, thinking_block in pairs(thinking_blocks) do
-                    if type(thinking_block) == "table" and thinking_block.type == "thinking" then
-                        table.insert(final_thinking_blocks, thinking_block)
-                    end
-                end
-
-                local result = {
-                    content = full_content,
-                    tool_calls = final_tool_calls,
-                    thinking = final_thinking_blocks,
-                    finish_reason = finish_reason,
-                    usage = usage,
-                    metadata = stream_response.metadata or {}
-                }
-
+                local result = stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
                 on_done(result)
                 return full_content, nil, result
             elseif event_type == "error" then
@@ -383,29 +419,7 @@ function claude_client.process_stream(stream_response, callbacks)
         ::continue::
     end
 
-    local final_tool_calls = {}
-    for _, tool_call in pairs(tool_calls) do
-        if type(tool_call) == "table" and tool_call.id then
-            table.insert(final_tool_calls, tool_call)
-        end
-    end
-
-    local final_thinking_blocks = {}
-    for _, thinking_block in pairs(thinking_blocks) do
-        if type(thinking_block) == "table" and thinking_block.type == "thinking" then
-            table.insert(final_thinking_blocks, thinking_block)
-        end
-    end
-
-    local result = {
-        content = full_content,
-        tool_calls = final_tool_calls,
-        thinking = final_thinking_blocks,
-        finish_reason = finish_reason,
-        usage = usage,
-        metadata = stream_response.metadata or {}
-    }
-
+    local result = stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
     on_done(result)
     return full_content, nil, result
 end

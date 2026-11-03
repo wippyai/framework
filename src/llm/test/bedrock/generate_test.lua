@@ -1,6 +1,34 @@
 local generate_handler = require("generate_handler")
 local json = require("json")
 
+local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+local CLAUDE_MODEL = "us.anthropic.claude-opus-5-5-v1:0"
+
+local function history_with_thinking(blocks)
+    return {
+        { role = "user", content = { { type = "text", text = "Plan the trip" } } },
+        {
+            role = "assistant",
+            content = { { type = "text", text = "Here is the plan." } },
+            metadata = { thinking_blocks = blocks }
+        },
+        { role = "user", content = { { type = "text", text = "Now book it" } } }
+    }
+end
+
+local SIGNED_THINKING = { type = "thinking", thinking = "Weighing the routes.", signature = "sig-original-1" }
+
+local function converse_response(extra)
+    local response = {
+        output = { message = { role = "assistant", content = { { text = "Booked." } } } },
+        stopReason = "end_turn",
+        usage = { inputTokens = 30, outputTokens = 3 },
+        metadata = {}
+    }
+    for k, v in pairs(extra or {}) do response[k] = v end
+    return response
+end
+
 local function define_tests()
     describe("Bedrock Generate Handler (Converse API)", function()
 
@@ -272,6 +300,129 @@ local function define_tests()
                 test.is_nil(response)
                 test.not_nil(err)
                 test.eq(err:kind(), "RateLimited")
+            end)
+        end)
+
+        describe("Thinking block binding", function()
+            local function capture()
+                local captured = {}
+                generate_handler._client = {
+                    converse = function(model_id, payload, options)
+                        captured.payload = payload
+                        return converse_response()
+                    end
+                }
+                return captured
+            end
+
+            it("binds replayed reasoning with drop_block under adaptive thinking", function()
+                local captured = capture()
+
+                generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local fields = captured.payload.additionalModelRequestFields
+                test.eq(fields.thinking.type, "adaptive")
+                test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(#fields.anthropic_beta, 1)
+                test.eq(fields.anthropic_beta[1], BINDING_BETA)
+                test.eq(#captured.payload.additionalModelResponseFieldPaths, 1)
+                test.eq(captured.payload.additionalModelResponseFieldPaths[1], "/input_transformations")
+                local replayed = captured.payload.messages[2].content[1].reasoningContent.reasoningText
+                test.eq(replayed.text, SIGNED_THINKING.thinking)
+                test.eq(replayed.signature, SIGNED_THINKING.signature)
+            end)
+
+            it("binds replayed reasoning under budget thinking", function()
+                local captured = capture()
+
+                generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    options = { thinking_effort = 50 }
+                })
+
+                local fields = captured.payload.additionalModelRequestFields
+                test.eq(fields.thinking.type, "enabled")
+                test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(fields.anthropic_beta[1], BINDING_BETA)
+            end)
+
+            it("sends no binding when the history replays no reasoning", function()
+                local captured = capture()
+
+                generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({}),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local fields = captured.payload.additionalModelRequestFields
+                test.is_nil(fields.thinking.block_binding)
+                test.is_nil(fields.anthropic_beta)
+                test.is_nil(captured.payload.additionalModelResponseFieldPaths)
+            end)
+
+            it("never adds a thinking object to carry the binding when the request sends none", function()
+                local captured = capture()
+
+                generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 0 }
+                })
+
+                test.is_nil(captured.payload.additionalModelRequestFields)
+                test.is_nil(captured.payload.additionalModelResponseFieldPaths)
+                local replayed = captured.payload.messages[2].content[1].reasoningContent.reasoningText
+                test.eq(replayed.signature, SIGNED_THINKING.signature)
+            end)
+
+            it("reports input_transformations from a streaming response in metadata", function()
+                generate_handler._output = {
+                    streamer = function()
+                        return { buffer_content = function() end, send_thinking = function() end, flush = function() end }
+                    end
+                }
+                generate_handler._client = {
+                    converse_stream = function()
+                        return { stream = {}, metadata = { request_id = "req_stream" } }, nil
+                    end,
+                    process_converse_stream = function(_, callbacks)
+                        callbacks.on_content("Booked.")
+                        local result = {
+                            content = "Booked.",
+                            finish_reason = "end_turn",
+                            usage = { inputTokens = 30, outputTokens = 3 },
+                            metadata = {
+                                request_id = "req_stream",
+                                input_transformations = {
+                                    { type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }
+                                }
+                            }
+                        }
+                        callbacks.on_done(result)
+                        return "Booked.", nil, result
+                    end
+                }
+
+                local response = generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 },
+                    stream = { reply_to = "test-process", topic = "binding_stream" }
+                })
+
+                test.is_true(response.success)
+                test.eq(response.metadata.request_id, "req_stream")
+                test.eq(response.metadata.input_transformations[1].reason, "prefix_binding_mismatch")
             end)
         end)
 

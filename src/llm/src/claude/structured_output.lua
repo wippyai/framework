@@ -204,7 +204,11 @@ function structured_output_handler.handler(contract_args)
         local response, request_err = structured_output_handler._client.request(
             structured_output_handler._client.ENDPOINTS.MESSAGES,
             native_payload,
-            { timeout = contract_args.timeout, retry = contract_args.retry }
+            {
+                timeout = contract_args.timeout,
+                retry = contract_args.retry,
+                beta_features = structured_output_handler._mapper.bind_thinking(native_payload)
+            }
         )
         if request_err then
             return nil, err:from(request_err):build()
@@ -266,7 +270,8 @@ function structured_output_handler.handler(contract_args)
 
     local request_options = {
         timeout = contract_args.timeout,
-        retry = contract_args.retry
+        retry = contract_args.retry,
+        beta_features = structured_output_handler._mapper.bind_thinking(claude_payload)
     }
 
     local response, request_err = structured_output_handler._client.request(

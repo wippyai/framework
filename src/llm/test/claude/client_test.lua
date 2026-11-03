@@ -1171,6 +1171,191 @@ local function define_tests()
             end)
         end)
 
+        describe("Thinking block binding", function()
+            local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+
+            local function use(context)
+                claude_client._ctx = { all = function() return context end }
+                claude_client._env = { get = function() return nil end }
+            end
+
+            local function sse_stream(chunks)
+                local stream = { chunks = chunks, current = 0 }
+                setmetatable(stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            return self.chunks[self.current]
+                        end
+                    }
+                })
+                return stream
+            end
+
+            it("merges request betas after configured betas without duplicates", function()
+                use({ api_key = "test-key", beta_features = { "prompt-caching-2024-07-31", BINDING_BETA } })
+                local sent_beta = nil
+                claude_client._http_client = {
+                    post = function(url, options)
+                        sent_beta = options.headers["anthropic-beta"]
+                        return { status_code = 200, body = "{}", headers = {} }
+                    end
+                }
+
+                local _, err = claude_client.request("/v1/messages", {}, { beta_features = { BINDING_BETA, "files-api-2025-04-14" } })
+
+                test.is_nil(err)
+                test.eq(sent_beta, "prompt-caching-2024-07-31," .. BINDING_BETA .. ",files-api-2025-04-14")
+            end)
+
+            it("sends request betas when none are configured", function()
+                use({ api_key = "test-key" })
+                local sent_beta = nil
+                claude_client._http_client = {
+                    post = function(url, options)
+                        sent_beta = options.headers["anthropic-beta"]
+                        return { status_code = 200, body = "{}", headers = {} }
+                    end
+                }
+
+                claude_client.request("/v1/messages", {}, { beta_features = { BINDING_BETA } })
+
+                test.eq(sent_beta, BINDING_BETA)
+            end)
+
+            it("reports input_transformations of a JSON response in metadata", function()
+                use({ api_key = "test-key" })
+                claude_client._http_client = {
+                    post = function()
+                        return {
+                            status_code = 200,
+                            headers = { ["request-id"] = "req_1" },
+                            body = json.encode({
+                                content = {},
+                                input_transformations = {
+                                    { type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }
+                                }
+                            })
+                        }
+                    end
+                }
+
+                local response = claude_client.request("/v1/messages", {})
+
+                local meta = assert(response.metadata)
+                test.eq(meta.request_id, "req_1")
+                test.eq(#meta.input_transformations, 1)
+                test.eq(meta.input_transformations[1].path, "messages.1.content.0")
+            end)
+
+            it("reports an empty input_transformations array as empty", function()
+                use({ api_key = "test-key" })
+                claude_client._http_client = {
+                    post = function()
+                        return { status_code = 200, headers = {}, body = '{"content":[],"input_transformations":[]}' }
+                    end
+                }
+
+                local response = claude_client.request("/v1/messages", {})
+
+                test.not_nil(response.metadata.input_transformations)
+                test.eq(#response.metadata.input_transformations, 0)
+            end)
+
+            it("leaves input_transformations unset when the response carries none", function()
+                use({ api_key = "test-key" })
+                claude_client._http_client = {
+                    post = function()
+                        return { status_code = 200, headers = {}, body = '{"content":[]}' }
+                    end
+                }
+
+                local response = claude_client.request("/v1/messages", {})
+
+                test.is_nil(response.metadata.input_transformations)
+            end)
+
+            it("reports input_transformations from message_start in stream metadata", function()
+                local stream_response = {
+                    stream = sse_stream({
+                        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5},"input_transformations":[{"type":"thinking_dropped","path":"messages.3.content.0","reason":"model_binding_mismatch"}]}}\n\n',
+                        'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                    }),
+                    metadata = { request_id = "req_stream" }
+                }
+
+                local _, err, result = claude_client.process_stream(stream_response, {})
+
+                test.is_nil(err)
+                local res = assert(result)
+                test.eq(res.metadata.request_id, "req_stream")
+                test.eq(#res.metadata.input_transformations, 1)
+                test.eq(res.metadata.input_transformations[1].reason, "model_binding_mismatch")
+            end)
+
+            it("keeps streamed redacted and signed thinking blocks in response order", function()
+                local stream_response = {
+                    stream = sse_stream({
+                        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5}}}\n\n',
+                        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}\n\n',
+                        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"first"}}\n\n',
+                        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-0"}}\n\n',
+                        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                        'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"opaque-1"}}\n\n',
+                        'event: content_block_stop\ndata: {"type":"content_block_stop","index":1}\n\n',
+                        'event: content_block_start\ndata: {"type":"content_block_start","index":2,"content_block":{"type":"thinking","thinking":""}}\n\n',
+                        'event: content_block_delta\ndata: {"type":"content_block_delta","index":2,"delta":{"type":"thinking_delta","thinking":"third"}}\n\n',
+                        'event: content_block_delta\ndata: {"type":"content_block_delta","index":2,"delta":{"type":"signature_delta","signature":"sig-2"}}\n\n',
+                        'event: content_block_stop\ndata: {"type":"content_block_stop","index":2}\n\n',
+                        'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                    }),
+                    metadata = {}
+                }
+
+                local _, err, result = claude_client.process_stream(stream_response, {})
+
+                test.is_nil(err)
+                local blocks = assert(result).thinking
+                test.eq(#blocks, 3)
+                test.eq(blocks[1].type, "thinking")
+                test.eq(blocks[1].thinking, "first")
+                test.eq(blocks[1].signature, "sig-0")
+                test.eq(blocks[2].type, "redacted_thinking")
+                test.eq(blocks[2].data, "opaque-1")
+                test.is_nil(blocks[2].thinking)
+                test.is_nil(blocks[2].signature)
+                test.eq(blocks[3].type, "thinking")
+                test.eq(blocks[3].thinking, "third")
+                test.eq(blocks[3].signature, "sig-2")
+            end)
+        end)
+
+        describe("Stream block order", function()
+            it("returns streamed tool calls in response order", function()
+                local chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_a","name":"first"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_b","name":"second"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":1}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+                local stream = { current = 0 }
+                function stream:read()
+                    self.current = self.current + 1
+                    return chunks[self.current]
+                end
+
+                local _, err, result = claude_client.process_stream({ stream = stream, metadata = {} }, {})
+
+                test.is_nil(err)
+                local calls = assert(result).tool_calls
+                test.eq(#calls, 2)
+                test.eq(calls[1].id, "call_a")
+                test.eq(calls[2].id, "call_b")
+            end)
+        end)
+
         describe("Stream Error Handling", function()
             it("should handle stream read errors", function()
                 local mock_stream = {

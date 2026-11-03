@@ -525,8 +525,10 @@ entries:
       - json
       - env
       - ctx
+      - http_client
     imports:
       generate_handler: wippy.llm.claude:generate
+      claude_client: wippy.llm.claude:client
       test: wippy.test:test
     method: run_tests
 
