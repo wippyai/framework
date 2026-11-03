@@ -435,21 +435,26 @@ function prompt.new(messages: {Message}?)
             end
         end
 
-        -- The current round is the last assistant turn when no user message
-        -- follows it: the request continues that round, and the provider
-        -- requires the final assistant turn to keep its thinking. Its blocks
-        -- are never stripped here; a provider that can drop mismatched blocks
-        -- handles them.
+        -- The current round is the last assistant turn while the request still
+        -- continues it: the provider requires the final assistant turn of a
+        -- tool round to keep its thinking. A user message after the round's
+        -- tool results joins that tool-result turn (steering, tool images), so
+        -- only a user message with no tool result after the turn ends it. The
+        -- round's blocks are never stripped here; a provider that can drop
+        -- mismatched blocks handles them.
         local current_round = #messages + 1
-        for index = #messages, 1, -1 do
+        local seen_result, seen_user = false, false
+        local index = #messages
+        while index >= 1 and not in_turn(messages[index]) do
             local role = messages[index].role
-            if role == prompt.ROLE.USER then
-                break
-            end
-            if in_turn(messages[index]) then
+            if role == prompt.ROLE.FUNCTION_RESULT then seen_result = true end
+            if role == prompt.ROLE.USER then seen_user = true end
+            index = index - 1
+        end
+        if index >= 1 and not (seen_user and not seen_result) then
+            while index >= 1 and in_turn(messages[index]) do
                 current_round = index
-            elseif current_round <= #messages then
-                break
+                index = index - 1
             end
         end
 
