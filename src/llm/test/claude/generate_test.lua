@@ -1622,7 +1622,6 @@ local function define_tests()
             end)
 
             it("sends no binding when the history replays no thinking blocks", function()
-
                 local captured = {}
                 generate_handler._client = capturing_client(captured)
 
@@ -1748,7 +1747,6 @@ local function define_tests()
             end)
 
             it("replays stored blocks in the API shape of their type", function()
-
                 local captured = {}
                 generate_handler._client = capturing_client(captured)
 

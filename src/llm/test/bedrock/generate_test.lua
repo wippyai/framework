@@ -402,6 +402,27 @@ local function define_tests()
                 test.is_nil(captured.payload.additionalModelResponseFieldPaths)
             end)
 
+            it("rejects a request list field the binding extends when it is not a list", function()
+                for _, request in ipairs({
+                    { additionalModelRequestFields = { anthropic_beta = "context-1m-2025-08-07" } },
+                    { additionalModelResponseFieldPaths = "/stop_sequence" }
+                }) do
+                    local captured = capture()
+                    local response, err = generate_handler.handler({
+                        model = CLAUDE_MODEL,
+                        messages = history_with_thinking({ SIGNED_THINKING }),
+                        accepts = { thinking = "adaptive" },
+                        options = { thinking_effort = 50, request = request }
+                    })
+
+                    test.is_nil(response)
+                    test.eq(err:kind(), "Invalid")
+                    test.contains(err:message(), next(request) == "additionalModelRequestFields"
+                        and "additionalModelRequestFields.anthropic_beta" or "additionalModelResponseFieldPaths")
+                    test.is_nil(captured.payload)
+                end
+            end)
+
             it("sends no binding when the history replays no reasoning", function()
 
                 local captured = capture()

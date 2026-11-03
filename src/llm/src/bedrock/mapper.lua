@@ -553,23 +553,31 @@ end
 
 -- Binds the reasoning a Converse payload replays to drop_block. Bedrock takes the beta in
 -- the anthropic_beta model field and returns input_transformations only when the payload
--- names it in additionalModelResponseFieldPaths.
-function mapper.bind_thinking(payload)
+-- names it in additionalModelResponseFieldPaths. Returns an error when either list a
+-- bound payload extends is not a list.
+function mapper.bind_thinking(payload): string?
     local fields = payload.additionalModelRequestFields
     if not fields then
-        return
+        return nil
     end
     if replays_reasoning(payload.messages) then
         thinking.bind_replayed_blocks(fields.thinking)
     end
     if not thinking.is_bound(fields.thinking) then
-        return
+        return nil
+    end
+    if fields.anthropic_beta ~= nil and type(fields.anthropic_beta) ~= "table" then
+        return "additionalModelRequestFields.anthropic_beta must be a list of beta names"
+    end
+    if payload.additionalModelResponseFieldPaths ~= nil and type(payload.additionalModelResponseFieldPaths) ~= "table" then
+        return "additionalModelResponseFieldPaths must be a list of field paths"
     end
     fields.anthropic_beta = transport.merge_unique({ fields.anthropic_beta or {}, { thinking.BINDING_BETA } })
     payload.additionalModelResponseFieldPaths = transport.merge_unique({
         payload.additionalModelResponseFieldPaths or {},
         { "/input_transformations" }
     })
+    return nil
 end
 
 -- Try to parse a text block as an embedded tool call.

@@ -242,8 +242,43 @@ local function define_tests()
                 test.eq(captured_payload.additionalModelResponseFieldPaths[1], "/input_transformations")
             end)
 
-            it("should send forced tool_choice in payload", function()
+            it("rejects a request anthropic_beta the binding extends when it is not a list", function()
+                local called = false
+                structured_output_handler._client = {
+                    converse = function()
+                        called = true
+                        return nil, { status_code = 500, message = "unreachable" }
+                    end
+                }
 
+                local response, err = structured_output_handler.handler({
+                    model = "us.anthropic.claude-opus-5-5-v1:0",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Plan" } } },
+                        {
+                            role = "assistant",
+                            content = { { type = "text", text = "Planned." } },
+                            metadata = { thinking_blocks = { { type = "thinking", thinking = "t", signature = "sig" } } }
+                        },
+                        { role = "user", content = { { type = "text", text = "Answer" } } }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { x = { type = "number" } },
+                        required = { "x" },
+                        additionalProperties = false
+                    },
+                    options = { thinking_effort = 50, request = { additionalModelRequestFields = { anthropic_beta = "context-1m-2025-08-07" } } },
+                    accepts = { thinking = "adaptive" }
+                })
+
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "additionalModelRequestFields.anthropic_beta")
+                test.is_false(called)
+            end)
+
+            it("should send forced tool_choice in payload", function()
                 local captured_payload = nil
                 structured_output_handler._client = {
                     converse = function(model_id, payload, options)

@@ -159,7 +159,10 @@ function generate_handler.handler(contract_args)
     }
 
     -- The binding depends on the thinking object as sent, so it is the last change to the payload.
-    generate_handler._mapper.bind_thinking(converse_payload)
+    local bind_err = generate_handler._mapper.bind_thinking(converse_payload)
+    if bind_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(bind_err):build()
+    end
 
     if contract_args.stream and contract_args.stream.reply_to then
         local stream_response, stream_err = generate_handler._client.converse_stream(

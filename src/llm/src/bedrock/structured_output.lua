@@ -144,7 +144,10 @@ function structured_output_handler.handler(contract_args)
     end
 
     -- The binding depends on the thinking object as sent, so it is the last change to the payload.
-    structured_output_handler._mapper.bind_thinking(converse_payload)
+    local bind_err = structured_output_handler._mapper.bind_thinking(converse_payload)
+    if bind_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(bind_err):build()
+    end
 
     local response, request_err = structured_output_handler._client.converse(
         contract_args.model,
