@@ -696,6 +696,123 @@ local function define_tests()
             end)
         end)
 
+        describe("Thinking binding", function()
+            local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+
+            local function payload(fields, response_paths): any
+                return {
+                    messages = {
+                        { role = "user", content = { { text = "Plan" } } },
+                        { role = "assistant", content = { { reasoningContent = { reasoningText = { text = "t", signature = "sig" } } } } },
+                        { role = "user", content = { { text = "Book" } } }
+                    },
+                    additionalModelRequestFields = fields,
+                    additionalModelResponseFieldPaths = response_paths
+                }
+            end
+
+            it("appends the beta and response path to lists the payload already carries", function()
+                local p: any = payload(
+                    { thinking = { type = "adaptive" }, anthropic_beta = { "context-1m-2025-08-07" } },
+                    { "/stop_sequence" }
+                )
+
+                mapper.bind_thinking(p)
+
+                local fields: any = p.additionalModelRequestFields
+                test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(#fields.anthropic_beta, 2)
+                test.eq(fields.anthropic_beta[1], "context-1m-2025-08-07")
+                test.eq(fields.anthropic_beta[2], BINDING_BETA)
+                test.eq(#p.additionalModelResponseFieldPaths, 2)
+                test.eq(p.additionalModelResponseFieldPaths[1], "/stop_sequence")
+                test.eq(p.additionalModelResponseFieldPaths[2], "/input_transformations")
+            end)
+
+            it("names the beta and response path once when already present", function()
+                local p: any = payload(
+                    { thinking = { type = "adaptive" }, anthropic_beta = { BINDING_BETA } },
+                    { "/input_transformations" }
+                )
+
+                mapper.bind_thinking(p)
+
+                test.eq(#p.additionalModelRequestFields.anthropic_beta, 1)
+                test.eq(#p.additionalModelResponseFieldPaths, 1)
+            end)
+
+            it("keeps a block_binding the payload already carries", function()
+                local p: any = payload({ thinking = { type = "adaptive", block_binding = { prefix_mismatch_behavior = "error" } } })
+
+                mapper.bind_thinking(p)
+
+                local fields: any = p.additionalModelRequestFields
+                test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "error")
+                test.eq(fields.anthropic_beta[1], BINDING_BETA)
+            end)
+
+            it("requires the beta for a block_binding set without replayed reasoning", function()
+                local p: any = {
+                    messages = { { role = "user", content = { { text = "Plan" } } } },
+                    additionalModelRequestFields = {
+                        thinking = { type = "adaptive", block_binding = { prefix_mismatch_behavior = "error" } }
+                    }
+                }
+
+                mapper.bind_thinking(p)
+
+                test.eq(p.additionalModelRequestFields.anthropic_beta[1], BINDING_BETA)
+                test.eq(p.additionalModelResponseFieldPaths[1], "/input_transformations")
+            end)
+        end)
+
+        describe("Redacted reasoning", function()
+            it("extracts redacted reasoning in response order", function()
+                local extracted = mapper.extract_response_content({
+                    output = {
+                        message = {
+                            role = "assistant",
+                            content = {
+                                { reasoningContent = { reasoningText = { text = "first", signature = "sig-1" } } },
+                                { reasoningContent = { redactedContent = "b3BhcXVl" } },
+                                { text = "Answer" }
+                            }
+                        }
+                    }
+                })
+
+                test.eq(#extracted.thinking_blocks, 2)
+                test.eq(extracted.thinking_blocks[1].type, "thinking")
+                test.eq(extracted.thinking_blocks[1].signature, "sig-1")
+                test.eq(extracted.thinking_blocks[2].type, "redacted_thinking")
+                test.eq(extracted.thinking_blocks[2].data, "b3BhcXVl")
+                test.is_nil(extracted.thinking_blocks[2].thinking)
+            end)
+
+            it("replays redacted blocks as redactedContent in their position", function()
+                local blocks = {
+                    { type = "thinking", thinking = "first", signature = "sig-1" },
+                    { type = "redacted_thinking", thinking = "", data = "b3BhcXVl", signature = "" },
+                    { type = "thinking", thinking = "third", signature = "sig-3" }
+                }
+                local result = mapper.map_messages({
+                    { role = "user", content = { { type = "text", text = "Hi" } } },
+                    { role = "function_call", function_call = { id = "call_1", name = "tool", arguments = {} }, metadata = { thinking_blocks = blocks } },
+                    { role = "function_result", function_call_id = "call_1", content = "ok" },
+                    { role = "assistant", content = { { type = "text", text = "Done" } }, metadata = { thinking_blocks = blocks } }
+                })
+
+                for _, index in ipairs({ 2, 4 }) do
+                    local content = result.messages[index].content :: any
+                    test.eq(content[1].reasoningContent.reasoningText.text, "first")
+                    test.eq(content[1].reasoningContent.reasoningText.signature, "sig-1")
+                    test.eq(content[2].reasoningContent.redactedContent, "b3BhcXVl")
+                    test.is_nil(content[2].reasoningContent.reasoningText)
+                    test.eq(content[3].reasoningContent.reasoningText.text, "third")
+                end
+            end)
+        end)
+
         describe("classify_error", function()
             it("should classify HTTP status to kind", function()
                 local k, m, d = mapper.classify_error({ status_code = 429, message = "Rate limited" })

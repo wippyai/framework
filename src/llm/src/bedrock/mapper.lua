@@ -3,6 +3,7 @@ local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
 local route = require("route")
+local transport = require("transport")
 
 local mapper = {}
 
@@ -199,6 +200,16 @@ local function select_cache_positions(system_positions, message_positions)
     return final_system, final_messages
 end
 
+-- A stored thinking or redacted_thinking block as a Converse reasoningContent block.
+local function reasoning_content(block)
+    if block.type == "thinking" then
+        return { reasoningContent = { reasoningText = { text = block.thinking or "", signature = block.signature or "" } } }
+    elseif block.type == "redacted_thinking" then
+        return { reasoningContent = { redactedContent = block.data } }
+    end
+    return nil
+end
+
 -- Map contract messages to Converse format
 function mapper.map_messages(contract_messages)
     if not contract_messages or #contract_messages == 0 then
@@ -264,15 +275,9 @@ function mapper.map_messages(contract_messages)
 
             if msg.metadata and msg.metadata.thinking_blocks then
                 for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    if thinking_block.type == "thinking" then
-                        table.insert(content_blocks, {
-                            reasoningContent = {
-                                reasoningText = {
-                                    text = thinking_block.thinking or "",
-                                    signature = thinking_block.signature or ""
-                                }
-                            }
-                        })
+                    local reasoning = reasoning_content(thinking_block)
+                    if reasoning then
+                        table.insert(content_blocks, reasoning)
                     end
                 end
             end
@@ -294,15 +299,9 @@ function mapper.map_messages(contract_messages)
 
             if msg.metadata and msg.metadata.thinking_blocks then
                 for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    if thinking_block.type == "thinking" then
-                        table.insert(content_blocks, {
-                            reasoningContent = {
-                                reasoningText = {
-                                    text = thinking_block.thinking or "",
-                                    signature = thinking_block.signature or ""
-                                }
-                            }
-                        })
+                    local reasoning = reasoning_content(thinking_block)
+                    if reasoning then
+                        table.insert(content_blocks, reasoning)
                     end
                 end
             end
@@ -547,16 +546,21 @@ end
 -- the anthropic_beta model field and returns input_transformations only when the payload
 -- names it in additionalModelResponseFieldPaths.
 function mapper.bind_thinking(payload)
-    if not replays_reasoning(payload.messages) then
-        return
-    end
     local fields = payload.additionalModelRequestFields
-    local beta = thinking.bind_replayed_blocks(fields and fields.thinking)
-    if not beta then
+    if not fields then
         return
     end
-    fields.anthropic_beta = { beta }
-    payload.additionalModelResponseFieldPaths = { "/input_transformations" }
+    if replays_reasoning(payload.messages) then
+        thinking.bind_replayed_blocks(fields.thinking)
+    end
+    if not thinking.is_bound(fields.thinking) then
+        return
+    end
+    fields.anthropic_beta = transport.merge_unique({ fields.anthropic_beta or {}, { thinking.BINDING_BETA } })
+    payload.additionalModelResponseFieldPaths = transport.merge_unique({
+        payload.additionalModelResponseFieldPaths or {},
+        { "/input_transformations" }
+    })
 end
 
 -- Try to parse a text block as an embedded tool call.
@@ -655,6 +659,8 @@ function mapper.extract_response_content(converse_response, tool_names)
                 thinking = block.reasoningContent.reasoningText.text or "",
                 signature = block.reasoningContent.reasoningText.signature or ""
             })
+        elseif block.reasoningContent and block.reasoningContent.redactedContent then
+            table.insert(thinking_blocks, { type = "redacted_thinking", data = block.reasoningContent.redactedContent })
         end
     end
 

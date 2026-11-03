@@ -9,13 +9,17 @@ local BINDABLE_TYPES: {[string]: boolean} = { adaptive = true, enabled = true }
 
 -- Sets drop_block on a thinking object that replays earlier thinking blocks, so the API
 -- drops blocks bound to a different conversation instead of rejecting the request.
--- Returns the beta the request then requires, or nil when the object takes no binding.
-function thinking.bind_replayed_blocks(config: {[string]: any}?): string?
-    if type(config) ~= "table" or not BINDABLE_TYPES[config.type] then
-        return nil
+-- A block_binding the object already carries stays as set.
+function thinking.bind_replayed_blocks(config: {[string]: any}?)
+    if type(config) ~= "table" or not BINDABLE_TYPES[config.type] or config.block_binding ~= nil then
+        return
     end
     config.block_binding = { prefix_mismatch_behavior = "drop_block" }
-    return thinking.BINDING_BETA
+end
+
+-- Whether a thinking object carries block_binding, which the API admits only with BINDING_BETA.
+function thinking.is_bound(config: {[string]: any}?): boolean
+    return type(config) == "table" and config.block_binding ~= nil
 end
 
 function thinking.effort_level(effort: number): string

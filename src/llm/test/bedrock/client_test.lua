@@ -230,6 +230,51 @@ local function define_tests()
                 return content, err, result, seen, source
             end
 
+            it("keeps streamed reasoning, redacted reasoning and tool calls in response order", function()
+                local function reasoning(index, rc)
+                    return event("contentBlockDelta", { contentBlockIndex = index, delta = { reasoningContent = rc } })
+                end
+                local function tool(index, id)
+                    return event("contentBlockStart", {
+                        contentBlockIndex = index,
+                        start = { toolUse = { toolUseId = id, name = "search" } }
+                    })
+                end
+                local events = {
+                    event("messageStart", { role = "assistant" }),
+                    reasoning(0, { text = "fir" }),
+                    reasoning(0, { text = "st" }),
+                    reasoning(0, { signature = "sig-0" }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    reasoning(1, { redactedContent = "b3BhcXVl" }),
+                    event("contentBlockStop", { contentBlockIndex = 1 }),
+                    reasoning(2, { text = "third" }),
+                    reasoning(2, { signature = "sig-2" }),
+                    event("contentBlockStop", { contentBlockIndex = 2 }),
+                    tool(3, "call_a"),
+                    event("contentBlockStop", { contentBlockIndex = 3 }),
+                    tool(4, "call_b"),
+                    event("contentBlockStop", { contentBlockIndex = 4 }),
+                    event("messageStop", { stopReason = "tool_use" }),
+                }
+
+                local _, err, result = run(events)
+
+                test.is_nil(err)
+                local blocks = result.thinking
+                test.eq(#blocks, 3)
+                test.eq(blocks[1].type, "thinking")
+                test.eq(blocks[1].thinking, "first")
+                test.eq(blocks[1].signature, "sig-0")
+                test.eq(blocks[2].type, "redacted_thinking")
+                test.eq(blocks[2].data, "b3BhcXVl")
+                test.eq(blocks[3].thinking, "third")
+                test.eq(blocks[3].signature, "sig-2")
+                test.eq(#result.tool_calls, 2)
+                test.eq(result.tool_calls[1].id, "call_a")
+                test.eq(result.tool_calls[2].id, "call_b")
+            end)
+
             it("reports input_transformations from messageStop in stream metadata", function()
                 local events = conversation()
                 events[6] = event("messageStop", {

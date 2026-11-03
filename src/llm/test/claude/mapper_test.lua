@@ -621,6 +621,47 @@ local function define_tests()
             end)
         end)
 
+        describe("Thinking binding", function()
+            local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+            local replayed = {
+                { role = "user", content = { { type = "text", text = "Plan" } } },
+                { role = "assistant", content = { { type = "thinking", thinking = "t", signature = "sig" }, { type = "text", text = "Planned." } } },
+                { role = "user", content = { { type = "text", text = "Book" } } }
+            }
+            local fresh = { { role = "user", content = { { type = "text", text = "Plan" } } } }
+
+            it("keeps a block_binding the payload already carries", function()
+                local payload = {
+                    messages = replayed,
+                    thinking = { type = "adaptive", block_binding = { prefix_mismatch_behavior = "error" } }
+                }
+
+                local betas = mapper.bind_thinking(payload)
+
+                test.eq(payload.thinking.block_binding.prefix_mismatch_behavior, "error")
+                test.eq(#betas, 1)
+                test.eq(betas[1], BINDING_BETA)
+            end)
+
+            it("requires the beta for a block_binding set without replayed blocks", function()
+                local payload = {
+                    messages = fresh,
+                    thinking = { type = "adaptive", block_binding = { prefix_mismatch_behavior = "error" } }
+                }
+
+                local betas = mapper.bind_thinking(payload)
+
+                test.eq(betas[1], BINDING_BETA)
+            end)
+
+            it("requires no beta for a payload without block_binding", function()
+                local payload = { messages = fresh, thinking = { type = "adaptive" } }
+
+                test.is_nil(mapper.bind_thinking(payload))
+                test.is_nil(payload.thinking.block_binding)
+            end)
+        end)
+
         describe("Options Mapping", function()
             it("should map basic options correctly", function()
                 local contract_options = {

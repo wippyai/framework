@@ -1223,6 +1223,42 @@ local function define_tests()
                 test.eq(sent_beta, BINDING_BETA)
             end)
 
+            it("folds a configured anthropic-beta header into the merged beta list", function()
+                use({
+                    api_key = "test-key",
+                    beta_features = { "prompt-caching-2024-07-31" },
+                    headers = { ["anthropic-beta"] = "context-1m-2025-08-07, prompt-caching-2024-07-31", ["x-team"] = "core" }
+                })
+                local sent: any = nil
+                claude_client._http_client = {
+                    post = function(url, options)
+                        sent = options.headers
+                        return { status_code = 200, body = "{}", headers = {} }
+                    end
+                }
+
+                claude_client.request("/v1/messages", {}, { beta_features = { BINDING_BETA } })
+
+                test.eq(sent["anthropic-beta"], "prompt-caching-2024-07-31,context-1m-2025-08-07," .. BINDING_BETA)
+                test.eq(sent["x-team"], "core")
+            end)
+
+            it("folds a configured beta header of any letter case into one header", function()
+                use({ api_key = "test-key", headers = { ["Anthropic-Beta"] = "context-1m-2025-08-07" } })
+                local sent: any = nil
+                claude_client._http_client = {
+                    post = function(url, options)
+                        sent = options.headers
+                        return { status_code = 200, body = "{}", headers = {} }
+                    end
+                }
+
+                claude_client.request("/v1/messages", {}, { beta_features = { BINDING_BETA } })
+
+                test.eq(sent["anthropic-beta"], "context-1m-2025-08-07," .. BINDING_BETA)
+                test.is_nil(sent["Anthropic-Beta"])
+            end)
+
             it("reports input_transformations of a JSON response in metadata", function()
                 use({ api_key = "test-key" })
                 claude_client._http_client = {

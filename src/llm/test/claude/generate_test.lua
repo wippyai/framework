@@ -1675,6 +1675,33 @@ local function define_tests()
                 test.is_nil(blocks[2].signature)
             end)
 
+            it("replays stored blocks in the API shape of their type", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({
+                        { type = "thinking", thinking = "Weighing the routes.", data = "stray", signature = "sig-1" },
+                        { type = "redacted_thinking", thinking = "", data = "opaque-old", signature = "" }
+                    }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                for _, index in ipairs({ 2, 4 }) do
+                    local content = captured.payload.messages[index].content
+                    test.eq(content[1].type, "thinking")
+                    test.eq(content[1].thinking, "Weighing the routes.")
+                    test.eq(content[1].signature, "sig-1")
+                    test.is_nil(content[1].data)
+                    test.eq(content[2].type, "redacted_thinking")
+                    test.eq(content[2].data, "opaque-old")
+                    test.is_nil(content[2].thinking)
+                    test.is_nil(content[2].signature)
+                end
+            end)
+
             it("reports input_transformations from a non-streaming response in metadata", function()
                 local captured = {}
                 generate_handler._client = capturing_client(captured, {

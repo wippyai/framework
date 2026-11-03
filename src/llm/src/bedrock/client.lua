@@ -438,12 +438,6 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                     name = start_block.toolUse.name or "",
                     partial_json = ""
                 }
-            elseif start_block.reasoningContent then
-                thinking_blocks[index] = {
-                    type = "thinking",
-                    thinking = "",
-                    signature = ""
-                }
             end
         elseif event.contentBlockDelta then
             local data = event.contentBlockDelta
@@ -455,16 +449,21 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                 full_content = full_content .. text_chunk
                 on_content(text_chunk)
             elseif delta.reasoningContent then
+                -- ConverseStream opens reasoning blocks with their first delta, not contentBlockStart.
                 local rc = delta.reasoningContent
-                if rc.text then
-                    on_thinking(tostring(rc.text))
-                    if thinking_blocks[index] then
-                        thinking_blocks[index].thinking = thinking_blocks[index].thinking .. rc.text
+                if rc.redactedContent then
+                    local block = thinking_blocks[index] or { type = "redacted_thinking", data = "" }
+                    block.data = block.data .. rc.redactedContent
+                    thinking_blocks[index] = block
+                else
+                    local block = thinking_blocks[index] or { type = "thinking", thinking = "", signature = "" }
+                    thinking_blocks[index] = block
+                    if rc.text then
+                        on_thinking(tostring(rc.text))
+                        block.thinking = block.thinking .. rc.text
                     end
-                end
-                if rc.signature then
-                    if thinking_blocks[index] then
-                        thinking_blocks[index].signature = thinking_blocks[index].signature .. rc.signature
+                    if rc.signature then
+                        block.signature = block.signature .. rc.signature
                     end
                 end
             elseif delta.toolUse then
@@ -515,23 +514,16 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     end
 
     local final_tool_calls = {}
-    for _, tool_call in pairs(tool_calls) do
+    for _, tool_call in ipairs(transport.in_index_order(tool_calls)) do
         if type(tool_call) == "table" and tool_call.id then
             table.insert(final_tool_calls, tool_call)
-        end
-    end
-
-    local final_thinking_blocks = {}
-    for _, thinking_block in pairs(thinking_blocks) do
-        if type(thinking_block) == "table" and thinking_block.type == "thinking" then
-            table.insert(final_thinking_blocks, thinking_block)
         end
     end
 
     local result = {
         content = full_content,
         tool_calls = final_tool_calls,
-        thinking = final_thinking_blocks,
+        thinking = transport.in_index_order(thinking_blocks),
         finish_reason = finish_reason,
         usage = usage,
         metadata = metadata

@@ -217,6 +217,17 @@ function mapper.map_finish_reason(claude_stop_reason)
     return mapper.FINISH_REASON_MAP[claude_stop_reason] or claude_stop_reason
 end
 
+-- A thinking or redacted_thinking block in the Messages API shape of its type, for
+-- storing a response block and replaying a stored one; other blocks yield nil.
+local function thinking_block_shape(block)
+    if block.type == "thinking" then
+        return { type = "thinking", thinking = block.thinking or "", signature = block.signature or "" }
+    elseif block.type == "redacted_thinking" then
+        return { type = "redacted_thinking", data = block.data }
+    end
+    return nil
+end
+
 local function extract_thinking_content_from_blocks(thinking_blocks)
     local thinking_content = ""
     for _, block in ipairs(thinking_blocks) do
@@ -461,7 +472,7 @@ function mapper.map_messages(contract_messages)
 
             if msg.metadata and msg.metadata.thinking_blocks then
                 for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    table.insert(content_blocks, thinking_block)
+                    table.insert(content_blocks, thinking_block_shape(thinking_block) or thinking_block)
                 end
             end
 
@@ -482,7 +493,7 @@ function mapper.map_messages(contract_messages)
 
             if msg.metadata and msg.metadata.thinking_blocks then
                 for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    table.insert(content_blocks, thinking_block)
+                    table.insert(content_blocks, thinking_block_shape(thinking_block) or thinking_block)
                 end
             end
 
@@ -694,16 +705,15 @@ local function replays_thinking(messages): boolean
 end
 
 -- Binds the thinking blocks a Messages payload replays to drop_block and returns the
--- request betas the binding requires, or nil when the payload carries no binding.
+-- request betas its block_binding requires, or nil when the payload carries none.
 function mapper.bind_thinking(payload): {string}?
-    if not replays_thinking(payload.messages) then
+    if replays_thinking(payload.messages) then
+        thinking.bind_replayed_blocks(payload.thinking)
+    end
+    if not thinking.is_bound(payload.thinking) then
         return nil
     end
-    local beta = thinking.bind_replayed_blocks(payload.thinking)
-    if not beta then
-        return nil
-    end
-    return { beta }
+    return { thinking.BINDING_BETA }
 end
 
 function mapper.extract_response_content(claude_response)
@@ -728,14 +738,8 @@ function mapper.extract_response_content(claude_response)
                 name = block.name or "",
                 arguments = block.input or {}
             })
-        elseif block.type == "thinking" then
-            table.insert(thinking_blocks, {
-                type = "thinking",
-                thinking = block.thinking or "",
-                signature = block.signature or ""
-            })
-        elseif block.type == "redacted_thinking" then
-            table.insert(thinking_blocks, { type = "redacted_thinking", data = block.data })
+        elseif block.type == "thinking" or block.type == "redacted_thinking" then
+            table.insert(thinking_blocks, thinking_block_shape(block))
         end
     end
 

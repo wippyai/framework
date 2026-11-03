@@ -110,19 +110,24 @@ local function parse_error_response(http_response: transport.HttpResponse): tran
     return error_info
 end
 
--- Configured betas first, then request betas, each named once.
-local function merge_betas(configured: {string}?, requested: {string}?): {string}
-    local merged: {string} = {}
-    local seen: {[string]: boolean} = {}
-    for _, list in ipairs({ configured or {}, requested or {} }) do
-        for _, beta in ipairs(list) do
-            if not seen[beta] then
-                seen[beta] = true
-                table.insert(merged, beta)
+-- Separates a configured anthropic-beta header, in any letter case, from the other
+-- configured headers so its betas join the single merged beta header.
+local function split_beta_header(headers: {[string]: string}?): ({[string]: string}, {string})
+    local others: {[string]: string} = {}
+    local betas: {string} = {}
+    for name, value in pairs(headers or {}) do
+        if string.lower(tostring(name)) == "anthropic-beta" then
+            for beta in string.gmatch(tostring(value), "[^,]+") do
+                local trimmed = beta:match("^%s*(.-)%s*$")
+                if trimmed ~= "" then
+                    table.insert(betas, trimmed)
+                end
             end
+        else
+            others[tostring(name)] = tostring(value)
         end
     end
-    return merged
+    return others, betas
 end
 
 local function prepare_headers(api_key, api_version, beta_features, method, additional_headers): {[string]: string}
@@ -162,8 +167,9 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     end
 
     local full_url = config.base_url .. endpoint_path
-    local beta_features = merge_betas(config.beta_features, options.beta_features)
-    local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, beta_features, method, config.headers)
+    local configured_headers, header_betas = split_beta_header(config.headers)
+    local beta_features = transport.merge_unique({ config.beta_features or {}, header_betas, options.beta_features or {} })
+    local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, beta_features, method, configured_headers)
 
     local http_options: {[string]: any} = {
         headers = headers,
@@ -217,23 +223,9 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     return parsed
 end
 
--- Stream indices start at 0 and leave gaps for other block types; blocks keep response order.
-local function in_index_order(blocks: {[number]: any}): {any}
-    local indices: {number} = {}
-    for index in pairs(blocks) do
-        table.insert(indices, index)
-    end
-    table.sort(indices)
-    local ordered: {any} = {}
-    for _, index in ipairs(indices) do
-        table.insert(ordered, blocks[index])
-    end
-    return ordered
-end
-
 local function stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
     local final_tool_calls = {}
-    for _, tool_call in ipairs(in_index_order(tool_calls)) do
+    for _, tool_call in ipairs(transport.in_index_order(tool_calls)) do
         if type(tool_call) == "table" and tool_call.id then
             table.insert(final_tool_calls, tool_call)
         end
@@ -242,7 +234,7 @@ local function stream_result(full_content, tool_calls, thinking_blocks, finish_r
     return {
         content = full_content,
         tool_calls = final_tool_calls,
-        thinking = in_index_order(thinking_blocks),
+        thinking = transport.in_index_order(thinking_blocks),
         finish_reason = finish_reason,
         usage = usage,
         metadata = metadata

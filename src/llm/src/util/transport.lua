@@ -197,4 +197,33 @@ function transport.health_failure(request_err: RequestError): HealthFailure
     }
 end
 
+-- Concatenates string lists in order, naming each value once.
+function transport.merge_unique(lists: {{string}}): {string}
+    local merged: {string} = {}
+    local seen: {[string]: boolean} = {}
+    for _, list in ipairs(lists) do
+        for _, value in ipairs(list) do
+            if not seen[value] then
+                seen[value] = true
+                table.insert(merged, value)
+            end
+        end
+    end
+    return merged
+end
+
+-- Values of a stream's 0-based, possibly sparse content block index in index order.
+function transport.in_index_order(blocks: {[number]: any}): {any}
+    local indices: {number} = {}
+    for index in pairs(blocks) do
+        table.insert(indices, index)
+    end
+    table.sort(indices)
+    local ordered: {any} = {}
+    for _, index in ipairs(indices) do
+        table.insert(ordered, blocks[index])
+    end
+    return ordered
+end
+
 return transport
