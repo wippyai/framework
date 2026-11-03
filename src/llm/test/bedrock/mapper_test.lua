@@ -2,12 +2,7 @@ local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
 
-local function same(a: any, b: any): boolean
-    if type(a) ~= "table" or type(b) ~= "table" then return a == b end
-    for k, v in pairs(a) do if not same(v, b[k]) then return false end end
-    for k in pairs(b) do if a[k] == nil then return false end end
-    return true
-end
+local same = require("deep_equal")
 
 local function define_tests()
     describe("Bedrock Converse Mapper", function()

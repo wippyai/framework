@@ -1,5 +1,6 @@
 local bedrock_client = require("bedrock_client")
 local json = require("json")
+local base64 = require("base64")
 
 local function define_tests()
     describe("Bedrock Client", function()
@@ -152,6 +153,21 @@ local function define_tests()
                 test.eq(#response.metadata.input_transformations, 1)
                 test.eq(response.metadata.input_transformations[1].path, "messages.1.content.0")
             end)
+
+            it("leaves input_transformations unset when the response carries no model response fields", function()
+                use_context({})
+                bedrock_client._http_client = {
+                    post = function()
+                        return { status_code = 200, headers = {}, body = json.encode({ stopReason = "end_turn" }) }
+                    end
+                }
+
+                local response, err = bedrock_client.converse("test-model", { messages = {} })
+
+                test.is_nil(err)
+                test.not_nil(response.metadata)
+                test.is_nil(response.metadata.input_transformations)
+            end)
         end)
 
         describe("ConverseStream", function()
@@ -273,6 +289,36 @@ local function define_tests()
                 test.eq(#result.tool_calls, 2)
                 test.eq(result.tool_calls[1].id, "call_a")
                 test.eq(result.tool_calls[2].id, "call_b")
+            end)
+
+            it("joins redactedContent deltas by their bytes into one base64 value", function()
+                local first = base64.encode("ab")
+                local second = base64.encode("cde")
+                local events = {
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { reasoningContent = { redactedContent = first } } }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { reasoningContent = { redactedContent = second } } }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    event("messageStop", { stopReason = "end_turn" }),
+                }
+
+                local _, err, result = run(events)
+
+                test.is_nil(err)
+                test.eq(#result.thinking, 1)
+                test.eq(result.thinking[1].type, "redacted_thinking")
+                test.eq(result.thinking[1].data, base64.encode("abcde"))
+            end)
+
+            it("fails the stream on a redactedContent delta that is not base64", function()
+                local _, err, _, seen = run({
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { reasoningContent = { redactedContent = "%%not base64%%" } } }),
+                    event("messageStop", { stopReason = "end_turn" }),
+                })
+
+                test.contains(err, "redactedContent")
+                test.eq(#seen.errors, 1)
             end)
 
             it("reports input_transformations from messageStop in stream metadata", function()

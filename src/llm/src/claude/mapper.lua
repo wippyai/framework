@@ -217,15 +217,31 @@ function mapper.map_finish_reason(claude_stop_reason)
     return mapper.FINISH_REASON_MAP[claude_stop_reason] or claude_stop_reason
 end
 
--- A thinking or redacted_thinking block in the Messages API shape of its type, for
--- storing a response block and replaying a stored one; other blocks yield nil.
+-- Fields an earlier stored shape carried on a block type the Messages API does not
+-- accept them on.
+local STALE_THINKING_FIELDS: {[string]: {[string]: boolean}} = {
+    thinking = { data = true },
+    redacted_thinking = { thinking = true, signature = true }
+}
+
+-- A thinking or redacted_thinking block as the API takes it back: every field passes
+-- through unchanged except the stale fields of its type; other blocks yield nil.
 local function thinking_block_shape(block)
-    if block.type == "thinking" then
-        return { type = "thinking", thinking = block.thinking or "", signature = block.signature or "" }
-    elseif block.type == "redacted_thinking" then
-        return { type = "redacted_thinking", data = block.data }
+    local stale = STALE_THINKING_FIELDS[block.type]
+    if not stale then
+        return nil
     end
-    return nil
+    local shaped = {}
+    for key, value in pairs(block) do
+        if not stale[key] then
+            shaped[key] = value
+        end
+    end
+    if block.type == "thinking" then
+        shaped.thinking = shaped.thinking or ""
+        shaped.signature = shaped.signature or ""
+    end
+    return shaped
 end
 
 local function extract_thinking_content_from_blocks(thinking_blocks)

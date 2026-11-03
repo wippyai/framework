@@ -197,7 +197,53 @@ local function define_tests()
                 test.eq(captured_payload.additionalModelResponseFieldPaths[1], "/input_transformations")
             end)
 
+            it("binds replayed reasoning on an always route at effort 0", function()
+                local captured_payload: any = nil
+                structured_output_handler._client = {
+                    converse = function(model_id, payload, options)
+                        captured_payload = payload
+                        return {
+                            output = { message = { role = "assistant", content = {
+                                { toolUse = { toolUseId = "c1", name = "structured_output", input = { x = 1 } } }
+                            } } },
+                            stopReason = "tool_use",
+                            usage = { inputTokens = 10, outputTokens = 5 },
+                            metadata = {}
+                        }
+                    end
+                }
+
+                structured_output_handler.handler({
+                    model = "us.anthropic.claude-opus-5-5-v1:0",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Plan" } } },
+                        {
+                            role = "assistant",
+                            content = { { type = "text", text = "Planned." } },
+                            metadata = { thinking_blocks = { { type = "thinking", thinking = "t", signature = "sig" } } }
+                        },
+                        { role = "user", content = { { type = "text", text = "Answer" } } }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { x = { type = "number" } },
+                        required = { "x" },
+                        additionalProperties = false
+                    },
+                    options = { thinking_effort = 0 },
+                    accepts = { thinking = "always" }
+                })
+
+                local fields = captured_payload.additionalModelRequestFields
+                test.eq(fields.thinking.type, "adaptive")
+                test.is_nil(fields.output_config)
+                test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(fields.anthropic_beta[1], "thinking-binding-controls-2026-08-01")
+                test.eq(captured_payload.additionalModelResponseFieldPaths[1], "/input_transformations")
+            end)
+
             it("should send forced tool_choice in payload", function()
+
                 local captured_payload = nil
                 structured_output_handler._client = {
                     converse = function(model_id, payload, options)

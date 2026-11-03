@@ -370,7 +370,40 @@ local function define_tests()
                 test.eq(captured.payload.additionalModelResponseFieldPaths[1], "/input_transformations")
             end)
 
+            it("decides the binding from the thinking object as finally sent", function()
+                local captured = capture()
+                local real_mapper = generate_handler._mapper
+                local fields: any = nil
+                generate_handler._mapper = setmetatable({
+                    map_options = function(...)
+                        local config, additional, adjusted, options_err = real_mapper.map_options(...)
+                        fields = additional
+                        return config, additional, adjusted, options_err
+                    end,
+                    map_tools = function(...)
+                        fields.thinking.type = "between_tools"
+                        return real_mapper.map_tools(...)
+                    end
+                }, { __index = real_mapper })
+
+                generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    tools = { { name = "search", description = "Search", schema = { type = "object" } } },
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+                generate_handler._mapper = real_mapper
+
+                local sent = captured.payload.additionalModelRequestFields
+                test.eq(sent.thinking.type, "between_tools")
+                test.is_nil(sent.thinking.block_binding)
+                test.is_nil(sent.anthropic_beta)
+                test.is_nil(captured.payload.additionalModelResponseFieldPaths)
+            end)
+
             it("sends no binding when the history replays no reasoning", function()
+
                 local captured = capture()
 
                 generate_handler.handler({

@@ -1590,7 +1590,39 @@ local function define_tests()
                 test.eq(captured.options.beta_features[1], BINDING_BETA)
             end)
 
+            it("decides the binding from the thinking object as finally sent", function()
+                local captured = {}
+                local real_mapper = generate_handler._mapper
+                local mapped_options: any = nil
+                generate_handler._mapper = setmetatable({
+                    map_options = function(...)
+                        local options, adjusted, options_err = real_mapper.map_options(...)
+                        mapped_options = options
+                        return options, adjusted, options_err
+                    end,
+                    map_tools = function(...)
+                        mapped_options.thinking.type = "between_tools"
+                        return real_mapper.map_tools(...)
+                    end
+                }, { __index = real_mapper })
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-sonnet-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    tools = { { name = "search", description = "Search", schema = { type = "object" } } },
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+                generate_handler._mapper = real_mapper
+
+                test.eq(captured.payload.thinking.type, "between_tools")
+                test.is_nil(captured.payload.thinking.block_binding)
+                test.is_nil(captured.options.beta_features)
+            end)
+
             it("sends no binding when the history replays no thinking blocks", function()
+
                 local captured = {}
                 generate_handler._client = capturing_client(captured)
 
@@ -1694,7 +1726,29 @@ local function define_tests()
                 test.is_nil(blocks[2].signature)
             end)
 
+            it("passes fields other than the stale ones through on replay", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({
+                        { type = "thinking", thinking = "Weighing the routes.", signature = "sig-1", cache_control = { type = "ephemeral" } },
+                        { type = "redacted_thinking", data = "opaque", provenance = "kept" }
+                    }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local content = captured.payload.messages[2].content
+                test.eq(content[1].cache_control.type, "ephemeral")
+                test.eq(content[1].signature, "sig-1")
+                test.eq(content[2].provenance, "kept")
+                test.eq(content[2].data, "opaque")
+            end)
+
             it("replays stored blocks in the API shape of their type", function()
+
                 local captured = {}
                 generate_handler._client = capturing_client(captured)
 

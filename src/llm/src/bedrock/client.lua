@@ -415,6 +415,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     local content_blocks = {}
     local error_reported = false
     local metadata = stream_response.metadata or {}
+    local redacted_bytes: {[number]: string} = {}
 
     local function handle_event(event): string?
         -- Converse stream events use top-level keys instead of a "type" field
@@ -452,9 +453,15 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                 -- ConverseStream opens reasoning blocks with their first delta, not contentBlockStart.
                 local rc = delta.reasoningContent
                 if rc.redactedContent then
-                    local block = thinking_blocks[index] or { type = "redacted_thinking", data = "" }
-                    block.data = block.data .. rc.redactedContent
-                    thinking_blocks[index] = block
+                    -- Each delta is its own base64 blob; the block's bytes are encoded once at contentBlockStop.
+                    local bytes = base64.decode(tostring(rc.redactedContent))
+                    if not bytes then
+                        error_reported = true
+                        on_error({ message = "Invalid base64 in redactedContent delta" })
+                        return "Invalid base64 in redactedContent delta"
+                    end
+                    thinking_blocks[index] = thinking_blocks[index] or { type = "redacted_thinking", data = "" }
+                    redacted_bytes[index] = (redacted_bytes[index] or "") .. bytes
                 else
                     local block = thinking_blocks[index] or { type = "thinking", thinking = "", signature = "" }
                     thinking_blocks[index] = block
@@ -473,6 +480,11 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             end
         elseif event.contentBlockStop then
             local index = (event.contentBlockStop.contentBlockIndex or 0)
+
+            if redacted_bytes[index] then
+                thinking_blocks[index].data = base64.encode(redacted_bytes[index])
+                redacted_bytes[index] = nil
+            end
 
             if tool_calls[index] and tool_calls[index].partial_json then
                 local json_str = tostring(tool_calls[index].partial_json)

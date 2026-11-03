@@ -127,8 +127,6 @@ function generate_handler.handler(contract_args)
         converse_payload.additionalModelRequestFields = additional_fields
     end
 
-    generate_handler._mapper.bind_thinking(converse_payload)
-
     if contract_args.tools and #contract_args.tools > 0 then
         local converse_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
 
@@ -153,6 +151,9 @@ function generate_handler.handler(contract_args)
         timeout = contract_args.timeout or 600,
         retry = contract_args.retry
     }
+
+    -- The binding depends on the thinking object as sent, so it is the last change to the payload.
+    generate_handler._mapper.bind_thinking(converse_payload)
 
     if contract_args.stream and contract_args.stream.reply_to then
         local stream_response, stream_err = generate_handler._client.converse_stream(

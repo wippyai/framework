@@ -137,6 +137,7 @@ function structured_output_handler.handler(contract_args)
         converse_payload.additionalModelRequestFields = additional_fields
     end
 
+    -- The binding depends on the thinking object as sent, so it is the last change to the payload.
     structured_output_handler._mapper.bind_thinking(converse_payload)
 
     local response, request_err = structured_output_handler._client.converse(

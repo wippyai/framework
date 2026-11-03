@@ -149,8 +149,7 @@ function generate_handler.handler(contract_args)
 
     local request_options = {
         timeout = contract_args.timeout or 600,
-        retry = contract_args.retry,
-        beta_features = generate_handler._mapper.bind_thinking(claude_payload)
+        retry = contract_args.retry
     }
 
     local stream_config = nil
@@ -158,6 +157,9 @@ function generate_handler.handler(contract_args)
         request_options.stream = true
         stream_config = contract_args.stream
     end
+
+    -- The binding depends on the thinking object as sent, so it is the last change to the payload.
+    request_options.beta_features = generate_handler._mapper.bind_thinking(claude_payload)
 
     local response, request_err = generate_handler._client.request(
         generate_handler._client.ENDPOINTS.MESSAGES,

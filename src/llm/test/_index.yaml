@@ -355,6 +355,7 @@ entries:
     source: file://bedrock/client_test.lua
     modules:
       - json
+      - base64
     imports:
       bedrock_client: wippy.llm.bedrock:client
       test: wippy.test:test
@@ -375,6 +376,7 @@ entries:
     modules:
       - json
     imports:
+      deep_equal: app:deep_equal
       mapper: wippy.llm.bedrock:mapper
       output: wippy.llm:output
       test: wippy.test:test
@@ -580,6 +582,7 @@ entries:
       - json
       - hash
     imports:
+      deep_equal: app:deep_equal
       prompt: wippy.llm:prompt
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
@@ -1424,6 +1427,24 @@ entries:
     source: file://util/transport_test.lua
     imports:
       transport: wippy.llm.util:transport
+      test: wippy.test:test
+    method: run_tests
+
+  - name: deep_equal
+    kind: library.lua
+    meta:
+      comment: Structural equality helper shared by tests
+    source: file://support/deep_equal.lua
+
+  - name: util_thinking_test
+    kind: function.lua
+    meta:
+      name: Thinking Binding Helpers Test
+      type: test
+      group: LLM / Utils
+    source: file://util/thinking_test.lua
+    imports:
+      thinking: wippy.llm.util:thinking
       test: wippy.test:test
     method: run_tests
 
