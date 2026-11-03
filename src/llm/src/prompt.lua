@@ -435,7 +435,7 @@ function prompt.new(messages: {Message}?)
             return self, nil
         end
 
-        local stale: {Message} = {}
+        local stale: {integer} = {}
         turn_start = nil
         for index = 1, last_stale do
             local msg = messages[index]
@@ -450,16 +450,23 @@ function prompt.new(messages: {Message}?)
                     return nil, string.format(
                         "thinking blocks of message %d must stay: its turn has open tool call %s", index, open)
                 end
-                table.insert(stale, msg)
+                table.insert(stale, index)
             end
         end
 
-        for _, msg in ipairs(stale) do
+        -- Stripped messages are replaced by copies, so message tables the
+        -- caller shares with the builder keep their blocks.
+        for _, index in ipairs(stale) do
+            local copy: Message = {} :: Message
+            for key, value in pairs(messages[index] :: table) do
+                (copy :: any)[key] = value
+            end
             local metadata = {}
-            for key, value in pairs(msg.metadata :: table) do
+            for key, value in pairs(messages[index].metadata :: table) do
                 if key ~= "thinking_blocks" then metadata[key] = value end
             end
-            msg.metadata = metadata
+            copy.metadata = metadata
+            messages[index] = copy
         end
         return self, nil
     end

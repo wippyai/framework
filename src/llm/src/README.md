@@ -214,11 +214,11 @@ builder:add_user("Question")
 
 A system or developer message with `metadata.preserve_position = true` is a positional note. It stays at its conversation position on every driver and is never merged with neighbouring messages:
 
-- Claude and Bedrock append it as text blocks after the content of the user turn it follows (including a turn of tool results). The top-level system prompt never contains it. A positional note that does not follow a user turn fails with `invalid_request` before dispatch.
+- Claude and Bedrock append it as text blocks after the content of the user turn it follows (including a turn of tool results). At the start of the conversation or after an assistant turn it opens a new user turn; it is never merged into earlier blocks. The top-level system prompt never contains it.
 - Google sends it as a user turn; `systemInstruction` holds only ordinary system messages.
 - OpenAI Responses keeps it in `input`; OpenAI-compatible keeps it as a `system` message in place.
 
-A positional note travels with the user turn it follows. Slicing a history (compaction, windowing) must keep or drop the note together with that turn: a slice that keeps the note but drops its user turn is `invalid_request` on Claude and Bedrock.
+A positional note travels with the message it follows. Slicing a history (compaction, windowing) keeps or drops the note together with that message; a slice that keeps the note but drops its user turn renders the note as a user turn of its own, which changes the prefix from that point.
 
 Per-turn and per-step context (current time, recalled memory, lifecycle notes) belongs in positional notes written once and persisted in the history. A note that is sent once and then removed, rebuilt or moved, and any change to the top-level system prompt, the tools or an earlier message, changes the provider prefix: the prompt cache restarts from that point and every later thinking block is invalidated (the provider rejects or drops it), not only cached.
 
@@ -228,7 +228,7 @@ builder:add_system("The current date and time is Tuesday, November 3, 2026 at 09
     { preserve_position = true })
 ```
 
-Ordinary developer messages render the same way on Claude and Bedrock: as their own text blocks after the content of the user turn they follow, or as a new user turn after an assistant turn. Existing blocks are never edited, so the rendering does not depend on where cache markers sit.
+Ordinary developer messages render the same way on Claude and Bedrock: as their own text blocks after the content of the user turn they follow, or as a new user turn at the start or after an assistant turn. Existing blocks are never edited, so the rendering does not depend on where cache markers sit. The text is sent as written: Claude no longer wraps it in `<developer-instruction>` tags. A host that needs the model to tell its guidance apart from the user's prose marks the note text itself.
 
 Bedrock sends developer messages as user text instead of `system` blocks. A Bedrock conversation stored before this change therefore renders a different prefix once after upgrading: its cache restarts and its earlier thinking blocks no longer match. The provider rejects such blocks unless the request lets it drop them; hosts that keep thinking blocks across the upgrade strip them with `drop_stale_thinking`.
 

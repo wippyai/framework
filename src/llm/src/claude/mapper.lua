@@ -379,12 +379,9 @@ function mapper.map_messages(contract_messages)
             local blocks = note_blocks(msg.content)
             local last_msg = claude_messages[#claude_messages]
             if not last_msg or last_msg.role ~= "user" then
-                if prompt.is_positional_note(msg) then
-                    return nil, string.format("positional %s note at message %d must follow a user message", msg.role, i)
-                end
-                -- Developer guidance after an assistant turn opens a user turn:
-                -- the request never ends on an assistant turn (a prefill that
-                -- current models reject) and model output is never amended.
+                -- A note at the start or after an assistant turn opens a user
+                -- turn: the request never ends on an assistant turn (a prefill
+                -- that current models reject) and model output is never amended.
                 if #blocks > 0 then
                     table.insert(claude_messages, { role = "user", content = blocks })
                 end

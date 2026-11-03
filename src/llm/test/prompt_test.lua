@@ -169,6 +169,23 @@ local function define_tests()
                 test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
             end)
 
+            it("leaves the caller's message tables unchanged when it strips", function()
+                local persisted = { role = prompt.ROLE.ASSISTANT, content = { prompt.text("old") },
+                    metadata = { thinking_blocks = block("a"), turn = 1 } }
+                local builder = prompt.new({
+                    { role = prompt.ROLE.USER, content = { prompt.text("question") } },
+                    persisted,
+                    { role = prompt.ROLE.USER, content = { prompt.text("again") } },
+                })
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(#persisted.metadata.thinking_blocks, 1)
+                local stripped = builder:get_messages()[2]
+                test.is_nil(stripped.metadata.thinking_blocks)
+                test.eq(stripped.metadata.turn, 1)
+                test.eq(stripped.content[1].text, "old")
+            end)
+
             it("is a no-op when no message carries thinking blocks", function()
                 local builder = prompt.new()
                 builder:add_user("hello")

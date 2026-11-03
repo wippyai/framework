@@ -237,19 +237,8 @@ function mapper.map_messages(contract_messages)
     local system_cache_positions = {}
     local message_cache_positions = {}
 
-    for i, msg in ipairs(contract_messages) do
-        if prompt.is_positional_note(msg) then
-            -- A positional note joins the user turn it follows, as blocks after
-            -- that turn's content, so the system blocks and every earlier
-            -- block stay byte-identical when the note changes.
-            local last_msg = converse_messages[#converse_messages]
-            if not last_msg or last_msg.role ~= "user" then
-                return nil, string.format("positional %s note at message %d must follow a user message", msg.role, i)
-            end
-            for _, block in ipairs(user_content_blocks(msg.content)) do
-                table.insert(last_msg.content, block)
-            end
-        elseif msg.role == prompt.ROLE.SYSTEM then
+    for _, msg in ipairs(contract_messages) do
+        if msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg) then
             if type(msg.content) == "string" then
                 table.insert(system_blocks, { text = msg.content })
             elseif type(msg.content) == "table" then
@@ -377,8 +366,10 @@ function mapper.map_messages(contract_messages)
                 })
             end
         else
-            -- User messages and developer guidance, which renders as user text
-            -- so per-step guidance never rewrites the system blocks.
+            -- User messages, developer guidance and positional notes. Notes
+            -- render as user text, so they never rewrite the system blocks;
+            -- consolidation appends them as blocks after the user turn they
+            -- follow, or they open a user turn after an assistant turn.
             local content_blocks = user_content_blocks(msg.content)
             if #content_blocks > 0 then
                 table.insert(converse_messages, {

@@ -107,18 +107,106 @@ local function define_tests()
                 test.eq(after.messages[1].content[3].text, "Attached: report.pdf")
             end)
 
-            it("rejects a positional note that has no preceding user message", function()
-                for _, history in ipairs({
-                    { { role = "system", content = text("Base") }, note("system", "Orphan") },
-                    {
+            local function same(a, b)
+                if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+                for k, v in pairs(a) do
+                    if k ~= "cache_control" and k ~= "cachePoint" and not same(v, b[k]) then return false end
+                end
+                for k in pairs(b) do
+                    if k ~= "cache_control" and k ~= "cachePoint" and a[k] == nil then return false end
+                end
+                return true
+            end
+
+            -- Every block of the earlier request appears unchanged, in order, in the later one.
+            local function assert_prefix(earlier, later, label)
+                test.is_true(same(earlier.system, later.system), label .. ": system")
+                for m, message in ipairs(earlier.messages) do
+                    local other = later.messages[m]
+                    test.not_nil(other, label .. ": message " .. m)
+                    test.eq(other.role, message.role, label .. ": role " .. m)
+                    local b2 = 0
+                    for _, block in ipairs(message.content) do
+                        if not block.cachePoint then
+                            b2 = b2 + 1
+                            while other.content[b2] and other.content[b2].cachePoint do b2 = b2 + 1 end
+                            test.is_true(same(block, other.content[b2]), label .. ": message " .. m .. " block " .. b2)
+                        end
+                    end
+                end
+            end
+
+            local function shapes()
+                return {
+                    first = {
+                        { role = "system", content = text("Base") },
+                        note("developer", "Resumed from checkpoint"),
+                        { role = "user", content = text("Continue") },
+                    },
+                    after_assistant = {
                         { role = "user", content = text("Question") },
                         { role = "assistant", content = text("Answer") },
-                        note("developer", "After the answer"),
+                        note("developer", "Stopped by the user"),
                     },
-                }) do
+                    after_call = {
+                        { role = "user", content = text("Question") },
+                        { role = "function_call", content = {}, function_call = { id = "call_1", name = "lookup", arguments = "{}" } },
+                        note("system", "Interrupted"),
+                    },
+                    after_result = {
+                        { role = "user", content = text("Question") },
+                        { role = "function_call", content = {}, function_call = { id = "call_1", name = "lookup", arguments = "{}" } },
+                        { role = "function_result", name = "lookup", function_call_id = "call_1", content = text("found") },
+                        note("system", "Reminder"),
+                    },
+                }
+            end
+
+            it("opens a user turn for a positional note that follows no user turn", function()
+                for label, history in pairs(shapes()) do
                     local mapped, err = mapper.map_messages(history)
-                    test.is_nil(mapped)
-                    test.contains(tostring(err), "positional")
+                    test.is_nil(err, label)
+                    assert(mapped)
+                    test.is_true(mapped.system == nil or #mapped.system <= 1, label)
+                    local note_text = nil
+                    for _, message in ipairs(history) do
+                        if message.metadata and message.metadata.preserve_position then
+                            note_text = message.content[1].text
+                        end
+                    end
+                    local found = nil
+                    for m, message in ipairs(mapped.messages) do
+                        for b, block in ipairs(message.content) do
+                            if block.text == note_text then
+                                found = { m = m, b = b, role = message.role }
+                            end
+                        end
+                    end
+                    test.not_nil(found, label)
+                    test.eq(found.role, "user", label)
+                    if label ~= "after_result" then
+                        test.eq(found.b, 1, label .. ": the note opens its own turn")
+                    end
+                end
+            end)
+
+            it("keeps earlier assistant output unchanged when a positional note follows it", function()
+                local mapped = assert(mapper.map_messages(shapes().after_assistant))
+                test.eq(mapped.messages[2].role, "assistant")
+                test.eq(#mapped.messages[2].content, 1)
+                test.eq(mapped.messages[3].role, "user")
+                test.eq(mapped.messages[3].content[1].text, "Stopped by the user")
+            end)
+
+            it("renders each positional note shape as a stable prefix of the next request", function()
+                for label, history in pairs(shapes()) do
+                    local later = {}
+                    for i, message in ipairs(history) do later[i] = message end
+                    table.insert(later, { role = "assistant", content = text("Next answer") })
+                    table.insert(later, { role = "user", content = text("Next question") })
+                    local earlier_mapped = assert(mapper.map_messages(history))
+                    local later_mapped = assert(mapper.map_messages(later))
+                    assert_prefix(earlier_mapped, later_mapped, label)
                 end
             end)
         end)

@@ -8,12 +8,15 @@ local codec = require("codec")
 -- Message-derived request body sections for prompts without positional notes.
 -- They are recorded from the drivers before positional notes existed, except
 -- Claude developer messages, which render as separate text blocks in the user
--- turn they follow. Any difference changes the provider prefix and its cache.
+-- turn they follow, and bedrock_developer, recorded after Bedrock developer
+-- messages moved from system blocks to user text. Any difference changes the
+-- provider prefix and its cache.
 local GOLDEN = {
     claude = "{\"messages\":[{\"content\":[{\"text\":\"Hello\",\"type\":\"text\"}],\"role\":\"user\"},{\"content\":[{\"signature\":\"sig-greet\",\"thinking\":\"greet\",\"type\":\"thinking\"},{\"text\":\"Hi\",\"type\":\"text\"}],\"role\":\"assistant\"},{\"content\":[{\"text\":\"Look it up\",\"type\":\"text\"},{\"text\":\"Prefer cached data\",\"type\":\"text\"}],\"role\":\"user\"},{\"content\":[{\"signature\":\"sig-lookup\",\"thinking\":\"lookup\",\"type\":\"thinking\"},{\"id\":\"call_1\",\"input\":{\"q\":\"x\"},\"name\":\"lookup\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},{\"content\":[{\"cache_control\":{\"type\":\"ephemeral\"},\"content\":\"found\",\"tool_use_id\":\"call_1\",\"type\":\"tool_result\"},{\"text\":\"Answer briefly\",\"type\":\"text\"}],\"role\":\"user\"}],\"system\":[{\"cache_control\":{\"type\":\"ephemeral\"},\"text\":\"You are concise.\",\"type\":\"text\"},{\"text\":\"Mode: review\",\"type\":\"text\"}]}",
     bedrock = "{\"messages\":[{\"content\":[{\"text\":\"Hello\"}],\"role\":\"user\"},{\"content\":[{\"reasoningContent\":{\"reasoningText\":{\"signature\":\"sig-greet\",\"text\":\"greet\"}}},{\"text\":\"Hi\"}],\"role\":\"assistant\"},{\"content\":[{\"text\":\"Look it up\"}],\"role\":\"user\"},{\"content\":[{\"reasoningContent\":{\"reasoningText\":{\"signature\":\"sig-lookup\",\"text\":\"lookup\"}}},{\"toolUse\":{\"input\":{\"q\":\"x\"},\"name\":\"lookup\",\"toolUseId\":\"call_1\"}}],\"role\":\"assistant\"},{\"content\":[{\"toolResult\":{\"content\":[{\"text\":\"found\"}],\"status\":\"success\",\"toolUseId\":\"call_1\"}},{\"cachePoint\":{\"type\":\"default\"}}],\"role\":\"user\"}],\"system\":[{\"text\":\"You are concise.\"},{\"cachePoint\":{\"type\":\"default\"}},{\"text\":\"Mode: review\"}]}",
     google = "{\"contents\":[{\"parts\":[{\"text\":\"Hello\"}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Hi\"}],\"role\":\"model\"},{\"parts\":[{\"text\":\"Look it up\"}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Prefer cached data\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"args\":{\"q\":\"x\"},\"name\":\"lookup\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"lookup\",\"response\":{\"content\":\"found\"}}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Answer briefly\"}],\"role\":\"user\"}],\"systemInstruction\":[{\"text\":\"You are concise.\"},{\"text\":\"Mode: review\"}]}",
     openai = "{\"input\":[{\"content\":[{\"text\":\"Hello\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"},{\"content\":[{\"text\":\"Hi\",\"type\":\"output_text\"}],\"role\":\"assistant\",\"type\":\"message\"},{\"content\":[{\"text\":\"Look it up\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"},{\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\",\"call_id\":\"call_1\",\"name\":\"lookup\",\"type\":\"function_call\"},{\"call_id\":\"call_1\",\"output\":\"found\",\"type\":\"function_call_output\"}],\"instructions\":\"You are concise.\\n\\nPrefer cached data\\n\\nMode: review\\n\\nAnswer briefly\"}",
+    bedrock_developer = "{\"messages\":[{\"content\":[{\"text\":\"Hello\"}],\"role\":\"user\"},{\"content\":[{\"reasoningContent\":{\"reasoningText\":{\"signature\":\"sig-greet\",\"text\":\"greet\"}}},{\"text\":\"Hi\"}],\"role\":\"assistant\"},{\"content\":[{\"text\":\"Look it up\"},{\"text\":\"Prefer cached data\"}],\"role\":\"user\"},{\"content\":[{\"reasoningContent\":{\"reasoningText\":{\"signature\":\"sig-lookup\",\"text\":\"lookup\"}}},{\"toolUse\":{\"input\":{\"q\":\"x\"},\"name\":\"lookup\",\"toolUseId\":\"call_1\"}}],\"role\":\"assistant\"},{\"content\":[{\"toolResult\":{\"content\":[{\"text\":\"found\"}],\"status\":\"success\",\"toolUseId\":\"call_1\"}},{\"cachePoint\":{\"type\":\"default\"}},{\"text\":\"Answer briefly\"}],\"role\":\"user\"}],\"system\":[{\"text\":\"You are concise.\"},{\"cachePoint\":{\"type\":\"default\"}},{\"text\":\"Mode: review\"}]}",
     openai_compat = "[{\"content\":[{\"text\":\"You are concise.\",\"type\":\"text\"}],\"role\":\"system\"},{\"content\":[{\"text\":\"Hello\",\"type\":\"text\"}],\"role\":\"user\"},{\"content\":\"Hi\",\"role\":\"assistant\"},{\"content\":[{\"text\":\"Look it up\",\"type\":\"text\"}],\"role\":\"user\"},{\"content\":[{\"text\":\"Prefer cached data\",\"type\":\"text\"}],\"role\":\"system\"},{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\",\"name\":\"lookup\"},\"id\":\"call_1\",\"type\":\"function\"}]},{\"content\":\"found\",\"name\":\"lookup\",\"role\":\"tool\",\"tool_call_id\":\"call_1\"},{\"content\":[{\"text\":\"Mode: review\",\"type\":\"text\"}],\"role\":\"system\"},{\"content\":[{\"text\":\"Answer briefly\",\"type\":\"text\"}],\"role\":\"system\"}]",
 }
 
@@ -56,6 +59,7 @@ local function bodies()
     return {
         claude = codec.canonical_json(claude_mapper.map_messages(conversation(true))),
         bedrock = codec.canonical_json(bedrock_mapper.map_messages(conversation(false))),
+        bedrock_developer = codec.canonical_json(bedrock_mapper.map_messages(conversation(true))),
         google = codec.canonical_json({ contents = google_contents, systemInstruction = google_system }),
         openai = codec.canonical_json({
             instructions = openai_mapper.extract_instructions(conversation(true)),
@@ -67,7 +71,7 @@ end
 
 local function define_tests()
     describe("Request body golden sections", function()
-        for _, driver in ipairs({ "claude", "bedrock", "google", "openai", "openai_compat" }) do
+        for _, driver in ipairs({ "claude", "bedrock", "bedrock_developer", "google", "openai", "openai_compat" }) do
             it("keeps the " .. driver .. " body byte-identical for prompts without positional notes", function()
                 local body = bodies()[driver]
                 test.not_nil(body)
