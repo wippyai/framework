@@ -124,7 +124,7 @@ function structured_output_handler.handler(contract_args)
         openai_payload[key] = value
     end
 
-    local overlay_err = wire_request.apply(openai_payload, (contract_args.options or {}).request, openai_mapper.REQUEST_KEYS)
+    local overlay_err = wire_request.apply(openai_payload, (contract_args.options or {}).request, openai_mapper.STRUCTURED_REQUEST_KEYS)
     if overlay_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end

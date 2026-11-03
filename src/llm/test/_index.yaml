@@ -1448,6 +1448,8 @@ entries:
       type: test
       group: LLM / Utils
     source: file://util/wire_request_test.lua
+    modules:
+      - json
     imports:
       wire_request: wippy.llm.util:wire_request
       test: wippy.test:test

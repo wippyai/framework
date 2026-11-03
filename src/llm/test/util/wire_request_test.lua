@@ -1,5 +1,6 @@
 local test = require("test")
 local wire_request = require("wire_request")
+local json = require("json")
 
 local function define_tests()
     describe("Wire request merge", function()
@@ -24,6 +25,22 @@ local function define_tests()
             test.eq(body.output_config.effort, "low")
             test.eq(body.output_config.format.type, "x")
             test.eq(body.top_k, 3)
+        end)
+
+        it("rejects a request naming a reserved nested path", function()
+            local body = { text = { verbosity = "low", format = { type = "json_schema" } } }
+            local err = wire_request.apply(body, { text = { format = { type = "json_object" } } }, { "text.format" })
+            test.contains(err, "text.format")
+            test.eq(body.text.format.type, "json_schema")
+            test.is_nil(wire_request.apply(body, { text = { verbosity = "high" } }, { "text.format" }))
+            test.eq(body.text.verbosity, "high")
+            test.eq(body.text.format.type, "json_schema")
+        end)
+
+        it("keeps an empty object an object on the wire", function()
+            local body = { model = "m" }
+            test.is_nil(wire_request.apply(body, json.decode('{"metadata":{}}'), reserved))
+            test.eq(json.encode(body.metadata), "{}")
         end)
 
         it("replaces arrays instead of merging them", function()

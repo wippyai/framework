@@ -97,7 +97,7 @@ function structured_output.handler(contract_args)
         end
     end
 
-    local overlay_err = wire_request.apply(payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+    local overlay_err = wire_request.apply(payload, (contract_args.options or {}).request, mapper.STRUCTURED_REQUEST_KEYS)
     if overlay_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end

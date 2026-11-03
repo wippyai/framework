@@ -220,6 +220,8 @@ local function define_tests()
                 name = "claude", generate = claude_generate, structured_output = claude_structured,
                 accepts = { thinking = "adaptive" }, reserved = "messages",
                 request = { thinking = { type = "between_tools" } },
+                schema_path = "output_config.format",
+                schema_request = { output_config = { format = { type = "json_schema", schema = {} } } },
                 install = function(handler, sent)
                     handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = function(_, payload)
                         sent.payload = payload
@@ -255,6 +257,8 @@ local function define_tests()
                 name = "openai", generate = openai_generate, structured_output = openai_structured,
                 accepts = { thinking = "adaptive" }, reserved = "input",
                 request = { reasoning = { summary = "auto" } },
+                schema_path = "text.format",
+                schema_request = { text = { format = { type = "json_object" } } },
                 install = function(handler, sent)
                     handler._client = { request = function(_, payload)
                         sent.payload = payload
@@ -272,6 +276,8 @@ local function define_tests()
                 name = "openai_compat", generate = openai_compat_generate, structured_output = openai_compat_structured,
                 accepts = { thinking = "adaptive" }, reserved = "messages",
                 request = { reasoning_effort = "low", top_k = 4 },
+                schema_path = "response_format",
+                schema_request = { response_format = { type = "json_object" } },
                 install = function(handler, sent)
                     handler._client = { request = function(_, payload)
                         sent.payload = payload
@@ -288,6 +294,8 @@ local function define_tests()
                 name = "google", generate = google_generate, structured_output = google_structured,
                 accepts = {}, reserved = "contents",
                 request = { generationConfig = { thinkingConfig = { thinkingBudget = 0 } } },
+                schema_path = "generationConfig.responseSchema",
+                schema_request = { generationConfig = { responseSchema = { type = "object" } } },
                 install = function(handler, sent)
                     local instance = { request = function(_, args)
                         sent.payload = args.payload
@@ -342,8 +350,43 @@ local function define_tests()
                     test.is_nil(sent.payload)
                 end)
 
+                if driver.schema_path then
+                    if method == "structured_output" then
+                        it("rejects a " .. driver.name .. " structured_output request setting the schema field before HTTP", function()
+                            local sent = setup(driver.schema_request)
+                            local result, err = call(method, { model = "route-model" })
+                            test.is_nil(result)
+                            test.eq(err:kind(), errors.INVALID)
+                            test.contains(err:message(), driver.schema_path)
+                            test.is_nil(sent.payload)
+                        end)
+                    else
+                        it("accepts the " .. driver.name .. " structured schema field on generate", function()
+                            local sent = setup(driver.schema_request)
+                            local _, err = call(method, { model = "route-model" })
+                            test.is_nil(err)
+                            test.not_nil(sent.payload)
+                        end)
+                    end
+                end
             end
         end
+
+        it("rejects an openai_compat request setting the usage flag the client owns", function()
+            local driver = drivers[4]
+            local sent: any = {}
+            driver.install(openai_compat_generate, sent)
+            local card = { name = "route-model", providers = { { id = "route", provider_model = "wire",
+                thinking = "adaptive", options = { request = { usage = { include = false } } } } } }
+            llm._model_resolver = { resolve = function() return card end }
+            llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                return { generate = function(_, args) return openai_compat_generate.handler(args) end }
+            end }
+            local result, err = call("generate", { model = "route-model" })
+            test.is_nil(result)
+            test.contains(err:message(), "usage")
+            test.is_nil(sent.payload)
+        end)
 
         for _, method in ipairs({ "generate", "structured_output" }) do
             it("returns an invalid request from Google " .. method .. " for declared thinking", function()

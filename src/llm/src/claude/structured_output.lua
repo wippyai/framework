@@ -202,7 +202,7 @@ function structured_output_handler.handler(contract_args)
         end
         native_payload.output_config = output_config
 
-        local overlay_err = wire_request.apply(native_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+        local overlay_err = wire_request.apply(native_payload, (contract_args.options or {}).request, mapper.STRUCTURED_REQUEST_KEYS)
         if overlay_err then
             return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
         end
@@ -270,7 +270,7 @@ function structured_output_handler.handler(contract_args)
         end
     end
 
-    local overlay_err = wire_request.apply(claude_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+    local overlay_err = wire_request.apply(claude_payload, (contract_args.options or {}).request, mapper.STRUCTURED_REQUEST_KEYS)
     if overlay_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end

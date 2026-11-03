@@ -16,6 +16,11 @@ mapper.CAPABILITY = {
 
 -- Wire body keys the driver builds structurally; options.request cannot set them.
 mapper.REQUEST_KEYS = { "contents", "systemInstruction", "tools", "toolConfig" }
+-- Structured output also owns the schema it sends.
+mapper.STRUCTURED_REQUEST_KEYS = {
+    "contents", "systemInstruction", "tools", "toolConfig",
+    "generationConfig.responseSchema", "generationConfig.response_mime_type"
+}
 
 -- Remove elements that are not supported by Google
 local function filter_tool_schema(schema)
