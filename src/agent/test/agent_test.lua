@@ -1628,6 +1628,24 @@ local function define_tests()
                         test.eq(#requests, 0)
                     end)
 
+                    it("keeps the current tool round's blocks when a user message joins its results", function()
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Compute it") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Computing") },
+                                metadata = { thinking_blocks = blocks("round"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.FUNCTION_CALL, content = {},
+                                function_call = { id = "call_1", name = "calculator", arguments = "{}" } },
+                            { role = prompt.ROLE.FUNCTION_RESULT, name = "calculator", function_call_id = "call_1",
+                                content = { prompt.text("4") } },
+                            { role = prompt.ROLE.USER, content = { prompt.text("Use metric units") } },
+                        })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        local answer = assert(sent_answer(requests))
+                        test.eq(answer.metadata.thinking_blocks[1].thinking, "round")
+                    end)
+
                     it("keeps the current tool round's blocks and strips earlier stale turns", function()
                         local builder = prompt.new({
                             { role = prompt.ROLE.USER, content = { prompt.text("Earlier question") } },
