@@ -87,6 +87,17 @@ local function define_tests()
                 end
             end
         end)
+        it("accepts thinking = always in direct and resolved modes", function()
+            equal(route.accepts({ id = "direct" }, { accepts = { thinking = "always" } }, "direct"), { thinking = "always" })
+            equal(route.accepts({ id = "route", thinking = "always" }, {}, "resolved"), { thinking = "always" })
+            equal(route.accepts({ options = { model_profile = { thinking_mode = "adaptive_only" } } }, {}, "resolved"),
+                { thinking = "adaptive" })
+        end)
+        it("lists always among the thinking values a rejection names", function()
+            local facts, err = route.accepts({ id = "bad-route", thinking = "sometimes" }, {}, "resolved")
+            test.is_nil(facts)
+            test.contains(err, "adaptive, budget, none, always")
+        end)
         it("rejects non-table accepts and unknown accepts keys", function()
             for _, value in ipairs({ false, "adaptive", { unexpected = true } }) do
                 local facts, err = route.accepts({ id = "direct" }, { accepts = value }, "direct")

@@ -123,6 +123,22 @@ local function define_tests()
                     test.is_nil(sent.payload)
                 end)
 
+                it("sends the adaptive thinking object for " .. provider .. " " .. method .. " on an always route without effort", function()
+                    for _, case in ipairs({ { thinking = "always", sends = true }, { thinking = "adaptive", sends = false } }) do
+                        local sent = setup()
+                        local _, err = call(method, { provider_id = "route", model = "wire", accepts = { thinking = case.thinking } })
+                        test.is_nil(err)
+                        local payload = sent.payload :: table
+                        local fields = provider == "claude" and payload or (payload.additionalModelRequestFields or {})
+                        if case.sends then
+                            test.eq(fields.thinking.type, "adaptive")
+                        else
+                            test.is_nil(fields.thinking)
+                        end
+                        test.is_nil(fields.output_config)
+                    end
+                end)
+
                 it("encodes " .. provider .. " " .. method .. " adaptive thinking after central sampling removal", function()
                     local sent = setup()
                     local result, err = call(method, { provider_id = "route", model = "wire",

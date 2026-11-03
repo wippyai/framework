@@ -352,6 +352,24 @@ local function define_tests()
                 test.eq(fields.anthropic_beta[1], BINDING_BETA)
             end)
 
+            it("binds replayed reasoning on an always route at the model's default effort", function()
+                local captured = capture()
+
+                generate_handler.handler({
+                    model = CLAUDE_MODEL,
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "always" },
+                    options = { thinking_effort = 0 }
+                })
+
+                local fields = captured.payload.additionalModelRequestFields
+                test.eq(fields.thinking.type, "adaptive")
+                test.is_nil(fields.output_config)
+                test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(fields.anthropic_beta[1], BINDING_BETA)
+                test.eq(captured.payload.additionalModelResponseFieldPaths[1], "/input_transformations")
+            end)
+
             it("sends no binding when the history replays no reasoning", function()
                 local captured = capture()
 

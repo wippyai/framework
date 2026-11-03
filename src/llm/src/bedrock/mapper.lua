@@ -16,7 +16,7 @@ mapper.CAPABILITY = {
         structured_output = "tool"
     },
     supported = {
-        thinking = { adaptive = true, budget = true, none = true },
+        thinking = { adaptive = true, budget = true, none = true, always = true },
         structured_output = { tool = true }
     }
 }
@@ -499,6 +499,12 @@ function mapper.map_options(contract_options, accepts): (table, table, table, st
     if mode == "adaptive" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         additional_fields.thinking = { type = "adaptive" }
         additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+    elseif mode == "always" then
+        -- The model thinks on every request; without an effort it keeps the model default.
+        additional_fields.thinking = { type = "adaptive" }
+        if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+            additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+        end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)

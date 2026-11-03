@@ -5,6 +5,13 @@ local json = require("json")
 local hash = require("hash")
 local test = require("test")
 
+local function same(a: any, b: any): boolean
+    if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+    for k, v in pairs(a) do if not same(v, b[k]) then return false end end
+    for k in pairs(b) do if a[k] == nil then return false end end
+    return true
+end
+
 local function define_tests()
     describe("Claude Mapper", function()
 
@@ -722,6 +729,27 @@ local function define_tests()
                 local result = mapper.map_options({ max_tokens = 1000 }, { thinking = "adaptive" })
                 test.is_nil(result.output_config)
                 test.is_nil(result.thinking)
+            end)
+
+            it("sends the adaptive thinking object without an effort for always at no effort", function()
+                for _, options in ipairs({ { max_tokens = 1000, temperature = 0.3 }, { max_tokens = 1000, temperature = 0.3, thinking_effort = 0 } }) do
+                    local result, adjusted, err = mapper.map_options(options, { thinking = "always" })
+                    test.is_nil(err)
+                    test.eq(result.thinking.type, "adaptive")
+                    test.is_nil(next(result.thinking, next(result.thinking)))
+                    test.is_nil(result.output_config)
+                    test.eq(result.temperature, 0.3)
+                    test.eq(result.max_tokens, 1000)
+                    test.is_nil(next(adjusted))
+                end
+            end)
+
+            it("encodes always with a positive effort exactly as adaptive", function()
+                local always = mapper.map_options({ thinking_effort = 50, max_tokens = 1000 }, { thinking = "always" })
+                local adaptive = mapper.map_options({ thinking_effort = 50, max_tokens = 1000 }, { thinking = "adaptive" })
+                test.eq(always.thinking.type, "adaptive")
+                test.eq(always.output_config.effort, "medium")
+                test.is_true(same(always, adaptive))
             end)
 
             it("should keep the explicit temperature an adaptive-only caller sets", function()

@@ -110,7 +110,7 @@ type ProviderRef = {
     id: string,
     provider_model: string?,
     context: table?,
-    thinking: "adaptive" | "budget" | "none" | nil,
+    thinking: "adaptive" | "budget" | "none" | "always" | nil,
     sampling: boolean?,
     forced_tool_choice: boolean?,
     structured_output: "native" | "tool" | nil,

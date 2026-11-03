@@ -2,6 +2,13 @@ local mapper = require("mapper")
 local output = require("output")
 local json = require("json")
 
+local function same(a: any, b: any): boolean
+    if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+    for k, v in pairs(a) do if not same(v, b[k]) then return false end end
+    for k in pairs(b) do if a[k] == nil then return false end end
+    return true
+end
+
 local function define_tests()
     describe("Bedrock Converse Mapper", function()
 
@@ -103,6 +110,21 @@ local function define_tests()
                 local config, fields, adjusted = mapper.map_options({ thinking_effort = 50, temperature = 1 }, { thinking = "budget" })
                 test.eq(config.temperature, 1)
                 test.is_nil(adjusted.temperature)
+            end)
+            it("sends the adaptive thinking object without an effort for always at no effort", function()
+                for _, options in ipairs({ {}, { thinking_effort = 0 } }) do
+                    local config, fields, _, err = mapper.map_options(options, { thinking = "always" })
+                    test.is_nil(err)
+                    test.eq(fields.thinking.type, "adaptive")
+                    test.is_nil(fields.output_config)
+                    test.is_nil(config.maxTokens)
+                end
+            end)
+            it("encodes always with a positive effort exactly as adaptive", function()
+                local _, always = mapper.map_options({ thinking_effort = 80 }, { thinking = "always" })
+                local _, adaptive = mapper.map_options({ thinking_effort = 80 }, { thinking = "adaptive" })
+                test.eq(always.output_config.effort, "xhigh")
+                test.is_true(same(always, adaptive))
             end)
             it("omits thinking for none and zero adaptive effort", function()
                 for _, thinking in ipairs({ "none", "adaptive" }) do

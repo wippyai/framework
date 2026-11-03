@@ -96,6 +96,12 @@ local function define_tests()
                 test.contains(err, "budget")
             end)
 
+            it("rejects a declared thinking = always, naming the supported values", function()
+                local _, err = openai_mapper.map_options({}, { thinking = "always" })
+                test.contains(err, "OpenAI-compatible does not support thinking = always")
+                test.contains(err, "supported: adaptive, none")
+            end)
+
             it("rejects a declared structured_output mode it cannot honor", function()
                 local opts, err = openai_mapper.map_options({}, { structured_output = "tool" })
                 test.contains(err, "structured_output")

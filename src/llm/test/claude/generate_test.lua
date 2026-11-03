@@ -1571,6 +1571,25 @@ local function define_tests()
                 test.eq(captured.options.beta_features[1], BINDING_BETA)
             end)
 
+            it("binds replayed blocks on an always route at the model's default effort", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "always" },
+                    options = {}
+                })
+
+                local thinking = captured.payload.thinking
+                test.eq(thinking.type, "adaptive")
+                test.eq(thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.is_nil(captured.payload.output_config)
+                test.eq(#captured.options.beta_features, 1)
+                test.eq(captured.options.beta_features[1], BINDING_BETA)
+            end)
+
             it("sends no binding when the history replays no thinking blocks", function()
                 local captured = {}
                 generate_handler._client = capturing_client(captured)

@@ -16,7 +16,7 @@ mapper.CAPABILITY = {
         structured_output = "tool"
     },
     supported = {
-        thinking = { adaptive = true, budget = true, none = true },
+        thinking = { adaptive = true, budget = true, none = true, always = true },
         structured_output = { native = true, tool = true }
     }
 }
@@ -665,6 +665,12 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
     if mode == "adaptive" then
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
             claude_options.thinking = { type = "adaptive" }
+            claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+        end
+    elseif mode == "always" then
+        -- The model thinks on every request; without an effort it keeps the model default.
+        claude_options.thinking = { type = "adaptive" }
+        if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
             claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
         end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then

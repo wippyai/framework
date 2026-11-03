@@ -898,7 +898,7 @@ local function define_tests()
                 additionalProperties = false
             }
 
-            local function send(structured_output_mode)
+            local function send(structured_output_mode, thinking_fact, thinking_effort)
                 local sent = {}
                 structured_output_handler._client._ctx = { all = function() return { api_key = "test-api-key" } end }
                 structured_output_handler._client._env = { get = function() return nil end }
@@ -935,19 +935,27 @@ local function define_tests()
                         { role = "user", content = { { type = "text", text = "Answer" } } }
                     },
                     schema = schema,
-                    options = { thinking_effort = 50 },
-                    accepts = { thinking = "adaptive", structured_output = structured_output_mode }
+                    options = { thinking_effort = thinking_effort },
+                    accepts = { thinking = thinking_fact, structured_output = structured_output_mode }
                 })
                 return sent, response
             end
 
             for _, mode in ipairs({ "native", "tool" }) do
                 it("binds replayed blocks on the " .. mode .. " path", function()
-                    local sent, response = send(mode)
+                    local sent, response = send(mode, "adaptive", 50)
 
                     test.eq(sent.body.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
                     test.eq(sent.headers["anthropic-beta"], "thinking-binding-controls-2026-08-01")
                     test.eq(response.metadata.input_transformations[1].reason, "prefix_binding_mismatch")
+                end)
+
+                it("binds replayed blocks on the " .. mode .. " path of an always route at no effort", function()
+                    local sent = send(mode, "always", nil)
+
+                    test.eq(sent.body.thinking.type, "adaptive")
+                    test.eq(sent.body.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                    test.eq(sent.headers["anthropic-beta"], "thinking-binding-controls-2026-08-01")
                 end)
             end
         end)
