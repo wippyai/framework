@@ -1456,7 +1456,7 @@ local function define_tests()
             describe("Stable prefix", function()
                 it("requires an llm package that provides positional notes", function()
                     if type(prompt.is_positional_note) ~= "function" then
-                        test.fail("wippy/llm >= 0.6.0 is required: prompt.is_positional_note is missing")
+                        test.fail("wippy/llm >= 0.5.13 is required: prompt.is_positional_note is missing")
                     end
                 end)
 
