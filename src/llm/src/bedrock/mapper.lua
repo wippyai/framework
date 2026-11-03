@@ -140,6 +140,30 @@ local function convert_document_to_converse(content_part)
     return nil
 end
 
+local function user_content_blocks(content)
+    local content_blocks = {}
+    if type(content) == "string" then
+        table.insert(content_blocks, { text = content })
+    elseif type(content) == "table" then
+        for _, part in ipairs(content) do
+            if part.type == "text" and part.text then
+                table.insert(content_blocks, { text = part.text })
+            elseif part.type == "image" then
+                local img = convert_image_to_converse(part)
+                if img then
+                    table.insert(content_blocks, img)
+                end
+            elseif part.type == "document" then
+                local doc = convert_document_to_converse(part)
+                if doc then
+                    table.insert(content_blocks, doc)
+                end
+            end
+        end
+    end
+    return content_blocks
+end
+
 local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
     if type(arguments) == "string" then
@@ -213,8 +237,19 @@ function mapper.map_messages(contract_messages)
     local system_cache_positions = {}
     local message_cache_positions = {}
 
-    for _, msg in ipairs(contract_messages) do
-        if msg.role == prompt.ROLE.SYSTEM then
+    for i, msg in ipairs(contract_messages) do
+        if prompt.is_positional_note(msg) then
+            -- A positional note joins the user turn it follows, as blocks after
+            -- that turn's content, so the system blocks and every earlier
+            -- block stay byte-identical when the note changes.
+            local last_msg = converse_messages[#converse_messages]
+            if not last_msg or last_msg.role ~= "user" then
+                return nil, string.format("positional %s note at message %d must follow a user message", msg.role, i)
+            end
+            for _, block in ipairs(user_content_blocks(msg.content)) do
+                table.insert(last_msg.content, block)
+            end
+        elseif msg.role == prompt.ROLE.SYSTEM then
             if type(msg.content) == "string" then
                 table.insert(system_blocks, { text = msg.content })
             elseif type(msg.content) == "table" then
@@ -237,13 +272,6 @@ function mapper.map_messages(contract_messages)
                 if position then
                     message_cache_positions[#message_cache_positions + 1] = position
                 end
-            end
-        elseif msg.role == prompt.ROLE.DEVELOPER then
-            local dev_text = type(msg.content) == "string" and msg.content or
-                (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
-
-            if dev_text ~= "" then
-                table.insert(system_blocks, { text = dev_text })
             end
         elseif msg.role == prompt.ROLE.FUNCTION_RESULT then
             local result_text = type(msg.content) == "string" and msg.content or
@@ -349,29 +377,9 @@ function mapper.map_messages(contract_messages)
                 })
             end
         else
-            -- User messages
-            local content_blocks = {}
-            local content = msg.content
-            if type(content) == "string" then
-                table.insert(content_blocks, { text = content })
-            elseif type(content) == "table" then
-                for _, part in ipairs(content) do
-                    if part.type == "text" and part.text then
-                        table.insert(content_blocks, { text = part.text })
-                    elseif part.type == "image" then
-                        local img = convert_image_to_converse(part)
-                        if img then
-                            table.insert(content_blocks, img)
-                        end
-                    elseif part.type == "document" then
-                        local doc = convert_document_to_converse(part)
-                        if doc then
-                            table.insert(content_blocks, doc)
-                        end
-                    end
-                end
-            end
-
+            -- User messages and developer guidance, which renders as user text
+            -- so per-step guidance never rewrites the system blocks.
+            local content_blocks = user_content_blocks(msg.content)
             if #content_blocks > 0 then
                 table.insert(converse_messages, {
                     role = "user",

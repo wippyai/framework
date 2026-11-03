@@ -350,7 +350,24 @@ function mapper.map_messages(contract_messages)
     local in_system_phase = true
 
     for i, msg in ipairs(contract_messages) do
-        if msg.role == prompt.ROLE.SYSTEM then
+        if prompt.is_positional_note(msg) then
+            -- A positional note joins the user turn it follows, as blocks after
+            -- that turn's content, so the system prompt and every earlier
+            -- block stay byte-identical when the note changes.
+            in_system_phase = false
+            local last_msg = claude_messages[#claude_messages]
+            if not last_msg or last_msg.role ~= "user" then
+                return nil, string.format("positional %s note at message %d must follow a user message", msg.role, i)
+            end
+            local note_content: any = process_content_array(msg.content)
+            if type(note_content) == "string" then
+                table.insert(last_msg.content, { type = "text", text = note_content })
+            elseif type(note_content) == "table" then
+                for _, part in ipairs(note_content) do
+                    table.insert(last_msg.content, part)
+                end
+            end
+        elseif msg.role == prompt.ROLE.SYSTEM then
             if type(msg.content) == "string" then
                 table.insert(system_blocks, {
                     type = "text",

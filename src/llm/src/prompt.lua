@@ -52,6 +52,7 @@ type PromptBuilder = {
     add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?) -> PromptBuilder,
     add_function_result: (self: any, name: string, content: any, function_call_id: string?, options: FunctionResultOptions?) -> PromptBuilder,
     add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
+    bind_thinking: (self: any, is_current: (msg: Message) -> boolean) -> (PromptBuilder?, string?),
     get_messages: (self: any) -> {Message},
     build: (self: any) -> {messages: {Message}},
     clone: (self: any) -> PromptBuilder,
@@ -130,6 +131,14 @@ function prompt.document_base64(mime_type: string, data: string): ContentPart
             data = data
         }
     }
+end
+
+-- A positional note is a system or developer message marked with
+-- metadata.preserve_position. Drivers render it at its conversation position
+-- instead of folding it into the top-level instructions.
+function prompt.is_positional_note(msg: Message): boolean
+    return (msg.role == prompt.ROLE.SYSTEM or msg.role == prompt.ROLE.DEVELOPER)
+        and type(msg.metadata) == "table" and msg.metadata.preserve_position == true
 end
 
 ---------------------------
@@ -361,6 +370,53 @@ function prompt.new(messages: {Message}?)
         }
         table.insert(self.messages, message)
         return self
+    end
+
+    -- Remove thinking blocks the current request can no longer replay.
+    -- Providers bind each block to the exact prefix before it and chain it to
+    -- the previous block, so only a leading run of blocks may be dropped, and
+    -- an assistant turn whose tool calls still await results keeps its blocks.
+    builder.bind_thinking = function(self: any, is_current: (msg: Message) -> boolean): (PromptBuilder?, string?)
+        local messages: {Message} = self.messages :: {Message}
+        local resolved: {[string]: boolean} = {}
+        for _, msg in ipairs(messages) do
+            if msg.role == prompt.ROLE.FUNCTION_RESULT and msg.function_call_id then
+                resolved[msg.function_call_id] = true
+            end
+        end
+
+        local stale: {Message} = {}
+        local kept_index: integer? = nil
+        for index, msg in ipairs(messages) do
+            local carries = (msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL)
+                and msg.metadata ~= nil and msg.metadata.thinking_blocks ~= nil
+            if carries then
+                if is_current(msg) then
+                    kept_index = kept_index or index
+                elseif kept_index then
+                    return nil, string.format(
+                        "thinking blocks can be removed only as a leading run: message %d is not current but follows current message %d",
+                        index, kept_index)
+                else
+                    local call_id = msg.function_call and msg.function_call.id
+                    if msg.role == prompt.ROLE.FUNCTION_CALL and not (call_id and resolved[call_id]) then
+                        return nil, string.format(
+                            "thinking blocks of open tool call %s must stay until its result is present",
+                            tostring(call_id))
+                    end
+                    table.insert(stale, msg)
+                end
+            end
+        end
+
+        for _, msg in ipairs(stale) do
+            local metadata = {}
+            for key, value in pairs(msg.metadata :: table) do
+                if key ~= "thinking_blocks" then metadata[key] = value end
+            end
+            msg.metadata = metadata
+        end
+        return self, nil
     end
 
     -- Get all messages in the current builder (with image processing)

@@ -1,6 +1,7 @@
 local json = require("json")
 local output = require("output")
 local route = require("route")
+local prompt = require("prompt")
 
 local openai_mapper = {}
 
@@ -177,8 +178,7 @@ function openai_mapper.extract_instructions(contract_messages)
     local parts = {}
     local consumed = {}
     for i, msg in ipairs(contract_messages) do
-        if (msg.role == "system" or msg.role == "developer")
-            and not (msg.metadata and msg.metadata.preserve_position == true) then
+        if (msg.role == "system" or msg.role == "developer") and not prompt.is_positional_note(msg) then
             local text = extract_text(msg.content)
             if text and text ~= "" then
                 table.insert(parts, text)

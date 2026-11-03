@@ -2,6 +2,7 @@ local json = require("json")
 local output = require("output")
 local uuid = require("uuid")
 local route = require("route")
+local prompt = require("prompt")
 
 local mapper = {}
 
@@ -166,15 +167,15 @@ function mapper.map_messages(contract_messages, options)
 
     while i <= #contract_messages do
         local msg = contract_messages[i]
-        msg.metadata = nil
+        local positional = prompt.is_positional_note(msg)
         if msg.role ~= "function_call" and msg.role ~= "function_result" and msg.role ~= "cache_marker" then
             flush_tool_round()
         end
 
-        if msg.role == "system" then
+        if msg.role == "system" and not positional then
             table.insert(system_instructions, { text = mapper.standardize_content(msg.content) })
             i = i + 1
-        elseif msg.role == "user" or msg.role == "developer" then
+        elseif msg.role == "user" or msg.role == "developer" or positional then
             table.insert(processed_messages, { role = "user", parts = normalize_content(msg.content) })
             i = i + 1
         elseif msg.role == "assistant" then

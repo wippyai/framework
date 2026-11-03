@@ -9,6 +9,27 @@ local function define_tests()
         end)
 
         describe("Contract Validation", function()
+            it("should reject a positional note without a preceding user message before dispatch", function()
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function() error("request must not be dispatched") end,
+                    converse = function() error("request must not be dispatched") end,
+                }
+                local response, err = generate_handler.handler({
+                    model = "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Question" } } },
+                        { role = "assistant", content = { { type = "text", text = "Answer" } } },
+                        { role = "system", content = { { type = "text", text = "Note" } },
+                            metadata = { preserve_position = true } },
+                    }
+                })
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "positional")
+            end)
+
             it("should require model parameter", function()
                 local response, err = generate_handler.handler({
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } }

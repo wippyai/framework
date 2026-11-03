@@ -8,6 +8,102 @@ local test = require("test")
 local function define_tests()
     describe("Claude Mapper", function()
 
+        describe("Positional notes", function()
+            local function text(value)
+                return { { type = "text", text = value } }
+            end
+
+            local function note(role, value)
+                return { role = role, content = text(value), metadata = { preserve_position = true } }
+            end
+
+            it("renders a positional note as a text block after the preceding user content", function()
+                for _, role in ipairs({ "system", "developer" }) do
+                    local mapped, err = mapper.map_messages({
+                        { role = "system", content = text("Base") },
+                        { role = "user", content = text("Question") },
+                        note(role, "The current date and time is Tuesday."),
+                    })
+                    test.is_nil(err)
+                    assert(mapped)
+                    test.eq(#mapped.system, 1)
+                    test.eq(mapped.system[1].text, "Base")
+                    test.eq(#mapped.messages, 1)
+                    local content = mapped.messages[1].content
+                    test.eq(#content, 2)
+                    test.eq(content[1].text, "Question")
+                    test.eq(content[2].type, "text")
+                    test.eq(content[2].text, "The current date and time is Tuesday.")
+                end
+            end)
+
+            it("appends a positional note after the tool results of the same user turn", function()
+                local mapped, err = mapper.map_messages({
+                    { role = "user", content = text("Question") },
+                    { role = "function_call", content = {}, function_call = { id = "call_1", name = "lookup", arguments = "{}" } },
+                    { role = "function_result", name = "lookup", function_call_id = "call_1", content = text("found") },
+                    note("system", "Reminder"),
+                })
+                test.is_nil(err)
+                assert(mapped)
+                test.is_nil(mapped.system)
+                test.eq(#mapped.messages, 3)
+                local content = mapped.messages[3].content
+                test.eq(#content, 2)
+                test.eq(content[1].type, "tool_result")
+                test.eq(content[2].type, "text")
+                test.eq(content[2].text, "Reminder")
+            end)
+
+            it("keeps the top-level system identical when the note text changes", function()
+                local function build(note_text)
+                    local mapped = mapper.map_messages({
+                        { role = "system", content = text("Base") },
+                        { role = "cache_marker", marker_id = "agent" },
+                        { role = "user", content = text("Question") },
+                        note("system", note_text),
+                    })
+                    return assert(mapped)
+                end
+                local first, second = build("Monday 09:00"), build("Tuesday 10:30")
+                test.eq(#first.system, 1)
+                test.eq(#second.system, 1)
+                test.eq(second.system[1].text, first.system[1].text)
+                test.eq(second.system[1].type, first.system[1].type)
+                test.eq(second.system[1].cache_control.type, first.system[1].cache_control.type)
+                test.eq(first.messages[1].content[2].text, "Monday 09:00")
+                test.eq(second.messages[1].content[2].text, "Tuesday 10:30")
+            end)
+
+            it("keeps a cache breakpoint on the user block before the note", function()
+                local mapped = assert(mapper.map_messages({
+                    { role = "system", content = text("Base") },
+                    { role = "user", content = text("Question") },
+                    { role = "cache_marker", marker_id = "conversation_tail" },
+                    note("developer", "Recalled memory"),
+                }))
+                local content = mapped.messages[1].content
+                test.eq(content[1].cache_control.type, "ephemeral")
+                test.eq(content[2].text, "Recalled memory")
+                test.is_nil(content[2].cache_control)
+            end)
+
+            it("rejects a positional note that has no preceding user message", function()
+                for _, history in ipairs({
+                    { { role = "system", content = text("Base") }, note("system", "Orphan") },
+                    {
+                        { role = "user", content = text("Question") },
+                        { role = "assistant", content = text("Answer") },
+                        note("developer", "After the answer"),
+                    },
+                }) do
+                    local mapped, err = mapper.map_messages(history)
+                    test.is_nil(mapped)
+                    test.contains(tostring(err), "positional")
+                end
+            end)
+        end)
+
         describe("Payment and quota classification", function()
             it("classifies HTTP 402 as non-retryable payment_required", function()
                 for _, message in ipairs({ "Payment required", "Network quota unavailable", "Maximum allowed tokens" }) do
@@ -74,14 +170,14 @@ local function define_tests()
             end)
         end)
         it("preserves distinct valid call IDs and their result pairings", function()
-            local mapped = mapper.map_messages({
+            local mapped = assert(mapper.map_messages({
                 { role = "assistant", content = {
                     { type = "function_call", id = "call_one", name = "lookup", arguments = "{}" },
                     { type = "function_call", id = "call-one", name = "lookup", arguments = "{}" },
                 } },
                 { role = "function_result", function_call_id = "call_one", content = "one" },
                 { role = "function_result", function_call_id = "call-one", content = "two" },
-            })
+            }))
             test.eq(mapped.messages[1].content[1].id, "call_one")
             test.eq(mapped.messages[1].content[2].id, "call-one")
             test.eq(mapped.messages[2].content[1].tool_use_id, "call_one")
@@ -99,8 +195,8 @@ local function define_tests()
                 { role = "function_result", function_call_id = foreign, content = "foreign" },
                 { role = "function_result", function_call_id = native, content = "native" },
             }
-            local first = mapper.map_messages(history)
-            local second = mapper.map_messages(history)
+            local first = assert(mapper.map_messages(history))
+            local second = assert(mapper.map_messages(history))
             local translated = first.messages[1].content[1].id
             test.is_true(translated:match("^[a-zA-Z0-9_-]+$") ~= nil)
             test.is_false(translated == native)
@@ -113,8 +209,8 @@ local function define_tests()
 
         it("marks only explicit tool failures, preserving unflagged outputs", function()
             for _, failed in ipairs({ false, true }) do
-                local mapped = mapper.map_messages({{ role = "function_result", name = "lookup",
-                    function_call_id = "call-1", content = "denied", is_error = failed }})
+                local mapped = assert(mapper.map_messages({{ role = "function_result", name = "lookup",
+                    function_call_id = "call-1", content = "denied", is_error = failed }}))
                 local result = mapped.messages[1].content[1]
                 test.eq(result.tool_use_id, "call-1")
                 test.eq(result.content, "denied")
@@ -507,15 +603,15 @@ local function define_tests()
             end)
 
             it("should keep the marked prefix stable when a dynamic developer note follows", function()
-                local first = mapper.map_messages({
+                local first = assert(mapper.map_messages({
                     { role = "user", content = {{ type = "text", text = "Question" }} },
                     { role = "cache_marker", marker_id = "history_tail" }
-                })
-                local second = mapper.map_messages({
+                }))
+                local second = assert(mapper.map_messages({
                     { role = "user", content = {{ type = "text", text = "Question" }} },
                     { role = "cache_marker", marker_id = "history_tail" },
                     { role = "developer", content = "Changing memory recall" }
-                })
+                }))
 
                 test.eq(second.messages[1].content[1].text, first.messages[1].content[1].text)
                 test.not_nil((second.messages[1].content[1] :: any).cache_control)

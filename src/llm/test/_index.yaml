@@ -280,6 +280,28 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  - name: request_golden_test
+    kind: function.lua
+    meta:
+      name: Request Body Golden Test
+      type: test
+      comment: Pins message-derived request body sections on every driver
+      group: LLM / General
+      tags:
+        - llm
+        - mapper
+        - cache
+    source: file://request_golden_test.lua
+    imports:
+      claude_mapper: wippy.llm.claude:mapper
+      bedrock_mapper: wippy.llm.bedrock:mapper
+      google_mapper: wippy.llm.google:mapper
+      openai_mapper: wippy.llm.openai:mapper
+      compat_mapper: wippy.llm.openai_compat:mapper
+      codec: wippy.llm:context_attention_codec_v2
+      test: wippy.test:test
+    method: run_tests
+
   # app:prompt_test
   - name: prompt_test
     kind: function.lua

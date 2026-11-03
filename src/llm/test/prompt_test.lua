@@ -18,6 +18,116 @@ local function define_tests()
                 end
             end
         end)
+        it("keeps positional notes and thinking metadata through clone", function()
+            local blocks = { { type = "thinking", thinking = "plan", signature = "sig" } }
+            local builder = prompt.new()
+            builder:add_user("question")
+            builder:add_system("note", { preserve_position = true })
+            builder:add_developer("guidance", { preserve_position = true })
+            builder:add_function_call("lookup", "{}", "call_1")
+            builder.messages[#builder.messages].metadata = { thinking_blocks = blocks }
+            local cloned: any = builder:clone()
+            local messages = cloned:get_messages()
+            test.eq(#messages, 4)
+            test.eq(messages[2].role, prompt.ROLE.SYSTEM)
+            test.is_true(messages[2].metadata.preserve_position)
+            test.eq(messages[3].role, prompt.ROLE.DEVELOPER)
+            test.is_true(messages[3].metadata.preserve_position)
+            test.eq(#messages[4].metadata.thinking_blocks, 1)
+            test.eq(messages[4].metadata.thinking_blocks[1].signature, "sig")
+        end)
+
+        describe("bind_thinking", function()
+            local function block(name)
+                return { { type = "thinking", thinking = name, signature = "sig-" .. name } }
+            end
+
+            local function history()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_function_call("lookup", "{}", "call_1")
+                builder.messages[#builder.messages].metadata = { thinking_blocks = block("a"), turn = 1 }
+                builder:add_function_result("lookup", "found", "call_1")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer one") }, nil,
+                    { thinking_blocks = block("b"), turn = 1 })
+                builder:add_user("second")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer two") }, nil,
+                    { thinking_blocks = block("c"), turn = 2 })
+                return builder
+            end
+
+            it("strips thinking blocks from a leading run of older messages", function()
+                local builder = history()
+                local bound, err = builder:bind_thinking(function(msg) return msg.metadata.turn >= 2 end)
+                test.is_nil(err)
+                test.eq(bound, builder)
+                local messages = builder:get_messages()
+                test.is_nil(messages[2].metadata.thinking_blocks)
+                test.eq(messages[2].metadata.turn, 1)
+                test.eq(messages[2].function_call.id, "call_1")
+                test.is_nil(messages[4].metadata.thinking_blocks)
+                test.eq(messages[4].content[1].text, "answer one")
+                test.eq(messages[6].metadata.thinking_blocks[1].thinking, "c")
+            end)
+
+            it("keeps every block when all messages are current", function()
+                local builder = history()
+                local _, err = builder:bind_thinking(function() return true end)
+                test.is_nil(err)
+                local messages = builder:get_messages()
+                test.eq(messages[2].metadata.thinking_blocks[1].thinking, "a")
+                test.eq(messages[4].metadata.thinking_blocks[1].thinking, "b")
+                test.eq(messages[6].metadata.thinking_blocks[1].thinking, "c")
+            end)
+
+            it("rejects removal from the middle and leaves the history unchanged", function()
+                local builder = history()
+                local bound, err = builder:bind_thinking(function(msg)
+                    return msg.metadata.thinking_blocks[1].thinking ~= "b"
+                end)
+                test.is_nil(bound)
+                test.contains(tostring(err), "leading run")
+                local messages = builder:get_messages()
+                test.eq(messages[2].metadata.thinking_blocks[1].thinking, "a")
+                test.eq(messages[4].metadata.thinking_blocks[1].thinking, "b")
+                test.eq(messages[6].metadata.thinking_blocks[1].thinking, "c")
+            end)
+
+            it("rejects a boundary that splits an open tool round", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("old") }, nil, { thinking_blocks = block("a") })
+                builder:add_user("second")
+                builder:add_function_call("lookup", "{}", "call_open")
+                builder.messages[#builder.messages].metadata = { thinking_blocks = block("b") }
+                local bound, err = builder:bind_thinking(function() return false end)
+                test.is_nil(bound)
+                test.contains(tostring(err), "call_open")
+                local messages = builder:get_messages()
+                test.eq(messages[2].metadata.thinking_blocks[1].thinking, "a")
+                test.eq(messages[4].metadata.thinking_blocks[1].thinking, "b")
+            end)
+
+            it("is a no-op when no message carries thinking blocks", function()
+                local builder = prompt.new()
+                builder:add_user("hello")
+                builder:add_assistant("hi", { turn = 1 })
+                builder:add_function_call("lookup", "{}", "call_1")
+                local consulted = false
+                local bound, err = builder:bind_thinking(function()
+                    consulted = true
+                    return false
+                end)
+                test.is_nil(err)
+                test.eq(bound, builder)
+                test.is_false(consulted)
+                local messages = builder:get_messages()
+                test.eq(#messages, 3)
+                test.eq(messages[2].metadata.turn, 1)
+                test.is_nil(messages[3].metadata)
+            end)
+        end)
+
         it("preserves explicit result failures through build and clone without inspecting success payloads", function()
             local builder = prompt.new()
             builder:add_function_result("lookup", "denied", "failed", { is_error = true })

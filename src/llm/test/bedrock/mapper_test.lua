@@ -5,6 +5,119 @@ local json = require("json")
 local function define_tests()
     describe("Bedrock Converse Mapper", function()
 
+        describe("Positional notes", function()
+            local function text(value)
+                return { { type = "text", text = value } }
+            end
+
+            local function note(role, value)
+                return { role = role, content = text(value), metadata = { preserve_position = true } }
+            end
+
+            it("renders a positional note as a text block after the preceding user content", function()
+                for _, role in ipairs({ "system", "developer" }) do
+                    local mapped, err = mapper.map_messages({
+                        { role = "system", content = text("Base") },
+                        { role = "user", content = text("Question") },
+                        note(role, "The current date and time is Tuesday."),
+                    })
+                    test.is_nil(err)
+                    assert(mapped)
+                    test.eq(#mapped.system, 1)
+                    test.eq(mapped.system[1].text, "Base")
+                    test.eq(#mapped.messages, 1)
+                    local content = mapped.messages[1].content
+                    test.eq(#content, 2)
+                    test.eq(content[1].text, "Question")
+                    test.eq(content[2].text, "The current date and time is Tuesday.")
+                end
+            end)
+
+            it("appends a positional note after the tool results of the same user turn", function()
+                local mapped, err = mapper.map_messages({
+                    { role = "user", content = text("Question") },
+                    { role = "function_call", content = {}, function_call = { id = "call_1", name = "lookup", arguments = "{}" } },
+                    { role = "function_result", name = "lookup", function_call_id = "call_1", content = text("found") },
+                    note("system", "Reminder"),
+                })
+                test.is_nil(err)
+                assert(mapped)
+                test.is_nil(mapped.system)
+                test.eq(#mapped.messages, 3)
+                local content = mapped.messages[3].content
+                test.eq(#content, 2)
+                test.not_nil(content[1].toolResult)
+                test.eq(content[2].text, "Reminder")
+            end)
+
+            it("keeps the system blocks identical when the note text changes", function()
+                local function build(note_text)
+                    return assert(mapper.map_messages({
+                        { role = "system", content = text("Base") },
+                        { role = "cache_marker", marker_id = "agent" },
+                        { role = "user", content = text("Question") },
+                        note("system", note_text),
+                    }))
+                end
+                local first, second = build("Monday 09:00"), build("Tuesday 10:30")
+                test.eq(#first.system, 2)
+                test.eq(#second.system, 2)
+                test.eq(second.system[1].text, first.system[1].text)
+                test.eq(second.system[2].cachePoint.type, first.system[2].cachePoint.type)
+                test.eq(first.messages[1].content[2].text, "Monday 09:00")
+                test.eq(second.messages[1].content[2].text, "Tuesday 10:30")
+            end)
+
+            it("keeps a cache point on the user block before the note", function()
+                local mapped = assert(mapper.map_messages({
+                    { role = "system", content = text("Base") },
+                    { role = "user", content = text("Question") },
+                    { role = "cache_marker", marker_id = "conversation_tail" },
+                    note("developer", "Recalled memory"),
+                }))
+                local content = mapped.messages[1].content
+                test.eq(#content, 3)
+                test.eq(content[1].text, "Question")
+                test.eq(content[2].cachePoint.type, "default")
+                test.eq(content[3].text, "Recalled memory")
+            end)
+
+            it("rejects a positional note that has no preceding user message", function()
+                for _, history in ipairs({
+                    { { role = "system", content = text("Base") }, note("system", "Orphan") },
+                    {
+                        { role = "user", content = text("Question") },
+                        { role = "assistant", content = text("Answer") },
+                        note("developer", "After the answer"),
+                    },
+                }) do
+                    local mapped, err = mapper.map_messages(history)
+                    test.is_nil(mapped)
+                    test.contains(tostring(err), "positional")
+                end
+            end)
+
+            it("renders developer guidance as user text instead of system blocks", function()
+                local function build(guidance)
+                    return assert(mapper.map_messages({
+                        { role = "system", content = text("Base") },
+                        { role = "user", content = text("Question") },
+                        { role = "developer", content = text(guidance) },
+                    }))
+                end
+                local first, second = build("Step one guidance"), build("Step two guidance")
+                for _, mapped in ipairs({ first, second }) do
+                    test.eq(#mapped.system, 1)
+                    test.eq(mapped.system[1].text, "Base")
+                    test.eq(#mapped.messages, 1)
+                    test.eq(mapped.messages[1].role, "user")
+                    test.eq(mapped.messages[1].content[1].text, "Question")
+                end
+                test.eq(first.messages[1].content[2].text, "Step one guidance")
+                test.eq(second.messages[1].content[2].text, "Step two guidance")
+            end)
+        end)
+
         describe("Payment and quota classification", function()
             it("classifies HTTP 402 as non-retryable payment_required", function()
                 for _, message in ipairs({ "Payment required", "Network quota unavailable", "Maximum allowed tokens" }) do
@@ -296,7 +409,7 @@ local function define_tests()
                 test.eq((result.messages[1].content[1] :: any).text, "Plain text")
             end)
 
-            it("should map developer messages to system blocks", function()
+            it("should map developer messages to user text at their position", function()
                 local result = mapper.map_messages({
                     { role = "system", content = "System prompt" },
                     { role = "developer", content = "Developer instruction" },
@@ -304,9 +417,12 @@ local function define_tests()
                 })
 
                 test.not_nil(result.system)
-                test.eq(#result.system, 2)
+                test.eq(#result.system, 1)
                 test.eq((result.system[1] :: any).text, "System prompt")
-                test.eq((result.system[2] :: any).text, "Developer instruction")
+                test.eq(#result.messages, 1)
+                test.eq(result.messages[1].role, "user")
+                test.eq(result.messages[1].content[1].text, "Developer instruction")
+                test.eq(result.messages[1].content[2].text, "Hello")
             end)
 
             it("should preserve thinking blocks in function_call messages", function()

@@ -210,6 +210,36 @@ builder:add_cache_marker("system_cache")
 builder:add_user("Question")
 ```
 
+### Positional Notes
+
+A system or developer message with `metadata.preserve_position = true` is a positional note. It stays at its conversation position on every driver and is never merged with neighbouring messages:
+
+- Claude and Bedrock append it as text blocks after the content of the user turn it follows (including a turn of tool results). The top-level system prompt never contains it. A positional note that does not follow a user turn fails with `invalid_request` before dispatch.
+- Google sends it as a user turn; `systemInstruction` holds only ordinary system messages.
+- OpenAI Responses keeps it in `input`; OpenAI-compatible keeps it as a `system` message in place.
+
+Per-turn context (current time, recalled memory, lifecycle notes) belongs in positional notes written once and kept in the history. Changing the top-level system prompt, the tools or any earlier message changes the provider prefix, which restarts the prompt cache and invalidates every later thinking block.
+
+```lua
+builder:add_user("What is on my calendar?")
+builder:add_system("The current date and time is Tuesday, November 3, 2026 at 09:41 UTC.",
+    { preserve_position = true })
+```
+
+Bedrock renders ordinary developer messages as user text at their position, like Claude.
+
+### Thinking Blocks
+
+Assistant and function call messages carry provider reasoning in `metadata.thinking_blocks`. Each block is bound to the prefix before it and chained to the previous block, so blocks can be dropped only from the front of the history. `bind_thinking` removes the blocks of every message the predicate reports as not current and keeps the rest:
+
+```lua
+local bound, err = builder:bind_thinking(function(msg)
+    return msg.metadata.turn_id == current_turn_id
+end)
+```
+
+It fails, leaving the history unchanged, when a non-current message follows a current one, or when a non-current function call has no result in the history yet. Messages without thinking blocks are not consulted.
+
 ### Builder Operations
 
 ```lua

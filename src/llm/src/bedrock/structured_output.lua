@@ -91,7 +91,10 @@ function structured_output_handler.handler(contract_args)
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(forced_err):build()
     end
 
-    local mapped = structured_output_handler._mapper.map_messages(contract_args.messages)
+    local mapped, map_err = structured_output_handler._mapper.map_messages(contract_args.messages)
+    if not mapped then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(tostring(map_err)):build()
+    end
     local inference_config, additional_fields, adjusted, options_err = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
     if options_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
