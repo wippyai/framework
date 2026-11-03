@@ -735,7 +735,78 @@ function mapper.map_tool_calls(claude_tool_calls, name_to_id_map)
     return contract_tool_calls
 end
 
-function mapper.format_success_response(claude_response, model, name_to_id_map)
+-- Encodes a value with its keys sorted, so equal requests always produce the
+-- same text. cache_control markers move between requests without changing what
+-- a thinking signature is bound to, so they are left out.
+local function canonical(value): string
+    local kind = type(value)
+    if kind == "table" then
+        if #value > 0 or next(value) == nil then
+            local items = {}
+            for i, item in ipairs(value) do items[i] = canonical(item) end
+            return "[" .. table.concat(items, ",") .. "]"
+        end
+        local keys = {}
+        for key in pairs(value) do
+            if key ~= "cache_control" then keys[#keys + 1] = tostring(key) end
+        end
+        table.sort(keys)
+        local fields = {}
+        for i, key in ipairs(keys) do fields[i] = (json.encode(key)) .. ":" .. canonical(value[key]) end
+        return "{" .. table.concat(fields, ",") .. "}"
+    end
+    return (json.encode(value))
+end
+
+-- A thinking block's signature is bound to the model, system prompt and tool
+-- list of the request that produced it. Returns the binding of a request.
+function mapper.thinking_binding(model, system, tools)
+    local digest, err = hash.sha256(canonical({ model = model or "", system = system or "", tools = tools or {} }))
+    if err then error(err) end
+    return digest
+end
+
+-- Keeps the thinking blocks that are bound to this request and drops the rest:
+-- replayed under another system prompt, tool list or model, a signed block is
+-- rejected. The binding itself never goes to the API. An assistant message left
+-- with no content is removed.
+function mapper.bind_thinking(messages, binding)
+    local out = {}
+    for _, msg in ipairs(messages or {}) do
+        if msg.role == "assistant" and type(msg.content) == "table" then
+            local content = {}
+            for _, part in ipairs(msg.content) do
+                if part.type == "thinking" or part.type == "redacted_thinking" then
+                    if part.binding == binding then
+                        local kept = {}
+                        for key, value in pairs(part) do
+                            if key ~= "binding" then kept[key] = value end
+                        end
+                        content[#content + 1] = kept
+                    end
+                else
+                    content[#content + 1] = part
+                end
+            end
+            if #content > 0 then
+                local copy = {}
+                for key, value in pairs(msg) do copy[key] = value end
+                copy.content = content
+                out[#out + 1] = copy
+            end
+        else
+            out[#out + 1] = msg
+        end
+    end
+    return out
+end
+
+local function bind_blocks(blocks, binding)
+    for _, block in ipairs(blocks or {}) do block.binding = binding end
+    return blocks
+end
+
+function mapper.format_success_response(claude_response, model, name_to_id_map, binding)
     local resp = claude_response :: any
     local extracted = mapper.extract_response_content(resp)
     local tokens = mapper.map_tokens(resp.usage)
@@ -759,12 +830,12 @@ function mapper.format_success_response(claude_response, model, name_to_id_map)
     }
 
     result.metadata.thinking = thinking_content
-    result.metadata.thinking_blocks = extracted.thinking_blocks
+    result.metadata.thinking_blocks = bind_blocks(extracted.thinking_blocks, binding)
 
     return result
 end
 
-function mapper.format_streaming_response(client_result, name_to_id_map, usage, finish_reason, response_metadata)
+function mapper.format_streaming_response(client_result, name_to_id_map, usage, finish_reason, response_metadata, binding)
     local thinking_blocks = client_result.thinking or {}
     local thinking_content = extract_thinking_content_from_blocks(thinking_blocks :: any)
     local mapped_tool_calls = mapper.map_tool_calls(client_result.tool_calls or {}, name_to_id_map or {})
@@ -788,7 +859,7 @@ function mapper.format_streaming_response(client_result, name_to_id_map, usage, 
     }
 
     result.metadata.thinking = thinking_content
-    result.metadata.thinking_blocks = thinking_blocks
+    result.metadata.thinking_blocks = bind_blocks(thinking_blocks, binding)
 
     return result
 end

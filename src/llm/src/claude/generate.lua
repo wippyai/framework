@@ -77,7 +77,8 @@ local function handle_streaming(stream_response, context, stream_config, err)
         context.name_to_id_map,
         final_usage,
         finish_reason,
-        stream_response.metadata
+        stream_response.metadata,
+        context.thinking_binding
     )
 end
 
@@ -147,6 +148,10 @@ function generate_handler.handler(contract_args)
         context.has_tools = true
     end
 
+    context.thinking_binding = generate_handler._mapper.thinking_binding(
+        claude_payload.model, claude_payload.system, claude_payload.tools)
+    claude_payload.messages = generate_handler._mapper.bind_thinking(claude_payload.messages, context.thinking_binding)
+
     local request_options = {
         timeout = contract_args.timeout or 600,
         retry = contract_args.retry
@@ -176,7 +181,8 @@ function generate_handler.handler(contract_args)
     if stream_config then
         result, result_err = handle_streaming(response, context, stream_config, err)
     else
-        result = generate_handler._mapper.format_success_response(response, contract_args.model, context.name_to_id_map)
+        result = generate_handler._mapper.format_success_response(response, contract_args.model,
+            context.name_to_id_map, context.thinking_binding)
     end
 
     route.attach_adjusted(result, adjusted)

@@ -1590,6 +1590,157 @@ local function define_tests()
                 test.eq(err:message(), "PID is required for streamer")
             end)
         end)
+
+        -- A thinking block's signature is bound to the system prompt, tool list
+        -- and model it was produced under; replayed under any other, the API
+        -- rejects the request. A block is replayed only where it is still valid.
+        describe("Thinking binding", function()
+            local MODEL = "claude-sonnet-5-5"
+            local TOOLS_A = { { name = "lookup_sales", description = "Look up sales", schema = { type = "object", properties = { retailer = { type = "string" } } } } }
+            local TOOLS_B = { { name = "query_data", description = "Run a query", schema = { type = "object", properties = { sql = { type = "string" } } } } }
+            local THINKING = { type = "thinking", thinking = "Reasoning about the retailer", signature = "sig-a" }
+
+            local function reply()
+                return {
+                    content = { THINKING, { type = "tool_use", id = "toolu_1", name = "lookup_sales", input = { retailer = "Meijer" } } },
+                    stop_reason = "tool_use",
+                    usage = { input_tokens = 10, output_tokens = 5 },
+                    metadata = {}
+                }
+            end
+
+            local function run(system, tools, model, history, response)
+                local sent
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function(_, payload)
+                        sent = payload
+                        return response or {
+                            content = { { type = "text", text = "ok" } },
+                            stop_reason = "end_turn",
+                            usage = { input_tokens = 10, output_tokens = 2 },
+                            metadata = {}
+                        }
+                    end
+                }
+                local messages = {}
+                for _, m in ipairs(system) do table.insert(messages, m) end
+                table.insert(messages, { role = "user", content = { { type = "text", text = "What are pizza sales at Meijer?" } } })
+                for _, m in ipairs(history or {}) do table.insert(messages, m) end
+                local result = generate_handler.handler({ model = model or MODEL, messages = messages, tools = tools })
+                return sent, result
+            end
+
+            -- The first request's thinking, replayed as a tool call with its result.
+            local function first_turn(system, tools, model)
+                local _, result = run(system, tools, model, nil, reply())
+                test.is_true(result.success)
+                local blocks = result.metadata.thinking_blocks
+                return {
+                    { role = "function_call", function_call = { name = "lookup_sales", arguments = { retailer = "Meijer" }, id = "toolu_1" },
+                        content = {}, metadata = { thinking_blocks = blocks } },
+                    { role = "function_result", name = "lookup_sales", content = { { type = "text", text = "$12.4M" } }, function_call_id = "toolu_1" },
+                }, blocks
+            end
+
+            local function replayed_thinking(payload)
+                local found = {}
+                for _, msg in ipairs(payload.messages) do
+                    if msg.role == "assistant" then
+                        for _, part in ipairs(msg.content) do
+                            if part.type == "thinking" or part.type == "redacted_thinking" then table.insert(found, part) end
+                        end
+                    end
+                end
+                return found
+            end
+
+            local SYSTEM_A = { { role = "system", content = "You are agent A." } }
+            local SYSTEM_B = { { role = "system", content = "You are agent B, a data agent." } }
+
+            it("binds the returned thinking blocks to the request", function()
+                local _, blocks = first_turn(SYSTEM_A, TOOLS_A)
+                test.eq(#blocks, 1)
+                test.eq(blocks[1].signature, "sig-a")
+                test.is_string(blocks[1].binding)
+                test.gt(#blocks[1].binding, 0)
+            end)
+
+            it("replays a thinking block under the same system prompt, tools and model, without the binding field", function()
+                local history = first_turn(SYSTEM_A, TOOLS_A)
+                local payload = run(SYSTEM_A, TOOLS_A, nil, history)
+                local found = replayed_thinking(payload)
+                test.eq(#found, 1)
+                test.eq(found[1].signature, "sig-a")
+                test.is_nil(found[1].binding)
+                test.eq(payload.messages[2].content[1].type, "thinking")
+            end)
+
+            it("drops a thinking block once the system prompt changed", function()
+                local history = first_turn(SYSTEM_A, TOOLS_A)
+                local payload = run(SYSTEM_B, TOOLS_A, nil, history)
+                test.eq(#replayed_thinking(payload), 0)
+                test.eq(payload.messages[2].content[1].type, "tool_use")
+            end)
+
+            it("drops a thinking block once the tool list changed", function()
+                local history = first_turn(SYSTEM_A, TOOLS_A)
+                local tools = { TOOLS_A[1], TOOLS_B[1] }
+                test.eq(#replayed_thinking(run(SYSTEM_A, tools, nil, history)), 0)
+            end)
+
+            it("drops a thinking block once the model changed", function()
+                local history = first_turn(SYSTEM_A, TOOLS_A)
+                test.eq(#replayed_thinking(run(SYSTEM_A, TOOLS_A, "claude-opus-5-5", history)), 0)
+            end)
+
+            it("drops a thinking block that carries no binding", function()
+                local history = {
+                    { role = "function_call", function_call = { name = "lookup_sales", arguments = { retailer = "Meijer" }, id = "toolu_1" },
+                        content = {}, metadata = { thinking_blocks = { THINKING } } },
+                    { role = "function_result", name = "lookup_sales", content = { { type = "text", text = "$12.4M" } }, function_call_id = "toolu_1" },
+                }
+                test.eq(#replayed_thinking(run(SYSTEM_A, TOOLS_A, nil, history)), 0)
+            end)
+
+            it("keeps a thinking block when only cache markers moved", function()
+                local history = first_turn(SYSTEM_A, TOOLS_A)
+                local marked = { { role = "system", content = "You are agent A." }, { role = "cache_marker" } }
+                test.eq(#replayed_thinking(run(marked, TOOLS_A, nil, history)), 1)
+            end)
+
+            it("binds the thinking blocks of a streamed response", function()
+                generate_handler._output = {
+                    streamer = function() return { buffer_content = function() end, send_tool_call = function() end,
+                        send_thinking = function() end, flush = function() end } end,
+                    FINISH_REASON = { TOOL_CALL = "tool_call" }
+                }
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function() return { stream = {}, metadata = {} } end,
+                    process_stream = function(_, callbacks)
+                        callbacks.on_done({ finish_reason = "tool_use", usage = { input_tokens = 10, output_tokens = 5 } })
+                        return "", nil, { content = "", thinking = { { type = "thinking", thinking = "Reasoning", signature = "sig-s" } }, tool_calls = {} }
+                    end
+                }
+                local result = generate_handler.handler({
+                    model = MODEL,
+                    messages = { SYSTEM_A[1], { role = "user", content = { { type = "text", text = "Hi" } } } },
+                    tools = TOOLS_A,
+                    stream = { reply_to = "test-process", topic = "test_stream" }
+                })
+                test.is_true(result.success)
+                test.is_string(result.metadata.thinking_blocks[1].binding)
+                local history = {
+                    { role = "function_call", function_call = { name = "lookup_sales", arguments = {}, id = "toolu_s" },
+                        content = {}, metadata = { thinking_blocks = result.metadata.thinking_blocks } },
+                    { role = "function_result", name = "lookup_sales", content = { { type = "text", text = "x" } }, function_call_id = "toolu_s" },
+                }
+                generate_handler._output = nil
+                test.eq(#replayed_thinking(run(SYSTEM_A, TOOLS_A, nil, history)), 1)
+                test.eq(#replayed_thinking(run(SYSTEM_B, TOOLS_A, nil, history)), 0)
+            end)
+        end)
     end)
 end
 
