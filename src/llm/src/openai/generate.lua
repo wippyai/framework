@@ -1,6 +1,7 @@
 local openai_client = require("openai_client")
 local openai_mapper = require("openai_mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
@@ -167,6 +168,11 @@ function generate_handler.handler(contract_args)
         payload.tool_choice = tool_choice
         context.tool_name_map = tool_name_map
         context.has_tools = true
+    end
+
+    local overlay_err = wire_request.apply(payload, (contract_args.options or {}).request, openai_mapper.REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local request_options = {

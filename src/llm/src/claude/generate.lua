@@ -1,6 +1,7 @@
 local claude_client = require("claude_client")
 local mapper = require("mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 local json = require("json")
 local route = require("route")
 
@@ -145,6 +146,11 @@ function generate_handler.handler(contract_args)
 
         context.name_to_id_map = name_to_id_map
         context.has_tools = true
+    end
+
+    local overlay_err = wire_request.apply(claude_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local request_options = {

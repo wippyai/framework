@@ -1,6 +1,7 @@
 local bedrock_client = require("bedrock_client")
 local mapper = require("mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 local json = require("json")
 local route = require("route")
 
@@ -135,6 +136,11 @@ function structured_output_handler.handler(contract_args)
 
     if next(additional_fields) then
         converse_payload.additionalModelRequestFields = additional_fields
+    end
+
+    local overlay_err = wire_request.apply(converse_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local response, request_err = structured_output_handler._client.converse(

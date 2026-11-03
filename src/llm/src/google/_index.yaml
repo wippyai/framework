@@ -150,6 +150,7 @@ entries:
       google_mapper: wippy.llm.google:mapper
       output: wippy.llm:output
       google_config: wippy.llm.google:config
+      wire_request: wippy.llm.util:wire_request
     method: handler
 
   # wippy.llm.google:mapper
@@ -194,4 +195,5 @@ entries:
       google_config: wippy.llm.google:config
       google_mapper: wippy.llm.google:mapper
       output: wippy.llm:output
+      wire_request: wippy.llm.util:wire_request
     method: handler

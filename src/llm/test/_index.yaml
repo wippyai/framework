@@ -249,6 +249,10 @@ entries:
       bedrock_structured: wippy.llm.bedrock:structured_output
       google_generate: wippy.llm.google:generate
       google_structured: wippy.llm.google:structured_output
+      openai_generate: wippy.llm.openai:generate
+      openai_structured: wippy.llm.openai:structured_output
+      openai_compat_generate: wippy.llm.openai_compat:generate
+      openai_compat_structured: wippy.llm.openai_compat:structured_output
       test: wippy.test:test
     method: run_tests
 
@@ -1434,6 +1438,20 @@ entries:
     source: file://util/route_test.lua
     imports:
       route: wippy.llm.util:route
+      test: wippy.test:test
+    method: run_tests
+
+  - name: util_wire_request_test
+    kind: function.lua
+    meta:
+      name: Wire Request Merge Test
+      type: test
+      group: LLM / Utils
+    source: file://util/wire_request_test.lua
+    modules:
+      - json
+    imports:
+      wire_request: wippy.llm.util:wire_request
       test: wippy.test:test
     method: run_tests
 

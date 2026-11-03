@@ -1,6 +1,7 @@
 local contract = require("contract")
 local mapper = require("google_mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 local config = require("google_config")
 local ctx = require("ctx")
 
@@ -63,6 +64,11 @@ function generate.handler(contract_args)
 
         payload.tools = { functionDeclarations = tools }
         payload.toolConfig = { functionCallingConfig = tool_config }
+    end
+
+    local overlay_err = wire_request.apply(payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local client_contract, contract_err = generate._contract.get(config.CLIENT_CONTRACT_ID)

@@ -1,6 +1,7 @@
 local openai_client = require("openai_client")
 local openai_mapper = require("openai_mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 local json = require("json")
 local hash = require("hash")
 
@@ -129,6 +130,11 @@ function structured_output_handler.handler(contract_args)
     end
     for key, value in pairs(mapped_options) do
         payload[key] = value
+    end
+
+    local overlay_err = wire_request.apply(payload, (contract_args.options or {}).request, openai_mapper.STRUCTURED_REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local request_options = {

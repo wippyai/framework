@@ -20,6 +20,9 @@ mapper.CAPABILITY = {
     }
 }
 
+-- Wire body keys the driver builds structurally; options.request cannot set them.
+mapper.REQUEST_KEYS = { "messages", "system", "toolConfig" }
+
 local MAX_CACHE_CHECKPOINTS = 4
 
 -- Converse stopReason -> contract finish_reason

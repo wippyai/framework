@@ -54,6 +54,14 @@ entries:
     kind: library.lua
     source: file://thinking.lua
 
+  # wippy.llm.util:wire_request
+  - name: wire_request
+    kind: library.lua
+    meta:
+      type: library
+      comment: Deep-merges a route's declarative options.request into a driver's mapped wire body
+    source: file://wire_request.lua
+
   - name: error_context
     kind: library.lua
     meta:

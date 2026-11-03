@@ -140,6 +140,7 @@ entries:
       openai_client: wippy.llm.openai:client
       openai_mapper: wippy.llm.openai:mapper
       output: wippy.llm:output
+      wire_request: wippy.llm.util:wire_request
     method: handler
     pool:
       max_size: 50
@@ -216,6 +217,7 @@ entries:
       openai_client: wippy.llm.openai:client
       openai_mapper: wippy.llm.openai:mapper
       output: wippy.llm:output
+      wire_request: wippy.llm.util:wire_request
     method: handler
     pool:
       max_size: 25

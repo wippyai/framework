@@ -99,6 +99,34 @@ Legacy forms remain supported through the normalizer:
 
 Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
 
+### Request passthrough
+
+`options.request` carries provider wire fields the contract options do not model. The driver maps every contract option first, then deep-merges `request` into the wire body: `request` values win on conflict, maps merge recursively, and arrays and scalars replace. The merge never writes into the caller's or the route's tables.
+
+Keys a driver builds structurally cannot be set this way; a `request` naming one fails with `invalid_request` naming the key, before the provider HTTP request:
+
+| Driver | Reserved keys | Also reserved for structured output |
+|---|---|---|
+| Claude | `model`, `messages`, `system`, `tools`, `tool_choice`, `stream` | `output_config.format` |
+| Bedrock (Converse) | `messages`, `system`, `toolConfig` | |
+| OpenAI (Responses) | `model`, `input`, `instructions`, `tools`, `tool_choice`, `stream` | `text.format` |
+| OpenAI-compatible | `model`, `messages`, `tools`, `tool_choice`, `stream`, `stream_options`, `usage` | `response_format` |
+| Google | `contents`, `systemInstruction`, `tools`, `toolConfig` | `generationConfig.responseSchema`, `generationConfig.responseJsonSchema`, `generationConfig.response_mime_type`, in either casing |
+
+A dotted entry reserves that nested field and every parent of it: a structured-output request may still set `text.verbosity` or `output_config.effort`, but not replace `text` or `output_config` with a value that is not an object. Generate leaves the structured-output fields open.
+
+`request` is raw wire data: route facts, the card's `output_tokens` cap and `metadata.adjusted` describe the contract options, not the request. A route that declares `sampling: false` and sends `request.temperature` sends that temperature. Maps merge into the mapped body rather than replacing it, so a `request.thinking` on a budget route keeps the mapped `budget_tokens`; declare the matching route facts instead of overriding them through `request`. `request` applies to `generate` and `structured_output`; `embed`, `evaluate` and `status` do not send it.
+
+`request` belongs to the route: route `options.request` from the catalog always applies, while a caller `request` on a resolved call is rejected with `invalid_request`, like caller `accepts`. Direct `provider_id` calls may pass `request`:
+
+```lua
+local response, err = llm.generate("Hello", {
+    provider_id = "wippy.llm.claude:provider",
+    model = "claude-sonnet-5-5",
+    request = { thinking = { type = "between_tools" } }
+})
+```
+
 ### Retry
 
 Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.
@@ -598,6 +626,19 @@ providers:
     structured_output: native
     options:
       thinking_effort: 60
+```
+
+```yaml
+# Claude Sonnet 5.5 with thinking between tool calls only, set on the wire
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-sonnet-5-5
+    thinking: adaptive
+    sampling: false
+    structured_output: native
+    options:
+      request:
+        thinking: { type: between_tools }
 ```
 
 ```yaml
