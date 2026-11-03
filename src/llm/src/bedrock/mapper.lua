@@ -140,14 +140,17 @@ local function convert_document_to_converse(content_part)
     return nil
 end
 
-local function user_content_blocks(content)
+local function user_content_blocks(content, developer: boolean)
     local content_blocks = {}
+    local function text_of(value: string): string
+        return developer and prompt.developer_instruction(value) or value
+    end
     if type(content) == "string" then
-        table.insert(content_blocks, { text = content })
+        table.insert(content_blocks, { text = text_of(content) })
     elseif type(content) == "table" then
         for _, part in ipairs(content) do
             if part.type == "text" and part.text then
-                table.insert(content_blocks, { text = part.text })
+                table.insert(content_blocks, { text = text_of(part.text) })
             elseif part.type == "image" then
                 local img = convert_image_to_converse(part)
                 if img then
@@ -370,7 +373,7 @@ function mapper.map_messages(contract_messages)
             -- render as user text, so they never rewrite the system blocks;
             -- consolidation appends them as blocks after the user turn they
             -- follow, or they open a user turn after an assistant turn.
-            local content_blocks = user_content_blocks(msg.content)
+            local content_blocks = user_content_blocks(msg.content, msg.role == prompt.ROLE.DEVELOPER)
             if #content_blocks > 0 then
                 table.insert(converse_messages, {
                     role = "user",

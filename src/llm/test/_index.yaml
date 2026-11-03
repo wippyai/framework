@@ -402,6 +402,7 @@ entries:
       - json
     imports:
       mapper: wippy.llm.bedrock:mapper
+      prompt: wippy.llm:prompt
       output: wippy.llm:output
       test: wippy.test:test
     method: run_tests

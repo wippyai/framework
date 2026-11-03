@@ -389,7 +389,7 @@ local function define_tests()
                         test.eq(user_msg.role, "user")
                         test.eq(user_msg.content[1].text, "Hello")
                         test.eq(user_msg.content[2].type, "text")
-                        test.eq(user_msg.content[2].text, "Be concise")
+                        test.eq(user_msg.content[2].text, "<developer-instruction>Be concise</developer-instruction>")
 
                         return {
                             content = { { type = "text", text = "Hi!" } },

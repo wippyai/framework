@@ -1,4 +1,5 @@
 local mapper = require("mapper")
+local prompt = require("prompt")
 local output = require("output")
 local json = require("json")
 
@@ -29,7 +30,8 @@ local function define_tests()
                     local content = mapped.messages[1].content
                     test.eq(#content, 2)
                     test.eq(content[1].text, "Question")
-                    test.eq(content[2].text, "The current date and time is Tuesday.")
+                    test.eq(content[2].text, role == "developer" and "<developer-instruction>The current date and time is Tuesday.</developer-instruction>"
+                        or "The current date and time is Tuesday.")
                 end
             end)
 
@@ -79,7 +81,7 @@ local function define_tests()
                 test.eq(#content, 3)
                 test.eq(content[1].text, "Question")
                 test.eq(content[2].cachePoint.type, "default")
-                test.eq(content[3].text, "Recalled memory")
+                test.eq(content[3].text, "<developer-instruction>Recalled memory</developer-instruction>")
             end)
 
             local function same(a, b)
@@ -123,11 +125,6 @@ local function define_tests()
                         { role = "assistant", content = text("Answer") },
                         note("developer", "Stopped by the user"),
                     },
-                    after_call = {
-                        { role = "user", content = text("Question") },
-                        { role = "function_call", content = {}, function_call = { id = "call_1", name = "lookup", arguments = "{}" } },
-                        note("system", "Interrupted"),
-                    },
                     after_result = {
                         { role = "user", content = text("Question") },
                         { role = "function_call", content = {}, function_call = { id = "call_1", name = "lookup", arguments = "{}" } },
@@ -136,6 +133,27 @@ local function define_tests()
                     },
                 }
             end
+
+            it("wraps developer text in its own developer-instruction block", function()
+                for _, metadata in ipairs({ { preserve_position = true }, {} }) do
+                    local mapped = assert(mapper.map_messages({
+                        { role = "user", content = text("Question") },
+                        { role = "developer", content = text("Be concise"), metadata = metadata },
+                    }))
+                    local content = mapped.messages[1].content
+                    test.eq(#content, 2)
+                    test.eq(content[1].text, "Question")
+                    test.eq(content[2].text, "<developer-instruction>Be concise</developer-instruction>")
+                end
+            end)
+
+            it("renders positional system notes as plain text", function()
+                local mapped = assert(mapper.map_messages({
+                    { role = "user", content = text("Question") },
+                    note("system", "The current date and time is Tuesday."),
+                }))
+                test.eq(mapped.messages[1].content[2].text, "The current date and time is Tuesday.")
+            end)
 
             it("opens a user turn for a positional note that follows no user turn", function()
                 for label, history in pairs(shapes()) do
@@ -152,7 +170,7 @@ local function define_tests()
                     local found = nil
                     for m, message in ipairs(mapped.messages) do
                         for b, block in ipairs(message.content) do
-                            if block.text == note_text then
+                            if block.text == note_text or block.text == prompt.developer_instruction(note_text) then
                                 found = { m = m, b = b, role = message.role }
                             end
                         end
@@ -170,7 +188,7 @@ local function define_tests()
                 test.eq(mapped.messages[2].role, "assistant")
                 test.eq(#mapped.messages[2].content, 1)
                 test.eq(mapped.messages[3].role, "user")
-                test.eq(mapped.messages[3].content[1].text, "Stopped by the user")
+                test.eq(mapped.messages[3].content[1].text, "<developer-instruction>Stopped by the user</developer-instruction>")
             end)
 
             it("renders each positional note shape as a stable prefix of the next request", function()
@@ -201,8 +219,8 @@ local function define_tests()
                     test.eq(mapped.messages[1].role, "user")
                     test.eq(mapped.messages[1].content[1].text, "Question")
                 end
-                test.eq(first.messages[1].content[2].text, "Step one guidance")
-                test.eq(second.messages[1].content[2].text, "Step two guidance")
+                test.eq(first.messages[1].content[2].text, "<developer-instruction>Step one guidance</developer-instruction>")
+                test.eq(second.messages[1].content[2].text, "<developer-instruction>Step two guidance</developer-instruction>")
             end)
         end)
 
@@ -509,7 +527,7 @@ local function define_tests()
                 test.eq((result.system[1] :: any).text, "System prompt")
                 test.eq(#result.messages, 1)
                 test.eq(result.messages[1].role, "user")
-                test.eq(result.messages[1].content[1].text, "Developer instruction")
+                test.eq(result.messages[1].content[1].text, "<developer-instruction>Developer instruction</developer-instruction>")
                 test.eq(result.messages[1].content[2].text, "Hello")
             end)
 

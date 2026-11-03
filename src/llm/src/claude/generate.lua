@@ -100,10 +100,7 @@ function generate_handler.handler(contract_args)
         name_to_id_map = {}
     }
 
-    local mapped_messages, map_err = generate_handler._mapper.map_messages(contract_args.messages)
-    if not mapped_messages then
-        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(tostring(map_err)):build()
-    end
+    local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
     local mapped_options, adjusted, options_err = generate_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
     if options_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()

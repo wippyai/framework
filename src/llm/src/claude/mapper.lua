@@ -280,17 +280,20 @@ local function process_content_array(content)
     return content
 end
 
-local function note_blocks(content): {any}
+local function note_blocks(content, developer: boolean): {any}
     local blocks: {any} = {}
+    local function text_of(value: string): string
+        return developer and prompt.developer_instruction(value) or value
+    end
     if type(content) == "string" then
         if content ~= "" then
-            table.insert(blocks, { type = "text", text = content })
+            table.insert(blocks, { type = "text", text = text_of(content) })
         end
     elseif type(content) == "table" then
         for _, part in ipairs(content) do
             if part.type == "text" then
                 if part.text and part.text ~= "" then
-                    table.insert(blocks, { type = "text", text = part.text })
+                    table.insert(blocks, { type = "text", text = text_of(part.text) })
                 end
             else
                 table.insert(blocks, convert_image_content(part))
@@ -376,7 +379,7 @@ function mapper.map_messages(contract_messages)
             -- not depend on where cache markers sit and every earlier block
             -- stays byte-identical across requests.
             in_system_phase = false
-            local blocks = note_blocks(msg.content)
+            local blocks = note_blocks(msg.content, msg.role == prompt.ROLE.DEVELOPER)
             local last_msg = claude_messages[#claude_messages]
             if not last_msg or last_msg.role ~= "user" then
                 -- A note at the start or after an assistant turn opens a user

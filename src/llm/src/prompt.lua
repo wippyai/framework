@@ -141,6 +141,12 @@ function prompt.is_positional_note(msg: Message): boolean
         and type(msg.metadata) == "table" and msg.metadata.preserve_position == true
 end
 
+-- Text of a developer message as drivers without a developer role render it
+-- inside a user turn, so the model can tell host guidance from user prose.
+function prompt.developer_instruction(text: string): string
+    return "<developer-instruction>" .. text .. "</developer-instruction>"
+end
+
 ---------------------------
 -- Helper Functions
 ---------------------------
@@ -409,17 +415,21 @@ function prompt.new(messages: {Message}?)
             if turn_start then
                 local ids: {any} = {}
                 if msg.role == prompt.ROLE.FUNCTION_CALL then
-                    table.insert(ids, msg.function_call and msg.function_call.id or false)
+                    table.insert(ids, {
+                        id = msg.function_call and msg.function_call.id or false,
+                        name = msg.function_call and msg.function_call.name,
+                    })
                 else
                     for _, part in ipairs(msg.content or {}) do
                         if (part :: any).type == "function_call" then
-                            table.insert(ids, (part :: any).id or false)
+                            table.insert(ids, { id = (part :: any).id or false, name = (part :: any).name })
                         end
                     end
                 end
-                for _, id in ipairs(ids) do
-                    if not open_call[turn_start] and not (id and resolved[id]) then
-                        open_call[turn_start] = id and tostring(id) or "without id"
+                for _, call in ipairs(ids) do
+                    if not open_call[turn_start] and not (call.id and resolved[call.id]) then
+                        open_call[turn_start] = string.format("%s (%s)",
+                            call.id and tostring(call.id) or "without id", tostring(call.name or "unnamed"))
                     end
                 end
             end

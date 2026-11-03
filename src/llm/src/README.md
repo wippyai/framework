@@ -228,7 +228,7 @@ builder:add_system("The current date and time is Tuesday, November 3, 2026 at 09
     { preserve_position = true })
 ```
 
-Ordinary developer messages render the same way on Claude and Bedrock: as their own text blocks after the content of the user turn they follow, or as a new user turn at the start or after an assistant turn. Existing blocks are never edited, so the rendering does not depend on where cache markers sit. The text is sent as written: Claude no longer wraps it in `<developer-instruction>` tags. A host that needs the model to tell its guidance apart from the user's prose marks the note text itself.
+Developer messages, positional or not, render the same way on Claude and Bedrock: each text part becomes its own text block, `<developer-instruction>` + text + `</developer-instruction>`, after the content of the user turn it follows, or a new user turn at the start or after an assistant turn. The wrapper tells the model host guidance apart from the user's prose. Positional system notes render as plain text. Existing blocks are never edited, so the rendering does not depend on where cache markers sit.
 
 Bedrock sends developer messages as user text instead of `system` blocks. A Bedrock conversation stored before this change therefore renders a different prefix once after upgrading: its cache restarts and its earlier thinking blocks no longer match. The provider rejects such blocks unless the request lets it drop them; hosts that keep thinking blocks across the upgrade strip them with `drop_stale_thinking`.
 
