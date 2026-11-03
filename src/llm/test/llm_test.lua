@@ -901,6 +901,51 @@ local function define_tests()
                     test.eq(tostring(err), err:message())
                     test.contains(err:message(), "accepts")
                 end)
+
+                local function route_card(ref)
+                    local card = { name = "route-model", providers = { ref } }
+                    mock_models.get_by_name = function() return card end
+                end
+
+                local function capture()
+                    local sent: any = {}
+                    mock_providers.open = function()
+                        return { [method] = function(_, args)
+                            sent.args = args
+                            return { success = true, result = { content = "ok", data = {} } }
+                        end }
+                    end
+                    return sent
+                end
+
+                it("delivers route options.request on a resolved " .. method, function()
+                    local request = { thinking = { type = "between_tools" } }
+                    route_card({ id = "wippy.llm.claude:provider", provider_model = "wire-model",
+                        options = { request = request } })
+                    local sent = capture()
+                    local _, err = call(method, { model = "route-model" })
+                    test.is_nil(err)
+                    test.eq(sent.args.options.request.thinking.type, "between_tools")
+                end)
+
+                it("rejects caller options.request on a resolved " .. method, function()
+                    route_card({ id = "wippy.llm.claude:provider", provider_model = "wire-model" })
+                    local sent = capture()
+                    local result, err = call(method, { model = "route-model", request = { thinking = { type = "disabled" } } })
+                    test.is_nil(result)
+                    test.eq(err:kind(), errors.INVALID)
+                    test.eq(tostring(err), err:message())
+                    test.contains(err:message(), "options.request")
+                    test.is_nil(sent.args)
+                end)
+
+                it("accepts caller options.request on a direct " .. method, function()
+                    local sent = capture()
+                    local _, err = call(method, { model = "wire", provider_id = "wippy.llm.claude:provider",
+                        request = { thinking = { type = "disabled" } } })
+                    test.is_nil(err)
+                    test.eq(sent.args.options.request.thinking.type, "disabled")
+                end)
             end
 
             it("enforces forced_tool_choice against a plain mock provider, proving the rule is provider-agnostic", function()

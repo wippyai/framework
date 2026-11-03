@@ -1,6 +1,7 @@
 local claude_client = require("claude_client")
 local mapper = require("mapper")
 local output = require("output")
+local wire_request = require("wire_request")
 local json = require("json")
 local hash = require("hash")
 local route = require("route")
@@ -201,6 +202,11 @@ function structured_output_handler.handler(contract_args)
         end
         native_payload.output_config = output_config
 
+        local overlay_err = wire_request.apply(native_payload, (contract_args.options or {}).request, mapper.STRUCTURED_REQUEST_KEYS)
+        if overlay_err then
+            return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
+        end
+
         -- The binding depends on the thinking object as sent, so it is the last change to the payload.
         local native_betas = structured_output_handler._mapper.bind_thinking(native_payload)
         local response, request_err = structured_output_handler._client.request(
@@ -264,6 +270,11 @@ function structured_output_handler.handler(contract_args)
         if k ~= "max_tokens" then
             claude_payload[k] = v
         end
+    end
+
+    local overlay_err = wire_request.apply(claude_payload, (contract_args.options or {}).request, mapper.STRUCTURED_REQUEST_KEYS)
+    if overlay_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
     end
 
     local request_options = {

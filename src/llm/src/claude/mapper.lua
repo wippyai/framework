@@ -21,6 +21,11 @@ mapper.CAPABILITY = {
     }
 }
 
+-- Wire body keys the driver builds structurally; options.request cannot set them.
+mapper.REQUEST_KEYS = { "model", "messages", "system", "tools", "tool_choice", "stream" }
+-- Structured output also owns the schema it sends.
+mapper.STRUCTURED_REQUEST_KEYS = { "model", "messages", "system", "tools", "tool_choice", "stream", "output_config.format" }
+
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
 mapper.FINISH_REASON_MAP["end_turn"] = output.FINISH_REASON.STOP
 mapper.FINISH_REASON_MAP["max_tokens"] = output.FINISH_REASON.LENGTH

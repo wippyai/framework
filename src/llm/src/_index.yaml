@@ -269,6 +269,7 @@ entries:
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
                       "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "request": {"type": "object", "additionalProperties": true, "description": "Provider wire fields deep-merged into the request body after option mapping; request values win, maps merge, arrays replace. Keys the driver builds (messages, tools, ...) are rejected. Set on routes in the catalog; callers may set it only on direct provider_id calls"},
                       "tool_choice_fallback": {"type": "string", "enum": ["auto"], "description": "Permits sending a forced tool_choice as 'auto' to a model that cannot be forced; for callers that enforce tool use themselves. The response metadata.tool_choice reports the substitution"},
                       "model_profile": {
                         "type": "object",
@@ -560,6 +561,7 @@ entries:
                       "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                       "max_tokens": {"type": "integer", "minimum": 1},
                       "thinking_effort": {"type": "integer", "minimum": 0, "maximum": 100},
+                      "request": {"type": "object", "additionalProperties": true, "description": "Provider wire fields deep-merged into the request body after option mapping; request values win, maps merge, arrays replace. Keys the driver builds (messages, tools, ...) are rejected. Set on routes in the catalog; callers may set it only on direct provider_id calls"},
                       "model_profile": {
                         "type": "object",
                         "deprecated": true,

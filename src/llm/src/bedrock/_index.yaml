@@ -190,6 +190,7 @@ entries:
       mapper: wippy.llm.bedrock:mapper
       output: wippy.llm:output
       route: wippy.llm.util:route
+      wire_request: wippy.llm.util:wire_request
     method: handler
 
   - name: structured_output
@@ -205,6 +206,7 @@ entries:
       mapper: wippy.llm.bedrock:mapper
       output: wippy.llm:output
       route: wippy.llm.util:route
+      wire_request: wippy.llm.util:wire_request
     method: handler
 
   - name: embed

@@ -101,11 +101,39 @@ Legacy forms remain supported through the normalizer:
 
 Provider open context composition is unchanged: provider entry `driver.options`, then route `context`, then route `options`. Request defaults come from route `options`, with caller options on top. Timeout and retry retain their existing transport handling. Embed and evaluate paths do not normalize route facts.
 
+### Request passthrough
+
+`options.request` carries provider wire fields the contract options do not model. The driver maps every contract option first, then deep-merges `request` into the wire body: `request` values win on conflict, maps merge recursively, and arrays and scalars replace. The merge never writes into the caller's or the route's tables.
+
+Keys a driver builds structurally cannot be set this way; a `request` naming one fails with `invalid_request` naming the key, before the provider HTTP request:
+
+| Driver | Reserved keys | Also reserved for structured output |
+|---|---|---|
+| Claude | `model`, `messages`, `system`, `tools`, `tool_choice`, `stream` | `output_config.format` |
+| Bedrock (Converse) | `messages`, `system`, `toolConfig` | |
+| OpenAI (Responses) | `model`, `input`, `instructions`, `tools`, `tool_choice`, `stream` | `text.format` |
+| OpenAI-compatible | `model`, `messages`, `tools`, `tool_choice`, `stream`, `stream_options`, `usage` | `response_format` |
+| Google | `contents`, `systemInstruction`, `tools`, `toolConfig` | `generationConfig.responseSchema`, `generationConfig.responseJsonSchema`, `generationConfig.response_mime_type`, in either casing |
+
+A dotted entry reserves that nested field and every parent of it: a structured-output request may still set `text.verbosity` or `output_config.effort`, but not replace `text` or `output_config` with a value that is not an object. Generate leaves the structured-output fields open.
+
+`request` is raw wire data: route facts, the card's `output_tokens` cap and `metadata.adjusted` describe the contract options, not the request. A route that declares `sampling: false` and sends `request.temperature` sends that temperature. Maps merge into the mapped body rather than replacing it, so a `request.thinking` on a budget route keeps the mapped `budget_tokens`; declare the matching route facts instead of overriding them through `request`. `request` applies to `generate` and `structured_output`; `embed`, `evaluate` and `status` do not send it.
+
+`request` belongs to the route: route `options.request` from the catalog always applies, while a caller `request` on a resolved call is rejected with `invalid_request`, like caller `accepts`. Direct `provider_id` calls may pass `request`:
+
+```lua
+local response, err = llm.generate("Hello", {
+    provider_id = "wippy.llm.claude:provider",
+    model = "claude-sonnet-5-5",
+    request = { thinking = { type = "between_tools" } }
+})
+```
+
 ### Thinking block binding
 
 Claude and Bedrock store each response's `thinking` blocks as `{ type, thinking, signature }` and `redacted_thinking` blocks as `{ type, data }` in `metadata.thinking_blocks`, in response order, and replay every stored block on later turns in its position (Bedrock: as `reasoningContent.reasoningText` and `reasoningContent.redactedContent`). Claude replays each block unchanged except for fields an earlier stored shape carried that its type does not accept (`data` on `thinking`, `thinking` and `signature` on `redacted_thinking`). A Claude thinking block is bound to the conversation that produced it: the top-level system prompt, the tools, and every earlier message. After an agent handoff, a prompt or tool change, or a history edit, models that enforce the check reject a request that replays such a block with a 400.
 
-When a request replays at least one thinking block and sends a thinking object of type `adaptive` or `enabled` (a positive thinking_effort, or `thinking = always` at any effort), the driver sets `thinking.block_binding.prefix_mismatch_behavior = "drop_block"` and adds the `thinking-binding-controls-2026-08-01` beta. The API then drops the first mismatched block and every later thinking block instead of rejecting the request. The drop applies to that request only and the history keeps the blocks, so after one change to the system prompt, tools or an earlier message, every later request again drops every thinking block from the first one bound to the old prefix onward, until the history before the change no longer carries thinking blocks; such conversations continue without that earlier reasoning, and `metadata.input_transformations` shows the drops on every response. Setting `prefix_mismatch_behavior` also opts the request into enforcement: on models that enforce the check only for organizations created on or after 2026-08-31, an older organization's mismatched blocks reached the model before and are now dropped. A `block_binding` the thinking object already carries is kept as set, and any request whose thinking object carries `block_binding` sends the beta. The Claude driver sends one `anthropic-beta` header: the configured `beta_features`, then the betas of a configured `anthropic-beta` context header (any letter case), then request betas, each named once. Bedrock appends the beta to the `anthropic_beta` list of `additionalModelRequestFields` and `/input_transformations` to `additionalModelResponseFieldPaths`, each named once. Plain generation and structured output behave the same.
+When a request replays at least one thinking block and sends a thinking object of type `adaptive` or `enabled` (a positive thinking_effort, or `thinking = always` at any effort), the driver sets `thinking.block_binding.prefix_mismatch_behavior = "drop_block"` and adds the `thinking-binding-controls-2026-08-01` beta. The API then drops the first mismatched block and every later thinking block instead of rejecting the request. The drop applies to that request only and the history keeps the blocks, so after one change to the system prompt, tools or an earlier message, every later request again drops every thinking block from the first one bound to the old prefix onward, until the history before the change no longer carries thinking blocks; such conversations continue without that earlier reasoning, and `metadata.input_transformations` shows the drops on every response. Setting `prefix_mismatch_behavior` also opts the request into enforcement: on models that enforce the check only for organizations created on or after 2026-08-31, an older organization's mismatched blocks reached the model before and are now dropped. A `block_binding` the thinking object already carries is kept as set, and any request whose thinking object carries `block_binding` sends the beta. The Claude driver sends one `anthropic-beta` header: the configured `beta_features`, then the betas of a configured `anthropic-beta` context header (any letter case), then request betas, each named once. Bedrock appends the beta to the `anthropic_beta` list of `additionalModelRequestFields` and `/input_transformations` to `additionalModelResponseFieldPaths`, each named once. Plain generation and structured output behave the same. The driver decides the binding after merging `options.request`, from the thinking object as sent: a `request.thinking.type = "between_tools"` gets no binding and no beta, and a `request.thinking.block_binding` is kept as set and sends the beta.
 
 A request without a thinking object (`adaptive` or `budget` at zero or absent effort, or `thinking = "none"`) carries no binding: `block_binding` exists only inside an adaptive or enabled thinking object, and the driver never turns thinking on to carry it, since on several models an omitted thinking object means no thinking. Such a request replays its blocks unbound, so keep that conversation append-only. `always` is the form that carries the binding at zero effort.
 
@@ -616,6 +644,20 @@ providers:
     structured_output: native
     options:
       thinking_effort: 60
+```
+
+```yaml
+# Claude Sonnet 5.5 with thinking between tool calls only, set on the wire;
+# between_tools carries no block binding, so keep this route's histories append-only
+providers:
+  - id: wippy.llm.claude:provider
+    provider_model: claude-sonnet-5-5
+    thinking: always
+    sampling: false
+    structured_output: native
+    options:
+      request:
+        thinking: { type: between_tools }
 ```
 
 ```yaml
