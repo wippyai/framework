@@ -396,6 +396,7 @@ entries:
     imports:
       test: wippy.test:test
       init_time_aware: wippy.agent.traits:init_time_aware
+      compiler: wippy.agent.compiler:compiler
     method: run_tests
 
   - name: turn_context_test

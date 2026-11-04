@@ -427,8 +427,8 @@ The note ends with "Use this temporal context when relevant to your responses."
 empty or unknown timezone or a `format` that is not a non-empty string. `format`
 is an optional Go time layout for the date and time part. The note carries the
 exact minute and is never rebuilt; the framework does not inject it per step.
-The removed `time_interval` setting fails compilation with an error naming
-`turn_context`.
+The legacy `time_interval` setting is ignored, so existing configurations still
+compile. A malformed `time_format` still fails compilation.
 
 ### Token Tracking
 
@@ -491,6 +491,8 @@ end
   start are delivered as soon as the failure is known.
 - Delivery happens before `after_execute` wrappers run; the wrappers and the
   return value still receive the complete batch keyed by call ID.
+- The listener runs synchronously. Stop is observed only after a listener in
+  progress returns, so keep listeners short.
 - A listener fails by raising or by returning a non-nil second value. The batch
   then stops: no further call starts, calls still running are cancelled, results
   of calls that finished but were not yet delivered are dropped without
@@ -670,7 +672,7 @@ return { execute = execute }
 
 ### Built-in Traits
 
-- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `time_format` (optional Go time layout). It contributes no prompt text; a `time_interval` setting is rejected.
+- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `time_format` (optional Go time layout). It contributes no prompt text; a legacy `time_interval` setting is ignored.
 
 A trait build function that returns an error fails `compiler.compile` with an
 error naming the trait and the function.

@@ -185,9 +185,6 @@ function openai_mapper.map_messages(contract_messages, options)
 
     while i <= #contract_messages do
         local msg = contract_messages[i]
-        -- Clear metadata
-        msg.metadata = nil
-
         if msg.role == "cache_marker" then
             -- A marker after a string tool result cannot be represented as a
             -- content-part breakpoint without changing the provider payload.

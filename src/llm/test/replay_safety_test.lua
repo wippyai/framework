@@ -352,6 +352,40 @@ local function define_tests()
             llm._usage_tracker = nil
         end)
 
+        it("preserves caller rows when compat maps before a Claude fallback", function()
+            local rows = {
+                { role = "system", content = text("Base") },
+                { role = "user", content = text("Question") },
+                { role = "system", content = text("Turn context"), metadata = { preserve_position = true } },
+                { role = "assistant", content = text("Answer"), metadata = {
+                    thinking_blocks = { { type = "thinking", thinking = "Reasoning", signature = "sig" },
+                        { type = "redacted_thinking", data = "opaque" } },
+                } },
+                { role = "user", content = text("Follow-up") },
+                { role = "developer", content = text("Recall"), metadata = {
+                    preserve_position = true, memory_ids = { "memory-1", "memory-2" },
+                } },
+            }
+            local before = json.encode(rows)
+
+            local compat = compat_mapper.map_messages(rows)
+            local after_compat = json.encode(rows)
+            local replay = claude_mapper.map_messages(rows)
+
+            test.eq(replay.messages[2].content[1].type, "thinking", "Claude fallback keeps thinking blocks")
+            test.eq(replay.messages[2].content[1].signature, "sig")
+            test.eq(replay.messages[2].content[2].type, "redacted_thinking")
+            test.eq(replay.messages[2].content[2].data, "opaque")
+            test.eq(replay.messages[2].content[3].text, "Answer")
+            test.eq(#replay.system, 1)
+            test.eq(replay.system[1].text, "Base")
+            test.eq(replay.messages[1].content[2].text, "Turn context")
+            test.eq(replay.messages[3].content[2].text, "<developer-instruction>Recall</developer-instruction>")
+            test.eq(after_compat, before, "compat leaves all input tables unchanged")
+            test.eq(json.encode(rows), before, "Claude leaves all input tables unchanged")
+            for _, row in ipairs(compat) do test.is_nil(row.metadata) end
+        end)
+
         describe("stale blocks without a bindable thinking object", function()
             local UNBINDABLE = {
                 { name = "default budget at effort 0", accepts = nil, options = { max_tokens = 100 } },

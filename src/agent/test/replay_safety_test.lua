@@ -269,6 +269,42 @@ local function define_tests()
             agent._llm = nil
         end)
 
+        it("keeps two cache markers across five steps with one builder on Bedrock and Claude", function()
+            for _, route in ipairs({ ROUTES[2], ROUTES[1] }) do
+                local sent = install({ id = route.id, provider_model = "wire" })
+                local runner = assert(agent.new(spec("agent_a", 0)))
+                local builder = prompt.new()
+                local counts, unchanged = {}, {}
+                for step = 1, 5 do
+                    if step == 3 then
+                        builder:add_function_call("lookup", "{}", "call-1")
+                        builder:add_function_result("lookup", "Found", "call-1")
+                    else
+                        builder:add_user("Question " .. step)
+                    end
+                    local before = json.encode(builder.messages)
+                    local response = assert(runner:step(builder, {}))
+                    unchanged[step] = json.encode(builder.messages) == before
+                    local count = 0
+                    local payload = sent[step].payload
+                    for _, block in ipairs(payload.system or {}) do
+                        if block.cache_control or block.cachePoint then count = count + 1 end
+                    end
+                    for _, message in ipairs(payload.messages) do
+                        for _, block in ipairs(message.content) do
+                            if block.cache_control or block.cachePoint then count = count + 1 end
+                        end
+                    end
+                    counts[step] = count
+                    builder:add_assistant(response.result)
+                end
+                test.eq(table.concat(counts, ","), "2,2,2,2,2", route.driver .. " per-step cache markers")
+                for step = 1, 5 do
+                    test.is_true(unchanged[step], route.driver .. " leaves builder unchanged at step " .. step)
+                end
+            end
+        end)
+
         for _, route in ipairs(ROUTES) do
             local UNBINDABLE = {
                 { name = "default budget", thinking = nil, effort = 0 },

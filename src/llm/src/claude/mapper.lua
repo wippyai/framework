@@ -254,7 +254,9 @@ local function convert_image_content(content_part)
             }
         end
     end
-    return content_part
+    local copy = {}
+    for key, value in pairs(content_part) do copy[key] = value end
+    return copy
 end
 
 local function process_content_array(content)

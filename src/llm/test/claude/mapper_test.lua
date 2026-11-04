@@ -641,6 +641,24 @@ local function define_tests()
                 test.eq(first_system.cache_control.type, "ephemeral")
             end)
 
+            it("marks copies of caller system, user and assistant text blocks", function()
+                local rows = {
+                    { role = "system", content = { { type = "text", text = "Base" } } },
+                    { role = "cache_marker" },
+                    { role = "user", content = { { type = "text", text = "Question" } } },
+                    { role = "cache_marker" },
+                    { role = "assistant", content = { { type = "text", text = "Answer" } } },
+                    { role = "cache_marker" },
+                }
+                local before = json.decode((json.encode(rows)))
+                local mapped = mapper.map_messages(rows)
+
+                test.eq(mapped.system[1].cache_control.type, "ephemeral")
+                test.eq(mapped.messages[1].content[1].cache_control.type, "ephemeral")
+                test.eq(mapped.messages[2].content[1].cache_control.type, "ephemeral")
+                test.is_true(same(rows, before), "cache marking leaves caller blocks unchanged")
+            end)
+
             it("should cache a tool-result history tail", function()
                 local result = mapper.map_messages({
                     { role = "user", content = {{ type = "text", text = "Weather?" }} },
