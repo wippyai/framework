@@ -535,7 +535,7 @@ entries:
 
 ### Trait behaviors and compatibility
 
-Put related lifecycle, checkpoint, and tool behavior under `data.behaviors` in a
+Put related lifecycle, checkpoint, and tool behavior under `behaviors` in a
 trait registry entry. `handles` selects phases; a handler binding runs only for
 the selected phases. A checkpoint configuration without a checkpoint handler
 still contributes the supported agent checkpoint options.
@@ -547,21 +547,20 @@ entries:
     meta:
       type: agent.trait
       name: Durable Memory
-    data:
-      behaviors:
-        memory:
-          kind: memory
-          handles: [recall, activate, before_step, checkpoint, deactivate]
-          handlers:
-            recall: my_ns:memory_impl
-            lifecycle: my_ns:memory_lifecycle
-            checkpoint: my_ns:memory_checkpoint
-          options:
-            namespace: project
-          recall:
-            max_items: 5
-          checkpoint:
-            token_threshold: 12000
+    behaviors:
+      memory:
+        kind: memory
+        handles: [recall, activate, before_step, checkpoint, deactivate]
+        handlers:
+          recall: my_ns:memory_impl
+          lifecycle: my_ns:memory_lifecycle
+          checkpoint: my_ns:memory_checkpoint
+        options:
+          namespace: project
+        recall:
+          max_items: 5
+        checkpoint:
+          token_threshold: 12000
 ```
 
 Behavior maps compile in key order; arrays compile in declaration order. Within
@@ -581,18 +580,17 @@ Each binding attempt receives its own option copy.
 
 **Per-agent compaction**
 
-Attach a trait with this `data` to configure the default checkpoint summarizer:
+Attach a trait with these fields to configure the default checkpoint summarizer:
 
 ```yaml
-data:
-  behaviors:
-    compaction:
-      handles: [checkpoint]
-      checkpoint:
-        token_threshold: 12000
-        model: class:fast
-        temperature: 0.2
-        max_tokens: 3000
+behaviors:
+  compaction:
+    handles: [checkpoint]
+    checkpoint:
+      token_threshold: 12000
+      model: class:fast
+      temperature: 0.2
+      max_tokens: 3000
 ```
 
 `model`, `temperature`, the session limits (`max_tool_result_chars`,
@@ -658,7 +656,7 @@ a hard kill; providers need stable persisted IDs and idempotent writes.
 
 The compiler retains the public `bindings` and `tool_wrappers` plans. To catch
 misspelled phases or missing lifecycle/tool handlers while authoring, call
-`compiler.validate_behaviors(trait.data.behaviors)`; it returns an array of
+`compiler.validate_behaviors(trait.behaviors)`; it returns an array of
 `{path, code, message}` diagnostics. Compilation remains permissive for
 existing registry entries.
 
