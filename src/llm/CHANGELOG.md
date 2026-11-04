@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.13](https://github.com/wippyai/framework/compare/llm-v0.5.12...llm-v0.5.13) (2026-11-04)
+
+
+### Features
+
+* **agent:** keep the request prefix stable across steps ([#237](https://github.com/wippyai/framework/issues/237)) ([7d3eae8](https://github.com/wippyai/framework/commit/7d3eae8838a86e7e432c2a203ee1681afd8dfc69))
+* **llm:** route options.request wire passthrough ([#233](https://github.com/wippyai/framework/issues/233)) ([e2ced01](https://github.com/wippyai/framework/commit/e2ced01f60685b91e0fac19d6c52d24c57273456))
+
+
+### Bug Fixes
+
+* **llm,agent:** make thinking replay and request shaping safe ([#239](https://github.com/wippyai/framework/issues/239)) ([89b479d](https://github.com/wippyai/framework/commit/89b479d1975ca9434965dddb5644e80e1002cb24))
+* **llm:** let the API drop thinking blocks bound to another conversation ([#235](https://github.com/wippyai/framework/issues/235)) ([cbc20be](https://github.com/wippyai/framework/commit/cbc20bed93d1256559d294cbc364ee98e5fb6c56))
+
 ## [0.5.12](https://github.com/wippyai/framework/compare/llm-v0.5.11...llm-v0.5.12) (2026-10-26)
 
 
