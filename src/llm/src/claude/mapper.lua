@@ -16,7 +16,7 @@ mapper.CAPABILITY = {
         structured_output = "tool"
     },
     supported = {
-        thinking = { adaptive = true, budget = true, none = true },
+        thinking = { adaptive = true, budget = true, none = true, always = true },
         structured_output = { native = true, tool = true }
     }
 }
@@ -220,6 +220,33 @@ end
 
 function mapper.map_finish_reason(claude_stop_reason)
     return mapper.FINISH_REASON_MAP[claude_stop_reason] or claude_stop_reason
+end
+
+-- Fields an earlier stored shape carried on a block type the Messages API does not
+-- accept them on.
+local STALE_THINKING_FIELDS: {[string]: {[string]: boolean}} = {
+    thinking = { data = true },
+    redacted_thinking = { thinking = true, signature = true }
+}
+
+-- A thinking or redacted_thinking block as the API takes it back: every field passes
+-- through unchanged except the stale fields of its type; other blocks yield nil.
+local function thinking_block_shape(block)
+    local stale = STALE_THINKING_FIELDS[block.type]
+    if not stale then
+        return nil
+    end
+    local shaped = {}
+    for key, value in pairs(block) do
+        if not stale[key] then
+            shaped[key] = value
+        end
+    end
+    if block.type == "thinking" then
+        shaped.thinking = shaped.thinking or ""
+        shaped.signature = shaped.signature or ""
+    end
+    return shaped
 end
 
 local function extract_thinking_content_from_blocks(thinking_blocks)
@@ -466,7 +493,7 @@ function mapper.map_messages(contract_messages)
 
             if msg.metadata and msg.metadata.thinking_blocks then
                 for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    table.insert(content_blocks, thinking_block)
+                    table.insert(content_blocks, thinking_block_shape(thinking_block) or thinking_block)
                 end
             end
 
@@ -487,7 +514,7 @@ function mapper.map_messages(contract_messages)
 
             if msg.metadata and msg.metadata.thinking_blocks then
                 for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    table.insert(content_blocks, thinking_block)
+                    table.insert(content_blocks, thinking_block_shape(thinking_block) or thinking_block)
                 end
             end
 
@@ -661,6 +688,12 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
             claude_options.thinking = { type = "adaptive" }
             claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
         end
+    elseif mode == "always" then
+        -- The model thinks on every request; without an effort it keeps the model default.
+        claude_options.thinking = { type = "adaptive" }
+        if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
+            claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+        end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
         thinking_budget = math.floor(thinking_budget + 0.5)
@@ -683,6 +716,31 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
     end
 
     return claude_options, adjusted
+end
+
+local function replays_thinking(messages): boolean
+    for _, message in ipairs(messages or {}) do
+        if message.role == "assistant" and type(message.content) == "table" then
+            for _, block in ipairs(message.content) do
+                if block.type == "thinking" or block.type == "redacted_thinking" then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Binds the thinking blocks a Messages payload replays to drop_block and returns the
+-- request betas its block_binding requires, or nil when the payload carries none.
+function mapper.bind_thinking(payload): {string}?
+    if replays_thinking(payload.messages) then
+        thinking.bind_replayed_blocks(payload.thinking)
+    end
+    if not thinking.is_bound(payload.thinking) then
+        return nil
+    end
+    return { thinking.BINDING_BETA }
 end
 
 function mapper.extract_response_content(claude_response)
@@ -708,13 +766,7 @@ function mapper.extract_response_content(claude_response)
                 arguments = block.input or {}
             })
         elseif block.type == "thinking" or block.type == "redacted_thinking" then
-            local thinking_block = {
-                type = block.type,
-                thinking = block.type == "thinking" and (block.thinking or "") or "",
-                data = block.type == "redacted_thinking" and block.data or nil,
-                signature = block.signature or ""
-            }
-            table.insert(thinking_blocks, thinking_block)
+            table.insert(thinking_blocks, thinking_block_shape(block))
         end
     end
 

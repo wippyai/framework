@@ -78,7 +78,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
         context.name_to_id_map,
         final_usage,
         finish_reason,
-        stream_response.metadata
+        stream_result.metadata
     )
 end
 
@@ -163,6 +163,9 @@ function generate_handler.handler(contract_args)
         request_options.stream = true
         stream_config = contract_args.stream
     end
+
+    -- The binding depends on the thinking object as sent, so it is the last change to the payload.
+    request_options.beta_features = generate_handler._mapper.bind_thinking(claude_payload)
 
     local response, request_err = generate_handler._client.request(
         generate_handler._client.ENDPOINTS.MESSAGES,

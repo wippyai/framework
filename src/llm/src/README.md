@@ -55,7 +55,7 @@ Each provider route declares what the model accepts on the wire. These optional 
 
 | Fact | Values | Meaning |
 |---|---|---|
-| `thinking` | `adaptive`, `budget`, `none` | How thinking effort is encoded |
+| `thinking` | `adaptive`, `budget`, `none`, `always` | How thinking effort is encoded |
 | `sampling` | `true`, `false` | Whether temperature, top_p and top_k are accepted |
 | `forced_tool_choice` | `true`, `false` | Whether `tool_choice = "any"` or a named tool is accepted |
 | `structured_output` | `native`, `tool` | Native JSON schema output or a structured-output tool |
@@ -81,6 +81,8 @@ Claude and Bedrock budget thinking never injects a temperature; the provider def
 
 Adaptive Claude and Bedrock requests with positive thinking_effort send `thinking.type = "adaptive"` and an effort level in `output_config`; they do not calculate a budget or touch temperature. An absent or zero effort sends no thinking fields.
 
+`always` is for models whose thinking cannot be turned off, where omitting `thinking` and sending `{ type = "adaptive" }` are equivalent: Claude Opus 5.5, Sonnet 5.5, Haiku 5.5, Opus 5, Sonnet 5 and the Fable 5.x models. Claude and Bedrock send the adaptive thinking object on every request. A positive thinking_effort adds its effort level in `output_config`, exactly as `adaptive`; an absent or zero effort sends no `output_config`, so the model's default effort applies. Use `adaptive` only for models where an omitted thinking object means no thinking (Claude Opus 4.6, 4.7, 4.8 and Sonnet 4.6), and never declare `none` for a model that thinks when `thinking` is omitted. OpenAI, OpenAI-compatible and Google reject `always`. Routes for 5.x models that declare `adaptive` keep sending no thinking object at zero effort until they are changed to `always`.
+
 The forced tool choice rule is provider-agnostic: a route with `forced_tool_choice = false` rejects a `tool_choice` of `"any"` or a tool name, for every driver, unless the caller permits `tool_choice_fallback = "auto"`. The caller must enforce tool use itself when accepting that fallback. The response reports `metadata.tool_choice = { requested = "any", sent = "auto" }` independently of `metadata.adjusted`. A route that can only produce structured output by forcing a tool (`structured_output = "tool"`, Bedrock's only mode) rejects `forced_tool_choice = false` the same way. Native Claude structured output requires `additionalProperties: false` on every object in the schema; an open object is rejected with its path.
 
 Legacy forms remain supported through the normalizer:
@@ -88,7 +90,7 @@ Legacy forms remain supported through the normalizer:
 | Legacy form | Canonical form / behavior |
 |---|---|
 | Route `options.reasoning_model_request = true` | Only on a route whose driver declares it owns this flag (OpenAI, OpenAI-compatible): `thinking: adaptive`, `sampling: false`; false, absent, or a driver that does not declare it derives nothing |
-| Route `options.model_profile.thinking_mode = adaptive_only` | `thinking: adaptive` only |
+| Route `options.model_profile.thinking_mode = adaptive_only` | `thinking: adaptive` only (not `always`) |
 | Route `options.model_profile.forced_tool_choice` | `forced_tool_choice`, preserving both true and false |
 | Route `options.model_profile.structured_output_mode = native` | `structured_output: native` |
 | Caller `reasoning_model_request = true` | Same driver-declares-it rule as the route form; when it applies, derives adaptive thinking and no sampling unless canonically declared on the route |
@@ -126,6 +128,22 @@ local response, err = llm.generate("Hello", {
     request = { thinking = { type = "between_tools" } }
 })
 ```
+
+### Thinking block binding
+
+Claude and Bedrock store each response's `thinking` blocks as `{ type, thinking, signature }` and `redacted_thinking` blocks as `{ type, data }` in `metadata.thinking_blocks`, in response order, and replay every stored block on later turns in its position (Bedrock: as `reasoningContent.reasoningText` and `reasoningContent.redactedContent`). Claude replays each block unchanged except for fields an earlier stored shape carried that its type does not accept (`data` on `thinking`, `thinking` and `signature` on `redacted_thinking`). A Claude thinking block is bound to the conversation that produced it: the top-level system prompt, the tools, and every earlier message. After an agent handoff, a prompt or tool change, or a history edit, models that enforce the check reject a request that replays such a block with a 400.
+
+When a request replays at least one thinking block and sends a thinking object of type `adaptive` or `enabled` (a positive thinking_effort, or `thinking = always` at any effort), the driver sets `thinking.block_binding.prefix_mismatch_behavior = "drop_block"` and adds the `thinking-binding-controls-2026-08-01` beta. The API then drops the first mismatched block and every later thinking block instead of rejecting the request. The drop applies to that request only and the history keeps the blocks, so after one change to the system prompt, tools or an earlier message, every later request again drops every thinking block from the first one bound to the old prefix onward, until the history before the change no longer carries thinking blocks; such conversations continue without that earlier reasoning, and `metadata.input_transformations` shows the drops on every response. Setting `prefix_mismatch_behavior` also opts the request into enforcement: on models that enforce the check only for organizations created on or after 2026-08-31, an older organization's mismatched blocks reached the model before and are now dropped. A `block_binding` the thinking object already carries is kept as set, and any request whose thinking object carries `block_binding` sends the beta. The Claude driver sends one `anthropic-beta` header: the configured `beta_features`, then the betas of a configured `anthropic-beta` context header (any letter case), then request betas, each named once. Bedrock appends the beta to the `anthropic_beta` list of `additionalModelRequestFields` and `/input_transformations` to `additionalModelResponseFieldPaths`, each named once. Plain generation and structured output behave the same. The driver decides the binding after merging `options.request`, from the thinking object as sent: a `request.thinking.type = "between_tools"` gets no binding and no beta, and a `request.thinking.block_binding` is kept as set and sends the beta.
+
+A request without a thinking object (`adaptive` or `budget` at zero or absent effort, or `thinking = "none"`) carries no binding: `block_binding` exists only inside an adaptive or enabled thinking object, and the driver never turns thinking on to carry it, since on several models an omitted thinking object means no thinking. Such a request replays its blocks unbound, so keep that conversation append-only. `always` is the form that carries the binding at zero effort.
+
+Claude Sonnet 5.5 `thinking.type = "between_tools"` rejects `block_binding`, so a between_tools request has no drop_block recovery. Routes that must survive agent handoffs or history edits use `thinking: always` with a low default effort (`options.thinking_effort: 10`, the `low` level; 20 through 50 map to `medium`); keep between_tools for append-only routes. between_tools also rejects the `xhigh` and `max` levels (thinking_effort 80 and above) and per-message effort changes.
+
+Responses to a bound request report each dropped block in `metadata.input_transformations`, for example `{ type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }`. `prefix_binding_mismatch` means the conversation before the block changed; `model_binding_mismatch` means the conversation moved to a model that cannot read the block. Other values exist and later checks add more, for example the reason `organization_binding_mismatch` (a block from another organization) and the entry type `thinking_mismatch_allowed` (a block that failed the check but still reached the model); ignore entry types and reasons you do not recognize. An empty array means nothing was dropped. Streaming Claude responses report the array from `message_start`. After a mid-stream server-side fallback the API sends the final array again in the closing `message_delta`, in a location that is not documented; the driver does not capture that final array yet, so such a stream reports the array from `message_start`. Bedrock reports it from `messageStop`.
+
+Model switches and fallbacks need no client-side handling: the API drops blocks the target model cannot read, so the drivers pass every block back unchanged. Prefix changes are different: keeping the system prompt, tools and earlier messages append-only is what keeps earlier reasoning in use.
+
+The binding controls are a beta on the Claude API, Claude Platform on AWS, Amazon Bedrock and Google Cloud Vertex AI; Microsoft Foundry is unconfirmed. An endpoint that rejects the beta fails the request with its own error.
 
 ### Retry
 
@@ -600,7 +618,7 @@ entries:
     providers:
       - id: wippy.llm.claude:provider
         provider_model: claude-sonnet-5
-        thinking: adaptive
+        thinking: always
         sampling: false
         forced_tool_choice: true
         structured_output: native
@@ -620,7 +638,7 @@ Additional model entries can use these routes with the same top-level structure.
 providers:
   - id: wippy.llm.claude:provider
     provider_model: claude-opus-5-5
-    thinking: adaptive
+    thinking: always
     sampling: false
     forced_tool_choice: false
     structured_output: native
@@ -629,11 +647,12 @@ providers:
 ```
 
 ```yaml
-# Claude Sonnet 5.5 with thinking between tool calls only, set on the wire
+# Claude Sonnet 5.5 with thinking between tool calls only, set on the wire;
+# between_tools carries no block binding, so keep this route's histories append-only
 providers:
   - id: wippy.llm.claude:provider
     provider_model: claude-sonnet-5-5
-    thinking: adaptive
+    thinking: always
     sampling: false
     structured_output: native
     options:

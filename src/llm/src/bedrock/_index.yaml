@@ -135,6 +135,7 @@ entries:
       prompt: wippy.llm:prompt
       output: wippy.llm:output
       route: wippy.llm.util:route
+      transport: wippy.llm.util:transport
 
   - name: embed_titan
     kind: library.lua

@@ -890,6 +890,76 @@ local function define_tests()
             end)
         end)
 
+        describe("Thinking block binding", function()
+            local schema = {
+                type = "object",
+                properties = { answer = { type = "string" } },
+                required = { "answer" },
+                additionalProperties = false
+            }
+
+            local function send(structured_output_mode, thinking_fact, thinking_effort)
+                local sent = {}
+                structured_output_handler._client._ctx = { all = function() return { api_key = "test-api-key" } end }
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function(url, options)
+                        sent.headers = options.headers
+                        sent.body = json.decode(tostring(options.body))
+                        return {
+                            status_code = 200,
+                            headers = {},
+                            body = json.encode({
+                                content = {
+                                    { type = "text", text = '{"answer":"yes"}' },
+                                    { type = "tool_use", id = "t1", name = "structured_output", input = { answer = "yes" } }
+                                },
+                                stop_reason = "end_turn",
+                                usage = { input_tokens = 10, output_tokens = 5 },
+                                input_transformations = {
+                                    { type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }
+                                }
+                            })
+                        }
+                    end
+                }
+                local response = structured_output_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Plan" } } },
+                        {
+                            role = "assistant",
+                            content = { { type = "text", text = "Planned." } },
+                            metadata = { thinking_blocks = { { type = "thinking", thinking = "t", signature = "sig" } } }
+                        },
+                        { role = "user", content = { { type = "text", text = "Answer" } } }
+                    },
+                    schema = schema,
+                    options = { thinking_effort = thinking_effort },
+                    accepts = { thinking = thinking_fact, structured_output = structured_output_mode }
+                })
+                return sent, response
+            end
+
+            for _, mode in ipairs({ "native", "tool" }) do
+                it("binds replayed blocks on the " .. mode .. " path", function()
+                    local sent, response = send(mode, "adaptive", 50)
+
+                    test.eq(sent.body.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                    test.eq(sent.headers["anthropic-beta"], "thinking-binding-controls-2026-08-01")
+                    test.eq(response.metadata.input_transformations[1].reason, "prefix_binding_mismatch")
+                end)
+
+                it("binds replayed blocks on the " .. mode .. " path of an always route at no effort", function()
+                    local sent = send(mode, "always", nil)
+
+                    test.eq(sent.body.thinking.type, "adaptive")
+                    test.eq(sent.body.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                    test.eq(sent.headers["anthropic-beta"], "thinking-binding-controls-2026-08-01")
+                end)
+            end
+        end)
+
         describe("Error Handling", function()
             it("should handle Claude API errors", function()
                 structured_output_handler._client._ctx = {

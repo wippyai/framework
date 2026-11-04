@@ -206,7 +206,11 @@ end
 -- Converse: POST /model/{modelId}/converse
 function bedrock_client.converse(model_id, payload, options)
     local path = "/model/" .. model_id .. "/converse"
-    return signed_request(path, payload, options)
+    local response, err = signed_request(path, payload, options)
+    if response and response.additionalModelResponseFields then
+        response.metadata.input_transformations = response.additionalModelResponseFields.input_transformations
+    end
+    return response, err
 end
 
 -- ConverseStream: POST /model/{modelId}/converse-stream (returns eventstream)
@@ -410,6 +414,8 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     local usage = {}
     local content_blocks = {}
     local error_reported = false
+    local metadata = stream_response.metadata or {}
+    local redacted_bytes: {[number]: string} = {}
 
     local function handle_event(event): string?
         -- Converse stream events use top-level keys instead of a "type" field
@@ -433,12 +439,6 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                     name = start_block.toolUse.name or "",
                     partial_json = ""
                 }
-            elseif start_block.reasoningContent then
-                thinking_blocks[index] = {
-                    type = "thinking",
-                    thinking = "",
-                    signature = ""
-                }
             end
         elseif event.contentBlockDelta then
             local data = event.contentBlockDelta
@@ -450,16 +450,27 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                 full_content = full_content .. text_chunk
                 on_content(text_chunk)
             elseif delta.reasoningContent then
+                -- ConverseStream opens reasoning blocks with their first delta, not contentBlockStart.
                 local rc = delta.reasoningContent
-                if rc.text then
-                    on_thinking(tostring(rc.text))
-                    if thinking_blocks[index] then
-                        thinking_blocks[index].thinking = thinking_blocks[index].thinking .. rc.text
+                if rc.redactedContent then
+                    -- Each delta is its own base64 blob; the block's bytes are encoded once at contentBlockStop.
+                    local bytes = base64.decode(tostring(rc.redactedContent))
+                    if not bytes then
+                        error_reported = true
+                        on_error({ message = "Invalid base64 in redactedContent delta" })
+                        return "Invalid base64 in redactedContent delta"
                     end
-                end
-                if rc.signature then
-                    if thinking_blocks[index] then
-                        thinking_blocks[index].signature = thinking_blocks[index].signature .. rc.signature
+                    thinking_blocks[index] = thinking_blocks[index] or { type = "redacted_thinking", data = "" }
+                    redacted_bytes[index] = (redacted_bytes[index] or "") .. bytes
+                else
+                    local block = thinking_blocks[index] or { type = "thinking", thinking = "", signature = "" }
+                    thinking_blocks[index] = block
+                    if rc.text then
+                        on_thinking(tostring(rc.text))
+                        block.thinking = block.thinking .. rc.text
+                    end
+                    if rc.signature then
+                        block.signature = block.signature .. rc.signature
                     end
                 end
             elseif delta.toolUse then
@@ -469,6 +480,11 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             end
         elseif event.contentBlockStop then
             local index = (event.contentBlockStop.contentBlockIndex or 0)
+
+            if redacted_bytes[index] then
+                thinking_blocks[index].data = base64.encode(redacted_bytes[index])
+                redacted_bytes[index] = nil
+            end
 
             if tool_calls[index] and tool_calls[index].partial_json then
                 local json_str = tostring(tool_calls[index].partial_json)
@@ -489,6 +505,10 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             end
         elseif event.messageStop then
             finish_reason = event.messageStop.stopReason
+            local response_fields = event.messageStop.additionalModelResponseFields
+            if response_fields then
+                metadata.input_transformations = response_fields.input_transformations
+            end
         elseif event.metadata then
             if event.metadata.usage then
                 usage = event.metadata.usage
@@ -506,26 +526,19 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     end
 
     local final_tool_calls = {}
-    for _, tool_call in pairs(tool_calls) do
+    for _, tool_call in ipairs(transport.in_index_order(tool_calls)) do
         if type(tool_call) == "table" and tool_call.id then
             table.insert(final_tool_calls, tool_call)
-        end
-    end
-
-    local final_thinking_blocks = {}
-    for _, thinking_block in pairs(thinking_blocks) do
-        if type(thinking_block) == "table" and thinking_block.type == "thinking" then
-            table.insert(final_thinking_blocks, thinking_block)
         end
     end
 
     local result = {
         content = full_content,
         tool_calls = final_tool_calls,
-        thinking = final_thinking_blocks,
+        thinking = transport.in_index_order(thinking_blocks),
         finish_reason = finish_reason,
         usage = usage,
-        metadata = stream_response.metadata or {}
+        metadata = metadata
     }
 
     on_done(result)

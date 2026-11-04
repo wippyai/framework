@@ -1,13 +1,13 @@
 local route = {}
 
 local VALUES = {
-    thinking = { adaptive = true, budget = true, none = true },
+    thinking = { adaptive = true, budget = true, none = true, always = true },
     sampling = "boolean",
     forced_tool_choice = "boolean",
     structured_output = { native = true, tool = true }
 }
 local ALLOWED = {
-    thinking = "adaptive, budget, none",
+    thinking = "adaptive, budget, none, always",
     sampling = "boolean (true, false)",
     forced_tool_choice = "boolean (true, false)",
     structured_output = "native, tool"

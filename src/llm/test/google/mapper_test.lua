@@ -80,7 +80,7 @@ local function define_tests()
 
         describe("Declared thinking", function()
             it("rejects thinking modes it cannot honor", function()
-                for _, thinking in ipairs({ "adaptive", "budget" }) do
+                for _, thinking in ipairs({ "adaptive", "budget", "always" }) do
                     local options, err = mapper.map_options({}, { thinking = thinking })
                     test.is_nil(options)
                     test.contains(err, "Google")

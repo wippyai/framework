@@ -138,6 +138,22 @@ local function define_tests()
                     test.is_nil(sent.payload)
                 end)
 
+                it("sends the adaptive thinking object for " .. provider .. " " .. method .. " on an always route without effort", function()
+                    for _, case in ipairs({ { thinking = "always", sends = true }, { thinking = "adaptive", sends = false } }) do
+                        local sent = setup()
+                        local _, err = call(method, { provider_id = "route", model = "wire", accepts = { thinking = case.thinking } })
+                        test.is_nil(err)
+                        local payload = sent.payload :: table
+                        local fields = provider == "claude" and payload or (payload.additionalModelRequestFields or {})
+                        if case.sends then
+                            test.eq(fields.thinking.type, "adaptive")
+                        else
+                            test.is_nil(fields.thinking)
+                        end
+                        test.is_nil(fields.output_config)
+                    end
+                end)
+
                 it("encodes " .. provider .. " " .. method .. " adaptive thinking after central sampling removal", function()
                     local sent = setup()
                     local result, err = call(method, { provider_id = "route", model = "wire",
@@ -391,6 +407,107 @@ local function define_tests()
                         end)
                     end
                 end
+            end
+        end
+
+        -- Binding decided after the options.request overlay, on a history that replays a thinking block.
+        local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+        local replayed_history = {
+            { role = "user", content = { { type = "text", text = "Plan" } } },
+            { role = "assistant", content = { { type = "text", text = "Planned." } },
+                metadata = { thinking_blocks = { { type = "thinking", thinking = "t", signature = "sig" } } } },
+            { role = "user", content = { { type = "text", text = "Answer" } } }
+        }
+
+        for _, variant in ipairs({
+            { provider = "claude", method = "generate" },
+            { provider = "claude", method = "structured_output" },
+            { provider = "claude", method = "structured_output", native = true },
+            { provider = "bedrock", method = "generate" },
+            { provider = "bedrock", method = "structured_output" },
+        }) do
+            local provider, method = variant.provider, variant.method
+            local label = method .. (variant.native and " native" or "")
+            do
+                local handler = provider == "claude"
+                    and (method == "generate" and claude_generate or claude_structured)
+                    or (method == "generate" and bedrock_generate or bedrock_structured)
+
+                -- Claude takes request fields at the top level; Bedrock under additionalModelRequestFields.
+                local function wire(fields)
+                    if provider == "claude" then return fields end
+                    return { additionalModelRequestFields = fields }
+                end
+
+                local function send(thinking_fact, effort, request)
+                    local sent: any = {}
+                    local function respond(_, payload, options)
+                        sent.payload = payload
+                        sent.options = options or {}
+                        if provider == "claude" then
+                            return { content = { { type = "text", text = variant.native and answer or "ok" },
+                                { type = "tool_use", name = "structured_output", id = "one", input = { answer = "ok" } } },
+                                stop_reason = "end_turn", usage = { input_tokens = 1, output_tokens = 1 }, metadata = {} }
+                        end
+                        return { output = { message = { role = "assistant", content = { { text = "ok" },
+                            { toolUse = { toolUseId = "one", name = "structured_output", input = { answer = "ok" } } } } } },
+                            stopReason = "end_turn", usage = { inputTokens = 1, outputTokens = 1 }, metadata = {} }
+                    end
+                    handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = respond, converse = respond }
+                    local card = { name = "route-model", providers = { {
+                        id = "route", provider_model = "wire", thinking = thinking_fact,
+                        structured_output = variant.native and "native" or nil,
+                        options = { thinking_effort = effort, request = request }
+                    } } }
+                    llm._model_resolver = { resolve = function() return card end }
+                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                        return { [method] = function(_, args) return handler.handler(args) end }
+                    end }
+                    local _, err
+                    if method == "generate" then
+                        _, err = llm.generate(replayed_history, { model = "route-model" })
+                    else
+                        _, err = llm.structured_output(schema, replayed_history, { model = "route-model" })
+                    end
+                    test.is_nil(err)
+                    local payload = sent.payload :: table
+                    local fields = provider == "claude" and payload or payload.additionalModelRequestFields
+                    local betas = provider == "claude" and sent.options.beta_features or fields.anthropic_beta
+                    return fields, betas, payload.additionalModelResponseFieldPaths
+                end
+
+                local function has(list, value)
+                    for _, item in ipairs(list or {}) do
+                        if item == value then return true end
+                    end
+                    return false
+                end
+
+                it("binds nothing on " .. provider .. " " .. label .. " when options.request sets between_tools", function()
+                    local fields, betas, paths = send("adaptive", 50, wire({ thinking = { type = "between_tools" } }))
+                    test.eq(fields.thinking.type, "between_tools")
+                    test.is_nil(fields.thinking.block_binding)
+                    test.is_false(has(betas, BINDING_BETA))
+                    test.is_nil(paths)
+                end)
+
+                it("keeps an options.request block_binding on " .. provider .. " " .. label .. " and sends the beta", function()
+                    local fields, betas, paths = send("adaptive", 50,
+                        wire({ thinking = { block_binding = { prefix_mismatch_behavior = "error" } } }))
+                    test.eq(fields.thinking.type, "adaptive")
+                    test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "error")
+                    test.is_true(has(betas, BINDING_BETA))
+                    if provider == "bedrock" then test.is_true(has(paths, "/input_transformations")) end
+                end)
+
+                it("merges options.request into an always route at effort 0 on " .. provider .. " " .. label .. " and binds", function()
+                    local fields, betas = send("always", 0, wire({ output_config = { task_budget = { type = "tokens", total = 20000 } } }))
+                    test.eq(fields.output_config.task_budget.total, 20000)
+                    test.is_nil(fields.output_config.effort)
+                    test.eq(fields.thinking.type, "adaptive")
+                    test.eq(fields.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                    test.is_true(has(betas, BINDING_BETA))
+                end)
             end
         end
 

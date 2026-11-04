@@ -77,7 +77,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
         context.name_to_id_map,
         final_usage,
         finish_reason,
-        stream_response.metadata
+        stream_result.metadata
     )
 end
 
@@ -157,6 +157,12 @@ function generate_handler.handler(contract_args)
         timeout = contract_args.timeout or 600,
         retry = contract_args.retry
     }
+
+    -- The binding depends on the thinking object as sent, so it is the last change to the payload.
+    local bind_err = generate_handler._mapper.bind_thinking(converse_payload)
+    if bind_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(bind_err):build()
+    end
 
     if contract_args.stream and contract_args.stream.reply_to then
         local stream_response, stream_err = generate_handler._client.converse_stream(

@@ -5,6 +5,8 @@ local json = require("json")
 local hash = require("hash")
 local test = require("test")
 
+local same = require("deep_equal")
+
 local function define_tests()
     describe("Claude Mapper", function()
 
@@ -621,6 +623,47 @@ local function define_tests()
             end)
         end)
 
+        describe("Thinking binding", function()
+            local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+            local replayed = {
+                { role = "user", content = { { type = "text", text = "Plan" } } },
+                { role = "assistant", content = { { type = "thinking", thinking = "t", signature = "sig" }, { type = "text", text = "Planned." } } },
+                { role = "user", content = { { type = "text", text = "Book" } } }
+            }
+            local fresh = { { role = "user", content = { { type = "text", text = "Plan" } } } }
+
+            it("keeps a block_binding the payload already carries", function()
+                local payload = {
+                    messages = replayed,
+                    thinking = { type = "adaptive", block_binding = { prefix_mismatch_behavior = "error" } }
+                }
+
+                local betas = mapper.bind_thinking(payload)
+
+                test.eq(payload.thinking.block_binding.prefix_mismatch_behavior, "error")
+                test.eq(#betas, 1)
+                test.eq(betas[1], BINDING_BETA)
+            end)
+
+            it("requires the beta for a block_binding set without replayed blocks", function()
+                local payload = {
+                    messages = fresh,
+                    thinking = { type = "adaptive", block_binding = { prefix_mismatch_behavior = "error" } }
+                }
+
+                local betas = mapper.bind_thinking(payload)
+
+                test.eq(betas[1], BINDING_BETA)
+            end)
+
+            it("requires no beta for a payload without block_binding", function()
+                local payload = { messages = fresh, thinking = { type = "adaptive" } }
+
+                test.is_nil(mapper.bind_thinking(payload))
+                test.is_nil(payload.thinking.block_binding)
+            end)
+        end)
+
         describe("Options Mapping", function()
             it("should map basic options correctly", function()
                 local contract_options = {
@@ -681,6 +724,27 @@ local function define_tests()
                 local result = mapper.map_options({ max_tokens = 1000 }, { thinking = "adaptive" })
                 test.is_nil(result.output_config)
                 test.is_nil(result.thinking)
+            end)
+
+            it("sends the adaptive thinking object without an effort for always at no effort", function()
+                for _, options in ipairs({ { max_tokens = 1000, temperature = 0.3 }, { max_tokens = 1000, temperature = 0.3, thinking_effort = 0 } }) do
+                    local result, adjusted, err = mapper.map_options(options, { thinking = "always" })
+                    test.is_nil(err)
+                    test.eq(result.thinking.type, "adaptive")
+                    test.is_nil(next(result.thinking, next(result.thinking)))
+                    test.is_nil(result.output_config)
+                    test.eq(result.temperature, 0.3)
+                    test.eq(result.max_tokens, 1000)
+                    test.is_nil(next(adjusted))
+                end
+            end)
+
+            it("encodes always with a positive effort exactly as adaptive", function()
+                local always = mapper.map_options({ thinking_effort = 50, max_tokens = 1000 }, { thinking = "always" })
+                local adaptive = mapper.map_options({ thinking_effort = 50, max_tokens = 1000 }, { thinking = "adaptive" })
+                test.eq(always.thinking.type, "adaptive")
+                test.eq(always.output_config.effort, "medium")
+                test.is_true(same(always, adaptive))
             end)
 
             it("should keep the explicit temperature an adaptive-only caller sets", function()

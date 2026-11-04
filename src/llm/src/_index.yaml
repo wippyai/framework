@@ -255,7 +255,7 @@ entries:
                   "accepts": {
                     "type": "object",
                     "properties": {
-                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none", "always"], "description": "always: the model thinks on every request; the driver sends the adaptive thinking object at every effort, 0 leaves the effort at the model default"},
                       "sampling": {"type": "boolean"},
                       "forced_tool_choice": {"type": "boolean"},
                       "structured_output": {"type": "string", "enum": ["native", "tool"]}
@@ -277,7 +277,7 @@ entries:
                         "description": "Deprecated legacy route facts; normalized into top-level accepts by llm",
                         "properties": {
                           "forced_tool_choice": {"type": "boolean", "description": "false: the model rejects forced tool choice ('any' or a tool name)"},
-                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: thinking is always on and thinking_effort maps to an effort level, not a budget"},
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: equals thinking: adaptive; thinking_effort maps to an effort level, not a budget"},
                           "structured_output_mode": {"type": "string", "enum": ["native"], "description": "native: structured output uses the provider's JSON schema output instead of a forced tool; every object in the schema must set additionalProperties: false"}
                         },
                         "additionalProperties": false
@@ -547,7 +547,7 @@ entries:
                   "accepts": {
                     "type": "object",
                     "properties": {
-                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                      "thinking": {"type": "string", "enum": ["adaptive", "budget", "none", "always"], "description": "always: the model thinks on every request; the driver sends the adaptive thinking object at every effort, 0 leaves the effort at the model default"},
                       "sampling": {"type": "boolean"},
                       "forced_tool_choice": {"type": "boolean"},
                       "structured_output": {"type": "string", "enum": ["native", "tool"]}
@@ -567,7 +567,7 @@ entries:
                         "deprecated": true,
                         "description": "Deprecated legacy route facts; normalized into top-level accepts by llm",
                         "properties": {
-                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"]},
+                          "thinking_mode": {"type": "string", "enum": ["adaptive_only"], "description": "adaptive_only: equals thinking: adaptive"},
                           "forced_tool_choice": {"type": "boolean"},
                           "structured_output_mode": {"type": "string", "enum": ["native"]}
                         },
@@ -816,7 +816,7 @@ entries:
                       "properties": {
                         "id": {"type": "string"},
                         "provider_model": {"type": "string"},
-                        "thinking": {"type": "string", "enum": ["adaptive", "budget", "none"]},
+                        "thinking": {"type": "string", "enum": ["adaptive", "budget", "none", "always"], "description": "always: the model thinks on every request; the driver sends the adaptive thinking object at every effort, 0 leaves the effort at the model default"},
                         "sampling": {"type": "boolean"},
                         "forced_tool_choice": {"type": "boolean"},
                         "structured_output": {"type": "string", "enum": ["native", "tool"]},

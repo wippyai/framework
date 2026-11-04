@@ -1,5 +1,46 @@
 local generate_handler = require("generate_handler")
+local claude_client = require("claude_client")
 local json = require("json")
+
+local BINDING_BETA = "thinking-binding-controls-2026-08-01"
+
+local SIGNED_THINKING = { type = "thinking", thinking = "Weighing the routes.", signature = "sig-original-1" }
+local REDACTED_THINKING = { type = "redacted_thinking", data = "opaque-redacted-1" }
+
+local function history_with_thinking(blocks)
+    return {
+        { role = "system", content = "You are the booking agent." },
+        { role = "user", content = { { type = "text", text = "Plan the trip" } } },
+        {
+            role = "function_call",
+            function_call = { id = "call_1", name = "search", arguments = { q = "flights" } },
+            metadata = { thinking_blocks = blocks }
+        },
+        { role = "function_result", function_call_id = "call_1", content = "3 flights" },
+        {
+            role = "assistant",
+            content = { { type = "text", text = "Here is the plan." } },
+            metadata = { thinking_blocks = blocks }
+        },
+        { role = "user", content = { { type = "text", text = "Now book it" } } }
+    }
+end
+
+local function capturing_client(captured, response)
+    return {
+        ENDPOINTS = { MESSAGES = "/v1/messages" },
+        request = function(endpoint, payload, options)
+            captured.payload = payload
+            captured.options = options
+            return response or {
+                content = { { type = "text", text = "Booked." } },
+                stop_reason = "end_turn",
+                usage = { input_tokens = 30, output_tokens = 3 },
+                metadata = {}
+            }
+        end
+    }
+end
 
 local function define_tests()
     describe("Claude Generate Handler", function()
@@ -1477,6 +1518,403 @@ local function define_tests()
                 test.is_true(response.success)
                 assert(response.success)
                 test.eq(response.finish_reason, "stop")
+            end)
+        end)
+
+        describe("Thinking block binding", function()
+            it("binds replayed blocks with drop_block under adaptive thinking", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                local response = generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                test.is_true(response.success)
+                test.eq(captured.payload.thinking.type, "adaptive")
+                test.eq(captured.payload.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(#captured.options.beta_features, 1)
+                test.eq(captured.options.beta_features[1], BINDING_BETA)
+            end)
+
+            it("binds a history whose only replayed block is redacted", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({ REDACTED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                test.eq(captured.payload.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(captured.options.beta_features[1], BINDING_BETA)
+            end)
+
+            it("binds replayed blocks under budget thinking", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-sonnet-4-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    options = { thinking_effort = 50 }
+                })
+
+                test.eq(captured.payload.thinking.type, "enabled")
+                test.not_nil(captured.payload.thinking.budget_tokens)
+                test.eq(captured.payload.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.eq(captured.options.beta_features[1], BINDING_BETA)
+            end)
+
+            it("binds replayed blocks on an always route at the model's default effort", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "always" },
+                    options = {}
+                })
+
+                local thinking = captured.payload.thinking
+                test.eq(thinking.type, "adaptive")
+                test.eq(thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                test.is_nil(captured.payload.output_config)
+                test.eq(#captured.options.beta_features, 1)
+                test.eq(captured.options.beta_features[1], BINDING_BETA)
+            end)
+
+            it("decides the binding from the thinking object as finally sent", function()
+                local captured = {}
+                local real_mapper = generate_handler._mapper
+                local mapped_options: any = nil
+                generate_handler._mapper = setmetatable({
+                    map_options = function(...)
+                        local options, adjusted, options_err = real_mapper.map_options(...)
+                        mapped_options = options
+                        return options, adjusted, options_err
+                    end,
+                    map_tools = function(...)
+                        mapped_options.thinking.type = "between_tools"
+                        return real_mapper.map_tools(...)
+                    end
+                }, { __index = real_mapper })
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-sonnet-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    tools = { { name = "search", description = "Search", schema = { type = "object" } } },
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+                generate_handler._mapper = real_mapper
+
+                test.eq(captured.payload.thinking.type, "between_tools")
+                test.is_nil(captured.payload.thinking.block_binding)
+                test.is_nil(captured.options.beta_features)
+            end)
+
+            it("sends no binding when the history replays no thinking blocks", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({}),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                test.eq(captured.payload.thinking.type, "adaptive")
+                test.is_nil(captured.payload.thinking.block_binding)
+                test.is_nil(captured.options.beta_features)
+            end)
+
+            it("never adds a thinking object to carry the binding when the request sends none", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-4-8",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 0 }
+                })
+
+                test.is_nil(captured.payload.thinking)
+                test.is_nil(captured.options.beta_features)
+                local replayed = captured.payload.messages[2].content[1]
+                test.eq(replayed.type, "thinking")
+                test.eq(replayed.signature, SIGNED_THINKING.signature)
+            end)
+
+            it("never adds a thinking object on a route that declares no thinking", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-sonnet-4-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "none" },
+                    options = {}
+                })
+
+                test.is_nil(captured.payload.thinking)
+                test.is_nil(captured.options.beta_features)
+            end)
+
+            it("replays every thinking block unchanged when the conversation switches models", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-haiku-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING, REDACTED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local messages = captured.payload.messages
+                for _, index in ipairs({ 2, 4 }) do
+                    local content = messages[index].content
+                    test.eq(messages[index].role, "assistant")
+                    test.eq(content[1].type, "thinking")
+                    test.eq(content[1].thinking, SIGNED_THINKING.thinking)
+                    test.eq(content[1].signature, SIGNED_THINKING.signature)
+                    test.eq(content[2].type, "redacted_thinking")
+                    test.eq(content[2].data, REDACTED_THINKING.data)
+                end
+                test.eq(captured.payload.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+            end)
+
+            it("stores response thinking blocks in the shape the API returned them", function()
+                generate_handler._client = capturing_client({}, {
+                    content = {
+                        { type = "thinking", thinking = "Weighing the routes.", signature = "sig-new" },
+                        { type = "redacted_thinking", data = "opaque-new" },
+                        { type = "text", text = "Booked." }
+                    },
+                    stop_reason = "end_turn",
+                    usage = { input_tokens = 30, output_tokens = 3 },
+                    metadata = {}
+                })
+
+                local response = generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({}),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local blocks = response.metadata.thinking_blocks
+                test.eq(#blocks, 2)
+                test.eq(blocks[1].type, "thinking")
+                test.eq(blocks[1].thinking, "Weighing the routes.")
+                test.eq(blocks[1].signature, "sig-new")
+                test.is_nil(blocks[1].data)
+                test.eq(blocks[2].type, "redacted_thinking")
+                test.eq(blocks[2].data, "opaque-new")
+                test.is_nil(blocks[2].thinking)
+                test.is_nil(blocks[2].signature)
+            end)
+
+            it("passes fields other than the stale ones through on replay", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({
+                        { type = "thinking", thinking = "Weighing the routes.", signature = "sig-1", cache_control = { type = "ephemeral" } },
+                        { type = "redacted_thinking", data = "opaque", provenance = "kept" }
+                    }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local content = captured.payload.messages[2].content
+                test.eq(content[1].cache_control.type, "ephemeral")
+                test.eq(content[1].signature, "sig-1")
+                test.eq(content[2].provenance, "kept")
+                test.eq(content[2].data, "opaque")
+            end)
+
+            it("replays stored blocks in the API shape of their type", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+
+                generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({
+                        { type = "thinking", thinking = "Weighing the routes.", data = "stray", signature = "sig-1" },
+                        { type = "redacted_thinking", thinking = "", data = "opaque-old", signature = "" }
+                    }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                for _, index in ipairs({ 2, 4 }) do
+                    local content = captured.payload.messages[index].content
+                    test.eq(content[1].type, "thinking")
+                    test.eq(content[1].thinking, "Weighing the routes.")
+                    test.eq(content[1].signature, "sig-1")
+                    test.is_nil(content[1].data)
+                    test.eq(content[2].type, "redacted_thinking")
+                    test.eq(content[2].data, "opaque-old")
+                    test.is_nil(content[2].thinking)
+                    test.is_nil(content[2].signature)
+                end
+            end)
+
+            it("reports input_transformations from a non-streaming response in metadata", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured, {
+                    content = { { type = "text", text = "Booked." } },
+                    stop_reason = "end_turn",
+                    usage = { input_tokens = 30, output_tokens = 3 },
+                    metadata = {
+                        input_transformations = {
+                            { type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }
+                        }
+                    }
+                })
+
+                local response = generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 }
+                })
+
+                local transformations = response.metadata.input_transformations
+                test.eq(#transformations, 1)
+                test.eq(transformations[1].type, "thinking_dropped")
+                test.eq(transformations[1].path, "messages.1.content.0")
+                test.eq(transformations[1].reason, "prefix_binding_mismatch")
+            end)
+
+            it("reports input_transformations from a streaming response in metadata", function()
+                generate_handler._output = {
+                    streamer = function()
+                        return {
+                            buffer_content = function() end,
+                            send_thinking = function() end,
+                            flush = function() end
+                        }
+                    end,
+                    FINISH_REASON = { TOOL_CALL = "tool_call" }
+                }
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        return { stream = {}, metadata = { request_id = "req_stream" } }
+                    end,
+                    process_stream = function(_, callbacks)
+                        callbacks.on_content("Booked.")
+                        local result = {
+                            content = "Booked.",
+                            finish_reason = "end_turn",
+                            usage = { input_tokens = 30, output_tokens = 3 },
+                            metadata = {
+                                request_id = "req_stream",
+                                input_transformations = {
+                                    { type = "thinking_dropped", path = "messages.3.content.0", reason = "model_binding_mismatch" }
+                                }
+                            }
+                        }
+                        callbacks.on_done(result)
+                        return "Booked.", nil, result
+                    end
+                }
+
+                local response = generate_handler.handler({
+                    model = "claude-opus-5-5",
+                    messages = history_with_thinking({ SIGNED_THINKING }),
+                    accepts = { thinking = "adaptive" },
+                    options = { thinking_effort = 50 },
+                    stream = { reply_to = "test-process", topic = "binding_stream" }
+                })
+
+                test.is_true(response.success)
+                test.eq(response.metadata.request_id, "req_stream")
+                local transformations = response.metadata.input_transformations
+                test.eq(#transformations, 1)
+                test.eq(transformations[1].reason, "model_binding_mismatch")
+            end)
+
+            describe("through the HTTP client", function()
+                local saved = {}
+
+                before_each(function()
+                    saved.ctx = claude_client._ctx
+                    saved.env = claude_client._env
+                    saved.http = claude_client._http_client
+                end)
+
+                after_each(function()
+                    claude_client._ctx = saved.ctx
+                    claude_client._env = saved.env
+                    claude_client._http_client = saved.http
+                end)
+
+                local function send(configured_betas)
+                    local sent = {}
+                    claude_client._ctx = {
+                        all = function()
+                            return { api_key = "test-key", beta_features = configured_betas }
+                        end
+                    }
+                    claude_client._env = { get = function() return nil end }
+                    claude_client._http_client = {
+                        post = function(url, options)
+                            sent.headers = options.headers
+                            sent.body = json.decode(options.body)
+                            return {
+                                status_code = 200,
+                                headers = { ["request-id"] = "req_bound" },
+                                body = json.encode({
+                                    content = { { type = "text", text = "Booked." } },
+                                    stop_reason = "end_turn",
+                                    usage = { input_tokens = 30, output_tokens = 3 },
+                                    input_transformations = {
+                                        { type = "thinking_dropped", path = "messages.1.content.0", reason = "prefix_binding_mismatch" }
+                                    }
+                                })
+                            }
+                        end
+                    }
+                    generate_handler._client = claude_client
+
+                    local response = generate_handler.handler({
+                        model = "claude-opus-5-5",
+                        messages = history_with_thinking({ SIGNED_THINKING }),
+                        accepts = { thinking = "adaptive" },
+                        options = { thinking_effort = 50 }
+                    })
+                    return sent, response
+                end
+
+                it("sends the binding beta once alongside configured betas", function()
+                    local sent, response = send({ "prompt-caching-2024-07-31" })
+
+                    test.eq(sent.headers["anthropic-beta"], "prompt-caching-2024-07-31," .. BINDING_BETA)
+                    test.eq(sent.body.thinking.block_binding.prefix_mismatch_behavior, "drop_block")
+                    test.eq(response.metadata.request_id, "req_bound")
+                    test.eq(response.metadata.input_transformations[1].reason, "prefix_binding_mismatch")
+                end)
+
+                it("sends the binding beta once when it is already configured", function()
+                    local sent = send({ BINDING_BETA, "prompt-caching-2024-07-31" })
+
+                    test.eq(sent.headers["anthropic-beta"], BINDING_BETA .. ",prompt-caching-2024-07-31")
+                end)
             end)
         end)
 
