@@ -51,8 +51,10 @@ local function run_tests()
                 end
                 function executor:async(id, args)
                     local result = self:call(id, args)
+                    local response = channel.new(1)
+                    response:send(true)
                     return {
-                        response = function() return {receive = function() return {}, true end} end,
+                        response = function() return response end,
                         is_canceled = function() return false end,
                         result = function() return {data = function() return result end} end,
                     }

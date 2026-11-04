@@ -227,6 +227,7 @@ function tool_caller.new(): any
     self.wrapper_controls = {}
     self.last_tool_calls = {}
     self.runtime_context_resolver = nil
+    self.result_listener = nil
     return self
 end
 
@@ -270,6 +271,17 @@ function tool_caller:set_runtime_context_resolver(resolver: any?): any
         error("runtime context resolver must be a function or nil")
     end
     self.runtime_context_resolver = resolver
+    return self
+end
+
+-- The listener receives (call_id, result) once per call as soon as that call's
+-- final result is known. It fails by raising or by returning a non-nil second
+-- value; execute then stops the batch and returns nil and the error.
+function tool_caller:set_result_listener(listener: any?): any
+    if listener ~= nil and type(listener) ~= "function" then
+        error("result listener must be a function or nil")
+    end
+    self.result_listener = listener
     return self
 end
 
@@ -633,6 +645,18 @@ end
 
 local CANCELLED_ERROR = "Tool call was cancelled"
 
+type BatchRun = {
+    results: {[any]: ToolExecResult},
+    listener: any?,
+    error: string?,
+}
+
+type PendingCall = {
+    command: any,
+    response: any,
+    tool_call: any,
+}
+
 local function cancelled_result(tool_call: any): any
     return { result = nil, error = CANCELLED_ERROR, cancelled = true, tool_call = tool_call }
 end
@@ -642,61 +666,41 @@ local function cancellation_requested(cancel: any?): boolean
     return not channel.select({ cancel:case_receive(), default = true }).default
 end
 
--- Waits for an async tool call; when `cancel` is ready first the call is cancelled.
-local function await_command(command: any, tool_call: any, cancel: any?, stopped: boolean?): (any, boolean)
-    local response = command:response()
-    local ok
-    local observed_stop = stopped == true
-    if observed_stop then
-        local completed = channel.select({ response:case_receive(), default = true })
-        if completed.default then
-            command:cancel()
-            return cancelled_result(tool_call), true
-        end
-        ok = completed.ok
-    elseif cancel then
-        local selected = channel.select({ response:case_receive(), cancel:case_receive() })
-        if selected.channel == cancel then
-            observed_stop = true
-            local completed = channel.select({ response:case_receive(), default = true })
-            if completed.default then
-                command:cancel()
-                return cancelled_result(tool_call), true
-            end
-            ok = completed.ok
-        else
-            ok = selected.ok
-        end
-    else
-        local _, received = response:receive()
-        ok = received
+-- Some tools return an explicit failure as data rather than the executor's
+-- second return value. Preserve that data, but expose its error through the
+-- same canonical channel used by hosts and after-execute wrappers.
+local function normalize_result(entry: any): any
+    local result = entry.result
+    if not entry.error and type(result) == "table" and result.success == false
+        and type(result.error) == "string" and result.error ~= "" then
+        entry.error = result.error
     end
-
-    if ok and not command:is_canceled() then
-        local payload, err = command:result()
-        if err then
-            return { result = nil, error = err, tool_call = tool_call }, observed_stop
-        end
-        return { result = payload and payload:data() or nil, error = nil, tool_call = tool_call }, observed_stop
-    end
-    local _, err = command:result()
-    return {
-        result = nil,
-        error = "Tool execution failed or was canceled: " .. tostring(err),
-        tool_call = tool_call
-    }, observed_stop
+    return entry
 end
 
-local function execute_single_tool(self: any, call_id: string, tool_call: any, context: table?, cancel: any?): (any, boolean?)
-    if cancellation_requested(cancel) then return cancelled_result(tool_call), true end
-    local registry_id = tool_call.registry_id
-    local args = tool_call.args
-    local tool_context = tool_call.context or {}
+-- Stores the call's final result and delivers it to the listener. A listener
+-- failure sets run.error, which stops the batch.
+local function record_result(run: BatchRun, call_id: any, entry: any)
+    normalize_result(entry)
+    run.results[call_id] = entry
+    if run.listener then
+        local ok, raised, listener_err = pcall(run.listener, call_id, entry)
+        if not ok then
+            run.error = "Tool result listener failed for " .. tostring(call_id) .. ": " .. tostring(raised)
+        elseif listener_err ~= nil then
+            run.error = "Tool result listener failed for " .. tostring(call_id) .. ": " .. tostring(listener_err)
+        end
+    end
+end
 
+-- Resolves arguments, context and the authorised executor for one call.
+-- Returns the executor and decoded arguments, or the call's failure result.
+local function prepare_call(self: any, call_id: any, tool_call: any, context: table?, batch: any?): (any, any, any)
+    local args = tool_call.args
     if type(args) == "string" then
         local parsed_args, err = get_json().decode(args)
         if err then
-            return {
+            return nil, nil, {
                 result = nil,
                 error = "Failed to parse arguments: " .. tostring(err),
                 tool_call = tool_call
@@ -705,196 +709,196 @@ local function execute_single_tool(self: any, call_id: string, tool_call: any, c
         args = parsed_args
     end
 
-    local merged_context = merge_execution_context(tool_context as table?, context, call_id)
+    local merged_context = merge_execution_context(tool_call.context as table?, context, tostring(call_id))
 
-    local runtime_context, runtime_err = resolve_runtime_context(self, call_id, tool_call)
+    local runtime_context, runtime_err = resolve_runtime_context(self, tostring(call_id), tool_call)
     if runtime_err then
-        return {
-            result = nil,
-            error = runtime_err,
-            tool_call = tool_call
-        }
+        return nil, nil, { result = nil, error = runtime_err, tool_call = tool_call }
     end
     for k, v in pairs(runtime_context or {}) do
         merged_context[k] = v
     end
 
-    -- Execute the tool
-    local ctx_executor, executor_err = execution_executor(self, merged_context, tostring(registry_id))
+    local ctx_executor, executor_err = execution_executor(self, merged_context, tostring(tool_call.registry_id), batch)
     if not ctx_executor then
-        return {result = nil, error = executor_err, tool_call = tool_call}
+        return nil, nil, { result = nil, error = executor_err, tool_call = tool_call }
     end
-    if cancel then
-        if cancellation_requested(cancel) then return cancelled_result(tool_call), true end
-        local command, start_err = ctx_executor:async(tostring(registry_id), args)
-        if not command then
-            return { result = nil, error = start_err, tool_call = tool_call }
-        end
-        return await_command(command, tool_call, cancel)
-    end
-    local result, err = ctx_executor:call(tostring(registry_id), args)
+    return ctx_executor, args, nil
+end
 
+-- Starts an async call. Returns the pending call, or the start failure result.
+local function launch_call(ctx_executor: any, tool_call: any, args: any): (PendingCall?, any)
+    local command, start_err = ctx_executor:async(tostring(tool_call.registry_id), args)
+    if not command then
+        return nil, { result = nil, error = start_err, tool_call = tool_call }
+    end
+    return { command = command, response = command:response(), tool_call = tool_call }, nil
+end
+
+local function command_result(pending: PendingCall, ok: boolean?): any
+    local command = pending.command
+    if ok and not command:is_canceled() then
+        local payload, err = command:result()
+        if err then
+            return { result = nil, error = err, tool_call = pending.tool_call }
+        end
+        return { result = payload and payload:data() or nil, error = nil, tool_call = pending.tool_call }
+    end
+    local _, err = command:result()
     return {
-        result = result,
-        error = err,
-        tool_call = tool_call
+        result = nil,
+        error = "Tool execution failed or was canceled: " .. tostring(err),
+        tool_call = pending.tool_call
     }
 end
 
-local function execute_sequential(self: any, context: any, validated_tools: any, cancel: any?): any
-    local results = {}
-    local cancelled = false
-
-    -- Handle nil or empty validated_tools
-    if not validated_tools then
-        return results
+local function cancel_pending(pending: {[any]: PendingCall})
+    for call_id, call in pairs(pending) do
+        call.command:cancel()
+        pending[call_id] = nil
     end
-
-    for call_id, tool_call in pairs(validated_tools) do
-        if not tool_call.valid then
-            results[call_id] = {
-                error = tool_call.error,
-                tool_call = tool_call
-            }
-            goto continue
-        end
-
-        if cancelled then
-            results[call_id] = cancelled_result(tool_call)
-            goto continue
-        end
-
-        local exec_result, observed_stop = execute_single_tool(self, tostring(call_id), tool_call, context as {}?, cancel)
-        results[call_id] = exec_result
-        cancelled = observed_stop == true
-
-        ::continue::
-    end
-
-    return results
 end
 
-local function execute_parallel(self: any, context: table?, validated_tools: any, cancel: any?): any
-    local results = {}
-    local commands = {}
+-- Records every pending call: responses that are already complete keep their
+-- real outcome, the rest are cancelled.
+local function settle_after_stop(run: BatchRun, pending: {[any]: PendingCall})
+    for call_id, call in pairs(pending) do
+        if run.error then break end
+        pending[call_id] = nil
+        local completed = channel.select({ call.response:case_receive(), default = true })
+        if completed.default then
+            call.command:cancel()
+            record_result(run, call_id, cancelled_result(call.tool_call))
+        else
+            record_result(run, call_id, command_result(call, completed.ok))
+        end
+    end
+    cancel_pending(pending)
+end
+
+-- Records pending calls in completion order. Returns true when cancellation was observed.
+local function collect_pending(run: BatchRun, pending: {[any]: PendingCall}, cancel: any?, stopped: boolean): boolean
+    if stopped then
+        settle_after_stop(run, pending)
+        return true
+    end
+    while next(pending) ~= nil and not run.error do
+        local cases = {}
+        for _, call in pairs(pending) do
+            cases[#cases + 1] = call.response:case_receive()
+        end
+        if cancel then cases[#cases + 1] = cancel:case_receive() end
+
+        local selected = channel.select(cases)
+        if cancel and selected.channel == cancel then
+            settle_after_stop(run, pending)
+            return true
+        end
+        for call_id, call in pairs(pending) do
+            if call.response == selected.channel then
+                pending[call_id] = nil
+                record_result(run, call_id, command_result(call, selected.ok))
+                break
+            end
+        end
+    end
+    cancel_pending(pending)
+    return false
+end
+
+local function execute_sequential(self: any, run: BatchRun, context: table?, validated_tools: any, cancel: any?)
+    local cancelled = false
+
+    for call_id, tool_call in pairs(validated_tools) do
+        local entry = nil
+        if not tool_call.valid then
+            entry = { error = tool_call.error, tool_call = tool_call }
+        elseif cancelled or cancellation_requested(cancel) then
+            cancelled = true
+            entry = cancelled_result(tool_call)
+        else
+            local ctx_executor, args, failure = prepare_call(self, call_id, tool_call, context, nil)
+            if failure then
+                entry = failure
+            elseif not cancel then
+                local result, err = ctx_executor:call(tostring(tool_call.registry_id), args)
+                entry = { result = result, error = err, tool_call = tool_call }
+            elseif cancellation_requested(cancel) then
+                cancelled = true
+                entry = cancelled_result(tool_call)
+            else
+                local pending, start_failure = launch_call(ctx_executor, tool_call, args)
+                if start_failure then
+                    entry = start_failure
+                else
+                    cancelled = collect_pending(run, { [call_id] = pending :: PendingCall }, cancel, false)
+                end
+            end
+        end
+
+        if entry then record_result(run, call_id, entry) end
+        if run.error then return end
+    end
+end
+
+local function execute_parallel(self: any, run: BatchRun, context: table?, validated_tools: any, cancel: any?)
+    local pending: {[any]: PendingCall} = {}
     local cancelled = false
     -- Parallel tools share one authority snapshot for this batch. The next
     -- execute() refreshes again; no provider call serializes each launch.
     local batch = {}
 
-    -- Start all valid tools
     for call_id, tool_call in pairs(validated_tools) do
+        local entry = nil
         if not tool_call.valid then
-            results[call_id] = {
-                error = tool_call.error,
-                tool_call = tool_call
-            }
-            goto continue
-        end
-
-        if cancelled or cancellation_requested(cancel) then
+            entry = { error = tool_call.error, tool_call = tool_call }
+        elseif cancelled or cancellation_requested(cancel) then
             cancelled = true
-            results[call_id] = cancelled_result(tool_call)
-            goto continue
-        end
-
-        local registry_id = tool_call.registry_id
-        local args = tool_call.args
-        local tool_context = tool_call.context or {}
-
-        if type(args) == "string" then
-            local parsed_args, err = get_json().decode(args)
-            if err then
-                results[call_id] = {
-                    error = "Failed to parse arguments: " .. tostring(err),
-                    tool_call = tool_call
-                }
-                goto continue
+            entry = cancelled_result(tool_call)
+        else
+            local ctx_executor, args, failure = prepare_call(self, call_id, tool_call, context, batch)
+            if failure then
+                entry = failure
+            elseif cancellation_requested(cancel) then
+                cancelled = true
+                entry = cancelled_result(tool_call)
+            else
+                local call, start_failure = launch_call(ctx_executor, tool_call, args)
+                if start_failure then
+                    entry = start_failure
+                else
+                    pending[call_id] = call :: PendingCall
+                end
             end
-            args = parsed_args
         end
 
-        local merged_context = merge_execution_context(tool_context as table?, context, tostring(call_id))
-
-        local runtime_context, runtime_err = resolve_runtime_context(self, tostring(call_id), tool_call)
-        if runtime_err then
-            results[call_id] = {
-                result = nil,
-                error = runtime_err,
-                tool_call = tool_call
-            }
-            goto continue
+        if entry then record_result(run, call_id, entry) end
+        if run.error then
+            cancel_pending(pending)
+            return
         end
-        for k, v in pairs(runtime_context or {}) do
-            merged_context[k] = v
-        end
-
-        -- Start async execution
-        local ctx_executor, executor_err = execution_executor(self, merged_context, tostring(registry_id), batch)
-        if not ctx_executor then
-            results[call_id] = {result = nil, error = executor_err, tool_call = tool_call}
-            goto continue
-        end
-        if cancellation_requested(cancel) then
-            cancelled = true
-            results[call_id] = cancelled_result(tool_call)
-            goto continue
-        end
-        local command, start_err = ctx_executor:async(tostring(registry_id), args)
-        if not command then
-            results[call_id] = {
-                result = nil,
-                error = start_err,
-                tool_call = tool_call
-            }
-            goto continue
-        end
-
-        commands[call_id] = {
-            command = command,
-            tool_call = tool_call
-        }
-
-        ::continue::
     end
 
-    -- Preserve completed outcomes even after Stop; cancel only pending peers.
-    for call_id, cmd_info in pairs(commands) do
-        local result, observed_stop = await_command(cmd_info.command, cmd_info.tool_call, cancel, cancelled)
-        results[call_id] = result
-        cancelled = cancelled or observed_stop == true
-    end
-
-    return results
+    collect_pending(run, pending, cancel, cancelled)
 end
 
 -- `cancel`, when given, is a channel whose closing cancels the in-flight calls;
--- each cancelled call reports `cancelled = true`.
-function tool_caller:execute(context: any, validated_tools: any, cancel: any?): any
+-- each cancelled call reports `cancelled = true`. Returns the results keyed by
+-- call ID, or nil and an error when the result listener fails.
+function tool_caller:execute(context: any, validated_tools: any, cancel: any?): (any, string?)
     self.wrapper_controls = {}
-    -- Handle nil validated_tools
-    if not validated_tools then
-        validated_tools = {}
-    end
+    local run: BatchRun = { results = {}, listener = self.result_listener, error = nil }
 
-    local results
     if self.strategy == STRATEGY.PARALLEL then
-        results = execute_parallel(self :: any, context as table?, validated_tools, cancel)
+        execute_parallel(self :: any, run, context as table?, validated_tools or {}, cancel)
     else
-        results = execute_sequential(self :: any, context, validated_tools, cancel)
+        execute_sequential(self :: any, run, context as table?, validated_tools or {}, cancel)
+    end
+    if run.error then
+        return nil, run.error
     end
 
-    -- Some tools return an explicit failure as data rather than the executor's
-    -- second return value. Preserve that data, but expose its error through the
-    -- same canonical channel used by hosts and after-execute wrappers.
-    for _, entry in pairs(results) do
-        local result = entry.result
-        if not entry.error and type(result) == "table" and result.success == false
-            and type(result.error) == "string" and result.error ~= "" then
-            entry.error = result.error
-        end
-    end
-
+    local results = run.results
     local after_payload: ToolWrapperApplyRequest = {
         phase = AFTER_EXECUTE :: ToolWrapperPhase,
         host = self.wrapper_context.host,
