@@ -4,6 +4,7 @@ local registry = require("registry")
 local llm = require("llm")
 local prompt = require("prompt")
 local providers = require("providers")
+local thinking = require("thinking")
 local claude_mapper = require("claude_mapper")
 local claude_client = require("claude_client")
 local claude_generate = require("claude_generate")
@@ -513,6 +514,89 @@ local function define_tests()
                     end
                 end)
             end
+
+            -- Rows a host stored from a response whose calls it discarded.
+            local function rows_without_calls(result, content): any
+                local rows = stored_rows(result)
+                local kept = { rows[1], rows[2], { role = "user", content = text("next") } }
+                if content then kept[2].content = content end
+                return kept
+            end
+
+            local function assistant_order(path, payload)
+                for _, message in ipairs(payload.messages) do
+                    if message.role == "assistant" then return path.order(message) end
+                end
+                return {}
+            end
+
+            for _, path in ipairs(EXTRACTION_PATHS) do
+                it("drops thinking behind a discarded call in a stored row: text, thinking, call: " .. path.name, function()
+                    local result: any = path.extract({ "A", "s1", { "c1" } })
+                    assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "A" })
+                end)
+
+                it("drops thinking behind a discarded call in a stored row: thinking, call: " .. path.name, function()
+                    local result: any = path.extract({ "s1", { "c1" } })
+                    assert_order(assistant_order(path, path.replay(rows_without_calls(result))), {})
+                end)
+
+                it("keeps thinking in front of the last visible text of a stored row: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "A", "s2", { "c1" } })
+                    assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "s1", "A" })
+                end)
+
+                it("drops thinking behind a discarded call when the host dropped the text too: " .. path.name, function()
+                    local result: any = path.extract({ "A", "s1", { "c1" } })
+                    for _, content in ipairs({ {}, text(""), text(" ") }) do
+                        assert_order(assistant_order(path, path.replay(rows_without_calls(result, content))), {})
+                    end
+                end)
+
+                it("keeps the calls that remain and drops thinking behind the last of them: " .. path.name, function()
+                    local result: any = path.extract({ "s1", { "c1" }, "s2", { "c2" } })
+                    local rows = stored_rows(result)
+                    local kept = {}
+                    for _, row in ipairs(rows) do
+                        local id = row.function_call and row.function_call.id or row.function_call_id
+                        if id ~= "c2" then table.insert(kept, row) end
+                    end
+                    assert_order(assistant_order(path, path.replay(kept)), { "s1", "c1" })
+                end)
+
+                it("keeps a response that itself ended in thinking: " .. path.name, function()
+                    local result: any = path.extract({ "A", "s1" })
+                    assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "A", "s1" })
+                end)
+
+                it("finds a call rendered after a result of the same response: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "A", { "c1" }, "s2", { "c2" } })
+                    local rows = stored_rows(result)
+                    local paired = { rows[1], rows[2], rows[3], rows[5], rows[4], rows[6] }
+                    local payload = path.replay(paired)
+                    local signatures = table.concat(assistant_order(path, payload), "|")
+                    test.contains(signatures, "s2")
+                end)
+            end
+
+            it("treats a streamed call that never closed as discarded", function()
+                local events = claude_stream_events(claude_blocks({ "A", "s1", { "c1" } }))
+                local kept = {}
+                for _, event in ipairs(events) do
+                    if not (event[1] == "content_block_stop" and event[2].index == 2) then
+                        table.insert(kept, event)
+                    end
+                end
+                local _, _, stream = claude_client.process_stream(sse_stream(kept), {})
+                local result: any = claude_mapper.format_streaming_response(stream, {}, stream.usage, "max_tokens", stream.metadata)
+                test.eq(#result.result.tool_calls, 0)
+                local payload = claude_replay({ { role = "user", content = text("q") },
+                    { role = "assistant", content = text(result.result.content), metadata = {
+                        thinking_blocks = result.metadata.thinking_blocks,
+                        content_positions = result.metadata.content_positions } },
+                    { role = "user", content = text("next") } })
+                assert_order(claude_order(payload.messages[2]), { "A" })
+            end)
 
             it("sends no position field on the wire", function()
                 local result = claude_mapper.format_success_response({ content = CLAUDE_RESPONSE, stop_reason = "tool_use",
@@ -1056,6 +1140,45 @@ local function define_tests()
                 test.is_true(ok)
                 test.is_nil(err)
                 test.is_nil(result.messages[2].metadata.thinking_blocks)
+            end)
+        end)
+
+        describe("discard_calls", function()
+            it("removes calls and the thinking behind the last visible text", function()
+                local metadata: any = {
+                    thinking_blocks = { { type = "thinking", signature = "s1", position = 1 },
+                        { type = "thinking", signature = "s2", position = 3 } },
+                    content_positions = { { type = "text", position = 2, text = "A" },
+                        { type = "tool_use", position = 4, id = "c1" } },
+                }
+                thinking.discard_calls(metadata, "A")
+                test.eq(#metadata.thinking_blocks, 1)
+                test.eq(metadata.thinking_blocks[1].signature, "s1")
+                test.eq(#metadata.content_positions, 1)
+                test.eq(metadata.content_positions[1].type, "text")
+            end)
+
+            it("clears thinking of a plain-order response with no visible text", function()
+                local metadata: any = { thinking_blocks = { signed("s1") } }
+                thinking.discard_calls(metadata, " ")
+                test.eq(#metadata.thinking_blocks, 0)
+            end)
+
+            it("keeps thinking of a plain-order response with visible text", function()
+                local metadata: any = { thinking_blocks = { signed("s1") } }
+                thinking.discard_calls(metadata, "A")
+                test.eq(#metadata.thinking_blocks, 1)
+            end)
+
+            it("leaves no layout when no visible text remains", function()
+                local metadata: any = {
+                    thinking_blocks = { { type = "thinking", signature = "s1", position = 2 } },
+                    content_positions = { { type = "text", position = 1, text = " " },
+                        { type = "tool_use", position = 3, id = "c1" } },
+                }
+                thinking.discard_calls(metadata, " ")
+                test.eq(#metadata.thinking_blocks, 0)
+                test.is_nil(metadata.content_positions)
             end)
         end)
 

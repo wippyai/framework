@@ -365,6 +365,10 @@ retry. User content
 assistant turn with no tool result in between ends that turn; ordinary system
 messages, which drivers hoist into the top-level system, do not.
 
+A truncated step (`truncation_reason = "tool_calls"`) discards its calls, so its
+`metadata` drops them from `content_positions` along with the thinking that led to
+them. Rows persisted from it replay as a turn that ends in text, or as nothing.
+
 Stripping works on copies: the host's message tables keep their blocks, and the
 stored fingerprint never reaches the provider. When a stale turn still has a
 function call without a result, the step fails with that error and sends no

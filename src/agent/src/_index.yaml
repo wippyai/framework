@@ -55,6 +55,7 @@ entries:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
       output: wippy.llm:output
+      thinking: wippy.llm.util:thinking
       canonical: wippy.agent:canonical
 
   # wippy.agent:canonical

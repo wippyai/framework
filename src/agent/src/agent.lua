@@ -5,6 +5,7 @@ local funcs = require("funcs")
 local output = require("output")
 local hash = require("hash")
 local canonical = require("canonical")
+local thinking = require("thinking")
 
 type UnifiedTool = {
     name: string,
@@ -808,6 +809,9 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         -- to distinguish a tool retry from an empty no-tool response.
         response.truncation_reason = result.tool_calls and #result.tool_calls > 0
             and "tool_calls" or "empty_output"
+        if response.truncation_reason == "tool_calls" and type(response.metadata) == "table" then
+            thinking.discard_calls(response.metadata, response.result)
+        end
         return response
     end
 

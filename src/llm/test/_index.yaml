@@ -269,6 +269,7 @@ entries:
       llm: wippy.llm:llm
       prompt: wippy.llm:prompt
       providers: wippy.llm.discovery:providers
+      thinking: wippy.llm.util:thinking
       claude_mapper: wippy.llm.claude:mapper
       claude_client: wippy.llm.claude:client
       claude_generate: wippy.llm.claude:generate

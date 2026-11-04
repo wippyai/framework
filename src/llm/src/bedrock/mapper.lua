@@ -284,7 +284,7 @@ function mapper.map_messages(contract_messages)
     end
 
     contract_messages = prompt.without_blank_text(contract_messages)
-    local order = thinking.new_turn_order()
+    local order = thinking.new_turn_order(contract_messages)
     local stale_thinking = {}
 
     local function add_reasoning_blocks(content_blocks, msg)
@@ -292,7 +292,7 @@ function mapper.map_messages(contract_messages)
             return
         end
         for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-            local reasoning = reasoning_content(thinking_block)
+            local reasoning = order.keeps_thinking(thinking_block) and reasoning_content(thinking_block)
             if reasoning then
                 order.place_thinking(reasoning, thinking_block)
                 if msg.metadata.stale_thinking then
@@ -812,8 +812,9 @@ function mapper.format_success_response(converse_response, name_to_id_map)
         tokens.thinking_tokens = approximate_token_count(thinking_content)
     end
 
-    -- If fallback parser recovered tool calls from text, treat it as tool_call stop
-    if #extracted.tool_calls > 0 and finish_reason ~= "tool_call" then
+    -- Tool calls make a tool_call stop (the fallback parser may have recovered them
+    -- from text), except a length stop: its last call can be incomplete.
+    if #extracted.tool_calls > 0 and finish_reason ~= "tool_call" and finish_reason ~= output.FINISH_REASON.LENGTH then
         finish_reason = "tool_call"
     end
 

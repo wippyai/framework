@@ -408,7 +408,7 @@ function mapper.map_messages(contract_messages)
 
     contract_messages = prompt.without_blank_text(contract_messages)
     local tool_id = tool_id_mapper(contract_messages)
-    local order = thinking.new_turn_order()
+    local order = thinking.new_turn_order(contract_messages)
     local stale_thinking = {}
 
     local function add_thinking_blocks(content_blocks, msg)
@@ -416,12 +416,14 @@ function mapper.map_messages(contract_messages)
             return
         end
         for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-            local wire_block = thinking_block_shape(thinking_block) or thinking_block
-            order.place_thinking(wire_block, thinking_block)
-            if msg.metadata.stale_thinking then
-                stale_thinking[wire_block] = true
+            if order.keeps_thinking(thinking_block) then
+                local wire_block = thinking_block_shape(thinking_block) or thinking_block
+                order.place_thinking(wire_block, thinking_block)
+                if msg.metadata.stale_thinking then
+                    stale_thinking[wire_block] = true
+                end
+                table.insert(content_blocks, wire_block)
             end
-            table.insert(content_blocks, wire_block)
         end
     end
 

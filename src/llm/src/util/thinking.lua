@@ -103,12 +103,58 @@ local function without_outer_whitespace(text: string): string
     return text:match("^%s*(.-)%s*$") :: string
 end
 
+-- The position of the last block that still exists when calls outside `calls` are
+-- gone, 0 when none does, or nil when the layout misses no call. Thinking behind that
+-- block led to a call that no longer exists: the turn would end in thinking the
+-- response did not end in, so it cannot be replayed.
+local function last_standing(positions: {any}, calls: {[any]: boolean}): number?
+    local last, missing = 0, false
+    for _, entry in ipairs(positions) do
+        if entry.type == "tool_use" and not calls[entry.id] then
+            missing = true
+        elseif entry.type == "tool_use" or not prompt.is_blank(entry.text) then
+            last = math.max(last, entry.position)
+        end
+    end
+    return missing and last or nil
+end
+
+-- Takes the calls out of a response's metadata when the caller discards them, along
+-- with the thinking that led to them. `text` is the response's text.
+function thinking.discard_calls(metadata: any, text: any)
+    local blocks = metadata.thinking_blocks
+    local positions = metadata.content_positions
+    if type(positions) ~= "table" then
+        if prompt.is_blank(text) then
+            metadata.thinking_blocks = {}
+        end
+        return
+    end
+
+    local limit = last_standing(positions, {}) or math.huge
+    local kept_blocks = {}
+    for _, block in ipairs(type(blocks) == "table" and blocks or {}) do
+        if block.position and block.position < limit then
+            table.insert(kept_blocks, block)
+        end
+    end
+    local kept_positions = {}
+    for _, entry in ipairs(positions) do
+        if entry.type == "text" then
+            table.insert(kept_positions, entry)
+        end
+    end
+    metadata.thinking_blocks = kept_blocks
+    metadata.content_positions = limit > 0 and kept_positions or nil
+end
+
 -- A row's recorded layout, or nil when it has none or its text is no longer the
 -- text the layout recorded: the row is what the host stands behind. Providers
 -- compare neither whitespace-only text blocks nor the outer whitespace of a block, so
 -- the layout holds only visible text, and whitespace a host stripped from the row's
--- ends is not an edit.
-local function read_layout(msg: any): any?
+-- ends is not an edit. A call the conversation no longer holds leaves the layout, and
+-- thinking_limit bounds the thinking that can still be replayed.
+local function read_layout(msg: any, calls: {[any]: boolean}): any?
     local positions = type(msg.metadata) == "table" and msg.metadata.content_positions or nil
     if type(positions) ~= "table" then
         return nil
@@ -122,9 +168,12 @@ local function read_layout(msg: any): any?
             end
             text = text .. entry.text
         elseif entry.type == "tool_use" then
-            layout.calls[entry.id] = entry.position
+            if calls[entry.id] then
+                layout.calls[entry.id] = entry.position
+            end
         end
     end
+    layout.thinking_limit = last_standing(positions, calls)
     if without_outer_whitespace(text) ~= without_outer_whitespace(row_text(msg.content)) then
         return nil
     end
@@ -133,20 +182,36 @@ end
 
 -- Tracks the wire blocks of assistant rows against their recorded layouts and
 -- rebuilds response order once the rows are consolidated into one turn.
-function thinking.new_turn_order()
+function thinking.new_turn_order(messages: {any})
     local placed: {[any]: any} = {}
     local active: any = nil
     local order = {}
 
+    local calls: {[any]: boolean} = {}
+    for _, msg in ipairs(messages) do
+        if msg.function_call then
+            calls[msg.function_call.id] = true
+        elseif type(msg.content) == "table" then
+            for _, part in ipairs(msg.content) do
+                if part.type == "function_call" then calls[part.id] = true end
+            end
+        end
+    end
+
     -- Returns the row's own layout, whose text blocks replace the row's text.
     function order.enter_row(msg: any): any?
-        local layout = read_layout(msg)
+        local layout = read_layout(msg, calls)
         if layout then active = layout end
         return layout
     end
 
     function order.leave_turn()
         active = nil
+    end
+
+    function order.keeps_thinking(stored_block: any): boolean
+        local limit = active and active.thinking_limit
+        return not (limit and stored_block.position and stored_block.position > limit)
     end
 
     function order.place_thinking(wire_block: any, stored_block: any)

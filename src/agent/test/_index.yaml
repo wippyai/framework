@@ -114,6 +114,10 @@ entries:
       llm: wippy.llm:llm
       claude_generate: wippy.llm.claude:generate
       bedrock_generate: wippy.llm.bedrock:generate
+      claude_mapper: wippy.llm.claude:mapper
+      claude_client: wippy.llm.claude:client
+      bedrock_mapper: wippy.llm.bedrock:mapper
+      bedrock_client: wippy.llm.bedrock:client
       test: wippy.test:test
     method: run_tests
 
