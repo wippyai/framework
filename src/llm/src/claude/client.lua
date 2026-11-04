@@ -165,7 +165,10 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
 
     local config = resolve_config()
     local timeout, timeout_err = transport.resolve_timeout(options.timeout, "options.timeout", config.timeout, config.timeout_error)
-    if timeout_err then return nil, timeout_err end
+    if timeout_err then
+        if options.stream then timeout_err.stream_started = false end
+        return nil, timeout_err
+    end
 
     if not config.api_key then
         return nil, {

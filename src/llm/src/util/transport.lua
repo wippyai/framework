@@ -18,6 +18,7 @@ type HttpResponse = {
 type RequestError = {
     status_code: number,
     message: string,
+    stream_started: boolean?,
     error: any?,
     error_type: string?,
     type: string?,

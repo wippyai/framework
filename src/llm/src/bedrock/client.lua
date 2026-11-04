@@ -113,7 +113,10 @@ local function signed_request(path, payload, options)
     options = options or {}
     local config = resolve_config()
     local timeout, timeout_err = transport.resolve_timeout(options.timeout, "options.timeout", config.timeout, config.timeout_error)
-    if timeout_err then return nil, timeout_err end
+    if timeout_err then
+        if options.stream then timeout_err.stream_started = false end
+        return nil, timeout_err
+    end
 
     local creds, creds_err = bedrock_client._credentials.resolve()
     if not creds then

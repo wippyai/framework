@@ -33,12 +33,17 @@ local function define_tests()
             object[key] = value
         end
 
-        local function setup(driver, operation)
+        local function setup(driver, operation, backup)
             local context = {}
             local environment = {}
             local configured = {}
             local route = { id = "timeout-provider", provider_model = "wire-model" }
+            local routes = { route }
+            if backup then
+                routes[2] = { id = "timeout-provider", provider_model = "backup-model" }
+            end
             local sent
+            local client_error
             local calls = 0
             local handler = operation == "structured" and driver.structured or driver.generate
             local streaming = operation == "streaming"
@@ -48,7 +53,8 @@ local function define_tests()
             replace(llm, "_providers", providers)
             replace(llm, "_usage_tracker", false)
             replace(llm, "_model_resolver", { resolve = function()
-                return { name = "timeout-model", providers = { route } }
+                return { name = "timeout-model", providers = routes,
+                    fallback_on = backup and backup.fallback_on }
             end })
             replace(providers, "_registry", { get = function(id)
                 if id == "timeout-provider" then
@@ -63,7 +69,12 @@ local function define_tests()
                     with_context = function(self, values) context = values; return self end,
                     open = function()
                         return {
-                            generate = function(_, args) return handler.handler(args) end,
+                            generate = function(_, args)
+                                if args.model == "backup-model" then
+                                    return { success = true, result = { content = "backup" }, metadata = {} }
+                                end
+                                return handler.handler(args)
+                            end,
                             structured_output = function(_, args) return handler.handler(args) end,
                         }
                     end
@@ -106,6 +117,13 @@ local function define_tests()
                     return { access_key = "test-access", secret_key = "test-secret" }
                 end })
             end
+            local method = driver.name == "Bedrock" and (streaming and "converse_stream" or "converse") or "request"
+            local request = driver.client[method]
+            replace(driver.client, method, function(...)
+                local response, err = request(...)
+                client_error = driver.google and response or err
+                return response, err
+            end)
 
             return function(case, deadline)
                 configured = { api_key = "test-key", base_url = "https://timeout.invalid",
@@ -114,7 +132,7 @@ local function define_tests()
                     [driver.env] = case.env ~= nil and tostring(case.env) or nil }
                 route.context = { timeout = case.route }
                 route.options = { timeout = case.route_option }
-                sent, calls = nil, 0
+                sent, calls, client_error = nil, 0, nil
                 local options = { model = "timeout-model", timeout = case.option, retry = false,
                     deadline_ms = deadline,
                     stream = streaming and { reply_to = "timeout-test", topic = "timeout" } or nil }
@@ -126,9 +144,11 @@ local function define_tests()
                 else
                     response, err = llm.generate("Hello", options)
                 end
-                test.is_nil(response)
-                test.not_nil(err)
-                return sent, calls, err
+                if not backup then
+                    test.is_nil(response)
+                    test.not_nil(err)
+                end
+                return sent, calls, err, response, client_error
             end
         end
 
@@ -145,6 +165,26 @@ local function define_tests()
         end
 
         for _, driver in ipairs(drivers) do
+            it(driver.name .. " switches streaming routes on an invalid timeout only with fallback_on", function()
+                local backup = {}
+                local call = setup(driver, "streaming", backup)
+                local _, calls, err, response = call({ route = "soon" })
+                test.is_nil(response)
+                test.eq(err:details().error_type, "invalid_request")
+                test.contains(err:message(), "soon")
+                test.contains(err:message(), "context.timeout")
+                test.eq(calls, 0)
+
+                backup.fallback_on = { "invalid_request" }
+                _, calls, err, response = call({ route = "soon" })
+                test.is_nil(err)
+                test.eq(response.result, "backup")
+                test.eq(response.metadata.route.provider_model, "backup-model")
+                test.eq(#response.metadata.fallbacks, 1)
+                test.eq(response.metadata.fallbacks[1].error_type, "invalid_request")
+                test.eq(calls, 0)
+            end)
+
             for _, operation in ipairs({ "generate", "streaming", "structured" }) do
                 local name = driver.name .. " " .. operation
                 for _, value in ipairs({ 90, "90", "20m" }) do
@@ -175,11 +215,14 @@ local function define_tests()
                     it(name .. " rejects soon from " .. level .. " before HTTP", function()
                         local call = setup(driver, operation)
                         for _, deadline in ipairs({ false, 1800000 }) do
-                            local _, calls, err = call(precedence_case(level, "soon"), deadline or nil)
+                            local _, calls, err, _, client_error = call(precedence_case(level, "soon"), deadline or nil)
                             test.eq(err:details().error_type, "invalid_request")
                             test.contains(err:message(), "soon")
                             test.contains(err:message(), sources[level] or driver.env)
                             test.eq(calls, 0)
+                            if operation == "streaming" then
+                                test.eq(client_error.stream_started, false)
+                            end
                         end
                     end)
                 end

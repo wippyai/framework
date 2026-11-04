@@ -22,7 +22,10 @@ function generative_ai_client.request(contract_args)
     if timeout == nil and timeout_err == nil then
         timeout, timeout_err = generative_ai_client._config.get_generative_ai_timeout()
     end
-    if timeout_err then return timeout_err end
+    if timeout_err then
+        if contract_args.options.stream then timeout_err.stream_started = false end
+        return timeout_err
+    end
 
     local options = {
         headers = {

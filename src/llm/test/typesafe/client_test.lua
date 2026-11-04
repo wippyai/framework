@@ -194,6 +194,20 @@ local function define_tests()
                 test.is_nil(err)
             end)
 
+            it("marks streaming timeout validation failures as not started", function()
+                for _, source in ipairs({ "context", "options" }) do
+                    with_key({ timeout = source == "context" and "soon" or nil })
+                    typesafe_client._http_client = { post = function() error("unexpected HTTP request") end }
+                    local response, err = typesafe_client.request("/systemone", {}, {
+                        stream = true, timeout = source == "options" and "soon" or nil
+                    })
+                    test.is_nil(response)
+                    test.eq(err.error_type, "invalid_request")
+                    test.contains(err.message, "soon")
+                    test.eq(err.stream_started, false)
+                end
+            end)
+
             it("should merge context headers into the request", function()
                 with_key({ headers = { ["X-Tenant"] = "acme" } })
 
