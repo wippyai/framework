@@ -1024,7 +1024,7 @@ local function get_canonical_tool_name(tool_id: any, tool_def: any): any
     return name
 end
 
-local function process_traits(raw_spec: any, config: CompilerConfig): (any, any, any, any, any, any, any, any, any, any, any)
+local function process_traits(raw_spec: any, config: CompilerConfig): (any, string?)
     local additional_prompts = {}
     local additional_tools = {}
     local trait_contexts = {}
@@ -1037,8 +1037,24 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
     local agent_options = {}
     local recall_defaults = {}
 
+    local function collected()
+        return {
+            prompts = additional_prompts,
+            tools = additional_tools,
+            contexts = trait_contexts,
+            tool_schemas = trait_tool_schemas,
+            delegates = additional_delegates,
+            prompt_funcs = prompt_funcs,
+            step_funcs = step_funcs,
+            tool_wrappers = tool_wrappers,
+            bindings = bindings,
+            agent_options = agent_options,
+            recall_defaults = recall_defaults,
+        }
+    end
+
     if not raw_spec.traits or #raw_spec.traits == 0 then
-        return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, agent_options, recall_defaults
+        return collected(), nil
     end
 
     for i, trait_config in ipairs(raw_spec.traits) do
@@ -1130,8 +1146,12 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
                 trait_def.prompt,
                 merged_context
             )
+            if err then
+                return nil, "trait " .. trait_id .. " build function " .. tostring(trait_def.build_func_id)
+                    .. " failed: " .. tostring(err)
+            end
 
-            if not err and contribution then
+            if contribution then
                 if contribution.prompt then
                     table.insert(additional_prompts, contribution.prompt)
                 end
@@ -1190,7 +1210,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, any,
         end)
     end
 
-    return additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, agent_options, recall_defaults
+    return collected(), nil
 end
 
 local function process_tools(raw_spec: any, additional_tools: any, trait_contexts: any, trait_tool_schemas: any, config: CompilerConfig): any
@@ -1406,8 +1426,15 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
 
     local config = merge_config(user_config)
 
-    local additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates, prompt_funcs, step_funcs, tool_wrappers, bindings, trait_agent_options, recall_defaults = process_traits(
-        raw_spec, config)
+    local traits, traits_err = process_traits(raw_spec, config)
+    if not traits then
+        return nil, traits_err
+    end
+    local additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates =
+        traits.prompts, traits.tools, traits.contexts, traits.tool_schemas, traits.delegates
+    local prompt_funcs, step_funcs, tool_wrappers, bindings = traits.prompt_funcs, traits.step_funcs,
+        traits.tool_wrappers, traits.bindings
+    local trait_agent_options, recall_defaults = traits.agent_options, traits.recall_defaults
 
     local memory_contract = raw_spec.memory_contract
     if memory_contract == nil then

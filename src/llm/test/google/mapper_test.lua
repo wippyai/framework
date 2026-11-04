@@ -100,6 +100,49 @@ local function define_tests()
             end)
         end)
 
+        describe("Positional notes", function()
+            it("renders a positional system note as user text in place", function()
+                local function build(note_text)
+                    return mapper.map_messages({
+                        { role = "system", content = { { type = "text", text = "Base" } } },
+                        { role = "user", content = { { type = "text", text = "Question" } } },
+                        { role = "system", content = { { type = "text", text = note_text } },
+                            metadata = { preserve_position = true } },
+                        { role = "user", content = { { type = "text", text = "Follow-up" } } },
+                    }, { model = "gemini-2.5-pro" })
+                end
+                local first_contents, first_system = build("Monday 09:00")
+                local second_contents, second_system = build("Tuesday 10:30")
+                for _, system in ipairs({ first_system, second_system }) do
+                    tests.eq(#system, 1)
+                    tests.eq(system[1].text, "Base")
+                end
+                for _, contents in ipairs({ first_contents, second_contents }) do
+                    tests.eq(#contents, 3)
+                    tests.eq(contents[1].parts[1].text, "Question")
+                    tests.eq(contents[2].role, "user")
+                    tests.eq(contents[3].parts[1].text, "Follow-up")
+                end
+                tests.eq(first_contents[2].parts[1].text, "Monday 09:00")
+                tests.eq(second_contents[2].parts[1].text, "Tuesday 10:30")
+            end)
+
+            it("leaves the caller's message metadata intact for later routes", function()
+                local note = { role = "system", content = { { type = "text", text = "Note" } },
+                    metadata = { preserve_position = true } }
+                local answer = { role = "assistant", content = { { type = "text", text = "Answer" } },
+                    metadata = { thinking_blocks = { { type = "thinking", thinking = "t", signature = "s" } } } }
+                mapper.map_messages({
+                    { role = "user", content = { { type = "text", text = "Question" } } },
+                    answer,
+                    { role = "user", content = { { type = "text", text = "Again" } } },
+                    note,
+                }, { model = "gemini-2.5-pro" })
+                tests.is_true(note.metadata.preserve_position)
+                tests.eq(#answer.metadata.thinking_blocks, 1)
+            end)
+        end)
+
         describe("Message Mapping", function()
             it("keeps tool-only rounds separate while cache markers preserve parallel pairing", function()
                 local mapped = mapper.map_messages({

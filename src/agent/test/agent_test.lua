@@ -980,7 +980,65 @@ local function define_tests()
                 test.not_nil(result.memory_recall)
                 test.not_nil(result.memory_recall.memory_ids)
                 test.gt(result.memory_recall.count, 0)
-                test.not_nil(result.memory_prompt)
+                test.eq(#result.context_notes, 1)
+                local note = result.context_notes[1]
+                test.eq(note.role, prompt.ROLE.DEVELOPER)
+                test.is_true(note.metadata.preserve_position)
+                test.eq(note.metadata.memory_ids, result.memory_recall.memory_ids)
+                test.is_nil(result.memory_prompt)
+            end)
+
+            it("recalls without any host option and returns the note on every result", function()
+                local replies = {
+                    { result = "ok", finish_reason = "stop" },
+                    { result = "partial", finish_reason = "length",
+                        tool_calls = { { id = "call_1", name = "calculator", arguments = {} } } },
+                    { result = "partial", finish_reason = "cancelled" },
+                }
+                for _, reply in ipairs(replies) do
+                    local sent: any = nil
+                    agent._llm = {
+                        generate = function(messages)
+                            sent = messages
+                            return reply
+                        end
+                    }
+                    local test_agent = agent.new(compiled_spec_with_memory)
+                    local prompt_builder = prompt.new()
+                    prompt_builder:add_user("Hello")
+                    prompt_builder:add_assistant("Hi there!")
+                    prompt_builder:add_user("Can you help me calculate something?")
+
+                    local result = assert(test_agent:step(prompt_builder))
+
+                    test.eq(#result.context_notes, 1, reply.finish_reason)
+                    test.eq(sent[#sent], result.context_notes[1], reply.finish_reason)
+                    test.is_true(result.context_notes[1].metadata.preserve_position, reply.finish_reason)
+                end
+            end)
+
+            it("sends the recall note at the conversation tail where the host persists it", function()
+                local sent: any = nil
+                agent._llm = {
+                    generate = function(messages)
+                        sent = messages
+                        return { result = "ok", finish_reason = "stop" }
+                    end
+                }
+                local test_agent = agent.new(compiled_spec_with_memory)
+                local prompt_builder = prompt.new()
+                prompt_builder:add_user("Hello")
+                prompt_builder:add_assistant("Hi there!")
+                prompt_builder:add_user("Can you help me calculate something?")
+
+                local result = test_agent:step(prompt_builder)
+
+                test.eq(#result.context_notes, 1)
+                local n = #sent
+                test.eq(sent[n], result.context_notes[1])
+                test.eq(sent[n - 1].role, prompt.ROLE.CACHE_MARKER)
+                test.eq(sent[n - 1].marker_id, "conversation_tail")
+                test.eq(sent[n - 2].role, prompt.ROLE.USER)
             end)
 
             it("should skip memory recall when conversation is too short", function()
@@ -994,7 +1052,7 @@ local function define_tests()
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should skip memory recall when disabled", function()
@@ -1013,7 +1071,7 @@ local function define_tests()
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should handle memory contract errors gracefully", function()
@@ -1077,7 +1135,7 @@ local function define_tests()
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should include session context in memory recall", function()
@@ -1233,6 +1291,21 @@ local function define_tests()
                 test.eq(messages[n - 2].role, prompt.ROLE.USER)
             end)
 
+            it("places the conversation tail marker before trailing positional notes", function()
+                local builder = prompt.new()
+                builder:add_user("First message")
+                builder:add_system("The current date and time is Tuesday.", { preserve_position = true })
+                builder:add_developer("Recalled memory", { preserve_position = true })
+
+                local messages = capture(builder)
+                local n = #messages
+                test.eq(messages[n].role, prompt.ROLE.DEVELOPER)
+                test.eq(messages[n - 1].role, prompt.ROLE.SYSTEM)
+                test.eq(messages[n - 2].role, prompt.ROLE.CACHE_MARKER)
+                test.eq(messages[n - 2].marker_id, "conversation_tail")
+                test.eq(messages[n - 3].role, prompt.ROLE.USER)
+            end)
+
             -- Canonical encoding with sorted keys and cache_control removed, so
             -- prefixes compare by the bytes a provider hashes for its cache.
             local function canonical(value)
@@ -1350,11 +1423,14 @@ local function define_tests()
                 local step1 = prompt.new()
                 step1:add_user("Plan the release")
                 step1:add_developer("Lifecycle note for step 1")
-                local _, err1 = runner:step(step1, { context = {} })
+                local result1, err1 = runner:step(step1, { context = {} })
                 test.is_nil(err1)
 
                 local step2 = prompt.new()
                 step2:add_user("Plan the release")
+                for _, note in ipairs(result1.context_notes) do
+                    step2:add_message(note.role, note.content, nil, note.metadata)
+                end
                 step2:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
                 step2:add_function_result("calculator", "4", "call_1")
                 step2:add_developer("Lifecycle note for step 2")
@@ -1373,6 +1449,488 @@ local function define_tests()
                     local after = prefix_text(second, prefix.system, prefix.messages, prefix.block)
                     test.eq(after, before, "prefix through message " .. tostring(prefix.messages))
                 end
+            end)
+
+            describe("Stable prefix", function()
+                it("requires an llm package that provides positional notes", function()
+                    if type(prompt.is_positional_note) ~= "function" then
+                        test.fail("wippy/llm >= 0.5.13 is required: prompt.is_positional_note is missing")
+                    end
+                end)
+
+                local function without_markers(messages)
+                    local result = {}
+                    for _, message in ipairs(messages) do
+                        if message.role ~= prompt.ROLE.CACHE_MARKER then
+                            result[#result + 1] = message
+                        end
+                    end
+                    return result
+                end
+
+                local function recording_llm(requests, replies)
+                    return {
+                        generate = function(messages)
+                            requests[#requests + 1] = messages
+                            return replies and replies[#requests] or { result = "ok", finish_reason = "stop" }
+                        end
+                    }
+                end
+
+                local function copy_spec(overrides)
+                    local spec = {}
+                    for k, v in pairs(basic_compiled_spec) do spec[k] = v end
+                    local tools = {}
+                    for name, tool in pairs(basic_compiled_spec.tools) do
+                        local copied = {}
+                        for k, v in pairs(tool) do copied[k] = v end
+                        copied.schema = json.decode((json.encode(tool.schema)))
+                        tools[name] = copied
+                    end
+                    spec.tools = tools
+                    for k, v in pairs(overrides or {}) do spec[k] = v end
+                    return spec
+                end
+
+                it("fails the step when a prompt function fails", function()
+                    local requests = {}
+                    agent._llm = recording_llm(requests)
+                    agent._funcs = {
+                        new = function()
+                            return {
+                                with_context = function(self) return self end,
+                                call = function()
+                                    return nil, errors.new({ message = "workspace store unavailable",
+                                        kind = errors.UNAVAILABLE, retryable = true,
+                                        details = { store = "workspace", attempt = 2 } })
+                                end
+                            }
+                        end
+                    }
+                    local runner = agent.new(copy_spec({
+                        prompt_funcs = { { trait_id = "workspace", func_id = "test:workspace_prompt", context = {} } }
+                    }))
+                    local builder = prompt.new()
+                    builder:add_user("First")
+                    local result, err = runner:step(builder, { context = {} })
+                    test.is_nil(result)
+                    test.contains(tostring(err), "test:workspace_prompt")
+                    test.contains(tostring(err), "workspace store unavailable")
+                    test.eq(err:kind(), errors.UNAVAILABLE)
+                    test.is_true(err:retryable())
+                    test.eq(err:details().store, "workspace")
+                    test.eq(err:details().attempt, 2)
+                    test.eq(#requests, 0)
+                end)
+
+                describe("Stale thinking", function()
+                    local function blocks(name)
+                        return { { type = "thinking", thinking = name, signature = "sig-" .. name } }
+                    end
+
+                    local function current_fingerprint()
+                        agent._llm = recording_llm({})
+                        local builder = prompt.new()
+                        builder:add_user("Hello")
+                        return assert(agent.new(copy_spec()):step(builder)).prefix_fingerprint
+                    end
+
+                    local function history(answer_metadata)
+                        local answer = { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Earlier answer") },
+                            metadata = answer_metadata }
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Earlier question") } },
+                            answer,
+                            { role = prompt.ROLE.USER, content = { prompt.text("New question") } },
+                        })
+                        return builder, answer
+                    end
+
+                    local function sent_answer(requests)
+                        for _, message in ipairs(requests[#requests]) do
+                            if message.role == prompt.ROLE.ASSISTANT then return message end
+                        end
+                        return nil
+                    end
+
+                    it("strips blocks bound to another prefix before the request", function()
+                        local builder, answer = history({ thinking_blocks = blocks("old"), prefix_fingerprint = "previous" })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        local result, err = agent.new(copy_spec()):step(builder, { drop_stale_thinking = true })
+                        test.is_nil(err)
+                        test.not_nil(result)
+                        local sent = assert(sent_answer(requests))
+                        test.is_nil(sent.metadata.thinking_blocks)
+                        test.eq(sent.metadata.prefix_fingerprint, "previous")
+                        test.eq(#answer.metadata.thinking_blocks, 1)
+                    end)
+
+                    it("treats blocks without a stored fingerprint as stale", function()
+                        local builder = history({ thinking_blocks = blocks("old") })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        test.is_nil(assert(sent_answer(requests)).metadata.thinking_blocks)
+                    end)
+
+                    it("keeps blocks bound to the current prefix", function()
+                        local fingerprint = current_fingerprint()
+                        local builder = history({ thinking_blocks = blocks("kept"), prefix_fingerprint = fingerprint })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        test.eq(assert(sent_answer(requests)).metadata.thinking_blocks[1].thinking, "kept")
+                    end)
+
+                    it("leaves blocks alone when the host does not ask for stripping", function()
+                        local builder = history({ thinking_blocks = blocks("old"), prefix_fingerprint = "previous" })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder))
+                        test.eq(assert(sent_answer(requests)).metadata.thinking_blocks[1].thinking, "old")
+                    end)
+
+                    it("honours a host predicate", function()
+                        local fingerprint = current_fingerprint()
+                        local builder = history({ thinking_blocks = blocks("epoch"), prefix_fingerprint = fingerprint,
+                            checkpoint = "before" })
+                        local requests = {}
+                        local seen = nil
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, {
+                            drop_stale_thinking = true,
+                            thinking_is_current = function(msg, current)
+                                seen = current
+                                return msg.metadata.prefix_fingerprint == current and msg.metadata.checkpoint == "after"
+                            end,
+                        }))
+                        test.eq(seen, fingerprint)
+                        test.is_nil(assert(sent_answer(requests)).metadata.thinking_blocks)
+                    end)
+
+                    it("fails the step without a request when a stale turn has an open call", function()
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Question") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Looking") },
+                                metadata = { thinking_blocks = blocks("open"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.FUNCTION_CALL, content = {},
+                                function_call = { id = "call_open", name = "calculator", arguments = "{}" } },
+                            { role = prompt.ROLE.USER, content = { prompt.text("Never mind") } },
+                        })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        local result, err = agent.new(copy_spec()):step(builder, { drop_stale_thinking = true })
+                        test.is_nil(result)
+                        test.contains(tostring(err), "call_open")
+                        test.eq(#requests, 0)
+                    end)
+
+                    it("keeps the current tool round's blocks when a user message joins its results", function()
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Compute it") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Computing") },
+                                metadata = { thinking_blocks = blocks("round"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.FUNCTION_CALL, content = {},
+                                function_call = { id = "call_1", name = "calculator", arguments = "{}" } },
+                            { role = prompt.ROLE.FUNCTION_RESULT, name = "calculator", function_call_id = "call_1",
+                                content = { prompt.text("4") } },
+                            { role = prompt.ROLE.USER, content = { prompt.text("Use metric units") } },
+                        })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        local answer = assert(sent_answer(requests))
+                        test.eq(answer.metadata.thinking_blocks[1].thinking, "round")
+                    end)
+
+                    it("keeps the current tool round's blocks and strips earlier stale turns", function()
+                        local builder = prompt.new({
+                            { role = prompt.ROLE.USER, content = { prompt.text("Earlier question") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Earlier answer") },
+                                metadata = { thinking_blocks = blocks("earlier"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.USER, content = { prompt.text("Compute it") } },
+                            { role = prompt.ROLE.ASSISTANT, content = { prompt.text("Computing") },
+                                metadata = { thinking_blocks = blocks("round"), prefix_fingerprint = "previous" } },
+                            { role = prompt.ROLE.FUNCTION_CALL, content = {},
+                                function_call = { id = "call_1", name = "calculator", arguments = "{}" } },
+                            { role = prompt.ROLE.FUNCTION_RESULT, name = "calculator", function_call_id = "call_1",
+                                content = { prompt.text("4") } },
+                        })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        local assistants = {}
+                        for _, message in ipairs(requests[1]) do
+                            if message.role == prompt.ROLE.ASSISTANT then table.insert(assistants, message) end
+                        end
+                        test.eq(#assistants, 2)
+                        test.is_nil(assistants[1].metadata.thinking_blocks)
+                        test.eq(assistants[2].metadata.thinking_blocks[1].thinking, "round")
+                    end)
+
+                    local function compacting_llm(captured)
+                        return {
+                            ERROR_TYPE = { CONTEXT_WINDOW = "context_window" },
+                            generate = function(_, options)
+                                local replacement, err = options.checkpoint.compact({ estimated_prompt_tokens = 10 })
+                                captured.replacement, captured.err = replacement, err
+                                return { result = "done", finish_reason = "stop" }
+                            end
+                        }
+                    end
+
+                    local function compaction()
+                        local replacement = prompt.new()
+                        replacement:add_user("Retained task")
+                        replacement:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Retained answer") }, nil,
+                            { thinking_blocks = blocks("retained"), prefix_fingerprint = "previous" })
+                        replacement:add_user("Next question")
+                        return replacement
+                    end
+
+                    local function retained_answer(messages)
+                        for _, message in ipairs(messages) do
+                            if message.role == prompt.ROLE.ASSISTANT then return message end
+                        end
+                        return nil
+                    end
+
+                    it("returns the fingerprint of the request a checkpoint replacement sends", function()
+                        local function replacement_history()
+                            local replacement = prompt.new()
+                            replacement:add_system("Context memory: release plan v2")
+                            replacement:add_user("Retained task")
+                            return replacement
+                        end
+                        local captured = {}
+                        agent._llm = compacting_llm(captured)
+                        local builder = prompt.new()
+                        builder:add_user("Large conversation")
+                        local compacted = assert(agent.new(copy_spec()):step(builder, {
+                            checkpoint = { token_threshold = 1, compact = function() return replacement_history() end },
+                        }))
+                        test.is_nil(captured.err)
+
+                        agent._llm = recording_llm({})
+                        local direct = assert(agent.new(copy_spec()):step(replacement_history()))
+                        local plain_builder = prompt.new()
+                        plain_builder:add_user("Large conversation")
+                        local plain = assert(agent.new(copy_spec()):step(plain_builder))
+
+                        test.eq(compacted.prefix_fingerprint, direct.prefix_fingerprint)
+                        test.neq(compacted.prefix_fingerprint, plain.prefix_fingerprint)
+                    end)
+
+                    it("keeps the fingerprint of a checkpointed step that does not compact", function()
+                        agent._llm = {
+                            ERROR_TYPE = { CONTEXT_WINDOW = "context_window" },
+                            generate = function() return { result = "done", finish_reason = "stop" } end
+                        }
+                        local builder = prompt.new()
+                        builder:add_user("Small conversation")
+                        local checkpointed = assert(agent.new(copy_spec()):step(builder, {
+                            checkpoint = { token_threshold = 1000, compact = function() return nil, "unused" end },
+                        }))
+                        agent._llm = recording_llm({})
+                        local plain = assert(agent.new(copy_spec()):step(builder))
+                        test.eq(checkpointed.prefix_fingerprint, plain.prefix_fingerprint)
+                    end)
+
+                    it("strips stale blocks from a checkpoint replacement history", function()
+                        local captured = {}
+                        agent._llm = compacting_llm(captured)
+                        local builder = prompt.new()
+                        builder:add_user("Large conversation")
+                        local result, err = agent.new(copy_spec()):step(builder, {
+                            drop_stale_thinking = true,
+                            checkpoint = { token_threshold = 1, compact = function() return compaction() end },
+                        })
+                        test.is_nil(err)
+                        test.not_nil(result)
+                        test.is_nil(captured.err)
+                        local answer = assert(retained_answer(captured.replacement))
+                        test.is_nil(answer.metadata.thinking_blocks)
+                    end)
+
+                    it("consults the host predicate for checkpoint replacement messages", function()
+                        local captured = {}
+                        local consulted = {}
+                        agent._llm = compacting_llm(captured)
+                        local builder = prompt.new()
+                        builder:add_user("Large conversation")
+                        assert(agent.new(copy_spec()):step(builder, {
+                            drop_stale_thinking = true,
+                            thinking_is_current = function(msg)
+                                table.insert(consulted, msg.content[1].text)
+                                return true
+                            end,
+                            checkpoint = { token_threshold = 1, compact = function() return compaction() end },
+                        }))
+                        test.eq(#consulted, 1)
+                        test.eq(consulted[1], "Retained answer")
+                        test.eq(assert(retained_answer(captured.replacement)).metadata.thinking_blocks[1].thinking, "retained")
+                    end)
+
+                    it("never sends the stored fingerprint to the provider", function()
+                        local fingerprint = current_fingerprint()
+                        local builder = history({ thinking_blocks = blocks("kept"), prefix_fingerprint = fingerprint })
+                        local requests = {}
+                        agent._llm = recording_llm(requests)
+                        assert(agent.new(copy_spec()):step(builder, { drop_stale_thinking = true }))
+                        local mapped = assert(claude_mapper.map_messages(requests[1]))
+                        test.is_nil(canonical(mapped):find(fingerprint, 1, true))
+                        test.is_nil(canonical(mapped):find("prefix_fingerprint", 1, true))
+                    end)
+                end)
+
+                it("sends the same system message on every step", function()
+                    local requests = {}
+                    agent._llm = recording_llm(requests)
+                    agent._funcs = {
+                        new = function()
+                            return {
+                                with_context = function(self) return self end,
+                                call = function() return "Workspace: release planning" end
+                            }
+                        end
+                    }
+                    local spec = copy_spec({
+                        prompt_funcs = { { trait_id = "workspace", func_id = "test:workspace_prompt", context = {} } }
+                    })
+                    local runner = agent.new(spec)
+                    local builder = prompt.new()
+                    builder:add_user("First")
+                    runner:step(builder, { context = {} })
+                    builder:add_assistant("Answer")
+                    builder:add_user("Second")
+                    runner:step(builder, { context = {} })
+
+                    test.eq(#requests, 2)
+                    test.eq(requests[1][1].role, prompt.ROLE.SYSTEM)
+                    test.eq(requests[2][1].content[1].text, requests[1][1].content[1].text)
+                end)
+
+                it("keeps each request a prefix of the next once the host persists context notes", function()
+                    agent._contract = {
+                        get = function()
+                            return {
+                                open = function()
+                                    return {
+                                        recall = function(_, options)
+                                            return { memories = { { id = "m" .. #options.recent_actions, content = "Fact" } } }
+                                        end
+                                    }
+                                end
+                            }
+                        end
+                    }
+                    local requests = {}
+                    agent._llm = recording_llm(requests, {
+                        {
+                            result = "",
+                            tool_calls = { { id = "call_1", name = "calculator", arguments = { expression = "2+2" } } },
+                            metadata = { thinking_blocks = { { type = "thinking", thinking = "plan", signature = "sig" } } },
+                            finish_reason = "tool_call"
+                        },
+                        { result = "Done", finish_reason = "stop" },
+                    })
+                    local runner = agent.new(copy_spec({
+                        memory_contract = { implementation_id = "test:memory", options = { min_conversation_length = 1 } }
+                    }))
+
+                    local history = prompt.new()
+                    history:add_user("Plan the release")
+                    local first = assert(runner:step(history, { context = {} }))
+                    test.eq(#first.context_notes, 1)
+                    for _, note in ipairs(first.context_notes) do
+                        history:add_message(note.role, note.content, nil, note.metadata)
+                    end
+                    history:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
+                    history.messages[#history.messages].metadata = { thinking_blocks = first.metadata.thinking_blocks }
+                    history:add_function_result("calculator", "4", "call_1")
+                    local second = assert(runner:step(history, { context = {} }))
+                    test.eq(#second.context_notes, 1)
+
+                    local before = without_markers(requests[1])
+                    local after = without_markers(requests[2])
+                    test.gt(#after, #before)
+                    for index, message in ipairs(before) do
+                        test.eq(canonical(after[index]), canonical(message), "message " .. tostring(index))
+                    end
+                end)
+
+                it("returns a prefix fingerprint that is stable across steps", function()
+                    local requests = {}
+                    agent._llm = recording_llm(requests)
+                    local runner = agent.new(copy_spec())
+                    local builder = prompt.new()
+                    builder:add_user("First")
+                    local first = assert(runner:step(builder))
+                    builder:add_assistant("Answer")
+                    builder:add_user("Second")
+                    local second = assert(runner:step(builder))
+                    local rebuilt = assert(agent.new(copy_spec()):step(builder))
+
+                    test.eq(type(first.prefix_fingerprint), "string")
+                    test.eq(#first.prefix_fingerprint, 64)
+                    test.eq(second.prefix_fingerprint, first.prefix_fingerprint)
+                    test.eq(rebuilt.prefix_fingerprint, first.prefix_fingerprint)
+                end)
+
+                local function fingerprint_of(spec, extend)
+                    agent._llm = recording_llm({})
+                    local builder = prompt.new()
+                    builder:add_user("Hello")
+                    if extend then extend(builder) end
+                    return assert(agent.new(spec):step(builder)).prefix_fingerprint
+                end
+
+                it("changes the prefix fingerprint when the sent system text or tools change", function()
+                    local base = fingerprint_of(copy_spec())
+                    local fewer_tools = copy_spec()
+                    fewer_tools.tools.weather = nil
+                    local described = copy_spec()
+                    described.tools.calculator.description = "Evaluate arithmetic"
+                    local reshaped = copy_spec()
+                    reshaped.tools.calculator.schema.required = { "expression" }
+                    local renamed = copy_spec()
+                    renamed.tools.calculate = renamed.tools.calculator
+                    renamed.tools.calculator = nil
+                    local native = copy_spec()
+                    native.tools.calculator.meta = { claude = { type = "code_execution_20250522" } }
+                    for label, spec in pairs({
+                        system = copy_spec({ prompt = "You are a different agent." }),
+                        tool_removed = fewer_tools,
+                        tool_renamed = renamed,
+                        tool_description = described,
+                        tool_schema = reshaped,
+                        tool_native_type = native,
+                    }) do
+                        test.neq(fingerprint_of(spec), base, label)
+                    end
+                end)
+
+                it("includes conversation system messages that drivers hoist into the system prompt", function()
+                    local base = fingerprint_of(copy_spec())
+                    local hoisted = fingerprint_of(copy_spec(), function(builder)
+                        builder:add_system("Mode: review")
+                    end)
+                    local positional = fingerprint_of(copy_spec(), function(builder)
+                        builder:add_system("The current date and time is Tuesday.", { preserve_position = true })
+                    end)
+                    test.neq(hoisted, base)
+                    test.eq(positional, base)
+                end)
+
+                it("keeps the prefix fingerprint across model and registry metadata changes", function()
+                    local base = fingerprint_of(copy_spec())
+                    local commented = copy_spec()
+                    commented.tools.calculator.meta = { comment = "Renamed in the registry", tags = { "math" }, title = "Calc" }
+                    commented.tools.calculator.registry_id = "other:calculator"
+                    test.eq(fingerprint_of(commented), base)
+                    test.eq(fingerprint_of(copy_spec({ model = "gpt-4o" })), base)
+                end)
             end)
         end)
 

@@ -224,6 +224,8 @@ local response, err = runner:step(builder, {
     stream_target = { reply_to = process.self(), topic = "stream" },
     tool_call = "auto",
     disable_memory_recall = false,
+    drop_stale_thinking = true,    -- strip blocks bound to another prefix before the request
+    thinking_is_current = nil,     -- optional function(msg, fingerprint) -> boolean
     previous_memory_ids = { "mem_1", "mem_2" },
     stop_check = function() return stop_requested end,
     cancel = turn_cancel,
@@ -236,7 +238,11 @@ conversation independently of the agent's prompt and tool execution `context`.
 
 `stop_check` runs after prompt functions and memory recall, immediately before
 provider generation. When it returns true, `step` returns `{ stopped = true }`
-without a provider request.
+without a provider request; that result carries no `prefix_fingerprint` and no
+`context_notes`, since nothing was sent.
+
+A prompt function that fails fails the step with an error naming the function,
+keeping its error kind and retryability; the request is not sent without its text.
 
 `cancel` is a channel the host closes to cancel the in-flight provider call (see
 `llm.generate`). The step then returns `{ stopped = true, result = <text streamed
@@ -275,10 +281,92 @@ When the model's first route fails and `llm` answers from a fallback model, the 
     finish_reason = "stop",
     route_pin = { model = "...", provider_id = "...", provider_model = "..." },  -- nil until a step fell back
     memory_recall = { memory_ids = { "mem_3" }, count = 1 },
-    memory_prompt = { ... },
+    context_notes = { ... },        -- positional notes sent after the conversation; nil if none
+    prefix_fingerprint = "9f2c...", -- sha256 of the sent system text and tools
     memory_recall_error = nil       -- string when a configured recall failed
 }
 ```
+
+### Context notes
+
+A step can send notes after the conversation, such as recalled memory. Each
+note is a developer message with `metadata.preserve_position = true` and is
+returned in `context_notes`. The host persists the notes, in order, after the
+messages it passed to the step and before the step output (assistant text or
+function calls). The next step then replays them at the position they were sent,
+so the provider prefix, the prompt cache and earlier thinking blocks stay valid.
+When the host discards the step output, it discards the notes with it.
+
+Lifecycle notes the host builds per step (before_step, activation messages) follow
+the same rule: persist each one as a positional note where it was sent. A per-step
+note that is sent once and then dropped or rebuilt changes the prefix before the
+output it produced; that restarts the prompt cache and invalidates every later
+thinking block, not only the cache.
+
+Memory recall runs whenever the agent has a memory contract and recall is not
+disabled; its note is a context note. A host that does not persist the notes
+sends each note once and drops it from the next request, which edits the history
+before the output it produced. The recall cooldown reads `metadata.memory_ids`
+from the persisted notes.
+
+### Prefix fingerprint
+
+`prefix_fingerprint` is a sha256 over the system text and tools as drivers send
+them: the compiled system prompt together with ordinary (non-positional) system
+messages in the conversation, which Claude and Bedrock hoist into the top-level
+system, and each tool's name, description, schema and native definition
+(`meta.claude`). Registry ids and registry metadata (comment, tags, title) do
+not reach the provider and are not part of it. It is stable across steps while
+the sent system text and tools stay the same. It describes the request actually sent:
+when a checkpoint callback replaces the history, the fingerprint is recomputed
+from the replacement, and stale thinking in the replacement is judged against it.
+
+The projection is the Claude and Bedrock prefix. Other drivers bind a different
+one: OpenAI moves developer messages into `instructions`, and Google filters tool
+schemas, so equal fingerprints there are necessary but not sufficient for an
+identical prefix.
+
+The model is not part of the fingerprint. Switching models needs no stripping:
+the provider drops thinking blocks the target model cannot read, and some models
+read each other's blocks. The fingerprint covers only the system and tools
+prefix; edits to earlier messages are not detected by it.
+
+### Stale thinking
+
+The fingerprint is computed before the request, so the agent strips stale
+thinking blocks itself:
+
+1. The host stores `response.prefix_fingerprint` as `metadata.prefix_fingerprint`
+   on every row it persists from that step that carries `thinking_blocks` (the
+   assistant row; function call messages built through `add_function_call` carry
+   no metadata, so blocks for a tool round live on its assistant row).
+2. On later steps the host passes `drop_stale_thinking = true`. Before the
+   request, the agent removes the blocks of every message up to and including the
+   last one whose `metadata.prefix_fingerprint` differs from the current
+   fingerprint; a message with blocks and no stored fingerprint counts as stale.
+3. A host with its own epoch (a checkpoint id, a compaction boundary) passes
+   `thinking_is_current = function(msg, fingerprint) ... end`, which replaces the
+   default comparison.
+
+The current tool round (the last assistant turn, while only its tool results,
+notes and user messages joining the tool-result turn follow it) keeps its blocks
+even when they are stale: the provider requires the final assistant turn of a
+tool round to keep its thinking, so those blocks are left to the provider's
+drop-on-mismatch handling, and only earlier turns are stripped. User content
+(a user message, a developer message or a positional system note) after an
+assistant turn with no tool result in between ends that turn; ordinary system
+messages, which drivers hoist into the top-level system, do not.
+
+Stripping works on copies: the host's message tables keep their blocks, and the
+stored fingerprint never reaches the provider. When a stale turn still has a
+function call without a result, the step fails with that error and sends no
+request. The same stripping applies to a checkpoint replacement history.
+
+The Claude API can drop mismatched blocks itself
+(`thinking.block_binding.prefix_mismatch_behavior = "drop_block"`). That covers
+what the host cannot know, such as an edit to an earlier message; stripping by
+fingerprint keeps known-stale blocks out of the request so they are not dropped,
+re-billed and reported on every request.
 
 A configured recall that fails (the provider errors, cannot be opened, or
 returns no valid `memories` list) does not stop the step: generation runs
@@ -290,11 +378,45 @@ error. Skipped recall and an empty `memories` list are not errors.
 ### Prompt caching
 
 The runner marks two cache breakpoints: after the system prompt and after the
-newest user or tool-result message. Trailing developer messages in the builder
-(lifecycle messages the host appends for the current step) and the memory
-recall are placed after the conversation breakpoint, so the next step reuses
-the cached prefix. Prompt function output is part of the system prompt and must
-be deterministic across steps to keep the prefix cacheable.
+newest user or tool-result message. Trailing developer messages and positional
+notes in the builder (lifecycle messages, turn context) and the memory recall
+are placed after the conversation breakpoint, so the next step reuses the cached
+prefix.
+
+Prompt function output is part of the system prompt. Prompt functions must
+return the same text on every step of a conversation: anything that changes per
+step or per turn (the current time, recalled facts, status) changes the prefix
+before every earlier message. Put such context in positional notes the host
+persists instead (see Turn context).
+
+### Turn context
+
+`agent_options.turn_context` declares per-turn context the host adds to each
+user turn. The `time_aware` trait sets
+`turn_context.time = { timezone = <context.timezone>, format = <context.time_format> }`.
+The layout key is `time_format` because the trait context is merged with the
+agent context, where a generic `format` key belongs to other features;
+`timezone` keeps its existing meaning.
+When a user message arrives, the host renders the note once and persists it as a
+positional note right after that message:
+
+```lua
+local turn_context = require("turn_context")  -- wippy.agent:turn_context
+
+local note, err = turn_context.render(runner.agent_options, time.now())
+-- "The current date and time is Tuesday, November 3, 2026 at 09:41 UTC."
+if note then
+    builder:add_system(note, { preserve_position = true })
+end
+```
+
+The note ends with "Use this temporal context when relevant to your responses."
+`render` returns nil when the agent declares no time context, and an error for an
+empty or unknown timezone or a `format` that is not a non-empty string. `format`
+is an optional Go time layout for the date and time part. The note carries the
+exact minute and is never rebuilt; the framework does not inject it per step.
+The removed `time_interval` setting fails compilation with an error naming
+`turn_context`.
 
 ### Token Tracking
 
@@ -357,7 +479,6 @@ entries:
         context:
           timezone: UTC
     context:
-      time_interval: 15
       timezone: UTC
 ```
 
@@ -483,23 +604,27 @@ local function execute(base_prompt, context)
         prompt = "Additional prompt text...",
         tools = { { id = "my_ns:dynamic_tool" } },
         delegates = { { id = "other_ns:agent", name = "helper" } },
-        context = { extra_key = "value" }
+        context = { extra_key = "value" },
+        agent_options = { turn_context = { time = { timezone = "UTC" } } }
     }
 end
 return { execute = execute }
 ```
 
 ```lua
--- Prompt function: called at each agent:step(), returns dynamic prompt text
+-- Prompt function: called at each agent:step(); must return the same text on every step
 local function execute(base_prompt)
-    return "Current time: Thursday, February 12, 2026 at 14:00 UTC"
+    return "Workspace: " .. ctx.get("workspace_name")
 end
 return { execute = execute }
 ```
 
 ### Built-in Traits
 
-- `wippy.agent.traits:time_aware` -- Injects rounded current time via `build_func_id`. Configurable via context: `time_interval` (minutes, default 15), `timezone` (default UTC).
+- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `time_format` (optional Go time layout). It contributes no prompt text; a `time_interval` setting is rejected.
+
+A trait build function that returns an error fails `compiler.compile` with an
+error naming the trait and the function.
 
 ## Delegation
 

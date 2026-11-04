@@ -150,12 +150,11 @@ local function define_tests()
                 meta = {
                     type = "agent.trait",
                     name = "Time Aware",
-                    comment = "Adds current time context to agent for time-aware responses with cache stability."
+                    comment = "Declares agent_options.turn_context.time so the host adds the current time to each user turn"
                 },
                 data = {
                     build_func_id = "wippy.agent.traits:init_time_aware",
                     context = {
-                        time_interval = 15,
                         timezone = "UTC"
                     }
                 }
@@ -482,7 +481,6 @@ local function define_tests()
             test.is_nil(trait.prompt_func_id) -- No runtime prompt function
             test.is_nil(trait.step_func_id) -- No step function
             test.eq(trait.prompt, "") -- No static prompt
-            test.eq(trait.context.time_interval, 15)
             test.eq(trait.context.timezone, "UTC")
         end)
 

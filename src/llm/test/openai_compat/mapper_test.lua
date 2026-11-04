@@ -110,6 +110,24 @@ local function define_tests()
         end)
 
         describe("Message Mapping", function()
+            it("keeps positional system and developer notes at their conversation position", function()
+                for _, role in ipairs({ "system", "developer" }) do
+                    local mapped = openai_mapper.map_messages({
+                        { role = "system", content = "Base" },
+                        { role = "user", content = "Question" },
+                        { role = role, content = "Note", metadata = { preserve_position = true } },
+                        { role = "user", content = "Follow-up" },
+                    }, { model = "gpt-5" })
+                    test.eq(#mapped, 4)
+                    test.eq(mapped[1].role, "system")
+                    test.eq(mapped[1].content[1].text, "Base")
+                    test.eq(mapped[2].role, "user")
+                    test.eq(mapped[3].role, "system")
+                    test.eq(mapped[3].content[1].text, "Note")
+                    test.eq(mapped[4].role, "user")
+                end
+            end)
+
             it("should map standard user, assistant, system messages", function()
                 local contract_messages = {
                     {

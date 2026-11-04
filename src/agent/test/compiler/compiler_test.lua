@@ -2139,7 +2139,7 @@ local function define_tests()
             test.is_false(has_delegate_tools)
         end)
 
-        it("should handle failing trait build methods gracefully", function()
+        it("should fail compilation when a trait build method fails", function()
             local failing_trait = {
                 id = "failing_trait",
                 name = "Failing Trait",
@@ -2164,10 +2164,9 @@ local function define_tests()
 
             local compiled_spec, err = compiler.compile(spec_with_failing_trait)
 
-            test.is_nil(err)
-            test.not_nil(compiled_spec)
-            test.contains(compiled_spec.prompt, "Test prompt")
-            test.contains(compiled_spec.prompt, "Base prompt")
+            test.is_nil(compiled_spec)
+            test.contains(tostring(err), "failing_trait")
+            test.contains(tostring(err), "Init method failed")
         end)
 
         it("should use custom context merger in unified structure", function()

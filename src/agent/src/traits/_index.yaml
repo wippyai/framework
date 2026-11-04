@@ -64,13 +64,12 @@ entries:
     kind: function.lua
     meta:
       type: function
-      comment: Initializes time-aware trait with current rounded time context
+      comment: Declares the per-turn time context the host renders with each user turn
     source: file://init_time_aware.lua
     modules:
-      - time
       - ctx
     method: execute
-    
+
   # wippy.agent.traits:time_aware
   - name: time_aware
     kind: registry.entry
@@ -78,13 +77,11 @@ entries:
       name: Time Aware
       type: agent.trait
       title: Time Aware
-      comment: Adds current time context to agent for time-aware responses with cache stability
+      comment: Declares agent_options.turn_context.time so the host adds the current time to each user turn
       tags:
         - time
         - context
-        - rounded
         - cache_stable
     build_func_id: wippy.agent.traits:init_time_aware
     context:
-      time_interval: 15
       timezone: UTC

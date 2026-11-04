@@ -18,6 +18,325 @@ local function define_tests()
                 end
             end
         end)
+        it("keeps positional notes and thinking metadata through clone", function()
+            local blocks = { { type = "thinking", thinking = "plan", signature = "sig" } }
+            local builder = prompt.new()
+            builder:add_user("question")
+            builder:add_system("note", { preserve_position = true })
+            builder:add_developer("guidance", { preserve_position = true })
+            builder:add_function_call("lookup", "{}", "call_1")
+            builder.messages[#builder.messages].metadata = { thinking_blocks = blocks }
+            local cloned: any = builder:clone()
+            local messages = cloned:get_messages()
+            test.eq(#messages, 4)
+            test.eq(messages[2].role, prompt.ROLE.SYSTEM)
+            test.is_true(messages[2].metadata.preserve_position)
+            test.eq(messages[3].role, prompt.ROLE.DEVELOPER)
+            test.is_true(messages[3].metadata.preserve_position)
+            test.eq(#messages[4].metadata.thinking_blocks, 1)
+            test.eq(messages[4].metadata.thinking_blocks[1].signature, "sig")
+        end)
+
+        describe("drop_stale_thinking", function()
+            local function block(name)
+                return { { type = "thinking", thinking = name, signature = "sig-" .. name } }
+            end
+
+            local function history()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_function_call("lookup", "{}", "call_1")
+                builder.messages[#builder.messages].metadata = { thinking_blocks = block("a"), turn = 1 }
+                builder:add_function_result("lookup", "found", "call_1")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer one") }, nil,
+                    { thinking_blocks = block("b"), turn = 1 })
+                builder:add_user("second")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer two") }, nil,
+                    { thinking_blocks = block("c"), turn = 2 })
+                return builder
+            end
+
+            local function thinking_of(messages, index)
+                local blocks = messages[index].metadata.thinking_blocks
+                return blocks and blocks[1] and blocks[1].thinking or nil
+            end
+
+            it("strips thinking blocks from a leading run of older messages", function()
+                local builder = history()
+                local dropped, err = builder:drop_stale_thinking(function(msg) return msg.metadata.turn >= 2 end)
+                test.is_nil(err)
+                test.eq(dropped, builder)
+                local messages = builder:get_messages()
+                test.is_nil(messages[2].metadata.thinking_blocks)
+                test.eq(messages[2].metadata.turn, 1)
+                test.eq(messages[2].function_call.id, "call_1")
+                test.is_nil(messages[4].metadata.thinking_blocks)
+                test.eq(messages[4].content[1].text, "answer one")
+                test.eq(thinking_of(messages, 6), "c")
+            end)
+
+            it("keeps every block when all messages are current", function()
+                local builder = history()
+                local _, err = builder:drop_stale_thinking(function() return true end)
+                test.is_nil(err)
+                local messages = builder:get_messages()
+                test.eq(thinking_of(messages, 2), "a")
+                test.eq(thinking_of(messages, 4), "b")
+                test.eq(thinking_of(messages, 6), "c")
+            end)
+
+            it("strips every block up to the last stale message", function()
+                local builder = history()
+                local _, err = builder:drop_stale_thinking(function(msg)
+                    return msg.metadata.thinking_blocks[1].thinking ~= "b"
+                end)
+                test.is_nil(err)
+                local messages = builder:get_messages()
+                test.is_nil(messages[2].metadata.thinking_blocks)
+                test.is_nil(messages[4].metadata.thinking_blocks)
+                test.eq(thinking_of(messages, 6), "c")
+            end)
+
+            it("treats an empty thinking block list as carrying nothing", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("old") }, nil, { thinking_blocks = {} })
+                builder:add_user("second")
+                builder:add_function_call("lookup", "{}", "call_open")
+                builder.messages[#builder.messages].metadata = { thinking_blocks = {} }
+                local consulted = 0
+                local dropped, err = builder:drop_stale_thinking(function()
+                    consulted = consulted + 1
+                    return false
+                end)
+                test.is_nil(err)
+                test.eq(dropped, builder)
+                test.eq(consulted, 0)
+            end)
+
+            it("refuses to strip a function call whose result is not present", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("old") }, nil, { thinking_blocks = block("a") })
+                builder:add_user("second")
+                builder:add_function_call("lookup", "{}", "call_open")
+                builder.messages[#builder.messages].metadata = { thinking_blocks = block("b") }
+                builder:add_user("later")
+                local dropped, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(dropped)
+                test.contains(tostring(err), "call_open")
+                local messages = builder:get_messages()
+                test.eq(thinking_of(messages, 2), "a")
+                test.eq(thinking_of(messages, 4), "b")
+            end)
+
+            it("refuses to strip an assistant message whose turn still has an open call", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Looking it up") }, nil,
+                    { thinking_blocks = block("a") })
+                builder:add_function_call("lookup", "{}", "call_done")
+                builder:add_function_call("fetch", "{}", "call_open")
+                builder:add_function_result("lookup", "found", "call_done")
+                builder:add_assistant("Partial summary")
+                builder:add_user("later")
+                local dropped, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(dropped)
+                test.contains(tostring(err), "call_open")
+                test.contains(tostring(err), "fetch")
+                test.eq(thinking_of(builder:get_messages(), 2), "a")
+            end)
+
+            it("refuses to strip an assistant message with an unanswered function call part", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, {
+                    prompt.text("Looking it up"),
+                    { type = "function_call", id = "call_part", name = "lookup", arguments = "{}" },
+                }, nil, { thinking_blocks = block("a") })
+                builder:add_user("later")
+                local dropped, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(dropped)
+                test.contains(tostring(err), "call_part")
+                test.contains(tostring(err), "lookup")
+            end)
+
+            it("strips an assistant turn once every call in it has a result", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Looking it up") }, nil,
+                    { thinking_blocks = block("a") })
+                builder:add_function_call("lookup", "{}", "call_1")
+                builder:add_function_call("fetch", "{}", "call_2")
+                builder:add_function_result("lookup", "found", "call_1")
+                builder:add_function_result("fetch", "fetched", "call_2")
+                builder:add_assistant("Summary")
+                builder:add_user("later")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
+            end)
+
+            local function current_round()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("old answer") }, nil,
+                    { thinking_blocks = block("earlier") })
+                builder:add_user("second")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Looking it up") }, nil,
+                    { thinking_blocks = block("round") })
+                builder:add_function_call("lookup", "{}", "call_1")
+                builder:add_function_result("lookup", "found", "call_1")
+                return builder
+            end
+
+            it("keeps the round when a user message joins its tool-result turn", function()
+                local builder = current_round()
+                builder:add_user("Use metric units")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                local messages = builder:get_messages()
+                test.is_nil(messages[2].metadata.thinking_blocks)
+                test.eq(thinking_of(messages, 4), "round")
+            end)
+
+            it("keeps the round when its tool result carries images", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Taking a screenshot") }, nil,
+                    { thinking_blocks = block("round") })
+                builder:add_function_call("screenshot", "{}", "call_1")
+                builder:add_function_result("screenshot",
+                    '{"result":"captured","_images":[{"url":"https://example.com/shot.png"}]}', "call_1")
+                local processed = prompt.new(builder:get_messages())
+                local last = processed.messages[#processed.messages]
+                test.eq(last.role, prompt.ROLE.USER)
+                test.eq(last.content[1].type, "image")
+                local _, err = processed:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(thinking_of(processed:get_messages(), 2), "round")
+            end)
+
+            local function answered()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer") }, nil,
+                    { thinking_blocks = block("stale") })
+                return builder
+            end
+
+            it("strips a stale text-only turn that a developer note follows", function()
+                local builder = answered()
+                builder:add_developer("Lifecycle note")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
+            end)
+
+            it("strips a stale text-only turn that a positional system note follows", function()
+                local builder = answered()
+                builder:add_system("Stopped by the user", { preserve_position = true })
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
+            end)
+
+            it("keeps the round when a developer note follows its tool results", function()
+                local builder = current_round()
+                builder:add_developer("Reminder")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(thinking_of(builder:get_messages(), 4), "round")
+            end)
+
+            it("keeps the last turn current when only a hoisted system message follows", function()
+                local builder = answered()
+                builder:add_system("Mode: review")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(thinking_of(builder:get_messages(), 2), "stale")
+            end)
+
+            it("strips a stale text-only turn that a user message follows", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("answer") }, nil,
+                    { thinking_blocks = block("stale") })
+                builder:add_user("second")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.is_nil(builder:get_messages()[2].metadata.thinking_blocks)
+            end)
+
+            it("keeps the current round's blocks when its results end the history", function()
+                local builder = current_round()
+                builder:add_developer("Reminder", { preserve_position = true })
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                local messages = builder:get_messages()
+                test.is_nil(messages[2].metadata.thinking_blocks)
+                test.eq(thinking_of(messages, 4), "round")
+            end)
+
+            it("keeps the current round's blocks while its calls await results", function()
+                local builder = prompt.new()
+                builder:add_user("first")
+                builder:add_message(prompt.ROLE.ASSISTANT, { prompt.text("Looking it up") }, nil,
+                    { thinking_blocks = block("round") })
+                builder:add_function_call("lookup", "{}", "call_open")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(thinking_of(builder:get_messages(), 2), "round")
+            end)
+
+            it("strips the same turn once a later assistant turn closes the round", function()
+                local builder = current_round()
+                builder:add_assistant("Final answer")
+                builder:add_user("third")
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                local messages = builder:get_messages()
+                test.is_nil(messages[2].metadata.thinking_blocks)
+                test.is_nil(messages[4].metadata.thinking_blocks)
+            end)
+
+            it("leaves the caller's message tables unchanged when it strips", function()
+                local persisted = { role = prompt.ROLE.ASSISTANT, content = { prompt.text("old") },
+                    metadata = { thinking_blocks = block("a"), turn = 1 } }
+                local builder = prompt.new({
+                    { role = prompt.ROLE.USER, content = { prompt.text("question") } },
+                    persisted,
+                    { role = prompt.ROLE.USER, content = { prompt.text("again") } },
+                })
+                local _, err = builder:drop_stale_thinking(function() return false end)
+                test.is_nil(err)
+                test.eq(#persisted.metadata.thinking_blocks, 1)
+                local stripped = builder:get_messages()[2]
+                test.is_nil(stripped.metadata.thinking_blocks)
+                test.eq(stripped.metadata.turn, 1)
+                test.eq(stripped.content[1].text, "old")
+            end)
+
+            it("is a no-op when no message carries thinking blocks", function()
+                local builder = prompt.new()
+                builder:add_user("hello")
+                builder:add_assistant("hi", { turn = 1 })
+                builder:add_function_call("lookup", "{}", "call_1")
+                local consulted = false
+                local dropped, err = builder:drop_stale_thinking(function()
+                    consulted = true
+                    return false
+                end)
+                test.is_nil(err)
+                test.eq(dropped, builder)
+                test.is_false(consulted)
+                local messages = builder:get_messages()
+                test.eq(#messages, 3)
+                test.eq(messages[2].metadata.turn, 1)
+                test.is_nil(messages[3].metadata)
+            end)
+        end)
+
         it("preserves explicit result failures through build and clone without inspecting success payloads", function()
             local builder = prompt.new()
             builder:add_function_result("lookup", "denied", "failed", { is_error = true })

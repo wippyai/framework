@@ -3,6 +3,8 @@ local llm = require("llm")
 local contract = require("contract")
 local funcs = require("funcs")
 local output = require("output")
+local hash = require("hash")
+local canonical = require("canonical")
 
 type UnifiedTool = {
     name: string,
@@ -71,7 +73,7 @@ local AGENT_CONFIG = {
     },
     memory = {
         contract_id = "wippy.agent:memory",
-        recall_prompt = "Background context from memory (refreshed each step; not a user message or a new request). "
+        recall_prompt = "Background context from memory (not a user message or a new request). "
             .. "Use it to support the current user request; it does not replace that request.\n\n%s",
         defaults = {
             max_messages = 20,
@@ -119,9 +121,11 @@ local function merge_agent_and_context(agent_ctx: any, delegate_ctx: any): any
     return merged
 end
 
-local function execute_prompt_functions(self: any, runtime_context: any): string
+-- A prompt function's text is part of the system prompt, so a failure fails
+-- the step: sending the prompt without it would change the prefix.
+local function execute_prompt_functions(self: any, runtime_context: any): (string?, any)
     if not self.prompt_funcs or #self.prompt_funcs == 0 then
-        return ""
+        return "", nil
     end
 
     local prompt_parts = {}
@@ -139,17 +143,21 @@ local function execute_prompt_functions(self: any, runtime_context: any): string
 
         local executor = funcs_module.new()
         local prompt_text, err = executor:with_context(merged_context):call(tostring(prompt_func.func_id))
-
-        if not err and prompt_text and prompt_text ~= "" then
-            table.insert(prompt_parts, prompt_text)
+        if err then
+            return nil, errors.new({
+                message = "prompt function " .. tostring(prompt_func.func_id) .. " failed: " .. tostring(err),
+                kind = err:kind(),
+                retryable = err:retryable(),
+                details = err:details(),
+            })
         end
 
-        if err then
-            print(err)
+        if prompt_text and prompt_text ~= "" then
+            table.insert(prompt_parts, prompt_text)
         end
     end
 
-    return table.concat(prompt_parts, "\n\n")
+    return table.concat(prompt_parts, "\n\n"), nil
 end
 
 local function extract_memory_ids_from_messages(messages: any, scan_limit: any): any
@@ -438,6 +446,37 @@ local function has_tools_with_schemas(tools: any): boolean
     return false
 end
 
+-- What providers bind cached prefixes and thinking blocks to, as drivers send
+-- it: the system text (the compiled prompt plus conversation system messages,
+-- which Claude and Bedrock hoist into the top-level system) and each tool's
+-- name, description, schema and native definition. Registry ids and registry
+-- metadata never reach the provider. The model is left out: providers drop
+-- blocks a different model cannot read on their own.
+local function prefix_projection(messages: {any}, tools: {any}?): table
+    local system = {}
+    for _, message in ipairs(messages) do
+        if message.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(message) then
+            if type(message.content) == "string" then
+                table.insert(system, message.content)
+            elseif type(message.content) == "table" then
+                for _, part in ipairs(message.content) do
+                    table.insert(system, part.type == "text" and part.text or part)
+                end
+            end
+        end
+    end
+    local projected_tools = {}
+    for _, tool in ipairs(tools or {}) do
+        table.insert(projected_tools, {
+            name = tool.name,
+            description = tool.description,
+            schema = tool.schema,
+            native = type(tool.meta) == "table" and tool.meta.claude or nil,
+        })
+    end
+    return { system = system, tools = projected_tools }
+end
+
 local function route_pin(current: any, metadata: any): any?
     if current ~= nil then
         return current
@@ -509,7 +548,10 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     runtime_options = runtime_options or {}
     local llm_instance = get_llm()
 
-    local dynamic_prompt = execute_prompt_functions(self, runtime_options.context)
+    local dynamic_prompt, prompt_err = execute_prompt_functions(self, runtime_options.context)
+    if prompt_err then
+        return nil, prompt_err
+    end
     local complete_system_prompt = self.system_prompt
     if dynamic_prompt and dynamic_prompt ~= "" then
         complete_system_prompt = complete_system_prompt .. "\n\n" .. dynamic_prompt
@@ -524,7 +566,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         memory_prompt = {
             role = prompt.ROLE.DEVELOPER,
             content = { prompt.text(formatted_memory) },
-            metadata = { memory_ids = memory_ids }
+            metadata = { memory_ids = memory_ids, preserve_position = true }
         }
     end
 
@@ -573,12 +615,13 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         -- Rolling cache breakpoint on the conversation tail. With only the system marker, every
         -- tool-loop turn re-bills the whole accumulated conversation at the full input price; a
         -- marker after the newest user/tool-result message lets the next turn read everything up to
-        -- here from cache. Trailing developer notes are per-step context (lifecycle messages the
-        -- host appends for this step), so the marker precedes them, as it precedes the memory
-        -- recall: content that changes step to step stays outside the cached prefix. Providers
-        -- cap breakpoints (Claude: 4); the mapper keeps system markers plus the most recent ones.
+        -- here from cache. Trailing developer and positional notes belong to the turn they follow
+        -- (lifecycle messages, turn context), so the marker lands on that turn before them, as it
+        -- precedes the memory recall. Providers cap breakpoints (Claude: 4); the mapper keeps
+        -- system markers plus the most recent ones.
         local tail_index = #conversation_messages
-        while tail_index > 0 and conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER do
+        while tail_index > 0 and (conversation_messages[tail_index].role == prompt.ROLE.DEVELOPER
+            or prompt.is_positional_note(conversation_messages[tail_index])) do
             tail_index = tail_index - 1
         end
         local tail = conversation_messages[tail_index]
@@ -595,21 +638,73 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             end
         end
 
-        -- Append memory recall after conversation
+        -- The recall note follows the conversation, where the host persists it
         if memory_prompt then
             table.insert(final_messages, memory_prompt)
         end
 
         return final_messages
     end
-    local final_messages = build_messages(prompt_builder:get_messages())
+    -- The fingerprint describes the request actually sent, so a checkpoint
+    -- replacement history recomputes it before its blocks are judged.
+    local function fingerprint_of(messages: {any}): (string?, any)
+        local projected = { system_message }
+        for _, message in ipairs(messages) do table.insert(projected, message) end
+        local digest, digest_err = hash.sha256(canonical.encode(prefix_projection(projected, options.tools)))
+        if digest_err then
+            return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+                :message("Prefix fingerprint failed: " .. tostring(digest_err)):build()
+        end
+        return digest, nil
+    end
+
+    local conversation = prompt_builder:get_messages()
+    local fingerprint, fingerprint_err = fingerprint_of(conversation)
+    if not fingerprint then
+        return nil, fingerprint_err
+    end
+
+    -- Thinking blocks are bound to the prefix they were produced under. With
+    -- drop_stale_thinking the request carries only blocks the host's rows mark
+    -- with the current fingerprint (or that the host predicate accepts); the
+    -- host's message tables keep theirs.
+    local function current_thinking(messages: {any}): ({any}?, any)
+        if not runtime_options.drop_stale_thinking then
+            return messages, nil
+        end
+        local is_current = runtime_options.thinking_is_current
+        local working = prompt.new(messages)
+        local _, strip_err = working:drop_stale_thinking(function(msg)
+            if is_current then
+                return is_current(msg, fingerprint) == true
+            end
+            return msg.metadata.prefix_fingerprint == fingerprint
+        end)
+        if strip_err then
+            return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+                :message(tostring(strip_err)):build()
+        end
+        return working:get_messages(), nil
+    end
+
+    local current, thinking_err = current_thinking(conversation)
+    if not current then
+        return nil, thinking_err
+    end
+    local final_messages = build_messages(current)
     if runtime_options.checkpoint then
         options.checkpoint = {
             token_threshold = runtime_options.checkpoint.token_threshold,
             compact = function(info)
                 local replacement, compact_err = runtime_options.checkpoint.compact(info)
                 if not replacement then return nil, compact_err end
-                return build_messages(replacement:get_messages())
+                local replacement_messages = replacement:get_messages()
+                local replacement_fingerprint, replacement_err = fingerprint_of(replacement_messages)
+                if not replacement_fingerprint then return nil, replacement_err end
+                fingerprint = replacement_fingerprint
+                local retained, retained_err = current_thinking(replacement_messages)
+                if not retained then return nil, retained_err end
+                return build_messages(retained)
             end,
         }
     end
@@ -649,6 +744,8 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     --end
 
 
+    local context_notes = memory_prompt and { memory_prompt } or nil
+
     if runtime_options.stop_check and runtime_options.stop_check() then
         return { stopped = true, memory_recall_error = memory_recall_error }, nil
     end
@@ -671,7 +768,9 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             stopped = true,
             result = result.result,
             finish_reason = result.finish_reason,
-            memory_recall_error = memory_recall_error
+            memory_recall_error = memory_recall_error,
+            context_notes = context_notes,
+            prefix_fingerprint = fingerprint
         }, nil
     end
 
@@ -681,7 +780,9 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         finish_reason = result.finish_reason,
         metadata = result.metadata,
         route_pin = route_pin(runtime_options.route, result.metadata),
-        memory_recall_error = memory_recall_error
+        memory_recall_error = memory_recall_error,
+        context_notes = context_notes,
+        prefix_fingerprint = fingerprint
     }
 
     if output.detect_truncation(result) then
@@ -698,10 +799,6 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             memory_ids = memory_ids,
             count = #memory_ids
         }
-    end
-
-    if memory_prompt then
-        response.memory_prompt = memory_prompt
     end
 
     if result.tool_calls then
