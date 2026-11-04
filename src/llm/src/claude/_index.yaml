@@ -116,12 +116,12 @@ entries:
     source: file://mapper.lua
     modules:
       - json
-      - hash
     imports:
       thinking: wippy.llm.util:thinking
       prompt: wippy.llm:prompt
       output: wippy.llm:output
       route: wippy.llm.util:route
+      tool_id: wippy.llm.util:tool_id
 
   # wippy.llm.claude:provider
   - name: provider

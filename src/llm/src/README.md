@@ -254,6 +254,18 @@ Developer messages, positional or not, render the same way on Claude and Bedrock
 
 Bedrock sends developer messages as user text instead of `system` blocks. A Bedrock conversation stored before this change therefore renders a different prefix once after upgrading: its cache restarts and its earlier thinking blocks no longer match. The provider rejects such blocks unless the request lets it drop them; hosts that keep thinking blocks across the upgrade strip them with `drop_stale_thinking`.
 
+### Tool Call IDs
+
+History moves between providers, so a call id can be foreign to the provider a request goes to. Each driver sends ids it accepts unchanged and translates the others, on the call and its result alike, into `tool-` plus a sha256 digest of the id. The translation is the same on every request, because the id is part of the prefix, and the stored history keeps the original.
+
+| Driver | Limits on the wire |
+|---|---|
+| Claude | `[a-zA-Z0-9_-]+` |
+| Bedrock | `[a-zA-Z0-9_-]+`, 64 characters |
+| OpenAI (Responses) | 64 characters |
+
+OpenAI-compatible endpoints differ and send ids unchanged. Google matches results to calls by the provider's own id or by name.
+
 ### Blank Content
 
 One rule decides what is blank: text with no non-whitespace character.

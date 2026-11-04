@@ -2,7 +2,7 @@ local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
-local hash = require("hash")
+local tool_ids = require("tool_id")
 local route = require("route")
 
 local mapper = {}
@@ -66,48 +66,6 @@ local MAX_CACHE_BREAKPOINTS = 4
 local function approximate_token_count(text)
     if not text or text == "" then return 0 end
     return math.ceil(string.len(text) / 4)
-end
-
--- Preserve valid native IDs. Foreign-provider IDs with other characters need a
--- stable translation, shared by calls/results and collision-checked against all
--- IDs in the prompt. Character replacement alone merges distinct identities.
-local function tool_id_mapper(messages)
-    local used, translated = {}, {}
-    local reserved = false
-    local function reserve_ids()
-        -- Normal native IDs need no extra history scan or hashing. Reserve all
-        -- IDs only if a foreign-provider ID actually needs translation.
-        if reserved then return end
-        reserved = true
-        local function reserve(id)
-            if type(id) == "string" then used[id] = id end
-        end
-        for _, msg in ipairs(messages) do
-            reserve(msg.function_call_id)
-            if msg.function_call then reserve(msg.function_call.id) end
-            if type(msg.content) == "table" then
-                for _, part in ipairs(msg.content) do
-                    if part.type == "function_call" or part.type == "tool_use" then reserve(part.id) end
-                end
-            end
-        end
-    end
-    return function(id)
-        if type(id) ~= "string" or id == "" then error("Tool call ID is required") end
-        if id:match("^[a-zA-Z0-9_-]+$") then return id end
-        if translated[id] then return translated[id] end
-        reserve_ids()
-        local digest, err = hash.sha256(id)
-        if err then error(err) end
-        local base = "tool-" .. digest
-        local candidate, suffix = base, 0
-        while used[candidate] and used[candidate] ~= id do
-            suffix = suffix + 1
-            candidate = base .. "-" .. suffix
-        end
-        used[candidate], translated[id] = id, candidate
-        return candidate
-    end
 end
 
 local function last_cacheable_message_position(messages)
@@ -407,7 +365,7 @@ function mapper.map_messages(contract_messages)
     end
 
     contract_messages = prompt.without_blank_text(contract_messages)
-    local tool_id = tool_id_mapper(contract_messages)
+    local tool_id = tool_ids.mapper(contract_messages, { pattern = tool_ids.NATIVE_PATTERN })
     local order = thinking.new_turn_order(contract_messages)
     local stale_thinking = {}
 

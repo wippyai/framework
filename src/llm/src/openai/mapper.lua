@@ -1,4 +1,5 @@
 local json = require("json")
+local tool_ids = require("tool_id")
 local output = require("output")
 local route = require("route")
 local prompt = require("prompt")
@@ -199,6 +200,9 @@ function openai_mapper.extract_instructions(contract_messages)
     return table.concat(parts, "\n\n"), consumed
 end
 
+-- Responses API call_id: longer ids fail with string_above_max_length.
+local MAX_CALL_ID_LENGTH = 64
+
 -- Map contract messages into the Responses API input[] array.
 -- Non-positional instructions are pulled out via extract_instructions().
 function openai_mapper.map_messages(contract_messages, options)
@@ -207,6 +211,7 @@ function openai_mapper.map_messages(contract_messages, options)
 
     contract_messages = prompt.without_blank_text(contract_messages)
     local _, consumed = openai_mapper.extract_instructions(contract_messages)
+    local wire_call_id = tool_ids.mapper(contract_messages, { max_length = MAX_CALL_ID_LENGTH })
     local items = {}
 
     for i, msg in ipairs(contract_messages) do
@@ -233,7 +238,7 @@ function openai_mapper.map_messages(contract_messages, options)
                 if msg.function_call and msg.function_call.id then
                     table.insert(items, {
                         type = "function_call",
-                        call_id = msg.function_call.id,
+                        call_id = wire_call_id(msg.function_call.id),
                         name = msg.function_call.name,
                         arguments = encode_arguments(msg.function_call.arguments)
                     })
@@ -255,7 +260,7 @@ function openai_mapper.map_messages(contract_messages, options)
                     end
                     table.insert(items, {
                         type = "function_call_output",
-                        call_id = call_id,
+                        call_id = wire_call_id(call_id),
                         output = msg.is_error == true and json.encode({ error = out_text }) or out_text
                     })
                 end

@@ -4,6 +4,7 @@ local prompt = require("prompt")
 local json = require("json")
 local route = require("route")
 local transport = require("transport")
+local tool_ids = require("tool_id")
 
 local mapper = {}
 
@@ -29,6 +30,9 @@ mapper.REQUEST_KEYS = { "messages", "system", "toolConfig" }
 mapper.DEFAULT_MAX_TOKENS = 2000
 
 local MAX_CACHE_CHECKPOINTS = 4
+
+-- ToolUseBlock.toolUseId and ToolResultBlock.toolUseId: at most 64 characters.
+local MAX_TOOL_ID_LENGTH = 64
 
 -- Converse stopReason -> contract finish_reason
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
@@ -285,6 +289,12 @@ function mapper.map_messages(contract_messages)
 
     contract_messages = prompt.without_blank_text(contract_messages)
     local order = thinking.new_turn_order(contract_messages)
+    local translate_id = tool_ids.mapper(contract_messages,
+        { pattern = tool_ids.NATIVE_PATTERN, max_length = MAX_TOOL_ID_LENGTH })
+    local function tool_use_id(id)
+        if id == nil or id == "" then return "" end
+        return translate_id(id)
+    end
     local stale_thinking = {}
 
     local function add_reasoning_blocks(content_blocks, msg)
@@ -345,7 +355,7 @@ function mapper.map_messages(contract_messages)
                 content = {
                     {
                         toolResult = {
-                            toolUseId = msg.function_call_id or "",
+                            toolUseId = tool_use_id(msg.function_call_id),
                             content = { { text = result_text } },
                             status = msg.is_error == true and "error" or "success"
                         }
@@ -361,7 +371,7 @@ function mapper.map_messages(contract_messages)
 
             local tool_use = {
                 toolUse = {
-                    toolUseId = msg.function_call.id or "",
+                    toolUseId = tool_use_id(msg.function_call.id),
                     name = msg.function_call.name or "",
                     input = arguments
                 }
@@ -400,7 +410,7 @@ function mapper.map_messages(contract_messages)
                         local args = normalize_tool_arguments(part.arguments)
                         local tool_use = {
                             toolUse = {
-                                toolUseId = part.id or "",
+                                toolUseId = tool_use_id(part.id),
                                 name = part.name or "",
                                 input = args
                             }

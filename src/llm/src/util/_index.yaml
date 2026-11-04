@@ -50,6 +50,15 @@ entries:
         - fallback
     source: file://fallback.lua
 
+  - name: tool_id
+    kind: library.lua
+    meta:
+      type: library
+      comment: Stable translation of foreign tool call ids into ids a provider accepts
+    source: file://tool_id.lua
+    modules:
+      - hash
+
   - name: thinking
     kind: library.lua
     source: file://thinking.lua

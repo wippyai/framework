@@ -136,6 +136,7 @@ entries:
       prompt: wippy.llm:prompt
       output: wippy.llm:output
       route: wippy.llm.util:route
+      tool_id: wippy.llm.util:tool_id
       transport: wippy.llm.util:transport
 
   - name: embed_titan

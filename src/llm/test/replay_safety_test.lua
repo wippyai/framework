@@ -1143,6 +1143,125 @@ local function define_tests()
             end)
         end)
 
+        describe("foreign tool call ids", function()
+            local LONG = "get_customer_subscription_details_0194c7a2-9c1e-7b3f-8a4d-1234567890ab"
+            local LONG_SIBLING = "get_customer_subscription_details_0194c7a2-9c1e-7b3f-8a4d-1234567890ac"
+
+            local function round(id): any
+                return {
+                    { role = "user", content = text("q") },
+                    { role = "function_call", content = {}, function_call = { id = id, name = "t", arguments = "{}" } },
+                    { role = "function_result", name = "t", function_call_id = id, content = text("r") },
+                }
+            end
+
+            local function bedrock_ids(rows): any
+                local messages: any = bedrock_mapper.map_messages(rows).messages
+                local ids = {}
+                for _, message in ipairs(messages) do
+                    for _, block in ipairs(message.content) do
+                        if block.toolUse then table.insert(ids, block.toolUse.toolUseId) end
+                        if block.toolResult then table.insert(ids, block.toolResult.toolUseId) end
+                    end
+                end
+                return ids
+            end
+
+            local function openai_ids(rows): any
+                local ids = {}
+                for _, item in ipairs(openai_mapper.map_messages(rows, {})) do
+                    if item.call_id then table.insert(ids, item.call_id) end
+                end
+                return ids
+            end
+
+            it("fits the same 70-character id on a Bedrock call and result", function()
+                test.eq(#LONG, 70)
+                local ids = bedrock_ids(round(LONG))
+                test.eq(#ids, 2)
+                test.eq(ids[1], ids[2])
+                test.is_true(#ids[1] <= 64)
+                test.not_nil(ids[1]:match("^[a-zA-Z0-9_-]+$"))
+            end)
+
+            it("translates ids with characters Bedrock rejects", function()
+                local ids = bedrock_ids(round("provider:call/one"))
+                test.eq(ids[1], ids[2])
+                test.not_nil(ids[1]:match("^[a-zA-Z0-9_-]+$"))
+            end)
+
+            it("keeps Bedrock ids stable over builds", function()
+                test.eq(bedrock_ids(round(LONG))[1], bedrock_ids(round(LONG))[1])
+            end)
+
+            it("keeps two long Bedrock ids sharing a prefix apart", function()
+                local rows = round(LONG)
+                for _, row in ipairs(round(LONG_SIBLING)) do
+                    if row.role ~= "user" then table.insert(rows, row) end
+                end
+                local ids = bedrock_ids(rows)
+                test.eq(#ids, 4)
+                test.eq(ids[1], ids[2])
+                test.eq(ids[3], ids[4])
+                test.is_false(ids[1] == ids[3])
+            end)
+
+            it("avoids a Bedrock native id equal to a translated one", function()
+                local translated = bedrock_ids(round(LONG))[1]
+                local rows = round(LONG)
+                for _, row in ipairs(round(translated)) do
+                    if row.role ~= "user" then table.insert(rows, row) end
+                end
+                local ids = bedrock_ids(rows)
+                test.is_false(ids[1] == ids[3])
+                test.eq(ids[3], translated)
+                test.is_true(#ids[1] <= 64)
+            end)
+
+            it("leaves ordinary ids byte-identical on Bedrock and OpenAI", function()
+                local ordinary = "tooluse_Abc-123_" .. string.rep("x", 48)
+                test.eq(#ordinary, 64)
+                test.eq(bedrock_ids(round(ordinary))[1], ordinary)
+                test.eq(bedrock_ids(round(ordinary))[2], ordinary)
+                test.eq(openai_ids(round(ordinary))[1], ordinary)
+                test.eq(openai_ids(round("call:with/other-chars"))[1], "call:with/other-chars")
+            end)
+
+            it("translates a function_call content part on Bedrock", function()
+                local messages: any = bedrock_mapper.map_messages({
+                    { role = "assistant", content = { { type = "function_call", id = LONG, name = "t", arguments = {} } } },
+                    { role = "function_result", name = "t", function_call_id = LONG, content = text("r") },
+                }).messages
+                local call = messages[1].content[1].toolUse.toolUseId
+                test.is_true(#call <= 64)
+                test.eq(messages[2].content[1].toolResult.toolUseId, call)
+            end)
+
+            it("fits the same long id on an OpenAI call and output", function()
+                local ids = openai_ids(round(LONG))
+                test.eq(#ids, 2)
+                test.eq(ids[1], ids[2])
+                test.is_true(#ids[1] <= 64)
+                test.eq(openai_ids(round(LONG))[1], ids[1])
+            end)
+
+            it("keeps the layout of a Bedrock response with a long id", function()
+                local result = bedrock_mapper.format_success_response({ output = { message = { role = "assistant", content = {
+                    reasoning_block("s1"), { text = "a" }, reasoning_block("s2"),
+                    { toolUse = { toolUseId = LONG, name = "t", input = { a = 1 } } },
+                } } }, stopReason = "tool_use", usage = { inputTokens = 1, outputTokens = 1 } }, {})
+                local order = bedrock_order(bedrock_replay(stored_rows(result)).messages[2])
+                test.eq(order[3], "s2")
+                test.is_true(#order[4] <= 64)
+            end)
+
+            it("keeps Claude's translated ids as they are", function()
+                local messages: any = claude_mapper.map_messages(round("provider:call/one")).messages
+                test.eq(#messages[2].content[1].id, 69)
+                test.eq(messages[2].content[1].id:sub(1, 5), "tool-")
+            end)
+        end)
+
         describe("discard_calls", function()
             it("removes calls and the thinking behind the last visible text", function()
                 local metadata: any = {
