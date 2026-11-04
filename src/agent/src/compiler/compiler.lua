@@ -593,9 +593,16 @@ end
 local CHECKPOINT_AGENT_OPTION_KEYS = {
     enabled = true,
     function_id = true,
+    max_conversation_chars = true,
     max_memory_chars = true,
+    max_row_chars = true,
     max_tokens = true,
+    max_tool_result_chars = true,
+    max_tool_results = true,
+    max_tool_results_chars = true,
+    model = true,
     strict = true,
+    temperature = true,
     token_threshold = true,
 }
 

@@ -579,6 +579,28 @@ options reach the checkpoint binding and function fallback, above binding defaul
 A strict binding failure stops processing without trying the function fallback.
 Each binding attempt receives its own option copy.
 
+**Per-agent compaction**
+
+Attach a trait with this `data` to configure the default checkpoint summarizer:
+
+```yaml
+data:
+  behaviors:
+    compaction:
+      handles: [checkpoint]
+      checkpoint:
+        token_threshold: 12000
+        model: class:fast
+        temperature: 0.2
+        max_tokens: 3000
+```
+
+No checkpoint handler is required. Session also reads `max_tool_result_chars`,
+`max_conversation_chars`, `max_tool_results`, and `max_tool_results_chars`;
+dataflow reads `max_row_chars` and `max_memory_chars`. Explicit
+`agent_options.checkpoint` overrides these trait defaults. Unrelated behavior
+checkpoint keys stay out of `agent_options.checkpoint`.
+
 Tool wrappers may adjust arguments, redirect a tool, or reorder calls, but must
 preserve every original tool-call ID exactly once. Dropping, duplicating, adding,
 or replacing an ID fails validation before tools execute, regardless of wrapper
