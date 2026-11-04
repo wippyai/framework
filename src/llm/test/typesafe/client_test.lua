@@ -134,7 +134,7 @@ local function define_tests()
                     get = function(url, options)
                         test.eq(url, "https://staging.typesafe.ai/v1/models")
                         test.eq(options.headers["Authorization"], "Bearer default-env-key")
-                        test.eq(options.timeout, 15)
+                        test.eq(options.timeout, "15000ms")
                         return { status_code = 200, body = "{}", headers = {} }
                     end
                 }
@@ -171,7 +171,7 @@ local function define_tests()
 
                 typesafe_client._http_client = {
                     get = function(url, options)
-                        test.eq(options.timeout, 60)
+                        test.eq(options.timeout, "60000ms")
                         return { status_code = 200, body = "{}", headers = {} }
                     end
                 }
@@ -185,7 +185,7 @@ local function define_tests()
 
                 typesafe_client._http_client = {
                     get = function(url, options)
-                        test.eq(options.timeout, 5)
+                        test.eq(options.timeout, "5000ms")
                         return { status_code = 200, body = "{}", headers = {} }
                     end
                 }

@@ -42,6 +42,13 @@ local function define_tests()
                 test.eq(transport.config_value({ api_key = "literal", api_key_env = "CUSTOM_KEY" }, env_module, "api_key", "DEFAULT_KEY"), "literal")
             end)
 
+            it("preserves explicit empty strings for every setting", function()
+                for _, key in ipairs({ "api_key", "base_url", "organization", "region", "timeout" }) do
+                    test.eq(transport.config_value({ [key] = "", [key .. "_env"] = "CUSTOM_KEY" },
+                        env_module, key, "DEFAULT_KEY"), "", key)
+                end
+            end)
+
             it("should read the env variable named by the context", function()
                 test.eq(transport.config_value({ api_key_env = "CUSTOM_KEY" }, env_module, "api_key", "DEFAULT_KEY"), "from-custom-env")
             end)
@@ -119,7 +126,8 @@ local function define_tests()
             for _, verb in ipairs({ "get", "post", "put", "patch", "delete" }) do
                 http[verb] = function(url, options)
                     table.insert(calls, verb)
-                    return { status_code = 200, url = url, options = options }
+                    test.eq(options.timeout, "30000ms")
+                    return { status_code = 200 }
                 end
             end
 
@@ -339,7 +347,7 @@ local function define_tests()
                     return { status_code = 200 }
                 end }
                 transport.dispatch(http, "POST", "fixture", options, 1250)
-                test.eq(seen, 0.25)
+                test.eq(seen, "250ms")
                 test.eq(options.timeout, 10)
             end)
 
@@ -353,8 +361,77 @@ local function define_tests()
                         return { status_code = 200 }
                     end }, "POST", "fixture", options, 1000 + budget)
                     test.is_nil(err)
-                    test.eq(seen, math.min(budget / 1000, 1200))
+                    test.eq(seen, tostring(math.min(budget, 1200000)) .. "ms")
                     test.eq(options.timeout, "20m")
+                end
+            end)
+
+            for _, case in ipairs({
+                { name = "500ms without a deadline for seconds and duration input", values = { 0.5, "500ms" }, expected = "500ms" },
+                { name = "fractional 1.9 seconds", values = { 1.9 }, expected = "1900ms" },
+                { name = "20m without a deadline", values = { "20m" }, expected = "1200000ms" },
+                { name = "bare numeric strings", values = { "0.25" }, expected = "250ms" },
+                { name = "floored milliseconds", values = { 0.2509 }, expected = "250ms" },
+                { name = "at least one millisecond", values = { 0.0001 }, expected = "1ms" },
+            }) do
+                it("sends " .. case.name .. " as a millisecond duration", function()
+                    for _, value in ipairs(case.values) do
+                        local options = { timeout = value }
+                        for _, method in ipairs({ "GET", "POST", "PUT", "PATCH", "DELETE" }) do
+                            local seen
+                            local _, err = transport.dispatch({ [string.lower(method)] = function(_, request)
+                                seen = request.timeout
+                                return { status_code = 200 }
+                            end }, method, "fixture", options)
+                            test.is_nil(err)
+                            test.eq(seen, case.expected)
+                            test.eq(options.timeout, value)
+                        end
+                    end
+                end)
+            end
+
+            it("recomputes retries from the original timeout", function()
+                local now, seen = 1000, {}
+                transport.now_ms = function() return now end
+                local options = { timeout = "500ms" }
+                local http = { post = function(_, request)
+                    seen[#seen + 1] = request.timeout
+                    now = now + 300
+                    return { status_code = #seen == 1 and 503 or 200 }
+                end }
+                local response, err = transport.send(function()
+                    return transport.dispatch(http, "POST", "fixture", options, 1700)
+                end, function(response)
+                    return { status_code = response.status_code, message = "retry" }
+                end, { attempts = 1, backoff_ms = 0 }, 1700)
+                test.is_nil(err)
+                test.not_nil(response)
+                test.eq(table.concat(seen, ","), "500ms,400ms")
+                test.eq(options.timeout, "500ms")
+                transport.dispatch(http, "POST", "fixture", options)
+                test.eq(seen[3], "500ms")
+            end)
+
+            it("rejects invalid dispatch timeouts without connection errors or retries", function()
+                transport.now_ms = function() return 1000 end
+                for _, deadline in ipairs({ 2000, false }) do
+                    local attempts, calls = 0, 0
+                    local response, err = transport.send(function()
+                        attempts = attempts + 1
+                        return transport.dispatch({ post = function()
+                            calls = calls + 1
+                            return { status_code = 200 }
+                        end }, "POST", "fixture", { timeout = "soon" }, deadline or nil)
+                    end, function(response)
+                        return { status_code = response.status_code, message = "HTTP failure" }
+                    end, { attempts = 2, backoff_ms = 0 }, deadline or nil)
+                    test.is_nil(response)
+                    test.eq(err.status_code, 400)
+                    test.eq(err.error_type, "invalid_request")
+                    test.contains(err.message, "Invalid timeout")
+                    test.eq(attempts, 1)
+                    test.eq(calls, 0)
                 end
             end)
 

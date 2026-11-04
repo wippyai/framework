@@ -62,8 +62,8 @@ entries:
         default_env: TYPESAFE_BASE_URL
         default_value: https://api.typesafe.ai/v1
       timeout:
-        type: integer
-        description: Request timeout in seconds
+        type: [number, string]
+        description: Request timeout in seconds or as a duration string
         default_env: TYPESAFE_TIMEOUT
         default_value: 60
       retry:

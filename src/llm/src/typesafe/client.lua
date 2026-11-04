@@ -32,8 +32,7 @@ local function resolve_config(): TypeSafeConfig
         return transport.config_value(ctx_all, typesafe_client._env, key, default_env)
     end
 
-    local timeout_value, timeout_source = transport.config_value(ctx_all, typesafe_client._env, "timeout", "TYPESAFE_TIMEOUT")
-    local timeout, timeout_err = transport.resolve_timeout(timeout_value, timeout_source, 60)
+    local timeout, timeout_err = transport.config_timeout(ctx_all, typesafe_client._env, "TYPESAFE_TIMEOUT", 60)
 
     local config = {
         api_key = resolve_string("api_key", "TYPESAFE_API_KEY"),

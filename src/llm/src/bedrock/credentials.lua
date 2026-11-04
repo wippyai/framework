@@ -44,7 +44,7 @@ function credentials.fetch_container_credentials()
         request_headers["Authorization"] = auth_token
     end
 
-    local response, err = credentials._http_client.get(creds_url, {
+    local response, err = transport.dispatch(credentials._http_client, "GET", creds_url, {
         headers = request_headers,
         timeout = 5
     })
@@ -88,7 +88,7 @@ end
 
 -- Fetch temporary credentials from EC2 instance metadata (IMDSv2)
 function credentials.fetch_instance_credentials()
-    local token_response, token_err = credentials._http_client.put(
+    local token_response, token_err = transport.dispatch(credentials._http_client, "PUT",
         "http://169.254.169.254/latest/api/token", {
             headers = { ["X-aws-ec2-metadata-token-ttl-seconds"] = "21600" },
             timeout = 2
@@ -101,7 +101,7 @@ function credentials.fetch_instance_credentials()
     local token = tostring(token_response.body)
     local imds_headers = { ["X-aws-ec2-metadata-token"] = token }
 
-    local role_response, role_err = credentials._http_client.get(
+    local role_response, role_err = transport.dispatch(credentials._http_client, "GET",
         "http://169.254.169.254/latest/meta-data/iam/security-credentials/", {
             headers = imds_headers,
             timeout = 2
@@ -116,7 +116,7 @@ function credentials.fetch_instance_credentials()
         return nil, "No IAM role found on instance"
     end
 
-    local creds_response, creds_err = credentials._http_client.get(
+    local creds_response, creds_err = transport.dispatch(credentials._http_client, "GET",
         "http://169.254.169.254/latest/meta-data/iam/security-credentials/" .. role_name, {
             headers = imds_headers,
             timeout = 2
@@ -149,7 +149,7 @@ end
 
 -- Check if EC2 instance metadata is reachable
 function credentials.has_instance_endpoint()
-    local response, err = credentials._http_client.put(
+    local response, err = transport.dispatch(credentials._http_client, "PUT",
         "http://169.254.169.254/latest/api/token", {
             headers = { ["X-aws-ec2-metadata-token-ttl-seconds"] = "21600" },
             timeout = 1

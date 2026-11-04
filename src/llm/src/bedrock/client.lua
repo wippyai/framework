@@ -25,8 +25,7 @@ local function resolve_config()
         return transport.config_value(ctx_all, bedrock_client._env, key, default_env)
     end
 
-    local timeout_value, timeout_source = transport.config_value(ctx_all, bedrock_client._env, "timeout", "BEDROCK_TIMEOUT")
-    local timeout, timeout_err = transport.resolve_timeout(timeout_value, timeout_source, 600)
+    local timeout, timeout_err = transport.config_timeout(ctx_all, bedrock_client._env, "BEDROCK_TIMEOUT", 600)
 
     local region = resolve_string("region", "AWS_REGION")
         or resolve_string("aws_region", "AWS_DEFAULT_REGION")

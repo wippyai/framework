@@ -5,6 +5,7 @@ local registry = require("registry")
 local google_config = require("google_config")
 local google_client = require("google_client")
 local transport = require("transport")
+local bedrock_credentials = require("bedrock_credentials")
 
 local drivers = {
     { name = "Claude", generate = require("claude_generate"), structured = require("claude_structured"), client = require("claude_client"), env = "ANTHROPIC_TIMEOUT" },
@@ -42,7 +43,7 @@ local function define_tests()
             if backup then
                 routes[2] = { id = "timeout-provider", provider_model = "backup-model" }
             end
-            local sent
+            local sent, headers
             local client_error
             local calls = 0
             local handler = operation == "structured" and driver.structured or driver.generate
@@ -85,6 +86,7 @@ local function define_tests()
             local http = { post = function(_, options)
                 calls = calls + 1
                 sent = options.timeout
+                headers = options.headers
                 test.eq(options.stream == true, streaming)
                 return { status_code = 401, headers = {}, body = '{"error":{"message":"timeout probe"}}' }
             end }
@@ -113,9 +115,9 @@ local function define_tests()
                 replace(driver.client, "_http_client", http)
             end
             if driver.name == "Bedrock" then
-                replace(driver.client, "_credentials", { resolve = function()
-                    return { access_key = "test-access", secret_key = "test-secret" }
-                end })
+                replace(driver.client, "_credentials", bedrock_credentials)
+                replace(bedrock_credentials, "_ctx", ctx)
+                replace(bedrock_credentials, "_env", env)
             end
             local method = driver.name == "Bedrock" and (streaming and "converse_stream" or "converse") or "request"
             local request = driver.client[method]
@@ -127,10 +129,19 @@ local function define_tests()
 
             return function(case, deadline)
                 configured = { api_key = "test-key", base_url = "https://timeout.invalid",
-                    timeout = case.configured, timeout_env = "TEST_TIMEOUT" }
+                    timeout = case.configured, timeout_env = "TEST_TIMEOUT",
+                    access_key = "test-access", secret_key = "test-secret" }
                 environment = { TEST_TIMEOUT = case.reference ~= nil and tostring(case.reference) or nil,
                     [driver.env] = case.env ~= nil and tostring(case.env) or nil }
-                route.context = { timeout = case.route }
+                if case.key_env then
+                    environment[case.key_env] = "env-secret"
+                    if driver.name == "Bedrock" then
+                        environment.AWS_SECRET_ACCESS_KEY = "env-secret"
+                        environment.AWS_SESSION_TOKEN = "env-secret"
+                    end
+                end
+                route.context = { timeout = case.route, api_key = case.api_key,
+                    access_key = case.api_key, secret_key = case.api_key, session_token = case.api_key }
                 route.options = { timeout = case.route_option }
                 sent, calls, client_error = nil, 0, nil
                 local options = { model = "timeout-model", timeout = case.option, retry = false,
@@ -148,7 +159,7 @@ local function define_tests()
                     test.is_nil(response)
                     test.not_nil(err)
                 end
-                return sent, calls, err, response, client_error
+                return sent, calls, err, response, client_error, headers
             end
         end
 
@@ -163,6 +174,43 @@ local function define_tests()
             end
             return case
         end
+
+        local key_envs = { Claude = "ANTHROPIC_API_KEY", Bedrock = "AWS_ACCESS_KEY_ID",
+            OpenAI = "OPENAI_API_KEY", compat = "OPENAI_COMPAT_API_KEY",
+            ["Google Generative AI"] = "GEMINI_API_KEY" }
+        for _, driver in ipairs(drivers) do
+            if key_envs[driver.name] then
+                it(driver.name .. " never sends an env key when the route key is explicitly empty", function()
+                    local call = setup(driver, "generate")
+                    local _, calls, _, _, _, headers = call({ api_key = "", key_env = key_envs[driver.name] })
+                    test.eq(calls, 1)
+                    for _, value in pairs(headers) do
+                        test.is_nil(tostring(value):find("env-secret", 1, true), "env key leaks in HTTP headers")
+                    end
+                end)
+            end
+        end
+
+        it("Bedrock metadata requests send millisecond durations through dispatch", function()
+            local seen = {}
+            local function capture(url, options)
+                seen[#seen + 1] = tostring(options.timeout)
+                local body = '{}'
+                if url:match("/token$") then body = "token"
+                elseif url:match("/security%-credentials/$") then body = "role" end
+                return { status_code = 200, body = body }
+            end
+            replace(bedrock_credentials, "_env", { get = function(key)
+                if key == "AWS_CONTAINER_CREDENTIALS_FULL_URI" then return "https://metadata.invalid" end
+            end })
+            replace(bedrock_credentials, "_http_client", { get = capture, put = capture })
+            local _, err = bedrock_credentials.fetch_container_credentials()
+            test.is_nil(err)
+            _, err = bedrock_credentials.fetch_instance_credentials()
+            test.is_nil(err)
+            test.ok(bedrock_credentials.has_instance_endpoint())
+            test.eq(table.concat(seen, ","), "5000ms,2000ms,2000ms,2000ms,1000ms")
+        end)
 
         for _, driver in ipairs(drivers) do
             it(driver.name .. " switches streaming routes on an invalid timeout only with fallback_on", function()
@@ -193,7 +241,7 @@ local function define_tests()
                         for _, level in ipairs(levels) do
                             local sent, calls = call(precedence_case(level, value))
                             test.eq(calls, 1, level)
-                            test.eq(sent, value == "20m" and 1200 or 90, level)
+                            test.eq(sent, value == "20m" and "1200000ms" or "90000ms", level)
                         end
                     end)
                 end
@@ -203,12 +251,12 @@ local function define_tests()
                         configured = "", reference = "", env = "" } }) do
                         local sent, calls = call(case)
                         test.eq(calls, 1)
-                        test.eq(sent, 600)
+                        test.eq(sent, "600000ms")
                     end
                     for _, level in ipairs(levels) do
                         local sent, calls = call(precedence_case(level, "90", ""))
                         test.eq(calls, 1, level)
-                        test.eq(sent, 90, level)
+                        test.eq(sent, "90000ms", level)
                     end
                 end)
                 for _, level in ipairs(levels) do
@@ -232,7 +280,7 @@ local function define_tests()
                         for _, level in ipairs(levels) do
                             local sent, calls = call(precedence_case(level, "20m"), deadline)
                             test.eq(calls, 1, level)
-                            test.eq(sent, math.min(deadline / 1000, 1200), level)
+                            test.eq(sent, tostring(math.min(deadline, 1200000)) .. "ms", level)
                         end
                     end)
                 end
@@ -244,7 +292,7 @@ local function define_tests()
             { name = "structured output", handler = require("google_structured_output"), method = "POST" },
             { name = "health checks", handler = require("google_status"), method = "GET" },
         }) do
-            it("Google Generative AI " .. operation.name .. " normalizes configured timeout formats to seconds at HTTP", function()
+            it("Google Generative AI " .. operation.name .. " normalizes configured timeout formats to millisecond durations at HTTP", function()
                 local client = require("generative_ai_client")
                 local context = { api_key = "test-key", base_url = "https://timeout.invalid" }
                 local environment = {}
@@ -277,9 +325,9 @@ local function define_tests()
                 end })
 
                 for _, case in ipairs({
-                    { configured = "90", expected = 90 },
-                    { expected = 600 },
-                    { configured = "20m", expected = 1200 },
+                    { configured = "90", expected = "90000ms" },
+                    { expected = "600000ms" },
+                    { configured = "20m", expected = "1200000ms" },
                 }) do
                     environment.GEN_AI_TIMEOUT = case.configured
                     sent, method, calls = nil, nil, 0

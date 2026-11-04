@@ -114,7 +114,7 @@ local function define_tests()
                 calls = calls + 1
                 test.eq(url, "https://example.test/v1/decisions")
                 test.eq(options.headers.Authorization, "Bearer test-key")
-                test.eq(options.timeout, 7)
+                test.eq(options.timeout, "7000ms")
                 test.eq(json.decode(options.body).questions[1].type, "predicate")
                 if calls == 1 then return { status_code = 503, body = json.encode({ error = { message = "unavailable" } }), headers = {} } end
                 return { status_code = 200, body = json.encode(body()), headers = { ["X-Request-Id"] = "req_http" } }

@@ -28,8 +28,8 @@ local function define_tests()
             test.is_nil(err)
             test.not_nil(result)
             test.eq(#timeouts, 2)
-            test.eq(timeouts[1], 10)
-            test.eq(timeouts[2], 4, "the second request only has four seconds of budget left")
+            test.eq(timeouts[1], "10000ms")
+            test.eq(timeouts[2], "4000ms", "the second request only has four seconds of budget left")
         end)
 
         after_each(function()
@@ -350,7 +350,7 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        test.eq(options.timeout, 60)
+                        test.eq(options.timeout, "60000ms")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }

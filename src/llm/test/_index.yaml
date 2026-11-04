@@ -251,6 +251,7 @@ entries:
       bedrock_structured: wippy.llm.bedrock:structured_output
       bedrock_generate: wippy.llm.bedrock:generate
       bedrock_client: wippy.llm.bedrock:client
+      bedrock_credentials: wippy.llm.bedrock:credentials
       openai_structured: wippy.llm.openai:structured_output
       openai_generate: wippy.llm.openai:generate
       openai_client: wippy.llm.openai:client

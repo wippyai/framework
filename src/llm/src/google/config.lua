@@ -26,7 +26,7 @@ end
 local function get_value(key, default_env_var)
     -- Check for direct value first
     local ctx_value = safe_ctx_get(key)
-    if ctx_value ~= nil and ctx_value ~= "" then
+    if ctx_value ~= nil then
         return ctx_value, "context." .. key
     end
 
@@ -137,8 +137,8 @@ function config.get_vertex_location()
 end
 
 function config.get_vertex_timeout()
-    local value, source = get_value("timeout", "VERTEX_AI_TIMEOUT")
-    return transport.resolve_timeout(value, source, 600)
+    return transport.config_timeout({ timeout = safe_ctx_get("timeout"),
+        timeout_env = safe_ctx_get("timeout_env") }, config._env, "VERTEX_AI_TIMEOUT", 600)
 end
 
 function config.get_retry(): transport.Retry?
@@ -154,8 +154,8 @@ function config.get_generative_ai_base_url()
 end
 
 function config.get_generative_ai_timeout()
-    local value, source = get_value("timeout", "GEN_AI_TIMEOUT")
-    return transport.resolve_timeout(value, source, 600)
+    return transport.config_timeout({ timeout = safe_ctx_get("timeout"),
+        timeout_env = safe_ctx_get("timeout_env") }, config._env, "GEN_AI_TIMEOUT", 600)
 end
 
 return config

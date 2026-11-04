@@ -87,7 +87,7 @@ local function define_tests()
                 tests.is_nil(result)
             end)
 
-            it("should ignore empty string values", function()
+            it("should preserve explicit empty string values", function()
                 config._ctx = {
                     get = function(key)
                         if key == "api_key" then
@@ -107,7 +107,7 @@ local function define_tests()
                 }
 
                 local result = config.get_gemini_api_key()
-                tests.eq(result, "fallback_value")
+                tests.eq(result, "")
             end)
         end)
 

@@ -37,8 +37,7 @@ local function resolve_config()
         return transport.config_value(ctx_all, openai_client._env, key, default_env)
     end
 
-    local timeout_value, timeout_source = transport.config_value(ctx_all, openai_client._env, "timeout", "OPENAI_TIMEOUT")
-    local timeout, timeout_err = transport.resolve_timeout(timeout_value, timeout_source, 600)
+    local timeout, timeout_err = transport.config_timeout(ctx_all, openai_client._env, "OPENAI_TIMEOUT", 600)
 
     local config = {
         api_key = resolve_string("api_key", "OPENAI_API_KEY"),

@@ -1336,7 +1336,7 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        test.eq(options.timeout, 60)
+                        test.eq(options.timeout, "60000ms")
 
                         return {
                             status_code = 200,

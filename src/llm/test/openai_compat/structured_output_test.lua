@@ -1021,7 +1021,7 @@ local function define_tests()
                     post = function(url, options)
                         test.contains(tostring(url), "https://custom.structured.api/v1/chat/completions")
                         test.eq(options.headers["Authorization"], "Bearer custom-structured-key")
-                        test.eq(options.timeout, 45)
+                        test.eq(options.timeout, "45000ms")
 
                         return {
                             status_code = 200,
@@ -1070,7 +1070,7 @@ local function define_tests()
 
                 structured_output_handler._client._http_client = {
                     post = function(url, options)
-                        test.eq(options.timeout, 60)
+                        test.eq(options.timeout, "60000ms")
 
                         return {
                             status_code = 200,
