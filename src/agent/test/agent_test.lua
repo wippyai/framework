@@ -974,7 +974,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Of course!")
                 prompt_builder:add_user("What's 2 + 2?")
 
-                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
+                local result = test_agent:step(prompt_builder)
 
                 test.not_nil(result)
                 test.not_nil(result.memory_recall)
@@ -988,33 +988,32 @@ local function define_tests()
                 test.is_nil(result.memory_prompt)
             end)
 
-            it("does not consult memory when the host does not persist context notes", function()
-                local opened = 0
-                agent._contract = {
-                    get = function()
-                        return { open = function() opened = opened + 1 end }
-                    end
+            it("recalls without any host option and returns the note on every result", function()
+                local replies = {
+                    { result = "ok", finish_reason = "stop" },
+                    { result = "partial", finish_reason = "length",
+                        tool_calls = { { id = "call_1", name = "calculator", arguments = {} } } },
+                    { result = "partial", finish_reason = "cancelled" },
                 }
-                local sent: any = nil
-                agent._llm = {
-                    generate = function(messages)
-                        sent = messages
-                        return { result = "ok", finish_reason = "stop" }
-                    end
-                }
-                local test_agent = agent.new(compiled_spec_with_memory)
-                local prompt_builder = prompt.new()
-                prompt_builder:add_user("Hello")
-                prompt_builder:add_assistant("Hi there!")
-                prompt_builder:add_user("Can you help me calculate something?")
+                for _, reply in ipairs(replies) do
+                    local sent: any = nil
+                    agent._llm = {
+                        generate = function(messages)
+                            sent = messages
+                            return reply
+                        end
+                    }
+                    local test_agent = agent.new(compiled_spec_with_memory)
+                    local prompt_builder = prompt.new()
+                    prompt_builder:add_user("Hello")
+                    prompt_builder:add_assistant("Hi there!")
+                    prompt_builder:add_user("Can you help me calculate something?")
 
-                local result = test_agent:step(prompt_builder)
+                    local result = assert(test_agent:step(prompt_builder))
 
-                test.eq(opened, 0)
-                test.is_nil(result.memory_recall)
-                test.is_nil(result.context_notes)
-                for _, message in ipairs(sent) do
-                    test.is_true(message.role ~= prompt.ROLE.DEVELOPER)
+                    test.eq(#result.context_notes, 1, reply.finish_reason)
+                    test.eq(sent[#sent], result.context_notes[1], reply.finish_reason)
+                    test.is_true(result.context_notes[1].metadata.preserve_position, reply.finish_reason)
                 end
             end)
 
@@ -1032,7 +1031,7 @@ local function define_tests()
                 prompt_builder:add_assistant("Hi there!")
                 prompt_builder:add_user("Can you help me calculate something?")
 
-                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
+                local result = test_agent:step(prompt_builder)
 
                 test.eq(#result.context_notes, 1)
                 local n = #sent
@@ -1049,7 +1048,7 @@ local function define_tests()
                 -- Only one message - below min_conversation_length
                 prompt_builder:add_user("Hello")
 
-                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
+                local result = test_agent:step(prompt_builder)
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1068,7 +1067,7 @@ local function define_tests()
                 prompt_builder:add_user("What's 2 + 2?")
 
                 -- Disable memory recall via runtime options
-                local result = test_agent:step(prompt_builder, { disable_memory_recall = true, persist_context_notes = true })
+                local result = test_agent:step(prompt_builder, { disable_memory_recall = true })
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1096,7 +1095,7 @@ local function define_tests()
                 prompt_builder:add_user("Test memory")
 
                 -- Should not fail, just skip memory recall
-                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
+                local result = test_agent:step(prompt_builder)
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall)
@@ -1118,7 +1117,7 @@ local function define_tests()
                 -- Add only one more message (cooldown = 2, so should not trigger)
                 prompt_builder:add_user("New question")
 
-                local result = test_agent:step(prompt_builder, { persist_context_notes = true })
+                local result = test_agent:step(prompt_builder)
 
                 test.not_nil(result)
                 test.is_nil(result.memory_recall) -- Should not recall due to cooldown
@@ -1152,7 +1151,6 @@ local function define_tests()
 
                 -- Pass session context via runtime options
                 local result = test_agent:step(prompt_builder, {
-                    persist_context_notes = true,
                     context = {
                         user_id = "test_user_123",
                         session_id = "session_456"
@@ -1425,7 +1423,7 @@ local function define_tests()
                 local step1 = prompt.new()
                 step1:add_user("Plan the release")
                 step1:add_developer("Lifecycle note for step 1")
-                local result1, err1 = runner:step(step1, { context = {}, persist_context_notes = true })
+                local result1, err1 = runner:step(step1, { context = {} })
                 test.is_nil(err1)
 
                 local step2 = prompt.new()
@@ -1436,7 +1434,7 @@ local function define_tests()
                 step2:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
                 step2:add_function_result("calculator", "4", "call_1")
                 step2:add_developer("Lifecycle note for step 2")
-                local _, err2 = runner:step(step2, { context = {}, persist_context_notes = true })
+                local _, err2 = runner:step(step2, { context = {} })
                 test.is_nil(err2)
 
                 test.eq(#requests, 2)
@@ -1843,7 +1841,7 @@ local function define_tests()
 
                     local history = prompt.new()
                     history:add_user("Plan the release")
-                    local first = assert(runner:step(history, { context = {}, persist_context_notes = true }))
+                    local first = assert(runner:step(history, { context = {} }))
                     test.eq(#first.context_notes, 1)
                     for _, note in ipairs(first.context_notes) do
                         history:add_message(note.role, note.content, nil, note.metadata)
@@ -1851,7 +1849,7 @@ local function define_tests()
                     history:add_function_call("calculator", '{"expression":"2+2"}', "call_1")
                     history.messages[#history.messages].metadata = { thinking_blocks = first.metadata.thinking_blocks }
                     history:add_function_result("calculator", "4", "call_1")
-                    local second = assert(runner:step(history, { context = {}, persist_context_notes = true }))
+                    local second = assert(runner:step(history, { context = {} }))
                     test.eq(#second.context_notes, 1)
 
                     local before = without_markers(requests[1])

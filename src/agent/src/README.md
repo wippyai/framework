@@ -224,7 +224,6 @@ local response, err = runner:step(builder, {
     stream_target = { reply_to = process.self(), topic = "stream" },
     tool_call = "auto",
     disable_memory_recall = false,
-    persist_context_notes = true,  -- the host persists response.context_notes in place
     drop_stale_thinking = true,    -- strip blocks bound to another prefix before the request
     thinking_is_current = nil,     -- optional function(msg, fingerprint) -> boolean
     previous_memory_ids = { "mem_1", "mem_2" },
@@ -304,11 +303,11 @@ note that is sent once and then dropped or rebuilt changes the prefix before the
 output it produced; that restarts the prompt cache and invalidates every later
 thinking block, not only the cache.
 
-Memory recall runs only when the host sets `persist_context_notes = true`. A host
-that does not persist the notes would send a note once and drop it from the next
-request, which edits the history before the output it produced; such a host gets
-no recall. The recall cooldown reads `metadata.memory_ids` from the persisted
-notes.
+Memory recall runs whenever the agent has a memory contract and recall is not
+disabled; its note is a context note. A host that does not persist the notes
+sends each note once and drops it from the next request, which edits the history
+before the output it produced. The recall cooldown reads `metadata.memory_ids`
+from the persisted notes.
 
 ### Prefix fingerprint
 

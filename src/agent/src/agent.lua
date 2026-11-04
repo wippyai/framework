@@ -336,13 +336,6 @@ local function perform_memory_recall(self: any, prompt_builder: any, runtime_opt
         return nil, nil
     end
 
-    -- The recall note is sent at the conversation tail, so it is part of the
-    -- prefix every later request replays. Only a host that persists the
-    -- returned context notes at that position keeps the prefix stable.
-    if not (runtime_options and runtime_options.persist_context_notes == true) then
-        return nil, nil
-    end
-
     local messages = prompt_builder:get_messages()
     local options = get_memory_options(self.memory_contract)
 
