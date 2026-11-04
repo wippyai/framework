@@ -245,17 +245,25 @@ entries:
       test: wippy.test:test
       llm: wippy.llm:llm
       providers: wippy.llm.discovery:providers
+      claude_structured: wippy.llm.claude:structured_output
       claude_generate: wippy.llm.claude:generate
       claude_client: wippy.llm.claude:client
+      bedrock_structured: wippy.llm.bedrock:structured_output
       bedrock_generate: wippy.llm.bedrock:generate
       bedrock_client: wippy.llm.bedrock:client
+      openai_structured: wippy.llm.openai:structured_output
       openai_generate: wippy.llm.openai:generate
       openai_client: wippy.llm.openai:client
+      compat_structured: wippy.llm.openai_compat:structured_output
       compat_generate: wippy.llm.openai_compat:generate
       compat_client: wippy.llm.openai_compat:client
       google_generate: wippy.llm.google:generate
+      google_structured_output: wippy.llm.google:structured_output
+      google_status: wippy.llm.google:status
       generative_ai_client: wippy.llm.google.generative_ai:client
       google_client: wippy.llm.google:client
+      transport: wippy.llm.util:transport
+      vertex_client: wippy.llm.google.vertex:client
       google_config: wippy.llm.google:config
     method: run_tests
 

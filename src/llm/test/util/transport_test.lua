@@ -8,6 +8,26 @@ type Sender = {
 
 local function define_tests()
     describe("Provider Transport", function()
+        describe("timeout_seconds", function()
+            it("parses seconds and runtime durations", function()
+                for _, case in ipairs({ { 90, 90 }, { "90", 90 }, { "20m", 1200 },
+                    { "1h30m", 5400 }, { "250ms", 0.25 }, { 0.5, 0.5 } }) do
+                    local seconds, err = transport.timeout_seconds(case[1])
+                    test.is_nil(err)
+                    test.eq(seconds, case[2])
+                end
+            end)
+
+            it("rejects missing, invalid and non-positive values", function()
+                for _, case in ipairs({ {}, { "" }, { "soon" }, { 0 }, { -1 },
+                    { "0s" }, { "-1m" }, { false }, { true }, { {} }, { math.huge }, { 0 / 0 } }) do
+                    local seconds, err = transport.timeout_seconds(case[1])
+                    test.is_nil(seconds)
+                    test.not_nil(err)
+                end
+            end)
+        end)
+
         describe("config_value", function()
             local env_values = {
                 CUSTOM_KEY = "from-custom-env",
@@ -319,8 +339,23 @@ local function define_tests()
                     return { status_code = 200 }
                 end }
                 transport.dispatch(http, "POST", "fixture", options, 1250)
-                test.eq(seen, "250ms")
+                test.eq(seen, 0.25)
                 test.eq(options.timeout, 10)
+            end)
+
+            it("caps duration strings without mutating request options", function()
+                transport.now_ms = function() return 1000 end
+                local options = { timeout = "20m" }
+                for _, budget in ipairs({ 30000, 1800000 }) do
+                    local seen
+                    local _, err = transport.dispatch({ post = function(_, request)
+                        seen = request.timeout
+                        return { status_code = 200 }
+                    end }, "POST", "fixture", options, 1000 + budget)
+                    test.is_nil(err)
+                    test.eq(seen, math.min(budget / 1000, 1200))
+                    test.eq(options.timeout, "20m")
+                end
             end)
 
             it("does not start HTTP after expiry even without a retry policy", function()

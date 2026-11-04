@@ -19,14 +19,15 @@ config.CLIENT_CONTRACT_ID = "wippy.llm.google:client_contract"
 local function safe_ctx_get(ctx_key)
     local success, v = pcall(function() return config._ctx.get(ctx_key) end)
 
-    return success and v or nil
+    if success then return v end
+    return nil
 end
 
 local function get_value(key, default_env_var)
     -- Check for direct value first
     local ctx_value = safe_ctx_get(key)
-    if ctx_value and ctx_value ~= "" then
-        return ctx_value
+    if ctx_value ~= nil and ctx_value ~= "" then
+        return ctx_value, "context." .. key
     end
 
     -- Check for env variable reference
@@ -34,14 +35,14 @@ local function get_value(key, default_env_var)
     if env_key_value and env_key_value ~= "" then
         local env_value = config._env.get(tostring(env_key_value))
         if env_value and env_value ~= "" then
-            return env_value
+            return env_value, tostring(env_key_value)
         end
     end
 
     -- Use default env variable
     local env_value = config._env.get(default_env_var)
     if env_value and env_value ~= "" then
-        return env_value
+        return env_value, default_env_var
     end
 
     return nil
@@ -136,9 +137,8 @@ function config.get_vertex_location()
 end
 
 function config.get_vertex_timeout()
-    local timeout = get_value("timeout", "VERTEX_AI_TIMEOUT")
-
-    return (timeout and tonumber(timeout)) or 600
+    local value, source = get_value("timeout", "VERTEX_AI_TIMEOUT")
+    return transport.resolve_timeout(value, source, 600)
 end
 
 function config.get_retry(): transport.Retry?
@@ -154,7 +154,8 @@ function config.get_generative_ai_base_url()
 end
 
 function config.get_generative_ai_timeout()
-    return tonumber(get_value("timeout", "GEN_AI_TIMEOUT")) or 600
+    local value, source = get_value("timeout", "GEN_AI_TIMEOUT")
+    return transport.resolve_timeout(value, source, 600)
 end
 
 return config

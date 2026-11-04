@@ -90,7 +90,7 @@ function providers.open(provider_id, context_overrides)
         final_context[k] = v
     end
     for k, v in pairs(context_overrides) do
-        final_context[k] = v
+        if k ~= "timeout" or v ~= "" then final_context[k] = v end
     end
 
     -- Get the base provider contract using injected contract module

@@ -48,23 +48,49 @@ function transport.now_ms(): number
     return math.floor(transport._time.now():unix_nano() / 1000000)
 end
 
+function transport.timeout_seconds(value: any): (number?, string?)
+    local seconds = nil
+    if type(value) == "number" then
+        seconds = value
+    elseif type(value) == "string" then
+        seconds = tonumber(value)
+        if seconds == nil then
+            local duration = time.parse_duration(value)
+            if duration then seconds = duration:seconds() end
+        end
+    end
+    if seconds and seconds > 0 and seconds < math.huge then return seconds, nil end
+    return nil, "Invalid timeout " .. string.format("%q", tostring(value))
+        .. ": expected positive seconds or a duration string"
+end
+
+function transport.resolve_timeout(value: any, source: string?, fallback: number?, fallback_err: RequestError?): (number?, RequestError?)
+    if value == nil or value == "" then return fallback, fallback_err end
+    local seconds, err = transport.timeout_seconds(value)
+    if err then
+        return nil, { status_code = 400, error_type = "invalid_request",
+            message = err .. " from " .. (source or "timeout") }
+    end
+    return seconds, nil
+end
+
 -- Resolves a string setting from a literal context value, then from the env
 -- variable named by `<key>_env` in the context, then from the provider's
 -- default env variable. Empty env values count as unset.
-function transport.config_value(ctx_all: {[string]: any}, env_module: any, key: string, default_env: string?): string?
-    if ctx_all[key] then
-        return tostring(ctx_all[key])
+function transport.config_value(ctx_all: {[string]: any}, env_module: any, key: string, default_env: string?): (string?, string?)
+    if ctx_all[key] ~= nil and ctx_all[key] ~= "" then
+        return tostring(ctx_all[key]), "context." .. key
     end
     local env_key = ctx_all[key .. "_env"]
     if env_key then
         local value = env_module.get(tostring(env_key))
-        if type(value) == "string" and value ~= "" then return value end
+        if type(value) == "string" and value ~= "" then return value, tostring(env_key) end
     end
     if default_env then
         local value = env_module.get(default_env)
-        if type(value) == "string" and value ~= "" then return value end
+        if type(value) == "string" and value ~= "" then return value, default_env end
     end
-    return nil
+    return nil, nil
 end
 
 function transport.normalize_retry(raw: any): Retry?
@@ -116,9 +142,9 @@ function transport.dispatch(http: any, method: string, url: string, options: {[s
         -- timeout and caps it against the remaining call budget.
         local capped = {}
         for key, value in pairs(options) do capped[key] = value end
-        local timeout = tonumber(options.timeout)
-        if timeout and timeout > 0 then remaining_ms = math.min(remaining_ms, timeout * 1000) end
-        capped.timeout = tostring(remaining_ms) .. "ms"
+        local timeout, timeout_err = transport.timeout_seconds(options.timeout)
+        if not timeout then return nil, timeout_err end
+        capped.timeout = math.min(remaining_ms / 1000, timeout)
         options = capped
     end
     local response, err = http[verb](url, options)

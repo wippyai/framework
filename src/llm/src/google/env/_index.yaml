@@ -32,7 +32,7 @@ entries:
   - name: vertex_timeout
     kind: env.variable
     meta:
-      comment: Vertex AI API request timeout in seconds
+      comment: Vertex AI API request timeout in seconds or as a duration string
       icon: tabler:clock
     default: "600"
     variable: VERTEX_AI_TIMEOUT
@@ -41,7 +41,7 @@ entries:
   - name: generative_ai_timeout
     kind: env.variable
     meta:
-      comment: Generative AI API request timeout in seconds
+      comment: Generative AI API request timeout in seconds or as a duration string
       icon: tabler:clock
     default: "600"
     variable: GEN_AI_TIMEOUT

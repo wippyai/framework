@@ -126,17 +126,6 @@ function fallback.should_switch(details: Details?, primary: boolean, streaming: 
     return TRANSIENT[error_type] == true or CANDIDATE_UNUSABLE[error_type] == true
 end
 
-function fallback.capped_timeout(timeout: any, remaining_ms: number): number
-    local remaining_s = math.max(1, math.floor(remaining_ms / 1000))
-    local current = tonumber(timeout)
-
-    if current ~= nil and current > 0 then
-        return math.min(current, remaining_s)
-    end
-
-    return remaining_s
-end
-
 function fallback.error_details(err: any): Details?
     if err == nil or type(err) == "string" then
         return nil

@@ -151,7 +151,7 @@ local function define_tests()
                 }
                 typesafe_client._env = {
                     get = function(key)
-                        return "env-value"
+                        if key ~= "TYPESAFE_TIMEOUT" then return "env-value" end
                     end
                 }
                 typesafe_client._http_client = {

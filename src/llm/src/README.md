@@ -151,8 +151,12 @@ The binding controls are a beta on the Claude API, Claude Platform on AWS, Amazo
 
 ### Timeout
 
-`timeout` is in seconds and covers the whole HTTP request, including reading a
-streamed response. It is not an idle timeout between chunks. Precedence is:
+Every driver accepts `timeout` as seconds (a number or numeric string such as
+`"90"`) or a duration string such as `"20m"`. The timeout covers the whole HTTP
+request, including reading a streamed response. It is not an idle timeout
+between chunks. Nil, empty and unset values fall through to the next level;
+invalid or non-positive values return `invalid_request` with the value and source.
+Precedence is:
 
 1. Call `options.timeout` (or the route's `options.timeout` default).
 2. Route `context.timeout`.
@@ -164,6 +168,8 @@ streamed response. It is not an idle timeout between chunks. Precedence is:
 TypeSafe evaluation uses the same precedence with `TYPESAFE_TIMEOUT` and a
 60-second default. Each HTTP retry gets its own request timeout;
 `deadline_ms` caps the remaining time across retries and fallback routes.
+Each request uses the smaller of its configured timeout and the remaining
+deadline, including when the timeout is a duration string.
 
 ### Retry
 

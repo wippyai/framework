@@ -25,6 +25,9 @@ local function resolve_config()
         return transport.config_value(ctx_all, bedrock_client._env, key, default_env)
     end
 
+    local timeout_value, timeout_source = transport.config_value(ctx_all, bedrock_client._env, "timeout", "BEDROCK_TIMEOUT")
+    local timeout, timeout_err = transport.resolve_timeout(timeout_value, timeout_source, 600)
+
     local region = resolve_string("region", "AWS_REGION")
         or resolve_string("aws_region", "AWS_DEFAULT_REGION")
         or "us-east-1"
@@ -33,7 +36,8 @@ local function resolve_config()
         region = region,
         base_url = resolve_string("base_url", "BEDROCK_BASE_URL")
             or ("https://bedrock-runtime." .. region .. ".amazonaws.com"),
-        timeout = tonumber(resolve_string("timeout", "BEDROCK_TIMEOUT")) or 600,
+        timeout = timeout,
+        timeout_error = timeout_err,
         retry = transport.normalize_retry(ctx_all.retry),
         deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
@@ -108,6 +112,8 @@ end
 local function signed_request(path, payload, options)
     options = options or {}
     local config = resolve_config()
+    local timeout, timeout_err = transport.resolve_timeout(options.timeout, "options.timeout", config.timeout, config.timeout_error)
+    if timeout_err then return nil, timeout_err end
 
     local creds, creds_err = bedrock_client._credentials.resolve()
     if not creds then
@@ -157,7 +163,7 @@ local function signed_request(path, payload, options)
     end
 
     local request_opts: {[string]: any} = {
-        timeout = tonumber(options.timeout) or config.timeout,
+        timeout = timeout,
         body = body
     }
     request_opts.headers = signed_headers

@@ -58,11 +58,17 @@ function vertex_client.request(contract_args)
         return {status_code = 401, message = tostring(token_err or "Google OAuth2 token is missing")}
     end
 
+    local timeout, timeout_err = transport.resolve_timeout(contract_args.options.timeout, "options.timeout")
+    if timeout == nil and timeout_err == nil then
+        timeout, timeout_err = vertex_client._config.get_vertex_timeout()
+    end
+    if timeout_err then return timeout_err end
+
     local options = {
         headers = {
             ["Authorization"] = "Bearer " .. token.access_token
         },
-        timeout = contract_args.options.timeout or vertex_client._config.get_vertex_timeout()
+        timeout = timeout
     }
     if contract_args.options.method == "POST" then
         options.body = json.encode(contract_args.payload or {})

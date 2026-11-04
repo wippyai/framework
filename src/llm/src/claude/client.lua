@@ -10,7 +10,8 @@ type ClaudeConfig = {
     base_url: string,
     api_version: string,
     beta_features: {string},
-    timeout: number,
+    timeout: number?,
+    timeout_error: transport.RequestError?,
     retry: transport.Retry?,
     deadline_at: number?,
     headers: {[string]: string}?
@@ -39,12 +40,16 @@ local function resolve_config()
         return transport.config_value(ctx_all, claude_client._env, key, default_env)
     end
 
+    local timeout_value, timeout_source = transport.config_value(ctx_all, claude_client._env, "timeout", "ANTHROPIC_TIMEOUT")
+    local timeout, timeout_err = transport.resolve_timeout(timeout_value, timeout_source, 600)
+
     local config = {
         api_key = resolve_string("api_key", "ANTHROPIC_API_KEY"),
         base_url = resolve_string("base_url", "ANTHROPIC_BASE_URL") or "https://api.anthropic.com",
         api_version = resolve_string("api_version", "ANTHROPIC_API_VERSION") or "2023-06-01",
         beta_features = ctx_all.beta_features or {},
-        timeout = tonumber(resolve_string("timeout", "ANTHROPIC_TIMEOUT")) or 600,
+        timeout = timeout,
+        timeout_error = timeout_err,
         retry = transport.normalize_retry(ctx_all.retry),
         deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
@@ -159,6 +164,8 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     local method = options.method or "POST"
 
     local config = resolve_config()
+    local timeout, timeout_err = transport.resolve_timeout(options.timeout, "options.timeout", config.timeout, config.timeout_error)
+    if timeout_err then return nil, timeout_err end
 
     if not config.api_key then
         return nil, {
@@ -174,7 +181,7 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
 
     local http_options: {[string]: any} = {
         headers = headers,
-        timeout = tonumber(options.timeout) or config.timeout,
+        timeout = timeout,
     }
 
     if method == "POST" or method == "PUT" or method == "PATCH" then
