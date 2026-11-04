@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.14](https://github.com/wippyai/framework/compare/llm-v0.5.13...llm-v0.5.14) (2026-11-04)
+
+
+### Bug Fixes
+
+* **llm:** honour the configured request timeout on generate ([#240](https://github.com/wippyai/framework/issues/240)) ([14977b7](https://github.com/wippyai/framework/commit/14977b7db5dbd87488d8ac8f3a7886339efc3a3f))
+
 ## [0.5.13](https://github.com/wippyai/framework/compare/llm-v0.5.12...llm-v0.5.13) (2026-11-04)
 
 
