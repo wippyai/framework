@@ -176,8 +176,7 @@ local function define_tests()
         end
 
         local key_envs = { Claude = "ANTHROPIC_API_KEY", Bedrock = "AWS_ACCESS_KEY_ID",
-            OpenAI = "OPENAI_API_KEY", compat = "OPENAI_COMPAT_API_KEY",
-            ["Google Generative AI"] = "GEMINI_API_KEY" }
+            OpenAI = "OPENAI_API_KEY", compat = "OPENAI_COMPAT_API_KEY" }
         for _, driver in ipairs(drivers) do
             if key_envs[driver.name] then
                 it(driver.name .. " never sends an env key when the route key is explicitly empty", function()

@@ -26,7 +26,7 @@ end
 local function get_value(key, default_env_var)
     -- Check for direct value first
     local ctx_value = safe_ctx_get(key)
-    if ctx_value ~= nil then
+    if ctx_value and ctx_value ~= "" then
         return ctx_value, "context." .. key
     end
 
