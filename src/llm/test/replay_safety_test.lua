@@ -140,7 +140,7 @@ local function sse_stream(events)
     end }, metadata = {} }
 end
 
-local function claude_stream_events(response)
+local function claude_stream_events(response, unclosed)
     local events = { { "message_start", { message = { usage = { input_tokens = 1 } } } } }
     for index, block in ipairs(response) do
         local at = index - 1
@@ -154,9 +154,11 @@ local function claude_stream_events(response)
             table.insert(events, { "content_block_start", { index = at, content_block = { type = "tool_use", id = block.id, name = block.name } } })
             table.insert(events, { "content_block_delta", { index = at, delta = { type = "input_json_delta", partial_json = json.encode(block.input) } } })
         end
-        table.insert(events, { "content_block_stop", { index = at } })
+        if not (unclosed and index == #response) then
+            table.insert(events, { "content_block_stop", { index = at } })
+        end
     end
-    table.insert(events, { "message_delta", { delta = { stop_reason = "tool_use" }, usage = { output_tokens = 2 } } })
+    table.insert(events, { "message_delta", { delta = { stop_reason = unclosed and "max_tokens" or "tool_use" }, usage = { output_tokens = 2 } } })
     table.insert(events, { "message_stop", {} })
     return events
 end
@@ -172,7 +174,7 @@ local function eventstream_message(event_type, body)
     return string.pack(">I4I4I4", total, #headers, 0) .. headers .. payload .. string.pack(">I4", 0)
 end
 
-local function bedrock_stream(response)
+local function bedrock_stream(response, unclosed)
     local chunks = { eventstream_message("messageStart", { role = "assistant" }) }
     local function add(name, body) table.insert(chunks, eventstream_message(name, body)) end
     for index, block in ipairs(response) do
@@ -186,9 +188,11 @@ local function bedrock_stream(response)
             add("contentBlockStart", { contentBlockIndex = at, start = { toolUse = { toolUseId = block.toolUse.toolUseId, name = "t" } } })
             add("contentBlockDelta", { contentBlockIndex = at, delta = { toolUse = { input = json.encode(block.toolUse.input) } } })
         end
-        add("contentBlockStop", { contentBlockIndex = at })
+        if not (unclosed and index == #response) then
+            add("contentBlockStop", { contentBlockIndex = at })
+        end
     end
-    add("messageStop", { stopReason = "tool_use" })
+    add("messageStop", { stopReason = unclosed and "max_tokens" or "tool_use" })
     add("metadata", { usage = { inputTokens = 1, outputTokens = 2 } })
     local at = 0
     return { stream = { read = function()
@@ -314,16 +318,16 @@ local EXTRACTION_PATHS = {
         return claude_mapper.format_success_response({ content = claude_blocks(shape), stop_reason = "tool_use",
             usage = { input_tokens = 1, output_tokens = 1 } }, "m", {})
     end },
-    { name = "Claude stream", replay = claude_replay, order = claude_order, extract = function(shape)
-        local _, _, stream = claude_client.process_stream(sse_stream(claude_stream_events(claude_blocks(shape))), {})
+    { name = "Claude stream", replay = claude_replay, order = claude_order, extract = function(shape, unclosed)
+        local _, _, stream = claude_client.process_stream(sse_stream(claude_stream_events(claude_blocks(shape), unclosed)), {})
         return claude_mapper.format_streaming_response(stream, {}, stream.usage, stream.finish_reason, stream.metadata)
     end },
     { name = "Bedrock JSON", replay = bedrock_replay, order = bedrock_order, extract = function(shape)
         return bedrock_mapper.format_success_response({ output = { message = { role = "assistant", content = bedrock_blocks(shape) } },
             stopReason = "tool_use", usage = { inputTokens = 1, outputTokens = 1 } }, {})
     end },
-    { name = "Bedrock stream", replay = bedrock_replay, order = bedrock_order, extract = function(shape)
-        local _, _, stream = bedrock_client.process_converse_stream(bedrock_stream(bedrock_blocks(shape)), {})
+    { name = "Bedrock stream", replay = bedrock_replay, order = bedrock_order, extract = function(shape, unclosed)
+        local _, _, stream = bedrock_client.process_converse_stream(bedrock_stream(bedrock_blocks(shape), unclosed), {})
         return bedrock_mapper.format_streaming_response(stream, {}, stream.usage, stream.finish_reason, stream.metadata)
     end },
 }
@@ -531,6 +535,27 @@ local function define_tests()
             end
 
             for _, path in ipairs(EXTRACTION_PATHS) do
+                it("drops thinking behind a missing call whose id belongs to an earlier turn: " .. path.name, function()
+                    local earlier = stored_rows(path.extract({ "before", "s1", { "c" } }))
+                    local before = path.replay(earlier)
+                    local result: any = path.extract({ "A", "s2", { "c" } }, true)
+                    local later = rows_without_calls(result)
+                    local rows = {}
+                    for _, row in ipairs(earlier) do table.insert(rows, row) end
+                    table.insert(rows, later[2])
+                    table.insert(rows, later[3])
+                    local payload = path.replay(rows)
+                    for index, message in ipairs(before.messages) do
+                        test.eq(json.encode(payload.messages[index]), json.encode(message), "earlier turn " .. index)
+                    end
+                    local last_assistant
+                    for _, message in ipairs(payload.messages) do
+                        if message.role == "assistant" then last_assistant = message end
+                    end
+                    test.not_nil(last_assistant)
+                    assert_order(path.order(last_assistant), { "A" })
+                end)
+
                 it("drops thinking behind a discarded call in a stored row: text, thinking, call: " .. path.name, function()
                     local result: any = path.extract({ "A", "s1", { "c1" } })
                     assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "A" })

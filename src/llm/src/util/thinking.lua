@@ -187,20 +187,34 @@ function thinking.new_turn_order(messages: {any})
     local active: any = nil
     local order = {}
 
+    local calls_by_row: {[any]: {[any]: boolean}} = {}
     local calls: {[any]: boolean} = {}
+    local after_result = false
     for _, msg in ipairs(messages) do
-        if msg.function_call then
-            calls[msg.function_call.id] = true
-        elseif type(msg.content) == "table" then
-            for _, part in ipairs(msg.content) do
-                if part.type == "function_call" then calls[part.id] = true end
+        if msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL then
+            if after_result and msg.role == prompt.ROLE.ASSISTANT then calls = {} end
+            after_result = false
+            calls_by_row[msg] = calls
+            if msg.function_call then
+                calls[msg.function_call.id] = true
+            elseif type(msg.content) == "table" then
+                for _, part in ipairs(msg.content) do
+                    if part.type == "function_call" then calls[part.id] = true end
+                end
             end
+        elseif msg.role == prompt.ROLE.FUNCTION_RESULT then
+            -- Calls after a result can belong to the same response; a new
+            -- assistant row starts the next turn.
+            after_result = true
+        elseif msg.role ~= prompt.ROLE.CACHE_MARKER then
+            calls = {}
+            after_result = false
         end
     end
 
     -- Returns the row's own layout, whose text blocks replace the row's text.
     function order.enter_row(msg: any): any?
-        local layout = read_layout(msg, calls)
+        local layout = read_layout(msg, calls_by_row[msg] or {})
         if layout then active = layout end
         return layout
     end
