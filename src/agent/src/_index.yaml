@@ -445,10 +445,14 @@ entries:
         get_history, or get_prompt with the supplied host.
 
         Returned messages are appended to the current prompt only by phases that
-        run before an LLM step (activate and before_step today). They are
-        per-step context: developer messages sit after the conversation cache
-        breakpoint, so they never alter the cached prompt prefix. Durable memory,
-        checkpoint, or audit writes belong inside the binding implementation.
+        run before an LLM step (activate and before_step today). The provider
+        prefix includes every message sent: a lifecycle message the host sends
+        for one step and then drops or rebuilds changes the prefix of the next
+        request, restarting the prompt cache and invalidating later thinking
+        blocks. Hosts persist returned messages in place as positional notes
+        (metadata.preserve_position) so later requests replay them unchanged.
+        Durable memory, checkpoint, or audit writes belong inside the binding
+        implementation.
         Multiple bindings may be attached by multiple traits; the compiler orders
         them by priority and declaration order.
 

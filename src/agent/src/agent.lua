@@ -652,13 +652,23 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
         return final_messages
     end
+    -- The fingerprint describes the request actually sent, so a checkpoint
+    -- replacement history recomputes it before its blocks are judged.
+    local function fingerprint_of(messages: {any}): (string?, any)
+        local projected = { system_message }
+        for _, message in ipairs(messages) do table.insert(projected, message) end
+        local digest, digest_err = hash.sha256(canonical.encode(prefix_projection(projected, options.tools)))
+        if digest_err then
+            return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+                :message("Prefix fingerprint failed: " .. tostring(digest_err)):build()
+        end
+        return digest, nil
+    end
+
     local conversation = prompt_builder:get_messages()
-    local projected = { system_message }
-    for _, message in ipairs(conversation) do table.insert(projected, message) end
-    local fingerprint, fingerprint_err = hash.sha256(canonical.encode(prefix_projection(projected, options.tools)))
-    if fingerprint_err then
-        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
-            :message("Prefix fingerprint failed: " .. tostring(fingerprint_err)):build()
+    local fingerprint, fingerprint_err = fingerprint_of(conversation)
+    if not fingerprint then
+        return nil, fingerprint_err
     end
 
     -- Thinking blocks are bound to the prefix they were produced under. With
@@ -695,7 +705,11 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
             compact = function(info)
                 local replacement, compact_err = runtime_options.checkpoint.compact(info)
                 if not replacement then return nil, compact_err end
-                local retained, retained_err = current_thinking(replacement:get_messages())
+                local replacement_messages = replacement:get_messages()
+                local replacement_fingerprint, replacement_err = fingerprint_of(replacement_messages)
+                if not replacement_fingerprint then return nil, replacement_err end
+                fingerprint = replacement_fingerprint
+                local retained, retained_err = current_thinking(replacement_messages)
                 if not retained then return nil, retained_err end
                 return build_messages(retained)
             end,

@@ -1698,6 +1698,47 @@ local function define_tests()
                         return nil
                     end
 
+                    it("returns the fingerprint of the request a checkpoint replacement sends", function()
+                        local function replacement_history()
+                            local replacement = prompt.new()
+                            replacement:add_system("Context memory: release plan v2")
+                            replacement:add_user("Retained task")
+                            return replacement
+                        end
+                        local captured = {}
+                        agent._llm = compacting_llm(captured)
+                        local builder = prompt.new()
+                        builder:add_user("Large conversation")
+                        local compacted = assert(agent.new(copy_spec()):step(builder, {
+                            checkpoint = { token_threshold = 1, compact = function() return replacement_history() end },
+                        }))
+                        test.is_nil(captured.err)
+
+                        agent._llm = recording_llm({})
+                        local direct = assert(agent.new(copy_spec()):step(replacement_history()))
+                        local plain_builder = prompt.new()
+                        plain_builder:add_user("Large conversation")
+                        local plain = assert(agent.new(copy_spec()):step(plain_builder))
+
+                        test.eq(compacted.prefix_fingerprint, direct.prefix_fingerprint)
+                        test.neq(compacted.prefix_fingerprint, plain.prefix_fingerprint)
+                    end)
+
+                    it("keeps the fingerprint of a checkpointed step that does not compact", function()
+                        agent._llm = {
+                            ERROR_TYPE = { CONTEXT_WINDOW = "context_window" },
+                            generate = function() return { result = "done", finish_reason = "stop" } end
+                        }
+                        local builder = prompt.new()
+                        builder:add_user("Small conversation")
+                        local checkpointed = assert(agent.new(copy_spec()):step(builder, {
+                            checkpoint = { token_threshold = 1000, compact = function() return nil, "unused" end },
+                        }))
+                        agent._llm = recording_llm({})
+                        local plain = assert(agent.new(copy_spec()):step(builder))
+                        test.eq(checkpointed.prefix_fingerprint, plain.prefix_fingerprint)
+                    end)
+
                     it("strips stale blocks from a checkpoint replacement history", function()
                         local captured = {}
                         agent._llm = compacting_llm(captured)

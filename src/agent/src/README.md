@@ -318,7 +318,9 @@ messages in the conversation, which Claude and Bedrock hoist into the top-level
 system, and each tool's name, description, schema and native definition
 (`meta.claude`). Registry ids and registry metadata (comment, tags, title) do
 not reach the provider and are not part of it. It is stable across steps while
-the sent system text and tools stay the same.
+the sent system text and tools stay the same. It describes the request actually sent:
+when a checkpoint callback replaces the history, the fingerprint is recomputed
+from the replacement, and stale thinking in the replacement is judged against it.
 
 The projection is the Claude and Bedrock prefix. Other drivers bind a different
 one: OpenAI moves developer messages into `instructions`, and Google filters tool
