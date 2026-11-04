@@ -595,11 +595,19 @@ data:
         max_tokens: 3000
 ```
 
-No checkpoint handler is required. Session also reads `max_tool_result_chars`,
-`max_conversation_chars`, `max_tool_results`, and `max_tool_results_chars`;
-dataflow reads `max_row_chars` and `max_memory_chars`. Explicit
-`agent_options.checkpoint` overrides these trait defaults. Unrelated behavior
-checkpoint keys stay out of `agent_options.checkpoint`.
+`model`, `temperature`, the session limits (`max_tool_result_chars`,
+`max_conversation_chars`, `max_tool_results`, `max_tool_results_chars`), and
+dataflow's `max_row_chars` are promoted into `agent_options.checkpoint` only
+from behaviors without a checkpoint handler, configuring the default summarizer.
+Behaviors with a checkpoint handler keep these keys binding-local. The six
+existing keys (`enabled`, `function_id`, `max_memory_chars`, `max_tokens`,
+`strict`, `token_threshold`) are promoted with or without a handler; dataflow
+also reads `max_memory_chars`.
+
+Explicit `agent_options.checkpoint` overrides these promoted trait defaults.
+Effective agent options still override binding-local options at runtime, so a
+no-handler behavior's `model` overrides a binding's local `model` when both are
+set. Unrelated behavior checkpoint keys stay out of `agent_options.checkpoint`.
 
 Tool wrappers may adjust arguments, redirect a tool, or reorder calls, but must
 preserve every original tool-call ID exactly once. Dropping, duplicating, adding,

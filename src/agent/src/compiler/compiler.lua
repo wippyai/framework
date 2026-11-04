@@ -593,17 +593,20 @@ end
 local CHECKPOINT_AGENT_OPTION_KEYS = {
     enabled = true,
     function_id = true,
-    max_conversation_chars = true,
     max_memory_chars = true,
-    max_row_chars = true,
     max_tokens = true,
+    strict = true,
+    token_threshold = true,
+}
+
+local CHECKPOINT_SUMMARIZER_OPTION_KEYS = {
+    max_conversation_chars = true,
+    max_row_chars = true,
     max_tool_result_chars = true,
     max_tool_results = true,
     max_tool_results_chars = true,
     model = true,
-    strict = true,
     temperature = true,
-    token_threshold = true,
 }
 
 local function normalize_tool_wrapper_phases(raw_hook: any): {string}
@@ -853,7 +856,7 @@ local function append_behavior_lifecycle(
     end
 end
 
-local function checkpoint_agent_options(checkpoint_config: any): table
+local function checkpoint_agent_options(checkpoint_config: any, has_handler: boolean): table
     local out = {}
     if type(checkpoint_config) ~= "table" then
         return out
@@ -861,7 +864,7 @@ local function checkpoint_agent_options(checkpoint_config: any): table
 
     local checkpoint = {}
     for key, value in pairs(checkpoint_config) do
-        if CHECKPOINT_AGENT_OPTION_KEYS[key] then
+        if CHECKPOINT_AGENT_OPTION_KEYS[key] or (not has_handler and CHECKPOINT_SUMMARIZER_OPTION_KEYS[key]) then
             checkpoint[key] = deep_copy(value)
         end
     end
@@ -886,7 +889,7 @@ local function append_behavior_checkpoint(
 
     local binding = behavior_handler(behavior, "checkpoint")
     local checkpoint_config = type(behavior.checkpoint) == "table" and behavior.checkpoint or {}
-    local agent_options = checkpoint_agent_options(checkpoint_config)
+    local agent_options = checkpoint_agent_options(checkpoint_config, binding ~= nil)
 
     if not binding then
         return agent_options

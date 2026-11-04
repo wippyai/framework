@@ -1,11 +1,13 @@
 local function define_tests()
     describe("Agent checkpoint runtime", function()
         local checkpoint_runtime
+        local compiler
         local calls
         local behaviors
 
         before_each(function()
             checkpoint_runtime = require("checkpoint_runtime")
+            compiler = require("compiler")
             calls = {}
             behaviors = {}
 
@@ -51,6 +53,8 @@ local function define_tests()
         end)
 
         after_each(function()
+            compiler._traits = nil
+            compiler = nil
             checkpoint_runtime._contract = nil
             checkpoint_runtime = nil
             calls = nil
@@ -77,6 +81,124 @@ local function define_tests()
                 }
             }
         end
+
+        local summarizer_keys = {
+            "model", "temperature", "max_tool_result_chars", "max_conversation_chars",
+            "max_tool_results", "max_tool_results_chars", "max_row_chars",
+        }
+        local shared_keys = {
+            "enabled", "function_id", "max_memory_chars", "max_tokens", "strict", "token_threshold",
+        }
+
+        local function compile_checkpoints(defaults)
+            local checkpoint_behaviors: {[string]: any} = {
+                a = {
+                    handles = { "checkpoint" },
+                    handlers = { checkpoint = "a" },
+                    checkpoint = {
+                        model = "model-a", temperature = 0.1, max_tool_result_chars = 100,
+                        max_conversation_chars = 10000, max_tool_results = 10,
+                        max_tool_results_chars = 1000, max_row_chars = 200,
+                        enabled = false, function_id = "summary:a", max_memory_chars = 300,
+                        max_tokens = 400, strict = true, token_threshold = 500,
+                    },
+                },
+                z = {
+                    handles = { "checkpoint" },
+                    handlers = { checkpoint = "z" },
+                    checkpoint = {
+                        model = "model-b", temperature = 0.2, max_tool_result_chars = 200,
+                        max_conversation_chars = 20000, max_tool_results = 20,
+                        max_tool_results_chars = 2000, max_row_chars = 400,
+                        enabled = true, function_id = "summary:z", max_memory_chars = 600,
+                        max_tokens = 800, strict = false, token_threshold = 1000,
+                    },
+                },
+            }
+            if defaults then
+                checkpoint_behaviors.compaction = { handles = { "checkpoint" }, checkpoint = defaults }
+            end
+            compiler._traits = {
+                get_by_id = function()
+                    return { id = "test:checkpoints", behaviors = checkpoint_behaviors }
+                end,
+            }
+            local compiled, err = compiler.compile({ id = "test:agent", traits = { "test:checkpoints" } })
+            test.is_nil(err)
+            test.eq(#compiled.bindings.checkpoint, 2)
+            return compiled, checkpoint_behaviors
+        end
+
+        for _, fail_first in ipairs({ false, true }) do
+            it("keeps compiled summarizer options local " .. (fail_first and "through non-strict fallback" or "on the first binding"), function()
+                local compiled, definitions = compile_checkpoints()
+                if fail_first then
+                    behaviors.a = function()
+                        return nil, "temporary failure"
+                    end
+                end
+                local input = payload()
+                input.options = checkpoint_runtime.resolve_options(compiled.agent_options.checkpoint, nil)
+                local result, err = checkpoint_runtime.create(compiled.bindings, input)
+                test.is_nil(err)
+                test.eq(result.applied, 1)
+                test.eq(#calls, fail_first and 2 or 1)
+                test.eq(#result.errors, fail_first and 1 or 0)
+                if fail_first then
+                    test.eq(result.errors[1].binding_id, "a")
+                    test.is_false(result.errors[1].strict)
+                    test.eq(result.errors[1].error, "temporary failure")
+                end
+                test.eq(calls[1].binding, "a")
+                if fail_first then
+                    test.eq(calls[2].binding, "z")
+                end
+                for _, call in ipairs(calls) do
+                    for _, key in ipairs(summarizer_keys) do
+                        test.eq(call.payload.options[key], definitions[call.binding].checkpoint[key],
+                            call.binding .. " checkpoint." .. key .. " stays binding-local")
+                    end
+                    for _, key in ipairs(shared_keys) do
+                        test.eq(call.payload.options[key], definitions.z.checkpoint[key],
+                            "checkpoint." .. key .. " keeps shared precedence")
+                    end
+                end
+                for _, binding in ipairs(compiled.bindings.checkpoint) do
+                    for _, key in ipairs(summarizer_keys) do
+                        test.eq(binding.options[key], definitions[binding.binding].checkpoint[key])
+                        test.eq(binding.context.options[key], definitions[binding.binding].checkpoint[key])
+                        test.is_nil(compiled.agent_options.checkpoint[key])
+                    end
+                end
+                for _, key in ipairs(shared_keys) do
+                    test.eq(compiled.agent_options.checkpoint[key], definitions.z.checkpoint[key])
+                end
+            end)
+        end
+
+        it("promotes no-handler summarizer defaults above binding-local options", function()
+            local defaults = {
+                model = "default-model", temperature = 0, max_tool_result_chars = 300,
+                max_conversation_chars = 30000, max_tool_results = 30,
+                max_tool_results_chars = 3000, max_row_chars = 600,
+            }
+            local compiled, definitions = compile_checkpoints(defaults)
+            for _, key in ipairs(summarizer_keys) do
+                test.eq(compiled.agent_options.checkpoint[key], defaults[key],
+                    "no-handler checkpoint." .. key .. " reaches agent options")
+            end
+            local input = payload()
+            input.options = checkpoint_runtime.resolve_options(compiled.agent_options.checkpoint, nil)
+            local result, err = checkpoint_runtime.create(compiled.bindings, input)
+            test.is_nil(err)
+            test.eq(result.applied, 1)
+            test.eq(#calls, 1)
+            test.eq(calls[1].binding, "a")
+            for _, key in ipairs(summarizer_keys) do
+                test.eq(calls[1].payload.options[key], defaults[key])
+                test.eq(compiled.bindings.checkpoint[1].options[key], definitions.a.checkpoint[key])
+            end
+        end)
 
         it("is a no-op when no checkpoint bindings are configured", function()
             local result, err = checkpoint_runtime.create(nil, payload())
