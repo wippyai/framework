@@ -53,6 +53,7 @@ type PromptBuilder = {
     add_function_result: (self: any, name: string, content: any, function_call_id: string?, options: FunctionResultOptions?) -> PromptBuilder,
     add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
     drop_stale_thinking: (self: any, is_current: (msg: Message) -> boolean) -> (PromptBuilder?, string?),
+    mark_stale_thinking: (self: any, is_current: (msg: Message) -> boolean) -> PromptBuilder,
     get_messages: (self: any) -> {Message},
     build: (self: any) -> {messages: {Message}},
     clone: (self: any) -> PromptBuilder,
@@ -147,9 +148,86 @@ function prompt.developer_instruction(text: string): string
     return "<developer-instruction>" .. text .. "</developer-instruction>"
 end
 
+-- Whether text has nothing visible in it. This one rule decides which text blocks
+-- reach a provider and which assistant turns render at all.
+function prompt.is_blank(text: any): boolean
+    return text == nil or (type(text) == "string" and not text:find("%S"))
+end
+
+local BLANKABLE_ROLES: {[string]: boolean} = {
+    [prompt.ROLE.USER] = true,
+    [prompt.ROLE.SYSTEM] = true,
+    [prompt.ROLE.DEVELOPER] = true,
+}
+
+local function is_blank_part(part: any): boolean
+    if type(part) == "string" then return prompt.is_blank(part) end
+    if type(part) ~= "table" then return false end
+    return (part.type == prompt.CONTENT_TYPE.TEXT or part.type == "input_text") and prompt.is_blank(part.text)
+end
+
+-- User, system and developer messages without their blank text. A message left
+-- with no content goes entirely; the caller's tables stay as they are.
+function prompt.without_blank_text(messages: {any}): {any}
+    local kept: {any} = table.create(#messages, 0)
+    for _, msg in ipairs(messages) do
+        local content = msg.content
+        if not BLANKABLE_ROLES[msg.role] then
+            table.insert(kept, msg)
+        elseif type(content) == "table" then
+            local parts: {any} = {}
+            for _, part in ipairs(content) do
+                if not is_blank_part(part) then table.insert(parts, part) end
+            end
+            if #parts == #content and #content > 0 then
+                table.insert(kept, msg)
+            elseif #parts > 0 then
+                local copy: any = {}
+                for key, value in pairs(msg) do copy[key] = value end
+                copy.content = parts
+                table.insert(kept, copy)
+            end
+        elseif not prompt.is_blank(content) then
+            table.insert(kept, msg)
+        end
+    end
+    return kept
+end
+
 ---------------------------
 -- Helper Functions
 ---------------------------
+
+local function in_assistant_turn(msg: Message): boolean
+    return msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL
+end
+
+function prompt.transparent_to_assistant_turn(msg: Message): boolean
+    return msg.role == prompt.ROLE.CACHE_MARKER
+        or (msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg))
+end
+
+local function carries_thinking(msg: Message): boolean
+    if not in_assistant_turn(msg) or type(msg.metadata) ~= "table" then return false end
+    local blocks = msg.metadata.thinking_blocks
+    return type(blocks) == "table" and #blocks > 0
+end
+
+-- A copy of a message with a rewritten metadata table, so message tables the
+-- caller shares with the builder keep theirs.
+local function with_metadata(msg: Message, rewrite: (metadata: table) -> ()): Message
+    local copy: Message = {} :: Message
+    for key, value in pairs(msg :: table) do
+        (copy :: any)[key] = value
+    end
+    local metadata = {}
+    for key, value in pairs(msg.metadata :: table) do
+        metadata[key] = value
+    end
+    rewrite(metadata)
+    copy.metadata = metadata
+    return copy
+end
 
 -- Process function result content to extract images and clean text
 local function process_function_result_content(content: any): (any, {ContentPart}?)
@@ -393,26 +471,16 @@ function prompt.new(messages: {Message}?)
             end
         end
 
-        local function in_turn(msg: Message): boolean
-            return msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL
-        end
-
-        local function carries(msg: Message): boolean
-            if not in_turn(msg) or type(msg.metadata) ~= "table" then return false end
-            local blocks = msg.metadata.thinking_blocks
-            return type(blocks) == "table" and #blocks > 0
-        end
-
         -- First unanswered call of each assistant turn, keyed by message index.
         local open_call: {[integer]: string} = {}
         local turn_start: integer? = nil
         for index, msg in ipairs(messages) do
-            if in_turn(msg) then
+            if in_assistant_turn(msg) then
                 turn_start = turn_start or index
-            else
+            elseif not prompt.transparent_to_assistant_turn(msg) then
                 turn_start = nil
             end
-            if turn_start then
+            if turn_start and in_assistant_turn(msg) then
                 local ids: {any} = {}
                 if msg.role == prompt.ROLE.FUNCTION_CALL then
                     table.insert(ids, {
@@ -420,9 +488,11 @@ function prompt.new(messages: {Message}?)
                         name = msg.function_call and msg.function_call.name,
                     })
                 else
-                    for _, part in ipairs(msg.content or {}) do
-                        if (part :: any).type == "function_call" then
-                            table.insert(ids, { id = (part :: any).id or false, name = (part :: any).name })
+                    if type(msg.content) == "table" then
+                        for _, part in ipairs(msg.content) do
+                            if (part :: any).type == "function_call" then
+                                table.insert(ids, { id = (part :: any).id or false, name = (part :: any).name })
+                            end
                         end
                     end
                 end
@@ -447,7 +517,7 @@ function prompt.new(messages: {Message}?)
         local current_round = #messages + 1
         local seen_result, seen_user = false, false
         local index = #messages
-        while index >= 1 and not in_turn(messages[index]) do
+        while index >= 1 and not in_assistant_turn(messages[index]) do
             local role = messages[index].role
             if role == prompt.ROLE.FUNCTION_RESULT then seen_result = true end
             if role == prompt.ROLE.USER or role == prompt.ROLE.DEVELOPER
@@ -457,8 +527,8 @@ function prompt.new(messages: {Message}?)
             index = index - 1
         end
         if index >= 1 and not (seen_user and not seen_result) then
-            while index >= 1 and in_turn(messages[index]) do
-                current_round = index
+            while index >= 1 and (in_assistant_turn(messages[index]) or prompt.transparent_to_assistant_turn(messages[index])) do
+                if in_assistant_turn(messages[index]) then current_round = index end
                 index = index - 1
             end
         end
@@ -466,7 +536,7 @@ function prompt.new(messages: {Message}?)
         local last_stale: integer? = nil
         for index = 1, current_round - 1 do
             local msg = messages[index]
-            if carries(msg) and not is_current(msg) then
+            if carries_thinking(msg) and not is_current(msg) then
                 last_stale = index
             end
         end
@@ -478,12 +548,12 @@ function prompt.new(messages: {Message}?)
         turn_start = nil
         for index = 1, last_stale do
             local msg = messages[index]
-            if in_turn(msg) then
+            if in_assistant_turn(msg) then
                 turn_start = turn_start or index
-            else
+            elseif not prompt.transparent_to_assistant_turn(msg) then
                 turn_start = nil
             end
-            if carries(msg) then
+            if carries_thinking(msg) then
                 local open = turn_start and open_call[turn_start]
                 if open then
                     return nil, string.format(
@@ -493,21 +563,38 @@ function prompt.new(messages: {Message}?)
             end
         end
 
-        -- Stripped messages are replaced by copies, so message tables the
-        -- caller shares with the builder keep their blocks.
         for _, index in ipairs(stale) do
-            local copy: Message = {} :: Message
-            for key, value in pairs(messages[index] :: table) do
-                (copy :: any)[key] = value
-            end
-            local metadata = {}
-            for key, value in pairs(messages[index].metadata :: table) do
-                if key ~= "thinking_blocks" then metadata[key] = value end
-            end
-            copy.metadata = metadata
-            messages[index] = copy
+            messages[index] = with_metadata(messages[index], function(metadata)
+                metadata.thinking_blocks = nil
+            end)
         end
         return self, nil
+    end
+
+    -- Marks the blocks that stay in the request although they are stale, the ones
+    -- drop_stale_thinking keeps for the current round. Only the caller knows they
+    -- are stale and only the driver knows whether the thinking object it sends can
+    -- carry a binding, so the driver removes marked blocks when it cannot. Marks
+    -- follow the same front-only rule: every block up to the last stale one.
+    builder.mark_stale_thinking = function(self: any, is_current: (msg: Message) -> boolean)
+        local messages: {Message} = self.messages :: {Message}
+        local last_stale: integer? = nil
+        for index, msg in ipairs(messages) do
+            if carries_thinking(msg) and not is_current(msg) then
+                last_stale = index
+            end
+        end
+        if not last_stale then
+            return self
+        end
+        for index = 1, last_stale do
+            if carries_thinking(messages[index]) then
+                messages[index] = with_metadata(messages[index], function(metadata)
+                    metadata.stale_thinking = true
+                end)
+            end
+        end
+        return self
     end
 
     -- Get all messages in the current builder (with image processing)

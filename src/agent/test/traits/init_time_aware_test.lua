@@ -1,5 +1,6 @@
 local init_time_aware = require("init_time_aware")
 local funcs = require("funcs")
+local compiler = require("compiler")
 
 local function define_tests()
     describe("Init Time Aware Trait", function()
@@ -43,14 +44,32 @@ local function define_tests()
             end
         end)
 
-        it("rejects the removed time_interval setting and names its replacement", function()
+        it("ignores the legacy time_interval setting", function()
             local result, err = funcs.new()
-                :with_context({ timezone = "UTC", time_interval = 15 })
+                :with_context({ timezone = "Europe/Berlin", time_format = "2006-01-02 15:04", time_interval = 15 })
                 :call("wippy.agent.traits:init_time_aware", "base prompt")
 
-            test.is_nil(result)
-            test.contains(tostring(err), "time_interval")
-            test.contains(tostring(err), "turn_context")
+            test.is_nil(err, "legacy time_interval is ignored")
+            test.not_nil(result)
+            test.is_nil(result.prompt)
+            test.eq(result.agent_options.turn_context.time.timezone, "Europe/Berlin")
+            test.eq(result.agent_options.turn_context.time.format, "2006-01-02 15:04")
+        end)
+
+        it("compiles a time-aware agent with legacy time_interval context", function()
+            local result, err = compiler.compile({
+                id = "test:legacy_time_aware",
+                model = "test-model",
+                prompt = "Base prompt",
+                context = { timezone = "Europe/Berlin", time_interval = 15 },
+                traits = { "wippy.agent.traits:time_aware" },
+            })
+
+            test.is_nil(err, "legacy time_interval does not fail compilation")
+            test.not_nil(result)
+            test.eq(result.prompt, "Base prompt")
+            test.eq(result.agent_options.turn_context.time.timezone, "Europe/Berlin")
+            test.is_nil(result.agent_options.turn_context.time.format)
         end)
     end)
 end

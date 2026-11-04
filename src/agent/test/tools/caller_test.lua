@@ -1222,6 +1222,39 @@ local function define_tests()
                 return notes
             end
 
+            for _, observed in ipairs({ "returned", "listener" }) do
+                it("preserves scalar tool values in " .. observed .. " results across strategies", function()
+                    for _, strategy in ipairs(STRATEGIES) do
+                        tool_results["test:false"] = { result = false }
+                        tool_results["test:zero"] = { result = 0 }
+                        tool_results["test:empty"] = { result = "" }
+                        local notes = recording_listener()
+                        local caller = tool_caller.new():set_strategy(strategy):set_result_listener(notes.listener)
+                        local returned, err = caller:execute({}, {
+                            falsy = tool("falsy", "test:false"),
+                            zero = tool("zero", "test:zero"),
+                            empty = tool("empty", "test:empty"),
+                            failed = tool("failed", "test:failing_tool"),
+                        })
+                        test.is_nil(err)
+                        test.eq(#notes.order, 4, strategy)
+                        local results = returned
+                        if observed == "listener" then results = notes.results end
+                        for call_id in pairs(returned) do
+                            test.eq(notes.counts[call_id], 1, strategy .. " " .. call_id)
+                        end
+                        test.is_nil(results.failed.result, strategy)
+                        test.eq(results.failed.error, "Tool execution failed", strategy)
+                        test.eq(results.zero.result, 0, strategy)
+                        test.is_nil(results.zero.error, strategy)
+                        test.eq(results.empty.result, "", strategy)
+                        test.is_nil(results.empty.error, strategy)
+                        test.is_nil(results.falsy.error, strategy)
+                        test.eq(results.falsy.result, false, strategy .. " " .. observed .. " false result")
+                    end
+                end)
+            end
+
             it("accepts a function or nil and rejects other values", function()
                 local caller = tool_caller.new()
                 test.eq(caller:set_result_listener(function() end), caller)
@@ -1360,6 +1393,63 @@ local function define_tests()
                 test.eq(cancelled_commands[1], "test:held")
                 test.eq(#cancelled_commands, 1)
             end)
+
+            for _, phase in ipairs({ "collection", "launch" }) do
+                it("cancels every pending call before a blocking stop listener during " .. phase, function()
+                    local cancel = channel.new()
+                    local listening, release, done = channel.new(1), channel.new(), channel.new(1)
+                    local responses = { channel.new(1), channel.new(1) }
+                    tool_results["test:pending_a"] = { response = responses[1], result = "committed a" }
+                    tool_results["test:pending_b"] = { response = responses[2], execute = function()
+                        cancel:close()
+                        return "committed b"
+                    end }
+                    local calls = { tool("a", "test:pending_a"), tool("b", "test:pending_b") }
+                    if phase == "launch" then table.insert(calls, tool("c", "test:calculator")) end
+                    local notes = recording_listener()
+                    local caller = tool_caller.new():set_strategy("parallel"):set_result_listener(function(call_id, result)
+                        notes.listener(call_id, result)
+                        if #notes.order == 1 then
+                            listening:send(true)
+                            release:receive()
+                        end
+                    end)
+                    coroutine.spawn(function()
+                        local results, err = caller:execute({}, calls, cancel)
+                        done:send({ results = results, error = err })
+                    end)
+                    local guard = time.timer("2s")
+                    local first = channel.select({ listening:case_receive(), guard:channel():case_receive() })
+                    local cancelled_before_listener = #cancelled_commands
+                    local effects = 0
+                    for index, registry_id in ipairs({ "test:pending_a", "test:pending_b" }) do
+                        local cancelled = false
+                        for _, id in ipairs(cancelled_commands) do
+                            if id == registry_id then cancelled = true end
+                        end
+                        if not cancelled then
+                            effects = effects + 1
+                            local response = assert(responses[index])
+                            response:send(true)
+                        end
+                    end
+                    release:close()
+                    local finished = channel.select({ done:case_receive(), guard:channel():case_receive() })
+                    guard:stop()
+                    test.eq(first.channel, listening)
+                    test.eq(finished.channel, done)
+                    test.eq(cancelled_before_listener, 2, "all pending commands are cancelled before the first listener")
+                    test.eq(effects, 0, "no pending tool commits while the listener blocks")
+                    test.is_nil(finished.value.error)
+                    test.eq(#notes.order, #calls)
+                    for index = 1, #calls do
+                        test.eq(notes.counts[index], 1, "listener fires once per call")
+                        test.is_true(finished.value.results[index].cancelled)
+                        test.is_nil(finished.value.results[index].result)
+                        test.is_true(rawequal(notes.results[index], finished.value.results[index]))
+                    end
+                end)
+            end
 
             it("fails the batch on a listener error and stops the remaining calls", function()
                 local failures = {

@@ -112,6 +112,38 @@ local function define_tests()
         end)
     end)
 
+    describe("Route output planning", function()
+        it("reserves answer room when a cap falls just above the thinking budget", function()
+            for _, case in ipairs({
+                { limit = 8192, output = 8192, budget = 7168 },
+                { limit = 8148, output = 8148, budget = 7124 },
+                { limit = 9170, output = 9170, budget = 8146 },
+                { limit = 9171, output = 9171, budget = 8147 },
+                { limit = 10000, output = 9171, budget = 8147 },
+            }) do
+                local plan = route.plan_output(512, 31, "budget", 2000, case.limit)
+                test.eq(plan.max_tokens, case.output)
+                test.eq(plan.budget, case.budget)
+                test.eq(plan.wanted_budget, 8147)
+                test.is_nil(plan.dropped_thinking)
+            end
+            equal(route.plan_output(8192, 31, "budget", 2000, nil),
+                { max_tokens = 8192, budget = 8147, wanted_budget = 8147 })
+        end)
+
+        it("keeps the minimum thinking budget when a cap leaves less than the answer room", function()
+            for _, limit in ipairs({ 1255, 2047, 2048, 1025 }) do
+                local plan = route.plan_output(512, 1, "budget", 2000, limit)
+                test.eq(plan.max_tokens, limit)
+                test.eq(plan.budget, 1024)
+                test.eq(plan.wanted_budget, 1254)
+                test.is_nil(plan.dropped_thinking)
+            end
+            equal(route.plan_output(512, 1, "budget", 2000, 1024),
+                { max_tokens = 512, dropped_thinking = true })
+        end)
+    end)
+
     describe("Route capability helpers", function()
         local capability = {
             name = "Test",

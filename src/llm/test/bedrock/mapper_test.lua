@@ -507,8 +507,7 @@ local function define_tests()
                 })
 
                 test.not_nil(((result.messages[1].content :: any)[2] :: any).cachePoint)
-                test.not_nil(((result.messages[2].content :: any)[1] :: any).reasoningContent)
-                test.is_nil(result.messages[2].content[2])
+                test.is_nil(result.messages[2])
             end)
 
             it("should consolidate consecutive same-role messages", function()

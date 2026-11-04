@@ -1,3 +1,4 @@
+local prompt = require("prompt")
 local openai_client = require("openai_client")
 local openai_mapper = require("openai_mapper")
 local output = require("output")
@@ -105,7 +106,7 @@ function structured_output_handler.handler(contract_args)
 
     local openai_payload = {
         model = contract_args.model,
-        messages = contract_args.messages,
+        messages = prompt.without_blank_text(contract_args.messages),
         response_format = {
             type = "json_schema",
             json_schema = {

@@ -105,6 +105,56 @@ function route.clean_options(options: table): table
     return clean
 end
 
+-- Budget thinking takes a share of the response: the budget grows with the effort
+-- and the response keeps room for an answer behind it.
+local MIN_THINKING_BUDGET = 1024
+local MAX_THINKING_BUDGET = 24000
+local ANSWER_ROOM = 1024
+
+function route.thinking_budget(effort: number): number
+    return math.floor(MIN_THINKING_BUDGET + (MAX_THINKING_BUDGET - MIN_THINKING_BUDGET) * (effort / 100) + 0.5)
+end
+
+-- The output a request sends, computed once per route before the card limit and
+-- admission: `mode` is the effective thinking mode, `default_max_tokens` what the
+-- driver sends for an unset max_tokens and `limit` the card's output limit.
+-- budget is nil when the request has no budget thinking; dropped_thinking says the
+-- limit leaves no room for the smallest budget.
+function route.plan_output(max_tokens: number?, effort: number?, mode: string?, default_max_tokens: number?, limit: number?): table
+    local thinks = mode == "budget" and effort ~= nil and effort > 0
+    local wanted_budget = thinks and route.thinking_budget(effort :: number) or nil
+    local output = max_tokens or default_max_tokens
+    if wanted_budget and (not max_tokens or max_tokens <= wanted_budget) then
+        output = wanted_budget + ANSWER_ROOM
+    end
+    local capped = false
+    if limit and output and output > limit then
+        output = limit
+        capped = true
+    end
+    if not wanted_budget then
+        return { max_tokens = output }
+    end
+    if output <= MIN_THINKING_BUDGET then
+        return { max_tokens = math.min(max_tokens or default_max_tokens or output, output), dropped_thinking = true }
+    end
+    local budget = wanted_budget
+    if capped then
+        budget = math.min(budget, math.max(output - ANSWER_ROOM, MIN_THINKING_BUDGET))
+    end
+    return { max_tokens = output, budget = budget, wanted_budget = wanted_budget }
+end
+
+-- The budget and output a budget-thinking request sends. llm plans them before the
+-- request; a driver called directly with no plan gets the same arithmetic.
+function route.budget_output(options: table): (number, number)
+    if options.thinking_budget_tokens then
+        return options.thinking_budget_tokens, options.max_tokens
+    end
+    local plan = route.plan_output(options.max_tokens, options.thinking_effort, "budget", nil, nil)
+    return plan.budget, plan.max_tokens
+end
+
 -- A driver capability table: { name, defaults = {fact = value}, supported = {fact = {value = true}} }.
 -- `supported` only needs entries for facts a driver restricts beyond the global
 -- enum; a fact absent from `supported` accepts any globally valid value.

@@ -256,6 +256,40 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  # app:replay_safety_test
+  - name: replay_safety_test
+    kind: function.lua
+    meta:
+      name: Replay Safety Test
+      type: test
+      group: LLM / General
+    source: file://replay_safety_test.lua
+    modules: [json, registry]
+    imports:
+      llm: wippy.llm:llm
+      prompt: wippy.llm:prompt
+      providers: wippy.llm.discovery:providers
+      thinking: wippy.llm.util:thinking
+      claude_mapper: wippy.llm.claude:mapper
+      claude_client: wippy.llm.claude:client
+      claude_generate: wippy.llm.claude:generate
+      claude_structured: wippy.llm.claude:structured_output
+      bedrock_mapper: wippy.llm.bedrock:mapper
+      bedrock_client: wippy.llm.bedrock:client
+      bedrock_generate: wippy.llm.bedrock:generate
+      bedrock_structured: wippy.llm.bedrock:structured_output
+      openai_mapper: wippy.llm.openai:mapper
+      openai_generate: wippy.llm.openai:generate
+      openai_structured: wippy.llm.openai:structured_output
+      compat_mapper: wippy.llm.openai_compat:mapper
+      compat_generate: wippy.llm.openai_compat:generate
+      compat_structured: wippy.llm.openai_compat:structured_output
+      google_mapper: wippy.llm.google:mapper
+      google_generate: wippy.llm.google:generate
+      google_structured: wippy.llm.google:structured_output
+      test: wippy.test:test
+    method: run_tests
+
   # app:output_test
   - name: output_test
     kind: function.lua

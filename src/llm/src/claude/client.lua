@@ -3,6 +3,7 @@ local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
+local thinking = require("thinking")
 
 type ClaudeConfig = {
     api_key: string?,
@@ -223,7 +224,7 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     return parsed
 end
 
-local function stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
+local function stream_result(full_content, tool_calls, thinking_blocks, layout, finish_reason, usage, metadata)
     local final_tool_calls = {}
     for _, tool_call in ipairs(transport.in_index_order(tool_calls)) do
         if type(tool_call) == "table" and tool_call.id then
@@ -235,6 +236,7 @@ local function stream_result(full_content, tool_calls, thinking_blocks, finish_r
         content = full_content,
         tool_calls = final_tool_calls,
         thinking = transport.in_index_order(thinking_blocks),
+        content_positions = thinking.record_positions(transport.in_index_order(layout)),
         finish_reason = finish_reason,
         usage = usage,
         metadata = metadata
@@ -259,6 +261,7 @@ function claude_client.process_stream(stream_response, callbacks)
     local finish_reason = nil
     local usage = {}
     local content_blocks = {}
+    local layout = {}
     local leftover = ""
     local metadata = stream_response.metadata or {}
 
@@ -331,6 +334,11 @@ function claude_client.process_stream(stream_response, callbacks)
                             data = data.content_block.data
                         }
                     end
+                    if thinking_blocks[data.index] then
+                        layout[data.index] = { kind = "thinking", block = thinking_blocks[data.index] }
+                    elseif data.content_block.type == "tool_use" then
+                        layout[data.index] = { kind = "tool_use", id = data.content_block.id }
+                    end
                 end
             elseif event_type == "content_block_delta" then
                 local index = data.index or 0
@@ -339,6 +347,8 @@ function claude_client.process_stream(stream_response, callbacks)
                 if delta.type == "text_delta" then
                     local text_chunk = delta.text or ""
                     full_content = full_content .. text_chunk
+                    layout[index] = layout[index] or { kind = "text", text = "" }
+                    layout[index].text = layout[index].text .. text_chunk
                     on_content(text_chunk)
                 elseif delta.type == "thinking_delta" then
                     local thinking_chunk = delta.thinking or ""
@@ -395,7 +405,7 @@ function claude_client.process_stream(stream_response, callbacks)
                     end
                 end
             elseif event_type == "message_stop" then
-                local result = stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
+                local result = stream_result(full_content, tool_calls, thinking_blocks, layout, finish_reason, usage, metadata)
                 on_done(result)
                 return full_content, nil, result
             elseif event_type == "error" then
@@ -411,7 +421,7 @@ function claude_client.process_stream(stream_response, callbacks)
         ::continue::
     end
 
-    local result = stream_result(full_content, tool_calls, thinking_blocks, finish_reason, usage, metadata)
+    local result = stream_result(full_content, tool_calls, thinking_blocks, layout, finish_reason, usage, metadata)
     on_done(result)
     return full_content, nil, result
 end

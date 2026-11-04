@@ -314,9 +314,10 @@ from the persisted notes.
 `prefix_fingerprint` is a sha256 over the system text and tools as drivers send
 them: the compiled system prompt together with ordinary (non-positional) system
 messages in the conversation, which Claude and Bedrock hoist into the top-level
-system, and each tool's name, description, schema and native definition
-(`meta.claude`). Registry ids and registry metadata (comment, tags, title) do
-not reach the provider and are not part of it. It is stable across steps while
+system, without blank text, and each tool's name, description, schema and native
+definition (a `meta.claude` that names a `type`). Registry ids and other registry
+metadata (comment, tags, title, a `meta.claude` without a `type`) do not reach the
+provider and are not part of it. It is stable across steps while
 the sent system text and tools stay the same. It describes the request actually sent:
 when a checkpoint callback replaces the history, the fingerprint is recomputed
 from the replacement, and stale thinking in the replacement is judged against it.
@@ -339,7 +340,9 @@ thinking blocks itself:
 1. The host stores `response.prefix_fingerprint` as `metadata.prefix_fingerprint`
    on every row it persists from that step that carries `thinking_blocks` (the
    assistant row; function call messages built through `add_function_call` carry
-   no metadata, so blocks for a tool round live on its assistant row).
+   no metadata, so blocks for a tool round live on its assistant row). It stores
+   `response.metadata.content_positions` on the same row when present, which keeps
+   a response that interleaves thinking, text and calls in its order on replay.
 2. On later steps the host passes `drop_stale_thinking = true`. Before the
    request, the agent removes the blocks of every message up to and including the
    last one whose `metadata.prefix_fingerprint` differs from the current
@@ -352,10 +355,19 @@ The current tool round (the last assistant turn, while only its tool results,
 notes and user messages joining the tool-result turn follow it) keeps its blocks
 even when they are stale: the provider requires the final assistant turn of a
 tool round to keep its thinking, so those blocks are left to the provider's
-drop-on-mismatch handling, and only earlier turns are stripped. User content
+drop-on-mismatch handling, and only earlier turns are stripped. The agent marks
+them `metadata.stale_thinking` on the copies it sends: when the route's final
+thinking object cannot carry a binding (`thinking_effort` 0 on a route not declared
+`always`, a `none` route, `between_tools`), Claude and Bedrock leave them out of the
+request instead of sending them unbound, which an enforcing model rejects on every
+retry. User content
 (a user message, a developer message or a positional system note) after an
 assistant turn with no tool result in between ends that turn; ordinary system
 messages, which drivers hoist into the top-level system, do not.
+
+A truncated step (`truncation_reason = "tool_calls"`) discards its calls, so its
+`metadata` drops them from `content_positions` along with the thinking that led to
+them. Rows persisted from it replay as a turn that ends in text, or as nothing.
 
 Stripping works on copies: the host's message tables keep their blocks, and the
 stored fingerprint never reaches the provider. When a stale turn still has a
@@ -415,8 +427,8 @@ The note ends with "Use this temporal context when relevant to your responses."
 empty or unknown timezone or a `format` that is not a non-empty string. `format`
 is an optional Go time layout for the date and time part. The note carries the
 exact minute and is never rebuilt; the framework does not inject it per step.
-The removed `time_interval` setting fails compilation with an error naming
-`turn_context`.
+The legacy `time_interval` setting is ignored, so existing configurations still
+compile. A malformed `time_format` still fails compilation.
 
 ### Token Tracking
 
@@ -479,6 +491,8 @@ end
   start are delivered as soon as the failure is known.
 - Delivery happens before `after_execute` wrappers run; the wrappers and the
   return value still receive the complete batch keyed by call ID.
+- The listener runs synchronously. Stop is observed only after a listener in
+  progress returns, so keep listeners short.
 - A listener fails by raising or by returning a non-nil second value. The batch
   then stops: no further call starts, calls still running are cancelled, results
   of calls that finished but were not yet delivered are dropped without
@@ -658,7 +672,7 @@ return { execute = execute }
 
 ### Built-in Traits
 
-- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `time_format` (optional Go time layout). It contributes no prompt text; a `time_interval` setting is rejected.
+- `wippy.agent.traits:time_aware` -- Declares `agent_options.turn_context.time` through `build_func_id`; the host renders the note with `wippy.agent:turn_context`. Configurable via context: `timezone` (default UTC), `time_format` (optional Go time layout). It contributes no prompt text; a legacy `time_interval` setting is ignored.
 
 A trait build function that returns an error fails `compiler.compile` with an
 error naming the trait and the function.

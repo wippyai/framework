@@ -742,7 +742,11 @@ local function command_result(pending: PendingCall, ok: boolean?): any
         if err then
             return { result = nil, error = err, tool_call = pending.tool_call }
         end
-        return { result = payload and payload:data() or nil, error = nil, tool_call = pending.tool_call }
+        local result = nil
+        if payload then
+            result = payload:data()
+        end
+        return { result = result, error = nil, tool_call = pending.tool_call }
     end
     local _, err = command:result()
     return {
@@ -771,20 +775,21 @@ local function cancel_pending(pending: {[any]: PendingCall})
 end
 
 -- Records every pending call: responses that are already complete keep their
--- real outcome, the rest are cancelled.
+-- real outcome, the rest are cancelled before any listener runs.
 local function settle_after_stop(run: BatchRun, pending: {[any]: PendingCall})
+    local settled = {}
     for call_id, call in pairs(pending) do
-        if run.error then break end
         pending[call_id] = nil
         local completed, ok = poll_response(call)
-        if completed then
-            record_result(run, call_id, command_result(call, ok))
-        else
-            call.command:cancel()
-            record_result(run, call_id, cancelled_result(call.tool_call))
-        end
+        if not completed then call.command:cancel() end
+        settled[call_id] = { call = call, completed = completed, ok = ok }
     end
-    cancel_pending(pending)
+    for call_id, outcome in pairs(settled) do
+        if run.error then break end
+        local entry = outcome.completed and command_result(outcome.call, outcome.ok)
+            or cancelled_result(outcome.call.tool_call)
+        record_result(run, call_id, entry)
+    end
 end
 
 -- Records pending calls in completion order. Returns true when cancellation was observed.
@@ -883,7 +888,13 @@ local function execute_parallel(self: any, run: BatchRun, context: table?, valid
             end
         end
 
-        if entry then record_result(run, call_id, entry) end
+        if entry then
+            if cancelled or cancellation_requested(cancel) then
+                cancelled = true
+                settle_after_stop(run, pending)
+            end
+            if not run.error then record_result(run, call_id, entry) end
+        end
         if run.error then
             cancel_pending(pending)
             return

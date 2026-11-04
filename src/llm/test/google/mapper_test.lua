@@ -499,9 +499,7 @@ local function define_tests()
 
                 local google_messages, _ = mapper.map_messages(contract_messages)
 
-                tests.eq(#google_messages, 1)
-                local empty_str_parts = google_messages[1].parts :: any
-                tests.eq(empty_str_parts[1].text, "")
+                tests.eq(#google_messages, 0)
             end)
 
             it("should skip assistant messages with empty content", function()

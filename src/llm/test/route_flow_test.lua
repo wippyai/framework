@@ -78,7 +78,7 @@ local function define_tests()
                         }
                     end
                     handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = request, converse = request }
-                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                         return { [method] = function(_, args) return handler.handler(args) end }
                     end }
                     return sent
@@ -194,7 +194,7 @@ local function define_tests()
                     }
                 end
                 handler._client = { ENDPOINTS = { MESSAGES = "/messages" }, request = request, converse = request }
-                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                     return { generate = function(_, args) return handler.handler(args) end }
                 end }
                 return sent
@@ -363,7 +363,7 @@ local function define_tests()
                     for key, value in pairs(driver.accepts) do ref[key] = value end
                     local card = { name = "route-model", providers = { ref } }
                     llm._model_resolver = { resolve = function() return card end }
-                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                         return { [method] = function(_, args) return handler.handler(args) end }
                     end }
                     return sent
@@ -460,7 +460,7 @@ local function define_tests()
                         options = { thinking_effort = effort, request = request }
                     } } }
                     llm._model_resolver = { resolve = function() return card end }
-                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                    llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                         return { [method] = function(_, args) return handler.handler(args) end }
                     end }
                     local _, err
@@ -530,7 +530,7 @@ local function define_tests()
                 for key, value in pairs(driver.accepts) do ref[key] = value end
                 local card = { name = "route-model", providers = { ref } }
                 llm._model_resolver = { resolve = function() return card end }
-                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                     return { structured_output = function(_, args) return handler.handler(args) end }
                 end }
                 local result, err = call("structured_output", { model = "route-model" })
@@ -550,7 +550,7 @@ local function define_tests()
             local card = { name = "route-model", providers = { { id = "route", provider_model = "wire",
                 thinking = "adaptive", options = { request = { usage = { include = false } } } } } }
             llm._model_resolver = { resolve = function() return card end }
-            llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+            llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                 return { generate = function(_, args) return openai_compat_generate.handler(args) end }
             end }
             local result, err = call("generate", { model = "route-model" })
@@ -562,7 +562,7 @@ local function define_tests()
         for _, method in ipairs({ "generate", "structured_output" }) do
             it("returns an invalid request from Google " .. method .. " for declared thinking", function()
                 local handler = method == "generate" and google_generate or google_structured
-                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, open = function()
+                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
                     return { [method] = function(_, args) return handler.handler(args) end }
                 end }
                 local result, err = call(method, { provider_id = "route", model = "wire", accepts = { thinking = "adaptive" } })

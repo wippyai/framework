@@ -157,6 +157,7 @@ entries:
       output: wippy.llm:output
       route: wippy.llm.util:route
       prompt: wippy.llm:prompt
+      tool_id: wippy.llm.util:tool_id
 
   # wippy.llm.openai:organization
   - name: organization

@@ -4,6 +4,7 @@ local prompt = require("prompt")
 local json = require("json")
 local route = require("route")
 local transport = require("transport")
+local tool_ids = require("tool_id")
 
 local mapper = {}
 
@@ -24,7 +25,14 @@ mapper.CAPABILITY = {
 -- Wire body keys the driver builds structurally; options.request cannot set them.
 mapper.REQUEST_KEYS = { "messages", "system", "toolConfig" }
 
+-- Output sent for a request that leaves max_tokens unset; the driver binding's
+-- meta.output_policy declares the same value so admission can reserve it.
+mapper.DEFAULT_MAX_TOKENS = 2000
+
 local MAX_CACHE_CHECKPOINTS = 4
+
+-- ToolUseBlock.toolUseId and ToolResultBlock.toolUseId: at most 64 characters.
+local MAX_TOOL_ID_LENGTH = 64
 
 -- Converse stopReason -> contract finish_reason
 mapper.FINISH_REASON_MAP = {} :: {[string]: string}
@@ -192,7 +200,7 @@ local function last_cacheable_message_position(messages)
         local content: any = messages[message_index].content or {}
         for block_index = #content, 1, -1 do
             local block = content[block_index]
-            if block and ((block.text and block.text ~= "") or block.toolUse or block.toolResult
+            if block and ((block.text and not prompt.is_blank(block.text)) or block.toolUse or block.toolResult
                 or block.image or block.document) then
                 return { message = message_index, block = block_index }
             end
@@ -240,10 +248,69 @@ local function reasoning_content(block)
     return nil
 end
 
+-- Merges consecutive same-role messages into one turn.
+local function consolidated_turns(messages)
+    local consolidated = {}
+    for _, msg in ipairs(messages) do
+        if #consolidated > 0 and consolidated[#consolidated].role == msg.role then
+            for _, block in ipairs(msg.content) do
+                table.insert(consolidated[#consolidated].content, block)
+            end
+        else
+            table.insert(consolidated, msg)
+        end
+    end
+    return consolidated
+end
+
+-- An assistant turn with no visible text and no call renders as nothing, thinking
+-- included: there is nothing in it to replay against.
+local function without_blank_turns(messages)
+    local kept = {}
+    for _, msg in ipairs(messages) do
+        local visible = msg.role ~= "assistant"
+        for _, block in ipairs(msg.role == "assistant" and msg.content or {}) do
+            if not block.reasoningContent and not block.cachePoint then
+                visible = true
+            end
+        end
+        if visible then
+            table.insert(kept, msg)
+        end
+    end
+    return kept
+end
+
 -- Map contract messages to Converse format
 function mapper.map_messages(contract_messages)
     if not contract_messages or #contract_messages == 0 then
         return { messages = {}, system = nil }
+    end
+
+    contract_messages = prompt.without_blank_text(contract_messages)
+    local order = thinking.new_turn_order()
+    local translate_id = tool_ids.mapper(contract_messages,
+        { pattern = tool_ids.NATIVE_PATTERN, max_length = MAX_TOOL_ID_LENGTH })
+    local function tool_use_id(id)
+        if id == nil or id == "" then return "" end
+        return translate_id(id)
+    end
+    local stale_thinking = {}
+
+    local function add_reasoning_blocks(content_blocks, msg)
+        if not (msg.metadata and msg.metadata.thinking_blocks) then
+            return
+        end
+        for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
+            local reasoning = order.keeps_thinking(thinking_block) and reasoning_content(thinking_block)
+            if reasoning then
+                order.place_thinking(reasoning, thinking_block)
+                if msg.metadata.stale_thinking then
+                    stale_thinking[reasoning] = true
+                end
+                table.insert(content_blocks, reasoning)
+            end
+        end
     end
 
     local converse_messages = {}
@@ -252,6 +319,10 @@ function mapper.map_messages(contract_messages)
     local message_cache_positions = {}
 
     for _, msg in ipairs(contract_messages) do
+        if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL
+            and not prompt.transparent_to_assistant_turn(msg) then
+            order.leave_turn()
+        end
         if msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg) then
             if type(msg.content) == "string" then
                 table.insert(system_blocks, { text = msg.content })
@@ -285,7 +356,7 @@ function mapper.map_messages(contract_messages)
                 content = {
                     {
                         toolResult = {
-                            toolUseId = msg.function_call_id or "",
+                            toolUseId = tool_use_id(msg.function_call_id),
                             content = { { text = result_text } },
                             status = msg.is_error == true and "error" or "success"
                         }
@@ -296,22 +367,18 @@ function mapper.map_messages(contract_messages)
             local arguments = normalize_tool_arguments(msg.function_call.arguments)
             local content_blocks = {}
 
-            if msg.metadata and msg.metadata.thinking_blocks then
-                for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    local reasoning = reasoning_content(thinking_block)
-                    if reasoning then
-                        table.insert(content_blocks, reasoning)
-                    end
-                end
-            end
+            order.enter_row(msg)
+            add_reasoning_blocks(content_blocks, msg)
 
-            table.insert(content_blocks, {
+            local tool_use = {
                 toolUse = {
-                    toolUseId = msg.function_call.id or "",
+                    toolUseId = tool_use_id(msg.function_call.id),
                     name = msg.function_call.name or "",
                     input = arguments
                 }
-            })
+            }
+            order.place_call(tool_use, msg.function_call.id)
+            table.insert(content_blocks, tool_use)
 
             table.insert(converse_messages, {
                 role = "assistant",
@@ -320,33 +387,37 @@ function mapper.map_messages(contract_messages)
         elseif msg.role == prompt.ROLE.ASSISTANT then
             local content_blocks = {}
 
-            if msg.metadata and msg.metadata.thinking_blocks then
-                for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    local reasoning = reasoning_content(thinking_block)
-                    if reasoning then
-                        table.insert(content_blocks, reasoning)
-                    end
+            local layout = order.enter_row(msg)
+            add_reasoning_blocks(content_blocks, msg)
+
+            if layout then
+                for _, entry in ipairs(layout.texts) do
+                    local text_block = { text = entry.text }
+                    order.place_text(text_block, entry.position)
+                    table.insert(content_blocks, text_block)
                 end
             end
 
             local content = msg.content
             if type(content) == "string" then
-                if content ~= "" then
+                if not prompt.is_blank(content) and not layout then
                     table.insert(content_blocks, { text = content })
                 end
             elseif type(content) == "table" then
                 for _, part in ipairs(content) do
-                    if part.type == "text" and part.text and part.text ~= "" then
+                    if part.type == "text" and not prompt.is_blank(part.text) and not layout then
                         table.insert(content_blocks, { text = part.text })
                     elseif part.type == "function_call" then
                         local args = normalize_tool_arguments(part.arguments)
-                        table.insert(content_blocks, {
+                        local tool_use = {
                             toolUse = {
-                                toolUseId = part.id or "",
+                                toolUseId = tool_use_id(part.id),
                                 name = part.name or "",
                                 input = args
                             }
-                        })
+                        }
+                        order.place_call(tool_use, part.id)
+                        table.insert(content_blocks, tool_use)
                     elseif part.type == "image" then
                         local img = convert_image_to_converse(part)
                         if img then
@@ -398,26 +469,25 @@ function mapper.map_messages(contract_messages)
             local message = (converse_messages :: any)[pos.message]
             local block_index = math.tointeger(pos.block)
             if message and block_index then
-                table.insert(message.content, block_index + 1, { cachePoint = { type = "default" } })
+                local cache_point = { cachePoint = { type = "default" } }
+                order.place_behind(cache_point, message.content[block_index])
+                table.insert(message.content, block_index + 1, cache_point)
             end
         end
     end
 
-    -- Consolidate consecutive same-role messages
-    local consolidated = {}
-    for _, msg in ipairs(converse_messages) do
-        if #consolidated > 0 and consolidated[#consolidated].role == msg.role then
-            for _, block in ipairs(msg.content) do
-                table.insert(consolidated[#consolidated].content, block)
-            end
-        else
-            table.insert(consolidated, msg)
+    local consolidated = consolidated_turns(converse_messages)
+    for _, msg in ipairs(consolidated) do
+        if msg.role == "assistant" then
+            msg.content = order.rebuild(msg.content)
         end
     end
 
     return {
-        messages = consolidated,
-        system = #system_blocks > 0 and system_blocks or nil
+        -- Converse takes alternating roles, so turns around a removed blank turn merge.
+        messages = consolidated_turns(without_blank_turns(consolidated)),
+        system = #system_blocks > 0 and system_blocks or nil,
+        stale_thinking = next(stale_thinking) and stale_thinking or nil
     }
 end
 
@@ -511,8 +581,7 @@ function mapper.map_options(contract_options, accepts): (table, table, table, st
             additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
         end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
-        local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
-        thinking_budget = math.floor(thinking_budget + 0.5)
+        local thinking_budget, max_tokens = route.budget_output(contract_options)
 
         additional_fields.thinking = {
             type = "enabled",
@@ -526,10 +595,7 @@ function mapper.map_options(contract_options, accepts): (table, table, table, st
             inference_config.temperature = nil
         end
 
-        -- Ensure max_tokens accommodates thinking budget
-        if not inference_config.maxTokens or inference_config.maxTokens <= thinking_budget then
-            inference_config.maxTokens = thinking_budget + 1024
-        end
+        inference_config.maxTokens = max_tokens
     end
 
     -- Pass through top_k as additional field
@@ -556,9 +622,14 @@ end
 -- Binds the reasoning a Converse payload replays to drop_block. Bedrock takes the beta in
 -- the anthropic_beta model field and returns input_transformations only when the payload
 -- names it in additionalModelResponseFieldPaths. Returns an error when either list a
--- bound payload extends is not a list.
-function mapper.bind_thinking(payload): string?
+-- bound payload extends is not a list. A thinking object that cannot carry a binding
+-- sends none of the blocks in `stale_blocks` (from map_messages): unbound, the API
+-- would reject them.
+function mapper.bind_thinking(payload, stale_blocks): string?
     local fields = payload.additionalModelRequestFields
+    if not thinking.is_bindable(fields and fields.thinking) then
+        thinking.remove_blocks(payload.messages, stale_blocks)
+    end
     if not fields then
         return nil
     end
@@ -661,25 +732,32 @@ function mapper.extract_response_content(converse_response, tool_names)
     end
 
     local text_blocks = {}
+    local entries = {}
 
     for _, block in ipairs(converse_response.output.message.content) do
         if block.text then
             content_text = content_text .. block.text
             table.insert(text_blocks, block.text)
+            table.insert(entries, { kind = "text", text = block.text })
         elseif block.toolUse then
+            table.insert(entries, { kind = "tool_use", id = block.toolUse.toolUseId })
             table.insert(tool_calls, {
                 id = block.toolUse.toolUseId or "",
                 name = block.toolUse.name or "",
                 arguments = block.toolUse.input or {}
             })
         elseif block.reasoningContent and block.reasoningContent.reasoningText then
-            table.insert(thinking_blocks, {
+            local stored = {
                 type = "thinking",
                 thinking = block.reasoningContent.reasoningText.text or "",
                 signature = block.reasoningContent.reasoningText.signature or ""
-            })
+            }
+            table.insert(entries, { kind = "thinking", block = stored })
+            table.insert(thinking_blocks, stored)
         elseif block.reasoningContent and block.reasoningContent.redactedContent then
-            table.insert(thinking_blocks, { type = "redacted_thinking", data = block.reasoningContent.redactedContent })
+            local stored = { type = "redacted_thinking", data = block.reasoningContent.redactedContent }
+            table.insert(entries, { kind = "thinking", block = stored })
+            table.insert(thinking_blocks, stored)
         end
     end
 
@@ -696,6 +774,7 @@ function mapper.extract_response_content(converse_response, tool_names)
                 })
                 -- Clear the content_text since the "content" was actually the tool call
                 content_text = ""
+                entries = {}
                 break
             end
         end
@@ -704,7 +783,8 @@ function mapper.extract_response_content(converse_response, tool_names)
     return {
         content = content_text,
         tool_calls = tool_calls,
-        thinking_blocks = thinking_blocks
+        thinking_blocks = thinking_blocks,
+        content_positions = thinking.record_positions(entries)
     }
 end
 
@@ -743,8 +823,9 @@ function mapper.format_success_response(converse_response, name_to_id_map)
         tokens.thinking_tokens = approximate_token_count(thinking_content)
     end
 
-    -- If fallback parser recovered tool calls from text, treat it as tool_call stop
-    if #extracted.tool_calls > 0 and finish_reason ~= "tool_call" then
+    -- Tool calls make a tool_call stop (the fallback parser may have recovered them
+    -- from text), except a length stop: its last call can be incomplete.
+    if #extracted.tool_calls > 0 and finish_reason ~= "tool_call" and finish_reason ~= output.FINISH_REASON.LENGTH then
         finish_reason = "tool_call"
     end
 
@@ -761,6 +842,7 @@ function mapper.format_success_response(converse_response, name_to_id_map)
 
     result.metadata.thinking = thinking_content
     result.metadata.thinking_blocks = extracted.thinking_blocks
+    result.metadata.content_positions = extracted.content_positions
 
     return result
 end
@@ -789,6 +871,7 @@ function mapper.format_streaming_response(stream_result, name_to_id_map, usage, 
 
     result.metadata.thinking = thinking_content
     result.metadata.thinking_blocks = thinking_blocks
+    result.metadata.content_positions = stream_result.content_positions
 
     return result
 end

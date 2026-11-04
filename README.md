@@ -20,6 +20,11 @@ Provides the foundational building blocks for developing concurrent AI agent app
 including actor model primitives, LLM integration, HTTP services, data storage, security,
 and configuration management — enabling developers to build sophisticated multiagent systems through Wippy's configuration-driven architecture.
 
+Stored conversations with developer messages render a different prefix once after
+upgrading on Claude and Bedrock. Their prompt cache restarts, and thinking blocks
+bound to the old prefix no longer match. See the [LLM replay guidance](src/llm/src/README.md#positional-notes)
+for handling retained thinking blocks across the upgrade.
+
 ## Modules
 
 ### Framework Modules

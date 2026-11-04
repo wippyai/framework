@@ -4,6 +4,7 @@ local base64 = require("base64")
 local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
+local thinking = require("thinking")
 local sigv4 = require("sigv4")
 local credentials = require("bedrock_credentials")
 
@@ -416,6 +417,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     local error_reported = false
     local metadata = stream_response.metadata or {}
     local redacted_bytes: {[number]: string} = {}
+    local layout = {}
 
     local function handle_event(event): string?
         -- Converse stream events use top-level keys instead of a "type" field
@@ -434,6 +436,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             content_blocks[index] = start_block
 
             if start_block.toolUse then
+                layout[index] = { kind = "tool_use", id = start_block.toolUse.toolUseId }
                 tool_calls[index] = {
                     id = start_block.toolUse.toolUseId or "",
                     name = start_block.toolUse.name or "",
@@ -448,6 +451,8 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             if delta.text then
                 local text_chunk = tostring(delta.text)
                 full_content = full_content .. text_chunk
+                layout[index] = layout[index] or { kind = "text", text = "" }
+                layout[index].text = layout[index].text .. text_chunk
                 on_content(text_chunk)
             elseif delta.reasoningContent then
                 -- ConverseStream opens reasoning blocks with their first delta, not contentBlockStart.
@@ -462,9 +467,11 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                     end
                     thinking_blocks[index] = thinking_blocks[index] or { type = "redacted_thinking", data = "" }
                     redacted_bytes[index] = (redacted_bytes[index] or "") .. bytes
+                    layout[index] = { kind = "thinking", block = thinking_blocks[index] }
                 else
                     local block = thinking_blocks[index] or { type = "thinking", thinking = "", signature = "" }
                     thinking_blocks[index] = block
+                    layout[index] = { kind = "thinking", block = block }
                     if rc.text then
                         on_thinking(tostring(rc.text))
                         block.thinking = block.thinking .. rc.text
@@ -536,6 +543,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
         content = full_content,
         tool_calls = final_tool_calls,
         thinking = transport.in_index_order(thinking_blocks),
+        content_positions = thinking.record_positions(transport.in_index_order(layout)),
         finish_reason = finish_reason,
         usage = usage,
         metadata = metadata
