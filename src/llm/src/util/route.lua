@@ -127,8 +127,10 @@ function route.plan_output(max_tokens: number?, effort: number?, mode: string?, 
     if wanted_budget and (not max_tokens or max_tokens <= wanted_budget) then
         output = wanted_budget + ANSWER_ROOM
     end
+    local capped = false
     if limit and output and output > limit then
         output = limit
+        capped = true
     end
     if not wanted_budget then
         return { max_tokens = output }
@@ -137,8 +139,8 @@ function route.plan_output(max_tokens: number?, effort: number?, mode: string?, 
         return { max_tokens = math.min(max_tokens or default_max_tokens or output, output), dropped_thinking = true }
     end
     local budget = wanted_budget
-    if budget >= output then
-        budget = math.max(output - ANSWER_ROOM, MIN_THINKING_BUDGET)
+    if capped then
+        budget = math.min(budget, math.max(output - ANSWER_ROOM, MIN_THINKING_BUDGET))
     end
     return { max_tokens = output, budget = budget, wanted_budget = wanted_budget }
 end
