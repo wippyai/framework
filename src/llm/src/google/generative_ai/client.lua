@@ -18,11 +18,20 @@ function generative_ai_client.request(contract_args)
         return {status_code = 401, message = "Google Gemini API key is missing"}
     end
 
+    local timeout, timeout_err = transport.resolve_timeout(contract_args.options.timeout, "options.timeout")
+    if timeout == nil and timeout_err == nil then
+        timeout, timeout_err = generative_ai_client._config.get_generative_ai_timeout()
+    end
+    if timeout_err then
+        if contract_args.options.stream then timeout_err.stream_started = false end
+        return timeout_err
+    end
+
     local options = {
         headers = {
             ["x-goog-api-key"] = api_key
         },
-        timeout = contract_args.options.timeout or generative_ai_client._config.get_generative_ai_timeout()
+        timeout = timeout
     }
     if contract_args.options.method == "POST" then
         options.body = json.encode(contract_args.payload or {})

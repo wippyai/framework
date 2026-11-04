@@ -204,6 +204,10 @@ function ErrorBuilder:build(): StructuredError
 
     local merged_details = {}
 
+    if type(http_err) == "table" and http_err.error_type == output.ERROR_TYPE.INVALID_REQUEST then
+        kind_type = kind_type or output.ERROR_TYPE.INVALID_REQUEST
+    end
+
     -- 1. Provider-specific classifier on HTTP / transport error if `:from(...)` was called.
     if has_http_err and s._classifier then
         local c_kind, c_message, c_details = s._classifier(http_err)

@@ -350,7 +350,7 @@ local function define_tests()
 
                 openai_client._http_client = {
                     post = function(url, options)
-                        test.eq(options.timeout, 60)
+                        test.eq(options.timeout, "60000ms")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }

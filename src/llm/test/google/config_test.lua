@@ -521,7 +521,7 @@ local function define_tests()
                 }
 
                 local timeout = config.get_generative_ai_timeout()
-                tests.eq(timeout, "90")
+                tests.eq(timeout, 90)
             end)
 
             it("should return timeout from environment", function()
@@ -541,7 +541,7 @@ local function define_tests()
                 }
 
                 local timeout = config.get_generative_ai_timeout()
-                tests.eq(timeout, "180")
+                tests.eq(timeout, 180)
             end)
         end)
 

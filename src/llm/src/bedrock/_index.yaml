@@ -286,8 +286,8 @@ entries:
         description: Bedrock Runtime base URL override
         default_env: BEDROCK_BASE_URL
       timeout:
-        type: integer
-        description: Request timeout in seconds
+        type: [number, string]
+        description: Request timeout in seconds or as a duration string
         default_env: BEDROCK_TIMEOUT
         default_value: 600
       retry:

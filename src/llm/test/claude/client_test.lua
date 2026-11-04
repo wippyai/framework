@@ -362,7 +362,7 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        test.eq(options.timeout, 120)
+                        test.eq(options.timeout, "120000ms")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
@@ -1134,7 +1134,7 @@ local function define_tests()
                         test.eq(url, "https://api.anthropic.com/messages")
                         test.eq(options.headers["x-api-key"], "default-env-key")
                         test.eq(options.headers["anthropic-version"], "2023-06-01")
-                        test.eq(options.timeout, 600)
+                        test.eq(options.timeout, "600000ms")
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
@@ -1617,7 +1617,7 @@ local function define_tests()
                     post = function(url, options)
                         test.eq(url, "https://env.claude.api/messages")  -- From env via context
                         test.eq(options.headers["x-api-key"], "direct-key")  -- Direct context
-                        test.eq(options.timeout, 90)  -- Direct context
+                        test.eq(options.timeout, "90000ms")  -- Direct context
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }
@@ -1644,7 +1644,7 @@ local function define_tests()
 
                 claude_client._http_client = {
                     post = function(url, options)
-                        test.eq(options.timeout, 30)  -- Request option overrides context
+                        test.eq(options.timeout, "30000ms")  -- Request option overrides context
                         return { status_code = 200, body = '{}', headers = {} }
                     end
                 }

@@ -79,8 +79,8 @@ entries:
         description: OpenAI organization ID
         default_env: OPENAI_ORGANIZATION
       timeout:
-        type: integer
-        description: Request timeout in seconds
+        type: [number, string]
+        description: Request timeout in seconds or as a duration string
         default_env: OPENAI_TIMEOUT
         default_value: 600
       retry:

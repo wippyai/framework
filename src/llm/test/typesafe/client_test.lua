@@ -134,7 +134,7 @@ local function define_tests()
                     get = function(url, options)
                         test.eq(url, "https://staging.typesafe.ai/v1/models")
                         test.eq(options.headers["Authorization"], "Bearer default-env-key")
-                        test.eq(options.timeout, 15)
+                        test.eq(options.timeout, "15000ms")
                         return { status_code = 200, body = "{}", headers = {} }
                     end
                 }
@@ -151,7 +151,7 @@ local function define_tests()
                 }
                 typesafe_client._env = {
                     get = function(key)
-                        return "env-value"
+                        if key ~= "TYPESAFE_TIMEOUT" then return "env-value" end
                     end
                 }
                 typesafe_client._http_client = {
@@ -171,7 +171,7 @@ local function define_tests()
 
                 typesafe_client._http_client = {
                     get = function(url, options)
-                        test.eq(options.timeout, 60)
+                        test.eq(options.timeout, "60000ms")
                         return { status_code = 200, body = "{}", headers = {} }
                     end
                 }
@@ -185,13 +185,27 @@ local function define_tests()
 
                 typesafe_client._http_client = {
                     get = function(url, options)
-                        test.eq(options.timeout, 5)
+                        test.eq(options.timeout, "5000ms")
                         return { status_code = 200, body = "{}", headers = {} }
                     end
                 }
 
                 local response, err = typesafe_client.request("/models", nil, { method = "GET", timeout = 5 })
                 test.is_nil(err)
+            end)
+
+            it("marks streaming timeout validation failures as not started", function()
+                for _, source in ipairs({ "context", "options" }) do
+                    with_key({ timeout = source == "context" and "soon" or nil })
+                    typesafe_client._http_client = { post = function() error("unexpected HTTP request") end }
+                    local response, err = typesafe_client.request("/systemone", {}, {
+                        stream = true, timeout = source == "options" and "soon" or nil
+                    })
+                    test.is_nil(response)
+                    test.eq(err.error_type, "invalid_request")
+                    test.contains(err.message, "soon")
+                    test.eq(err.stream_started, false)
+                end
             end)
 
             it("should merge context headers into the request", function()

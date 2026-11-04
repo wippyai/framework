@@ -32,7 +32,7 @@ local function define_tests()
                         test.eq(options.headers["anthropic-version"], "2023-06-01")
                         test.is_nil(options.headers["content-type"])
                         test.is_nil(options.body)
-                        test.eq(options.timeout, 15)
+                        test.eq(options.timeout, "15000ms")
 
                         return {
                             status_code = 200,
@@ -642,7 +642,7 @@ local function define_tests()
                         test.not_nil(options.headers["anthropic-version"])
                         test.is_nil(options.headers["content-type"])
                         test.is_nil(options.body)
-                        test.eq(options.timeout, 15)
+                        test.eq(options.timeout, "15000ms")
 
                         request_validated = true
 

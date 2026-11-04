@@ -179,7 +179,7 @@ local function define_tests()
                 })
 
                 test.is_nil(err)
-                test.eq(seen_timeout, 7)
+                test.eq(seen_timeout, "7000ms")
                 test.eq(calls, 2)
             end)
         end)

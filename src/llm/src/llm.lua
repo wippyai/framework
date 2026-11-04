@@ -168,7 +168,7 @@ type EvaluationOptions = {
     model: string,
     provider_id: string?,
     user: string?,
-    timeout: number?,
+    timeout: number | string?,
     retry: table?
 }
 
@@ -434,7 +434,7 @@ local function merge_provider_options(contract_args, provider_info)
         for k, v in pairs(provider_info.options) do
             if k == "tools" or k == "tool_choice" or k == "stream" then
                 contract_args[k] = v
-            else
+            elseif k ~= "timeout" or v ~= "" then
                 contract_args.options[k] = v
             end
         end
@@ -448,12 +448,12 @@ local function provider_open_context(provider_info)
     local merged = {}
     if provider_info and type(provider_info.context) == "table" then
         for k, v in pairs(provider_info.context) do
-            merged[k] = v
+            if k ~= "timeout" or v ~= "" then merged[k] = v end
         end
     end
     if provider_info and type(provider_info.options) == "table" then
         for k, v in pairs(provider_info.options) do
-            merged[k] = v
+            if k ~= "timeout" or v ~= "" then merged[k] = v end
         end
     end
     return merged
@@ -492,21 +492,13 @@ local function merge_user_options(contract_args, user_options, exclude_keys)
             end
         end
 
-        if not should_exclude then
+        if not should_exclude and (k ~= "timeout" or v ~= "") then
             if k == "tools" or k == "tool_choice" or k == "stream" then
                 contract_args[k] = v
             else
                 contract_args.options[k] = v
             end
         end
-    end
-end
-
-local function apply_provider_transport(contract_args, provider_info)
-    local context = provider_info and provider_info.context
-    if type(context) ~= "table" then return end
-    if contract_args.timeout == nil and context.timeout ~= nil then
-        contract_args.timeout = context.timeout
     end
 end
 
@@ -972,7 +964,6 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
     if not candidate.direct then
         -- Provider options first (from the model card), caller options on top.
         merge_provider_options(contract_args, route_info)
-        apply_provider_transport(contract_args, route_info)
     end
 
     merge_user_options(contract_args, options, candidate.direct and spec.direct_exclude or spec.exclude)
@@ -980,10 +971,6 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
 
     if candidate.direct then
         contract_args._provider_id = route_info.id
-    end
-
-    if deadline_at ~= nil then
-        contract_args.timeout = fallback.capped_timeout(contract_args.timeout, deadline_at - current_ms())
     end
 
     local state = nil
@@ -1528,7 +1515,6 @@ function llm.status(options)
         end
         provider_info = model_card.providers[1] as any
         merge_provider_options(contract_args, provider_info)
-        apply_provider_transport(contract_args, provider_info)
     end
 
     local providers_module = llm._providers or providers

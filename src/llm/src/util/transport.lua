@@ -18,6 +18,7 @@ type HttpResponse = {
 type RequestError = {
     status_code: number,
     message: string,
+    stream_started: boolean?,
     error: any?,
     error_type: string?,
     type: string?,
@@ -48,23 +49,56 @@ function transport.now_ms(): number
     return math.floor(transport._time.now():unix_nano() / 1000000)
 end
 
+function transport.timeout_seconds(value: any): (number?, string?)
+    local seconds = nil
+    if type(value) == "number" then
+        seconds = value
+    elseif type(value) == "string" then
+        seconds = tonumber(value)
+        if seconds == nil then
+            local duration = time.parse_duration(value)
+            if duration then seconds = duration:seconds() end
+        end
+    end
+    if seconds and seconds > 0 and seconds < math.huge then return seconds, nil end
+    return nil, "Invalid timeout " .. string.format("%q", tostring(value))
+        .. ": expected positive seconds or a duration string"
+end
+
+function transport.resolve_timeout(value: any, source: string?, fallback: number?, fallback_err: RequestError?): (number?, RequestError?)
+    if value == nil or value == "" then return fallback, fallback_err end
+    local seconds, err = transport.timeout_seconds(value)
+    if err then
+        return nil, { status_code = 400, error_type = "invalid_request",
+            message = err .. " from " .. (source or "timeout") }
+    end
+    return seconds, nil
+end
+
 -- Resolves a string setting from a literal context value, then from the env
 -- variable named by `<key>_env` in the context, then from the provider's
 -- default env variable. Empty env values count as unset.
-function transport.config_value(ctx_all: {[string]: any}, env_module: any, key: string, default_env: string?): string?
+function transport.config_value(ctx_all: {[string]: any}, env_module: any, key: string, default_env: string?): (string?, string?)
     if ctx_all[key] then
-        return tostring(ctx_all[key])
+        return tostring(ctx_all[key]), "context." .. key
     end
     local env_key = ctx_all[key .. "_env"]
     if env_key then
         local value = env_module.get(tostring(env_key))
-        if type(value) == "string" and value ~= "" then return value end
+        if type(value) == "string" and value ~= "" then return value, tostring(env_key) end
     end
     if default_env then
         local value = env_module.get(default_env)
-        if type(value) == "string" and value ~= "" then return value end
+        if type(value) == "string" and value ~= "" then return value, default_env end
     end
-    return nil
+    return nil, nil
+end
+
+function transport.config_timeout(ctx_all: {[string]: any}, env_module: any, default_env: string, fallback: number): (number?, RequestError?)
+    local context = { timeout = ctx_all.timeout, timeout_env = ctx_all.timeout_env }
+    if context.timeout == "" then context.timeout = nil end
+    local value, source = transport.config_value(context, env_module, "timeout", default_env)
+    return transport.resolve_timeout(value, source, fallback)
 end
 
 function transport.normalize_retry(raw: any): Retry?
@@ -104,24 +138,25 @@ local VERBS = {
     DELETE = "delete"
 }
 
-function transport.dispatch(http: any, method: string, url: string, options: {[string]: any}, deadline_at: number?): (HttpResponse?, string?)
+function transport.dispatch(http: any, method: string, url: string, options: {[string]: any}, deadline_at: number?): (HttpResponse?, string | RequestError?)
     local verb = VERBS[method]
     if not verb then
         error("Unsupported HTTP method: " .. tostring(method))
     end
+    local remaining_ms = nil
     if deadline_at ~= nil then
-        local remaining_ms = deadline_at - transport.now_ms()
+        remaining_ms = deadline_at - transport.now_ms()
         if remaining_ms <= 0 then return nil, "Request deadline exceeded" end
-        -- Do not mutate the shared options: every retry starts with the original
-        -- timeout and caps it against the remaining call budget.
-        local capped = {}
-        for key, value in pairs(options) do capped[key] = value end
-        local timeout = tonumber(options.timeout)
-        if timeout and timeout > 0 then remaining_ms = math.min(remaining_ms, timeout * 1000) end
-        capped.timeout = tostring(remaining_ms) .. "ms"
-        options = capped
     end
-    local response, err = http[verb](url, options)
+    local timeout, timeout_err = transport.resolve_timeout(options.timeout, "timeout", 30)
+    if not timeout then return nil, timeout_err end
+    local timeout_ms = timeout * 1000
+    if remaining_ms then timeout_ms = math.min(timeout_ms, remaining_ms) end
+    -- Every retry starts with the original timeout and the remaining call budget.
+    local request_options = {}
+    for key, value in pairs(options) do request_options[key] = value end
+    request_options.timeout = string.format("%.0fms", math.max(1, math.floor(timeout_ms)))
+    local response, err = http[verb](url, request_options)
     return response :: HttpResponse?, err and tostring(err) or nil
 end
 
@@ -138,7 +173,7 @@ end
 -- once. `deadline_at` (Unix milliseconds) prevents dispatch after expiry. A retry whose
 -- backoff would end at or after it is not attempted, and the last error is
 -- returned instead.
-function transport.send(send_once: () -> (HttpResponse?, string?), parse_error: (HttpResponse) -> RequestError, retry: Retry?, deadline_at: number?): (HttpResponse?, RequestError?)
+function transport.send(send_once: () -> (HttpResponse?, string | RequestError?), parse_error: (HttpResponse) -> RequestError, retry: Retry?, deadline_at: number?): (HttpResponse?, RequestError?)
     local retries = 0
     while true do
         if deadline_at ~= nil and transport.now_ms() >= deadline_at then
@@ -148,10 +183,14 @@ function transport.send(send_once: () -> (HttpResponse?, string?), parse_error: 
 
         local request_error: RequestError
         if not response then
-            request_error = {
-                status_code = 0,
-                message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
-            }
+            if type(err) == "table" then
+                request_error = err
+            else
+                request_error = {
+                    status_code = 0,
+                    message = err and ("Connection failed: " .. tostring(err)) or "Connection failed"
+                }
+            end
         elseif response.status_code < 200 or response.status_code >= 300 then
             request_error = parse_error(response)
         else

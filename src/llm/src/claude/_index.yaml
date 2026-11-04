@@ -83,10 +83,10 @@ entries:
         default_env: ANTHROPIC_BASE_URL
         default_value: https://api.anthropic.com
       timeout:
-        type: integer
-        description: Request timeout in seconds
+        type: [number, string]
+        description: Request timeout in seconds or as a duration string
         default_env: ANTHROPIC_TIMEOUT
-        default_value: 240
+        default_value: 600
       retry:
         type: object
         description: Provider-level retry policy for transient transport/provider failures
