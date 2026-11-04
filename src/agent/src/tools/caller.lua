@@ -752,10 +752,21 @@ local function command_result(pending: PendingCall, ok: boolean?): any
     }
 end
 
+-- Takes the call's response if it has already arrived.
+local function poll_response(call: PendingCall): (boolean, boolean?)
+    local completed = channel.select({ call.response:case_receive(), default = true })
+    if completed.default then return false, nil end
+    return true, completed.ok
+end
+
+-- Cancels calls that are still running. Responses that have already arrived
+-- are taken and dropped; their commands are finished and are not cancelled.
 local function cancel_pending(pending: {[any]: PendingCall})
     for call_id, call in pairs(pending) do
-        call.command:cancel()
         pending[call_id] = nil
+        if not poll_response(call) then
+            call.command:cancel()
+        end
     end
 end
 
@@ -765,12 +776,12 @@ local function settle_after_stop(run: BatchRun, pending: {[any]: PendingCall})
     for call_id, call in pairs(pending) do
         if run.error then break end
         pending[call_id] = nil
-        local completed = channel.select({ call.response:case_receive(), default = true })
-        if completed.default then
+        local completed, ok = poll_response(call)
+        if completed then
+            record_result(run, call_id, command_result(call, ok))
+        else
             call.command:cancel()
             record_result(run, call_id, cancelled_result(call.tool_call))
-        else
-            record_result(run, call_id, command_result(call, completed.ok))
         end
     end
     cancel_pending(pending)

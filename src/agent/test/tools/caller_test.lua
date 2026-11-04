@@ -1372,10 +1372,15 @@ local function define_tests()
                         cancelled_commands = {}
                         local runs = 0
                         local notified = {}
-                        tool_results["test:calculator"] = { execute = function()
-                            runs = runs + 1
-                            return 42
-                        end }
+                        local function counted(response)
+                            return { response = response, execute = function()
+                                runs = runs + 1
+                                return 42
+                            end }
+                        end
+                        tool_results["test:calculator"] = counted(nil)
+                        tool_results["test:held_b"] = counted(channel.new())
+                        tool_results["test:held_c"] = counted(channel.new())
                         local caller = tool_caller.new():set_strategy(strategy)
                         caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
                         caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
@@ -1386,8 +1391,8 @@ local function define_tests()
                         end)
                         local results, err = caller:execute({}, {
                             a = tool("a", "test:calculator"),
-                            b = tool("b", "test:calculator"),
-                            c = tool("c", "test:calculator"),
+                            b = tool("b", "test:held_b"),
+                            c = tool("c", "test:held_c"),
                         })
                         local label = strategy .. " " .. kind
                         test.is_nil(results, label)
@@ -1398,9 +1403,65 @@ local function define_tests()
                         if strategy == "sequential" then
                             test.eq(runs, 1, label .. ": no further call starts")
                         else
-                            test.eq(#cancelled_commands, 2, label .. ": undelivered calls are cancelled")
+                            test.eq(notified[1], "a", label)
+                            test.eq(#cancelled_commands, 2, label .. ": unfinished calls are cancelled")
                         end
                     end
+                end
+            end)
+
+            it("does not cancel parallel calls that completed but were not delivered", function()
+                local caller = tool_caller.new():set_strategy("parallel")
+                local notified = 0
+                caller:set_result_listener(function()
+                    notified = notified + 1
+                    return nil, "store unavailable"
+                end)
+                local results, err = caller:execute({}, {
+                    a = tool("a", "test:calculator"),
+                    b = tool("b", "test:weather"),
+                    c = tool("c", "test:non_exclusive"),
+                })
+                test.is_nil(results)
+                test.contains(tostring(err), "store unavailable")
+                test.eq(notified, 1)
+                test.eq(#cancelled_commands, 0, "a completed command must not be cancelled")
+            end)
+
+            it("starts no call when the listener fails during the parallel launch", function()
+                for _, first in ipairs({ "invalid", "parse" }) do
+                    wrapper_calls = {}
+                    local runs = 0
+                    tool_results["test:calculator"] = { execute = function()
+                        runs = runs + 1
+                        return 42
+                    end }
+                    local failed = tool("failed", "test:calculator", '{"invalid": json}')
+                    if first == "invalid" then
+                        failed.valid = false
+                        failed.error = "Tool validation failed"
+                    end
+                    local caller = tool_caller.new():set_strategy("parallel")
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                    caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit" } })
+                    local notified = {}
+                    caller:set_result_listener(function(call_id)
+                        table.insert(notified, call_id)
+                        return nil, "store unavailable"
+                    end)
+                    -- Array keys record the failed entry before any call launches.
+                    local results, err = caller:execute({}, {
+                        failed,
+                        tool("a", "test:calculator"),
+                        tool("b", "test:calculator"),
+                    })
+                    test.is_nil(results, first)
+                    test.contains(tostring(err), "Tool result listener failed for 1", first)
+                    test.contains(tostring(err), "store unavailable", first)
+                    test.eq(#notified, 1, first)
+                    test.eq(runs, 0, first .. ": no call starts")
+                    test.eq(#wrapper_calls, 0, first .. ": after_execute wrappers do not run")
                 end
             end)
         end)

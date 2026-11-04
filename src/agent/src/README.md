@@ -358,10 +358,11 @@ end
 - Delivery happens before `after_execute` wrappers run; the wrappers and the
   return value still receive the complete batch keyed by call ID.
 - A listener fails by raising or by returning a non-nil second value. The batch
-  then stops: no further call starts, in-flight calls are cancelled,
-  `after_execute` wrappers do not run, and `execute` returns `nil` and an error
-  naming the call ID whose delivery failed. Every result delivered before that
-  call was accepted by the listener.
+  then stops: no further call starts, calls still running are cancelled, results
+  of calls that finished but were not yet delivered are dropped without
+  cancelling them, `after_execute` wrappers do not run, and `execute` returns
+  `nil` and an error naming the call ID whose delivery failed. Every result
+  delivered before that call was accepted by the listener.
 - The listener must not mutate the result; it is the table the batch returns.
 - `set_result_listener(nil)` removes the listener.
 
