@@ -581,6 +581,9 @@ local function define_tests()
                 it("keeps thinking in front of the last visible text of a stored row: " .. path.name, function()
                     local result: any = path.extract({ "s1", "A", "s2", { "c1" } })
                     assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "s1", "A" })
+                    local rows = rows_without_calls(result)
+                    table.insert(rows, 3, { role = "assistant", content = text("B") })
+                    assert_order(assistant_order(path, path.replay(rows)), { "s1", "A", "B" })
                 end)
 
                 it("drops thinking behind a discarded call when the host dropped the text too: " .. path.name, function()
@@ -675,13 +678,50 @@ local function define_tests()
                     end)
                 end
 
-                it("finds a call rendered after a result of the same response: " .. path.name, function()
+                it("ends each split response turn with text or a call: " .. path.name, function()
                     local result: any = path.extract({ "s1", "A", { "c1" }, "s2", { "c2" } })
                     local rows = stored_rows(result)
                     local paired = { rows[1], rows[2], rows[3], rows[5], rows[4], rows[6] }
                     local payload = path.replay(paired)
-                    local signatures = table.concat(assistant_order(path, payload), "|")
-                    test.contains(signatures, "s2")
+                    local blocks = path.order == claude_order and claude_blocks or bedrock_blocks
+                    test.eq(#payload.messages, 5)
+                    for index, role in ipairs({ "user", "assistant", "user", "assistant", "user" }) do
+                        test.eq(payload.messages[index].role, role)
+                    end
+                    test.eq(json.encode(payload.messages[2].content), json.encode(blocks({ "s1", "A", { "c1" } })),
+                        "first emitted turn")
+                    test.eq(json.encode(payload.messages[4].content), json.encode(blocks({ { "c2" } })),
+                        "second emitted turn")
+                end)
+
+                it("ends a turn before thinking-only rows without positions: " .. path.name, function()
+                    for _, redacted in ipairs({ false, true }) do
+                        for _, cached in ipairs({ false, true }) do
+                            local result: any = path.extract({ "s1", "A", { "c1" } })
+                            local rows = stored_rows(result)
+                            table.insert(rows, 4, { role = "assistant", content = {}, metadata = {
+                                thinking_blocks = { redacted and { type = "redacted_thinking", data = "opaque" } or signed("s2") } } })
+                            if cached then table.insert(rows, 5, { role = "cache_marker", marker_id = "tail" }) end
+                            local payload = path.replay(rows)
+                            local blocks = path.order == claude_order and claude_blocks or bedrock_blocks
+                            local expected = blocks({ "s1", "A", { "c1" } })
+                            if cached then
+                                if path.order == claude_order then
+                                    expected[3].cache_control = { type = "ephemeral" }
+                                else
+                                    table.insert(expected, { cachePoint = { type = "default" } })
+                                end
+                            end
+                            test.eq(#payload.messages, 3)
+                            test.eq(json.encode(payload.messages[2].content), json.encode(expected), "emitted turn without positions")
+                            if path.order == claude_order then
+                                rows[4].content = rows[4].metadata.thinking_blocks
+                                rows[4].metadata = nil
+                                payload = path.replay(rows)
+                                test.eq(json.encode(payload.messages[2].content), json.encode(expected), "emitted turn with inline thinking")
+                            end
+                        end
+                    end
                 end)
             end
 

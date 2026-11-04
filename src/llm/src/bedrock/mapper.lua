@@ -288,7 +288,7 @@ function mapper.map_messages(contract_messages)
     end
 
     contract_messages = prompt.without_blank_text(contract_messages)
-    local order = thinking.new_turn_order(contract_messages)
+    local order = thinking.new_turn_order()
     local translate_id = tool_ids.mapper(contract_messages,
         { pattern = tool_ids.NATIVE_PATTERN, max_length = MAX_TOOL_ID_LENGTH })
     local function tool_use_id(id)

@@ -366,7 +366,7 @@ function mapper.map_messages(contract_messages)
 
     contract_messages = prompt.without_blank_text(contract_messages)
     local tool_id = tool_ids.mapper(contract_messages, { pattern = tool_ids.NATIVE_PATTERN })
-    local order = thinking.new_turn_order(contract_messages)
+    local order = thinking.new_turn_order()
     local stale_thinking = {}
 
     local function add_thinking_blocks(content_blocks, msg)

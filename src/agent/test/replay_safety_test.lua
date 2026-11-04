@@ -388,6 +388,33 @@ local function define_tests()
                 return assert(agent.new(compiled):step(builder, {})).prefix_fingerprint
             end
 
+            it("distinguishes schema arrays from objects while keeping equal schemas stable", function()
+                local function schema_fingerprint(schema)
+                    local sent = install({ id = "claude_route", provider_model = "wire" })
+                    local compiled = spec("agent_b", 0)
+                    compiled.tools.lookup.schema = schema
+                    local builder = prompt.new()
+                    builder:add_user("q")
+                    local result = assert(agent.new(compiled):step(builder, {}))
+                    return result.prefix_fingerprint, sent[1].payload.tools[1].input_schema
+                end
+                local array = { type = "object", properties = {}, enum = { "x" } }
+                local object = { type = "object", properties = {}, enum = { ["1"] = "x" } }
+                local array_fingerprint, array_wire = schema_fingerprint(array)
+                local object_fingerprint, object_wire = schema_fingerprint(object)
+                test.eq(json.encode(array_wire.enum), '["x"]')
+                test.eq(json.encode(object_wire.enum), '{"1":"x"}')
+                test.is_false(array_fingerprint == object_fingerprint, "different wire schemas need different fingerprints")
+                local reordered = {}
+                reordered.enum = { "x" }
+                reordered.properties = {}
+                reordered.type = "object"
+                test.eq(schema_fingerprint(reordered), array_fingerprint, "key insertion order is irrelevant")
+                test.eq(schema_fingerprint({ type = "object", properties = {}, enum = { "x" } }), array_fingerprint,
+                    "equal schemas have equal fingerprints")
+                test.eq(schema_fingerprint({ enum = { ["1"] = "x" }, properties = {}, type = "object" }), object_fingerprint)
+            end)
+
             it("ignores meta.claude without a type, which never reaches the wire", function()
                 test.eq(fingerprint({ claude = { display_width_px = 10 } }), fingerprint({}))
             end)

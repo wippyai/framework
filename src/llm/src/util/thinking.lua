@@ -149,9 +149,8 @@ end
 -- text the layout recorded: the row is what the host stands behind. Providers
 -- compare neither whitespace-only text blocks nor the outer whitespace of a block, so
 -- the layout holds only visible text, and whitespace a host stripped from the row's
--- ends is not an edit. A call the conversation no longer holds leaves the layout, and
--- thinking_limit bounds the thinking that can still be replayed.
-local function read_layout(msg: any, calls: {[any]: boolean}): any?
+-- ends is not an edit.
+local function read_layout(msg: any): any?
     local positions = type(msg.metadata) == "table" and msg.metadata.content_positions or nil
     if type(positions) ~= "table" then
         return nil
@@ -165,53 +164,30 @@ local function read_layout(msg: any, calls: {[any]: boolean}): any?
             end
             text = text .. entry.text
         elseif entry.type == "tool_use" then
-            if calls[entry.id] then
-                layout.calls[entry.id] = entry.position
-            end
+            layout.calls[entry.id] = entry.position
         end
     end
-    layout.thinking_limit = last_standing(positions, calls)
     if without_outer_whitespace(text) ~= without_outer_whitespace(row_text(msg.content)) then
         return nil
     end
     return layout
 end
 
+local function is_wire_thinking(block: any): boolean
+    return block.type == "thinking" or block.type == "redacted_thinking" or block.reasoningContent ~= nil
+end
+
 -- Tracks the wire blocks of assistant rows against their recorded layouts and
 -- rebuilds response order once the rows are consolidated into one turn.
-function thinking.new_turn_order(messages: {any})
+function thinking.new_turn_order()
     local placed: {[any]: any} = {}
+    local attached: {[any]: boolean} = {}
     local active: any = nil
     local order = {}
 
-    local calls_by_row: {[any]: {[any]: boolean}} = {}
-    local calls: {[any]: boolean} = {}
-    local after_result = false
-    for _, msg in ipairs(messages) do
-        if msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL then
-            if after_result and msg.role == prompt.ROLE.ASSISTANT then calls = {} end
-            after_result = false
-            calls_by_row[msg] = calls
-            if msg.function_call then
-                calls[msg.function_call.id] = true
-            elseif type(msg.content) == "table" then
-                for _, part in ipairs(msg.content) do
-                    if part.type == "function_call" then calls[part.id] = true end
-                end
-            end
-        elseif msg.role == prompt.ROLE.FUNCTION_RESULT then
-            -- Calls after a result can belong to the same response; a new
-            -- assistant row starts the next turn.
-            after_result = true
-        elseif msg.role ~= prompt.ROLE.CACHE_MARKER then
-            calls = {}
-            after_result = false
-        end
-    end
-
     -- Returns the row's own layout, whose text blocks replace the row's text.
     function order.enter_row(msg: any): any?
-        local layout = read_layout(msg, calls_by_row[msg] or {})
+        local layout = read_layout(msg)
         if layout then active = layout end
         return layout
     end
@@ -224,8 +200,7 @@ function thinking.new_turn_order(messages: {any})
         if stored_block.type == "thinking" and (stored_block.signature or "") == "" then
             return false
         end
-        local limit = active and active.thinking_limit
-        return not (limit and stored_block.position and stored_block.position > limit)
+        return true
     end
 
     function order.place_thinking(wire_block: any, stored_block: any)
@@ -249,6 +224,7 @@ function thinking.new_turn_order(messages: {any})
 
     -- A block that belongs right behind `anchor`, wherever the anchor ends up.
     function order.place_behind(wire_block: any, anchor: any)
+        attached[wire_block] = true
         local place = placed[anchor]
         if place then
             placed[wire_block] = { layout = place.layout, position = place.position + 0.5 }
@@ -258,8 +234,12 @@ function thinking.new_turn_order(messages: {any})
     -- The content with each run of blocks from one layout in response order. Blocks
     -- with no recorded place keep theirs, and they end a run.
     function order.rebuild(content: {any}): {any}
-        if next(placed) == nil then
-            return content
+        local limits: {[any]: number} = {}
+        for _, block in ipairs(content) do
+            local place = placed[block]
+            if place and not is_wire_thinking(block) and not attached[block] then
+                limits[place.layout] = math.max(limits[place.layout] or 0, place.position)
+            end
         end
         local rebuilt: {any} = {}
         local index = 1
@@ -275,8 +255,21 @@ function thinking.new_turn_order(messages: {any})
                     index = index + 1
                 end
                 table.sort(run, function(a, b) return placed[a].position < placed[b].position end)
-                for _, block in ipairs(run) do table.insert(rebuilt, block) end
+                for _, block in ipairs(run) do
+                    if not is_wire_thinking(block) or placed[block].position <= (limits[place.layout] or 0) then
+                        table.insert(rebuilt, block)
+                    end
+                end
             end
+        end
+        -- Each emitted turn ends on visible content, even when persisted rows
+        -- split a response or carry thinking without recorded positions.
+        local last = #rebuilt
+        while last > 0 and (is_wire_thinking(rebuilt[last]) or attached[rebuilt[last]]) do
+            last = last - 1
+        end
+        for index = #rebuilt, last + 1, -1 do
+            if is_wire_thinking(rebuilt[index]) then table.remove(rebuilt, index) end
         end
         return rebuilt
     end

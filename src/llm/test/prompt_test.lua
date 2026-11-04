@@ -190,6 +190,54 @@ local function define_tests()
                 return builder
             end
 
+            for _, role in ipairs({ "cache_marker", "system" }) do
+                local function transparent_row()
+                    return { role = role, content = { prompt.text("policy") }, marker_id = "m" }
+                end
+
+                it("keeps and marks the current round across " .. role, function()
+                    for _, placement in ipairs({ 3, 4 }) do
+                        local builder = prompt.new()
+                        builder:add_user("q")
+                        builder:add_assistant("A", { thinking_blocks = block("round") })
+                        builder:add_function_call("lookup", "{}", "call_1")
+                        builder:add_function_result("lookup", "found", "call_1")
+                        table.insert(builder.messages, placement, transparent_row())
+                        local consulted = 0
+                        local dropped, err = builder:drop_stale_thinking(function()
+                            consulted = consulted + 1
+                            return false
+                        end)
+                        test.is_nil(err)
+                        test.eq(dropped, builder)
+                        test.eq(thinking_of(builder.messages, 2), "round", "current thinking survives " .. role)
+                        test.eq(consulted, 0)
+                        builder:mark_stale_thinking(function() return false end)
+                        test.is_true(builder.messages[2].metadata.stale_thinking)
+                        test.eq(thinking_of(builder.messages, 2), "round")
+                    end
+                end)
+
+                for _, carrier in ipairs({ "before", "after" }) do
+                    it("protects an open call with thinking " .. carrier .. " " .. role, function()
+                        local builder = prompt.new()
+                        builder:add_user("q")
+                        builder:add_assistant("A", carrier == "before" and { thinking_blocks = block("round") } or nil)
+                        builder:add_function_call("lookup", "{}", "call_open")
+                        builder:add_function_call("fetch", "{}", "call_done")
+                        if carrier == "after" then builder.messages[4].metadata = { thinking_blocks = block("round") } end
+                        builder:add_function_result("fetch", "found", "call_done")
+                        builder:add_assistant("later")
+                        builder:add_user("next")
+                        table.insert(builder.messages, carrier == "before" and 3 or 4, transparent_row())
+                        local dropped, err = builder:drop_stale_thinking(function() return false end)
+                        test.is_nil(dropped, "open call across " .. role)
+                        test.contains(tostring(err), "call_open")
+                        test.eq(thinking_of(builder.messages, carrier == "before" and 2 or 5), "round")
+                    end)
+                end
+            end
+
             it("keeps the round when a user message joins its tool-result turn", function()
                 local builder = current_round()
                 builder:add_user("Use metric units")
