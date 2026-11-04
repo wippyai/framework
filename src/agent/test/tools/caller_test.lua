@@ -17,6 +17,7 @@ local function define_tests()
         local wrapper_calls
         local wrapper_behaviors
         local execution_contexts
+        local cancelled_commands
 
         -- Mock tool schemas
         local tool_schemas = {
@@ -97,6 +98,7 @@ local function define_tests()
             wrapper_calls = {}
             wrapper_behaviors = {}
             execution_contexts = {}
+            cancelled_commands = {}
 
             -- Create mock modules
             local mock_json = {
@@ -174,15 +176,19 @@ local function define_tests()
                                         final_error = "Tool execution failed"
                                     end
 
+                                    local response = result_data and result_data.response
+                                    if not response then
+                                        response = channel.new(1)
+                                        response:send(true)
+                                    end
+                                    local canceled = false
                                     return {
-                                        response = function()
-                                            return {
-                                                receive = function()
-                                                    return {}, true
-                                                end
-                                            }
+                                        response = function() return response end,
+                                        cancel = function()
+                                            canceled = true
+                                            table.insert(cancelled_commands, registry_id)
                                         end,
-                                        is_canceled = function() return false end,
+                                        is_canceled = function() return canceled end,
                                         result = function()
                                             if final_error then
                                                 return nil, final_error
@@ -287,6 +293,7 @@ local function define_tests()
             wrapper_calls = nil
             wrapper_behaviors = nil
             execution_contexts = nil
+            cancelled_commands = nil
         end)
 
         describe("explicit failure results", function()
@@ -1194,6 +1201,268 @@ local function define_tests()
 
                 test.eq(results["call_123"].result, 42)
                 test.eq(results["call_456"].error, "Tool validation failed")
+            end)
+        end)
+
+        describe("Result listener", function()
+            local STRATEGIES = { "sequential", "parallel" }
+
+            local function tool(call_id, registry_id, args)
+                return { call_id = call_id, name = call_id, registry_id = registry_id, args = args or {}, valid = true }
+            end
+
+            local function recording_listener()
+                local notes = { order = {}, results = {}, errors = {}, counts = {} }
+                notes.listener = function(call_id, result)
+                    table.insert(notes.order, call_id)
+                    notes.results[call_id] = result
+                    notes.errors[call_id] = result.error
+                    notes.counts[call_id] = (notes.counts[call_id] or 0) + 1
+                end
+                return notes
+            end
+
+            it("accepts a function or nil and rejects other values", function()
+                local caller = tool_caller.new()
+                test.eq(caller:set_result_listener(function() end), caller)
+                test.eq(caller:set_result_listener(nil), caller)
+                local ok, err = pcall(function() caller:set_result_listener("listener") end)
+                test.is_false(ok)
+                test.contains(tostring(err), "result listener must be a function or nil")
+            end)
+
+            it("notifies every outcome once with the normalised result the batch returns", function()
+                for _, strategy in ipairs(STRATEGIES) do
+                    tool_results["test:explicit"] = { result = { success = false, error = "automation not found" } }
+                    local notes = recording_listener()
+                    local caller = tool_caller.new():set_strategy(strategy):set_result_listener(notes.listener)
+                    local invalid = tool("invalid", "test:invalid")
+                    invalid.valid = false
+                    invalid.error = "Tool validation failed"
+                    local results = caller:execute({}, {
+                        ok = tool("ok", "test:calculator"),
+                        invalid = invalid,
+                        parse = tool("parse", "test:calculator", '{"invalid": json}'),
+                        failed = tool("failed", "test:failing_tool"),
+                        denied = tool("denied", "test:denied_tool"),
+                        explicit = tool("explicit", "test:explicit"),
+                    }, channel.new())
+
+                    test.eq(#notes.order, 6, strategy)
+                    test.eq(count_table_elements(results), 6, strategy)
+                    for call_id, entry in pairs(results) do
+                        test.eq(notes.counts[call_id], 1, strategy .. " " .. call_id)
+                        test.is_true(rawequal(notes.results[call_id], entry), strategy .. " " .. call_id)
+                        test.eq(notes.errors[call_id], entry.error, strategy .. " " .. call_id)
+                    end
+                    test.eq(results.ok.result, 42)
+                    test.is_nil(results.ok.error)
+                    test.eq(results.invalid.error, "Tool validation failed")
+                    test.contains(results.parse.error, "Failed to parse arguments")
+                    test.eq(results.failed.error, "Tool execution failed")
+                    test.eq(results.denied.error, "not allowed: test:denied_tool")
+                    test.eq(notes.errors.explicit, "automation not found", strategy)
+                end
+            end)
+
+            it("notifies a fast parallel call before a slower peer finishes", function()
+                local slow_response = channel.new(1)
+                tool_results["test:slow"] = { response = slow_response, result = "slow" }
+                local notes = channel.new()
+                local done = channel.new(1)
+                local caller = tool_caller.new():set_strategy(tool_caller.STRATEGY.PARALLEL)
+                caller:set_result_listener(function(call_id, result)
+                    notes:send({ call_id = call_id, result = result })
+                end)
+                -- Array keys put the slow call first in iteration order.
+                local slow = tool("slow", "test:slow")
+                local fast = tool("fast", "test:calculator")
+                coroutine.spawn(function() done:send(caller:execute({}, { slow, fast })) end)
+
+                local guard = time.timer("2s")
+                local first = channel.select({ notes:case_receive(), guard:channel():case_receive() })
+                test.eq(first.channel, notes, "the fast call must be delivered while the slow call is pending")
+                test.eq(first.value.result.tool_call.call_id, "fast")
+                test.eq(first.value.result.result, 42)
+
+                slow_response:send(true)
+                local second = channel.select({ notes:case_receive(), guard:channel():case_receive() })
+                test.eq(second.channel, notes)
+                test.eq(second.value.result.tool_call.call_id, "slow")
+                test.eq(second.value.result.result, "slow")
+                local finished = channel.select({ done:case_receive(), guard:channel():case_receive() })
+                guard:stop()
+                test.eq(finished.channel, done)
+                test.eq(finished.value[1].result, "slow")
+                test.eq(finished.value[2].result, 42)
+            end)
+
+            it("notifies each sequential call before the next one starts", function()
+                for _, cancel in ipairs({ false, true }) do
+                    local events = {}
+                    tool_results["test:calculator"] = { execute = function(_, ctx)
+                        table.insert(events, "run:" .. ctx.call_id)
+                        return 42
+                    end }
+                    local caller = tool_caller.new():set_result_listener(function(call_id)
+                        table.insert(events, "notify:" .. call_id)
+                    end)
+                    caller:execute({}, {
+                        a = tool("a", "test:calculator"),
+                        b = tool("b", "test:calculator"),
+                        c = tool("c", "test:calculator"),
+                    }, cancel and channel.new() or nil)
+                    test.eq(#events, 6)
+                    for i = 1, #events, 2 do
+                        local call_id = string.match(tostring(events[i]), "^run:(.+)$")
+                        test.not_nil(call_id, events[i])
+                        test.eq(events[i + 1], "notify:" .. call_id)
+                    end
+                end
+            end)
+
+            it("notifies cancelled calls once when the batch is cancelled before start", function()
+                for _, strategy in ipairs(STRATEGIES) do
+                    local notes = recording_listener()
+                    local caller = tool_caller.new():set_strategy(strategy):set_result_listener(notes.listener)
+                    local cancel = channel.new()
+                    cancel:close()
+                    local results = caller:execute({}, {
+                        a = tool("a", "test:calculator"),
+                        b = tool("b", "test:weather"),
+                    }, cancel)
+                    test.eq(#notes.order, 2, strategy)
+                    for _, call_id in ipairs({ "a", "b" }) do
+                        test.eq(notes.counts[call_id], 1, strategy)
+                        test.is_true(results[call_id].cancelled, strategy)
+                        test.is_true(rawequal(notes.results[call_id], results[call_id]), strategy)
+                    end
+                end
+            end)
+
+            it("notifies a completed peer and the cancelled pending call once each", function()
+                local cancel = channel.new()
+                tool_results["test:held"] = { response = channel.new(), result = "never" }
+                tool_results["test:done"] = { execute = function()
+                    cancel:close()
+                    return "committed"
+                end }
+                local notes = recording_listener()
+                local caller = tool_caller.new():set_strategy(tool_caller.STRATEGY.PARALLEL)
+                caller:set_result_listener(notes.listener)
+                local results = caller:execute({}, { tool("held", "test:held"), tool("done", "test:done") }, cancel)
+                test.eq(#notes.order, 2)
+                test.eq(notes.counts[1], 1)
+                test.eq(notes.counts[2], 1)
+                test.is_true(results[1].cancelled)
+                test.eq(results[2].result, "committed")
+                test.is_nil(results[2].cancelled)
+                test.eq(cancelled_commands[1], "test:held")
+                test.eq(#cancelled_commands, 1)
+            end)
+
+            it("fails the batch on a listener error and stops the remaining calls", function()
+                local failures = {
+                    returned = function() return nil, "store unavailable" end,
+                    raised = function() error("store unavailable") end,
+                }
+                for _, strategy in ipairs(STRATEGIES) do
+                    for kind, fail in pairs(failures) do
+                        wrapper_calls = {}
+                        cancelled_commands = {}
+                        local runs = 0
+                        local notified = {}
+                        local function counted(response)
+                            return { response = response, execute = function()
+                                runs = runs + 1
+                                return 42
+                            end }
+                        end
+                        tool_results["test:calculator"] = counted(nil)
+                        tool_results["test:held_b"] = counted(channel.new())
+                        tool_results["test:held_c"] = counted(channel.new())
+                        local caller = tool_caller.new():set_strategy(strategy)
+                        caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                        caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                            binding = "test.wrapper:audit" } })
+                        caller:set_result_listener(function(call_id, result)
+                            table.insert(notified, call_id)
+                            return fail(call_id, result)
+                        end)
+                        local results, err = caller:execute({}, {
+                            a = tool("a", "test:calculator"),
+                            b = tool("b", "test:held_b"),
+                            c = tool("c", "test:held_c"),
+                        })
+                        local label = strategy .. " " .. kind
+                        test.is_nil(results, label)
+                        test.contains(tostring(err), "Tool result listener failed for " .. notified[1], label)
+                        test.contains(tostring(err), "store unavailable", label)
+                        test.eq(#notified, 1, label)
+                        test.eq(#wrapper_calls, 0, label .. ": after_execute wrappers see only complete batches")
+                        if strategy == "sequential" then
+                            test.eq(runs, 1, label .. ": no further call starts")
+                        else
+                            test.eq(notified[1], "a", label)
+                            test.eq(#cancelled_commands, 2, label .. ": unfinished calls are cancelled")
+                        end
+                    end
+                end
+            end)
+
+            it("does not cancel parallel calls that completed but were not delivered", function()
+                local caller = tool_caller.new():set_strategy("parallel")
+                local notified = 0
+                caller:set_result_listener(function()
+                    notified = notified + 1
+                    return nil, "store unavailable"
+                end)
+                local results, err = caller:execute({}, {
+                    a = tool("a", "test:calculator"),
+                    b = tool("b", "test:weather"),
+                    c = tool("c", "test:non_exclusive"),
+                })
+                test.is_nil(results)
+                test.contains(tostring(err), "store unavailable")
+                test.eq(notified, 1)
+                test.eq(#cancelled_commands, 0, "a completed command must not be cancelled")
+            end)
+
+            it("starts no call when the listener fails during the parallel launch", function()
+                for _, first in ipairs({ "invalid", "parse" }) do
+                    wrapper_calls = {}
+                    local runs = 0
+                    tool_results["test:calculator"] = { execute = function()
+                        runs = runs + 1
+                        return 42
+                    end }
+                    local failed = tool("failed", "test:calculator", '{"invalid": json}')
+                    if first == "invalid" then
+                        failed.valid = false
+                        failed.error = "Tool validation failed"
+                    end
+                    local caller = tool_caller.new():set_strategy("parallel")
+                    caller:set_wrapper_context({ host = { kind = "session", session_id = "s" } })
+                    caller:set_tool_wrappers({ { id = "audit", phases = { tool_caller.PHASE.AFTER_EXECUTE },
+                        binding = "test.wrapper:audit" } })
+                    local notified = {}
+                    caller:set_result_listener(function(call_id)
+                        table.insert(notified, call_id)
+                        return nil, "store unavailable"
+                    end)
+                    -- Array keys record the failed entry before any call launches.
+                    local results, err = caller:execute({}, {
+                        failed,
+                        tool("a", "test:calculator"),
+                        tool("b", "test:calculator"),
+                    })
+                    test.is_nil(results, first)
+                    test.contains(tostring(err), "Tool result listener failed for 1", first)
+                    test.contains(tostring(err), "store unavailable", first)
+                    test.eq(#notified, 1, first)
+                    test.eq(runs, 0, first .. ": no call starts")
+                    test.eq(#wrapper_calls, 0, first .. ": after_execute wrappers do not run")
+                end
             end)
         end)
 
