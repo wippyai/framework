@@ -631,6 +631,26 @@ local function define_tests()
                     }
                 }
             },
+            checkpoint_defaults_trait = {
+                id = "checkpoint_defaults_trait",
+                name = "Checkpoint Defaults Trait",
+                behaviors = {
+                    compaction = {
+                        handles = { "checkpoint" },
+                        checkpoint = {
+                            token_threshold = 12000,
+                            model = "class:fast",
+                            temperature = 0.4,
+                            max_tool_result_chars = 1500,
+                            max_conversation_chars = 400000,
+                            max_tool_results = 80,
+                            max_tool_results_chars = 90000,
+                            max_row_chars = 1800,
+                            unrelated_key = "excluded",
+                        },
+                    },
+                },
+            },
             behavior_trait = {
                 id = "behavior_trait",
                 name = "Behavior Trait",
@@ -1294,6 +1314,34 @@ local function define_tests()
                 test.eq(compiled_spec.tool_wrappers[2].phases[1], "after_execute")
                 test.is_true(compiled_spec.tool_wrappers[2].options.include_results)
             end)
+
+            for _, option in ipairs({
+                { key = "model", expected = "class:fast", override = "custom:summarizer" },
+                { key = "temperature", expected = 0.4, override = 0 },
+                { key = "max_tool_result_chars", expected = 1500, override = 3000 },
+                { key = "max_conversation_chars", expected = 400000, override = 600000 },
+                { key = "max_tool_results", expected = 80, override = 120 },
+                { key = "max_tool_results_chars", expected = 90000, override = 120000 },
+                { key = "max_row_chars", expected = 1800, override = 2400 },
+            }) do
+                it("compiles checkpoint " .. option.key .. " defaults with explicit overrides and key filtering", function()
+                    local spec = { id = "test:checkpoint_defaults", traits = { "checkpoint_defaults_trait" } }
+                    local compiled, err = compiler.compile(spec)
+                    test.is_nil(err)
+                    test.eq(compiled.agent_options.checkpoint[option.key], option.expected,
+                        "trait checkpoint." .. option.key .. " reaches agent options")
+                    test.is_nil(compiled.agent_options.checkpoint.unrelated_key)
+                    test.is_nil(compiled.bindings.checkpoint)
+
+                    spec.agent_options = { checkpoint = { [option.key] = option.override } }
+                    compiled, err = compiler.compile(spec)
+                    test.is_nil(err)
+                    test.eq(compiled.agent_options.checkpoint[option.key], option.override,
+                        "explicit checkpoint." .. option.key .. " overrides the trait")
+                    test.eq(compiled.agent_options.checkpoint.token_threshold, 12000)
+                    test.is_nil(compiled.agent_options.checkpoint.unrelated_key)
+                end)
+            end
 
             it("should keep map-form behavior and legacy binding order deterministic without deduplication", function()
                 trait_definitions.map_trait = {

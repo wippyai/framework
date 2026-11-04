@@ -204,6 +204,7 @@ entries:
     source: file://checkpoint_runtime_test.lua
     imports:
       checkpoint_runtime: wippy.agent:checkpoint_runtime
+      compiler: wippy.agent.compiler:compiler
       test: wippy.test:test
     method: run_tests
 
