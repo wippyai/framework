@@ -140,13 +140,16 @@ local function sse_stream(events)
     end }, metadata = {} }
 end
 
-local function claude_stream_events(response, unclosed)
+local function claude_stream_events(response, unclosed, stop_reason)
     local events = { { "message_start", { message = { usage = { input_tokens = 1 } } } } }
     for index, block in ipairs(response) do
         local at = index - 1
         if block.type == "thinking" then
             table.insert(events, { "content_block_start", { index = at, content_block = { type = "thinking", thinking = "", signature = "" } } })
-            table.insert(events, { "content_block_delta", { index = at, delta = { type = "signature_delta", signature = block.signature } } })
+            table.insert(events, { "content_block_delta", { index = at, delta = { type = "thinking_delta", thinking = block.thinking } } })
+            if block.signature ~= "" then
+                table.insert(events, { "content_block_delta", { index = at, delta = { type = "signature_delta", signature = block.signature } } })
+            end
         elseif block.type == "text" then
             table.insert(events, { "content_block_start", { index = at, content_block = { type = "text", text = "" } } })
             table.insert(events, { "content_block_delta", { index = at, delta = { type = "text_delta", text = block.text } } })
@@ -158,7 +161,7 @@ local function claude_stream_events(response, unclosed)
             table.insert(events, { "content_block_stop", { index = at } })
         end
     end
-    table.insert(events, { "message_delta", { delta = { stop_reason = unclosed and "max_tokens" or "tool_use" }, usage = { output_tokens = 2 } } })
+    table.insert(events, { "message_delta", { delta = { stop_reason = stop_reason or (unclosed and "max_tokens" or "tool_use") }, usage = { output_tokens = 2 } } })
     table.insert(events, { "message_stop", {} })
     return events
 end
@@ -174,14 +177,17 @@ local function eventstream_message(event_type, body)
     return string.pack(">I4I4I4", total, #headers, 0) .. headers .. payload .. string.pack(">I4", 0)
 end
 
-local function bedrock_stream(response, unclosed)
+local function bedrock_stream(response, unclosed, stop_reason)
     local chunks = { eventstream_message("messageStart", { role = "assistant" }) }
     local function add(name, body) table.insert(chunks, eventstream_message(name, body)) end
     for index, block in ipairs(response) do
         local at = index - 1
         if block.reasoningContent then
-            add("contentBlockDelta", { contentBlockIndex = at, delta = { reasoningContent = {
-                signature = block.reasoningContent.reasoningText.signature } } })
+            local reasoning = block.reasoningContent.reasoningText
+            add("contentBlockDelta", { contentBlockIndex = at, delta = { reasoningContent = { text = reasoning.text } } })
+            if reasoning.signature ~= "" then
+                add("contentBlockDelta", { contentBlockIndex = at, delta = { reasoningContent = { signature = reasoning.signature } } })
+            end
         elseif block.text then
             add("contentBlockDelta", { contentBlockIndex = at, delta = { text = block.text } })
         else
@@ -192,7 +198,7 @@ local function bedrock_stream(response, unclosed)
             add("contentBlockStop", { contentBlockIndex = at })
         end
     end
-    add("messageStop", { stopReason = unclosed and "max_tokens" or "tool_use" })
+    add("messageStop", { stopReason = stop_reason or (unclosed and "max_tokens" or "tool_use") })
     add("metadata", { usage = { inputTokens = 1, outputTokens = 2 } })
     local at = 0
     return { stream = { read = function()
@@ -201,7 +207,7 @@ local function bedrock_stream(response, unclosed)
     end }, metadata = {} }
 end
 
--- The rows a host persists from one tool-using response.
+-- The rows a host persists from one response.
 local function stored_rows(result): any
     local metadata = {
         thinking_blocks = result.metadata.thinking_blocks,
@@ -287,7 +293,9 @@ local BUDGET_POLICY = { thinking = "budget", default_max_tokens = 2000 }
 local function claude_blocks(shape)
     local blocks = {}
     for _, item in ipairs(shape) do
-        if type(item) == "table" then
+        if type(item) == "table" and item.type == "thinking" then
+            table.insert(blocks, item)
+        elseif type(item) == "table" then
             table.insert(blocks, { type = "tool_use", id = item[1], name = "t", input = { a = 1 } })
         elseif item:match("^s%d$") then
             table.insert(blocks, { type = "thinking", thinking = "", signature = item })
@@ -301,7 +309,9 @@ end
 local function bedrock_blocks(shape)
     local blocks = {}
     for _, item in ipairs(shape) do
-        if type(item) == "table" then
+        if type(item) == "table" and item.type == "thinking" then
+            table.insert(blocks, { reasoningContent = { reasoningText = { text = item.thinking, signature = item.signature } } })
+        elseif type(item) == "table" then
             table.insert(blocks, { toolUse = { toolUseId = item[1], name = "t", input = { a = 1 } } })
         elseif item:match("^s%d$") then
             table.insert(blocks, reasoning_block(item))
@@ -314,20 +324,22 @@ end
 
 -- The four extraction paths, each returning a response as llm hands it to a host.
 local EXTRACTION_PATHS = {
-    { name = "Claude JSON", replay = claude_replay, order = claude_order, extract = function(shape)
-        return claude_mapper.format_success_response({ content = claude_blocks(shape), stop_reason = "tool_use",
+    { name = "Claude JSON", replay = claude_replay, order = claude_order, extract = function(shape, _, stop_reason)
+        return claude_mapper.format_success_response({ content = claude_blocks(shape), stop_reason = stop_reason or "tool_use",
             usage = { input_tokens = 1, output_tokens = 1 } }, "m", {})
     end },
-    { name = "Claude stream", replay = claude_replay, order = claude_order, extract = function(shape, unclosed)
-        local _, _, stream = claude_client.process_stream(sse_stream(claude_stream_events(claude_blocks(shape), unclosed)), {})
+    { name = "Claude stream", streaming = true, replay = claude_replay, order = claude_order, extract = function(shape, unclosed, stop_reason)
+        local _, err, stream = claude_client.process_stream(sse_stream(claude_stream_events(claude_blocks(shape), unclosed, stop_reason)), {})
+        test.is_nil(err)
         return claude_mapper.format_streaming_response(stream, {}, stream.usage, stream.finish_reason, stream.metadata)
     end },
-    { name = "Bedrock JSON", replay = bedrock_replay, order = bedrock_order, extract = function(shape)
+    { name = "Bedrock JSON", replay = bedrock_replay, order = bedrock_order, extract = function(shape, _, stop_reason)
         return bedrock_mapper.format_success_response({ output = { message = { role = "assistant", content = bedrock_blocks(shape) } },
-            stopReason = "tool_use", usage = { inputTokens = 1, outputTokens = 1 } }, {})
+            stopReason = stop_reason or "tool_use", usage = { inputTokens = 1, outputTokens = 1 } }, {})
     end },
-    { name = "Bedrock stream", replay = bedrock_replay, order = bedrock_order, extract = function(shape, unclosed)
-        local _, _, stream = bedrock_client.process_converse_stream(bedrock_stream(bedrock_blocks(shape), unclosed), {})
+    { name = "Bedrock stream", streaming = true, replay = bedrock_replay, order = bedrock_order, extract = function(shape, unclosed, stop_reason)
+        local _, err, stream = bedrock_client.process_converse_stream(bedrock_stream(bedrock_blocks(shape), unclosed, stop_reason), {})
+        test.is_nil(err)
         return bedrock_mapper.format_streaming_response(stream, {}, stream.usage, stream.finish_reason, stream.metadata)
     end },
 }
@@ -589,10 +601,79 @@ local function define_tests()
                     assert_order(assistant_order(path, path.replay(kept)), { "s1", "c1" })
                 end)
 
-                it("keeps a response that itself ended in thinking: " .. path.name, function()
-                    local result: any = path.extract({ "A", "s1" })
-                    assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "A", "s1" })
+                for _, case in ipairs({
+                    { name = "A T", shape = { "A", "s1" }, expected = { "A" } },
+                    { name = "T A T", shape = { "s1", "A", "s2" }, expected = { "s1", "A" } },
+                }) do
+                    it("drops trailing thinking after max_tokens: " .. case.name .. ": " .. path.name, function()
+                        local result: any = path.extract(case.shape, false, "max_tokens")
+                        test.eq(result.finish_reason, "length")
+                        test.eq(#result.result.tool_calls, 0)
+                        test.not_nil(result.metadata.content_positions)
+                        local rows = rows_without_calls(result)
+                        for _ = 1, 2 do
+                            local payload = path.replay(rows)
+                            assert_order(assistant_order(path, payload), case.expected)
+                            test.eq(payload.messages[#payload.messages].role, "user")
+                            table.insert(rows, { role = "assistant", content = text("Later answer") })
+                            table.insert(rows, { role = "user", content = text("Another question") })
+                        end
+                    end)
+                end
+
+                it("omits thinking alone after max_tokens before a user message: " .. path.name, function()
+                    local result: any = path.extract({ "s1" }, false, "max_tokens")
+                    test.eq(result.finish_reason, "length")
+                    test.eq(#result.result.tool_calls, 0)
+                    test.eq(#result.metadata.thinking_blocks, 1)
+                    test.is_nil(result.metadata.content_positions)
+                    local payload = path.replay(rows_without_calls(result))
+                    for _, message in ipairs(payload.messages) do
+                        test.eq(message.role, "user")
+                    end
+                    test.contains(table.concat(path.order(payload.messages[#payload.messages]), "|"), "next")
                 end)
+
+                it("keeps signed plain-order thinking in front of text: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "s2", "A" }, false, "max_tokens")
+                    test.eq(result.finish_reason, "length")
+                    test.is_nil(result.metadata.content_positions)
+                    for _, block in ipairs(result.metadata.thinking_blocks) do test.is_nil(block.position) end
+                    assert_order(assistant_order(path, path.replay(rows_without_calls(result))), { "s1", "s2", "A" })
+                end)
+
+                it("keeps a completed call turn after max_tokens: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "A", "s2", { "c1" } }, false, "max_tokens")
+                    test.eq(result.finish_reason, "length")
+                    test.eq(#result.result.tool_calls, 1)
+                    local payload = path.replay(stored_rows(result))
+                    assert_order(assistant_order(path, payload), { "s1", "A", "s2", "c1" })
+                    test.eq(payload.messages[#payload.messages].role, "user")
+                end)
+
+                for _, layout in ipairs({ false, true }) do
+                    it("drops an empty thinking signature before text in " .. (layout and "a layout" or "plain order") .. ": " .. path.name, function()
+                        local unsigned = { type = "thinking", thinking = "unfinished", signature = "" }
+                        local shape = layout and { "before ", unsigned, "A" } or { unsigned, "A" }
+                        local result: any = path.extract(shape, false, "max_tokens")
+                        test.eq(result.metadata.thinking_blocks[1].signature, "")
+                        test.eq(result.metadata.content_positions ~= nil, layout)
+                        local payload = path.replay(rows_without_calls(result))
+                        assert_order(assistant_order(path, payload), layout and { "before ", "A" } or { "A" })
+                    end)
+                end
+
+                if path.streaming then
+                    it("drops an unsigned block cut mid-thinking after text: " .. path.name, function()
+                        local result: any = path.extract({ "A", { type = "thinking", thinking = "unfinished", signature = "" } }, true)
+                        test.eq(result.finish_reason, "length")
+                        test.eq(#result.result.tool_calls, 0)
+                        test.eq(result.metadata.thinking_blocks[1].thinking, "unfinished")
+                        test.eq(result.metadata.thinking_blocks[1].signature, "")
+                        local payload = path.replay(rows_without_calls(result))
+                        assert_order(assistant_order(path, payload), { "A" })
+                    end)
+                end
 
                 it("finds a call rendered after a result of the same response: " .. path.name, function()
                     local result: any = path.extract({ "s1", "A", { "c1" }, "s2", { "c2" } })

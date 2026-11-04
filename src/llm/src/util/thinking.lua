@@ -103,20 +103,17 @@ local function without_outer_whitespace(text: string): string
     return text:match("^%s*(.-)%s*$") :: string
 end
 
--- The position of the last block that still exists when calls outside `calls` are
--- gone, 0 when none does, or nil when the layout misses no call. Thinking behind that
--- block led to a call that no longer exists: the turn would end in thinking the
--- response did not end in, so it cannot be replayed.
-local function last_standing(positions: {any}, calls: {[any]: boolean}): number?
-    local last, missing = 0, false
+-- The position of the last visible text or retained call, or 0 when neither remains.
+-- Thinking behind it cannot end a replayed assistant turn.
+local function last_standing(positions: {any}, calls: {[any]: boolean}): number
+    local last = 0
     for _, entry in ipairs(positions) do
-        if entry.type == "tool_use" and not calls[entry.id] then
-            missing = true
-        elseif entry.type == "tool_use" or not prompt.is_blank(entry.text) then
+        if (entry.type == "tool_use" and calls[entry.id])
+            or (entry.type == "text" and not prompt.is_blank(entry.text)) then
             last = math.max(last, entry.position)
         end
     end
-    return missing and last or nil
+    return last
 end
 
 -- Takes the calls out of a response's metadata when the caller discards them, along
@@ -131,7 +128,7 @@ function thinking.discard_calls(metadata: any, text: any)
         return
     end
 
-    local limit = last_standing(positions, {}) or math.huge
+    local limit = last_standing(positions, {})
     local kept_blocks = {}
     for _, block in ipairs(type(blocks) == "table" and blocks or {}) do
         if block.position and block.position < limit then
@@ -224,6 +221,9 @@ function thinking.new_turn_order(messages: {any})
     end
 
     function order.keeps_thinking(stored_block: any): boolean
+        if stored_block.type == "thinking" and (stored_block.signature or "") == "" then
+            return false
+        end
         local limit = active and active.thinking_limit
         return not (limit and stored_block.position and stored_block.position > limit)
     end
