@@ -742,7 +742,11 @@ local function command_result(pending: PendingCall, ok: boolean?): any
         if err then
             return { result = nil, error = err, tool_call = pending.tool_call }
         end
-        return { result = payload and payload:data() or nil, error = nil, tool_call = pending.tool_call }
+        local result = nil
+        if payload then
+            result = payload:data()
+        end
+        return { result = result, error = nil, tool_call = pending.tool_call }
     end
     local _, err = command:result()
     return {

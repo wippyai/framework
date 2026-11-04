@@ -1222,6 +1222,39 @@ local function define_tests()
                 return notes
             end
 
+            for _, observed in ipairs({ "returned", "listener" }) do
+                it("preserves scalar tool values in " .. observed .. " results across strategies", function()
+                    for _, strategy in ipairs(STRATEGIES) do
+                        tool_results["test:false"] = { result = false }
+                        tool_results["test:zero"] = { result = 0 }
+                        tool_results["test:empty"] = { result = "" }
+                        local notes = recording_listener()
+                        local caller = tool_caller.new():set_strategy(strategy):set_result_listener(notes.listener)
+                        local returned, err = caller:execute({}, {
+                            falsy = tool("falsy", "test:false"),
+                            zero = tool("zero", "test:zero"),
+                            empty = tool("empty", "test:empty"),
+                            failed = tool("failed", "test:failing_tool"),
+                        })
+                        test.is_nil(err)
+                        test.eq(#notes.order, 4, strategy)
+                        local results = returned
+                        if observed == "listener" then results = notes.results end
+                        for call_id in pairs(returned) do
+                            test.eq(notes.counts[call_id], 1, strategy .. " " .. call_id)
+                        end
+                        test.is_nil(results.failed.result, strategy)
+                        test.eq(results.failed.error, "Tool execution failed", strategy)
+                        test.eq(results.zero.result, 0, strategy)
+                        test.is_nil(results.zero.error, strategy)
+                        test.eq(results.empty.result, "", strategy)
+                        test.is_nil(results.empty.error, strategy)
+                        test.is_nil(results.falsy.error, strategy)
+                        test.eq(results.falsy.result, false, strategy .. " " .. observed .. " false result")
+                    end
+                end)
+            end
+
             it("accepts a function or nil and rejects other values", function()
                 local caller = tool_caller.new()
                 test.eq(caller:set_result_listener(function() end), caller)
