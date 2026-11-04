@@ -299,11 +299,11 @@ local function define_tests()
                 test.is_nil(response.metadata.adjusted.temperature.sent)
             end)
 
-            it("should use default timeout when not specified", function()
+            it("should leave an unspecified timeout to the client", function()
                 generate_handler._client = {
                     ENDPOINTS = { MESSAGES = "/v1/messages" },
                     request = function(endpoint, payload, options)
-                        test.eq(options.timeout, 600) -- Default timeout
+                        test.is_nil(options.timeout)
                         return {
                             content = { { type = "text", text = "Default timeout" } },
                             stop_reason = "end_turn",

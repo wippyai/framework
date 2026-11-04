@@ -86,7 +86,7 @@ entries:
         type: integer
         description: Request timeout in seconds
         default_env: ANTHROPIC_TIMEOUT
-        default_value: 240
+        default_value: 600
       retry:
         type: object
         description: Provider-level retry policy for transient transport/provider failures

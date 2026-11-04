@@ -149,6 +149,22 @@ Model switches and fallbacks need no client-side handling: the API drops blocks 
 
 The binding controls are a beta on the Claude API, Claude Platform on AWS, Amazon Bedrock and Google Cloud Vertex AI; Microsoft Foundry is unconfirmed. An endpoint that rejects the beta fails the request with its own error.
 
+### Timeout
+
+`timeout` is in seconds and covers the whole HTTP request, including reading a
+streamed response. It is not an idle timeout between chunks. Precedence is:
+
+1. Call `options.timeout` (or the route's `options.timeout` default).
+2. Route `context.timeout`.
+3. The provider's `driver.options.timeout`, then its `timeout_env` reference,
+   then the driver's environment variable (`ANTHROPIC_TIMEOUT`, `BEDROCK_TIMEOUT`,
+   `OPENAI_TIMEOUT`, `OPENAI_COMPAT_TIMEOUT`, `VERTEX_AI_TIMEOUT`, or `GEN_AI_TIMEOUT`).
+4. The client's 600-second default for generation and structured output.
+
+TypeSafe evaluation uses the same precedence with `TYPESAFE_TIMEOUT` and a
+60-second default. Each HTTP retry gets its own request timeout;
+`deadline_ms` caps the remaining time across retries and fallback routes.
+
 ### Retry
 
 Drivers retry transient failures (connection errors, 408, 409, 425, 429, 5xx) with exponential backoff before any response body is read, so a streamed response is never replayed. Health probes (`status`) always send a single request.

@@ -154,7 +154,7 @@ function config.get_generative_ai_base_url()
 end
 
 function config.get_generative_ai_timeout()
-    return get_value("timeout", "GEN_AI_TIMEOUT")
+    return tonumber(get_value("timeout", "GEN_AI_TIMEOUT")) or 600
 end
 
 return config
