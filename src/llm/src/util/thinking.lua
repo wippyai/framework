@@ -103,14 +103,11 @@ local function without_outer_whitespace(text: string): string
     return text:match("^%s*(.-)%s*$") :: string
 end
 
--- The position of the last visible text or retained call, or 0 when neither remains.
--- Thinking behind it cannot end a replayed assistant turn.
-local function last_standing(positions: {any}, calls: {[any]: boolean}): number
-    local last = 0
-    for _, entry in ipairs(positions) do
-        if (entry.type == "tool_use" and calls[entry.id])
-            or (entry.type == "text" and not prompt.is_blank(entry.text)) then
-            last = math.max(last, entry.position)
+-- Thinking at or after a missing call no longer has its signed prefix.
+local function thinking_limit(last: number, calls: {[any]: number}, retained: {[any]: boolean}): number
+    for id, position in pairs(calls) do
+        if not retained[id] then
+            last = math.min(last, position)
         end
     end
     return last
@@ -128,17 +125,22 @@ function thinking.discard_calls(metadata: any, text: any)
         return
     end
 
-    local limit = last_standing(positions, {})
-    local kept_blocks = {}
-    for _, block in ipairs(type(blocks) == "table" and blocks or {}) do
-        if block.position and block.position < limit then
-            table.insert(kept_blocks, block)
-        end
-    end
+    local limit = 0
+    local calls = {}
     local kept_positions = {}
     for _, entry in ipairs(positions) do
         if entry.type == "text" then
             table.insert(kept_positions, entry)
+            if not prompt.is_blank(entry.text) then limit = math.max(limit, entry.position) end
+        elseif entry.type == "tool_use" then
+            calls[entry.id] = entry.position
+        end
+    end
+    limit = thinking_limit(limit, calls, {})
+    local kept_blocks = {}
+    for _, block in ipairs(type(blocks) == "table" and blocks or {}) do
+        if block.position and block.position < limit then
+            table.insert(kept_blocks, block)
         end
     end
     metadata.thinking_blocks = kept_blocks
@@ -218,7 +220,7 @@ function thinking.new_turn_order()
     function order.place_call(wire_block: any, id: any)
         local position = active and active.calls[id]
         if position then
-            placed[wire_block] = { layout = active, position = position }
+            placed[wire_block] = { layout = active, position = position, call_id = id }
         end
     end
 
@@ -235,11 +237,17 @@ function thinking.new_turn_order()
     -- with no recorded place keep theirs, and they end a run.
     function order.rebuild(content: {any}): {any}
         local limits: {[any]: number} = {}
+        local retained: {[any]: {[any]: boolean}} = {}
         for _, block in ipairs(content) do
             local place = placed[block]
             if place and not is_wire_thinking(block) and not attached[block] then
                 limits[place.layout] = math.max(limits[place.layout] or 0, place.position)
+                retained[place.layout] = retained[place.layout] or {}
+                if place.call_id then retained[place.layout][place.call_id] = true end
             end
+        end
+        for layout, last in pairs(limits) do
+            limits[layout] = thinking_limit(last, layout.calls, retained[layout] :: {[any]: boolean})
         end
         local rebuilt: {any} = {}
         local index = 1
@@ -256,7 +264,7 @@ function thinking.new_turn_order()
                 end
                 table.sort(run, function(a, b) return placed[a].position < placed[b].position end)
                 for _, block in ipairs(run) do
-                    if not is_wire_thinking(block) or placed[block].position <= (limits[place.layout] or 0) then
+                    if not is_wire_thinking(block) or placed[block].position < (limits[place.layout] or 0) then
                         table.insert(rebuilt, block)
                     end
                 end

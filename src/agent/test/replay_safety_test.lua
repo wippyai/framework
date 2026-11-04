@@ -335,6 +335,17 @@ local function define_tests()
         end
 
         for _, path in ipairs(TRUNCATED_PATHS) do
+            it("drops thinking after the first discarded call even before visible text: " .. path.name, function()
+                local order, response = replay_after_truncation(path, { "s1", { "c1" }, "s2", "A", { "c2" } })
+                test.eq(table.concat(order, "|"), "s1|A")
+                test.eq(response.result, "A")
+                test.eq(#response.metadata.thinking_blocks, 1)
+                test.eq(response.metadata.thinking_blocks[1].signature, "s1")
+                test.eq(#response.metadata.content_positions, 1)
+                test.eq(response.metadata.content_positions[1].type, "text")
+                test.eq(response.metadata.content_positions[1].text, "A")
+            end)
+
             it("never replays thinking behind a discarded call: text, thinking, call: " .. path.name, function()
                 local order, response = replay_after_truncation(path, { "A", "s1", { "c1" } })
                 test.eq(table.concat(order, "|"), "A")

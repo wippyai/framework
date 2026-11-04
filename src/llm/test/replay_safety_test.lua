@@ -547,6 +547,36 @@ local function define_tests()
             end
 
             for _, path in ipairs(EXTRACTION_PATHS) do
+                for _, keep_second in ipairs({ false, true }) do
+                    it("drops thinking after a missing call before visible text with " .. (keep_second and "one call retained: " or "no calls retained: ") .. path.name, function()
+                        local result: any = path.extract({ "s1", { "c1" }, "s2", "A", { "c2" } })
+                        local rows = rows_without_calls(result)
+                        if keep_second then
+                            local stored = stored_rows(result)
+                            table.insert(rows, 3, stored[4])
+                            table.insert(rows, 4, stored[6])
+                        end
+                        assert_order(assistant_order(path, path.replay(rows)), keep_second and { "s1", "A", "c2" } or { "s1", "A" })
+                        test.eq(#result.metadata.thinking_blocks, 2)
+                        test.eq(#result.metadata.content_positions, 3)
+                    end)
+                end
+
+                it("keeps layouts across hoisted systems and ends them at positional notes: " .. path.name, function()
+                    for _, role in ipairs({ "system", "developer" }) do
+                        local rows = stored_rows(path.extract({ "A", "s1", { "c1" } }))
+                        table.insert(rows, 3, { role = role, content = text("NOTE"), metadata = { preserve_position = true } })
+                        local payload = path.replay(rows)
+                        assert_order(path.order(payload.messages[2]), { "A" })
+                        assert_order(path.order(payload.messages[4]), { "c1" })
+                    end
+                    local rows = stored_rows(path.extract({ "A", "s1", { "c1" } }))
+                    table.insert(rows, 3, { role = "system", content = text("SYSTEM") })
+                    local payload = path.replay(rows)
+                    assert_order(path.order(payload.messages[2]), { "A", "s1", "c1" })
+                    test.eq(payload.system[1].text, "SYSTEM")
+                end)
+
                 it("drops thinking behind a missing call whose id belongs to an earlier turn: " .. path.name, function()
                     local earlier = stored_rows(path.extract({ "before", "s1", { "c" } }))
                     local before = path.replay(earlier)
@@ -825,6 +855,30 @@ local function define_tests()
         end)
 
         describe("OpenAI-compatible tool rounds", function()
+            for _, role in ipairs({ "system", "developer" }) do
+                it("emits an intervening " .. role .. " note after all tool results", function()
+                    local mapped: any = compat_mapper.map_messages({
+                        { role = "assistant", content = text("look") },
+                        { role = "function_call", content = {}, function_call = { id = "c1", name = "t", arguments = "{}" } },
+                        { role = "function_call", content = {}, function_call = { id = "c2", name = "t", arguments = "{}" } },
+                        { role = "function_result", name = "t", function_call_id = "c1", content = text("r1") },
+                        { role = role, content = text("NOTE"), metadata = { preserve_position = true } },
+                        { role = "function_result", name = "t", function_call_id = "c2", content = text("r2") },
+                    }, { model = "gpt" })
+                    local roles = {}
+                    for _, message in ipairs(mapped) do table.insert(roles, message.role) end
+                    assert_order(roles, { "assistant", "tool", "tool", "system" })
+                    test.eq(#mapped[1].tool_calls, 2)
+                    test.eq(mapped[1].tool_calls[1].id, "c1")
+                    test.eq(mapped[1].tool_calls[2].id, "c2")
+                    test.eq(mapped[2].tool_call_id, "c1")
+                    test.eq(mapped[2].content, "r1")
+                    test.eq(mapped[3].tool_call_id, "c2")
+                    test.eq(mapped[3].content, "r2")
+                    test.eq(mapped[4].content[1].text, "NOTE")
+                end)
+            end
+
             local function note_rows()
                 return {
                     { role = "user", content = text("q") },

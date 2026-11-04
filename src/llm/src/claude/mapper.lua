@@ -392,7 +392,8 @@ function mapper.map_messages(contract_messages)
     local in_system_phase = true
 
     for i, msg in ipairs(contract_messages) do
-        if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL and msg.role ~= "cache_marker" then
+        if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL
+            and not prompt.transparent_to_assistant_turn(msg) then
             order.leave_turn()
         end
         if prompt.is_positional_note(msg) or msg.role == prompt.ROLE.DEVELOPER then

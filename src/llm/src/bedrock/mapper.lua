@@ -319,7 +319,8 @@ function mapper.map_messages(contract_messages)
     local message_cache_positions = {}
 
     for _, msg in ipairs(contract_messages) do
-        if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL and msg.role ~= "cache_marker" then
+        if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL
+            and not prompt.transparent_to_assistant_turn(msg) then
             order.leave_turn()
         end
         if msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg) then

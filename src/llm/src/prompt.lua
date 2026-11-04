@@ -202,7 +202,7 @@ local function in_assistant_turn(msg: Message): boolean
     return msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL
 end
 
-local function transparent_to_assistant_turn(msg: Message): boolean
+function prompt.transparent_to_assistant_turn(msg: Message): boolean
     return msg.role == prompt.ROLE.CACHE_MARKER
         or (msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg))
 end
@@ -477,7 +477,7 @@ function prompt.new(messages: {Message}?)
         for index, msg in ipairs(messages) do
             if in_assistant_turn(msg) then
                 turn_start = turn_start or index
-            elseif not transparent_to_assistant_turn(msg) then
+            elseif not prompt.transparent_to_assistant_turn(msg) then
                 turn_start = nil
             end
             if turn_start and in_assistant_turn(msg) then
@@ -527,7 +527,7 @@ function prompt.new(messages: {Message}?)
             index = index - 1
         end
         if index >= 1 and not (seen_user and not seen_result) then
-            while index >= 1 and (in_assistant_turn(messages[index]) or transparent_to_assistant_turn(messages[index])) do
+            while index >= 1 and (in_assistant_turn(messages[index]) or prompt.transparent_to_assistant_turn(messages[index])) do
                 if in_assistant_turn(messages[index]) then current_round = index end
                 index = index - 1
             end
@@ -550,7 +550,7 @@ function prompt.new(messages: {Message}?)
             local msg = messages[index]
             if in_assistant_turn(msg) then
                 turn_start = turn_start or index
-            elseif not transparent_to_assistant_turn(msg) then
+            elseif not prompt.transparent_to_assistant_turn(msg) then
                 turn_start = nil
             end
             if carries_thinking(msg) then

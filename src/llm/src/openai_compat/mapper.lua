@@ -157,10 +157,28 @@ end
 
 -- MESSAGE MAPPING FUNCTIONS
 
+local function map_text_message(msg)
+    local content = msg.content
+    if msg.role == "developer" then
+        content = ""
+        if type(msg.content) == "string" then
+            content = msg.content
+        elseif type(msg.content) == "table" then
+            for _, part in ipairs(msg.content) do
+                if part.type == "text" then content = content .. part.text end
+            end
+        end
+    end
+    return {
+        role = msg.role == "developer" and "system" or msg.role,
+        content = normalize_content(content)
+    }
+end
+
 function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
     contract_messages = prompt.without_blank_text(contract_messages)
-    local processed_messages = {}
+    local processed_messages: {any} = {}
     local i = 1
     local is_claude = is_claude_model(options.model)
     local cache_positions = {}
@@ -182,13 +200,8 @@ function openai_mapper.map_messages(contract_messages, options)
             end
             -- Skip cache marker message (don't add to processed_messages)
             i = i + 1
-        elseif msg.role == "user" or msg.role == "system" then
-            -- Standard user/system messages - use structured content
-            local processed_msg = {
-                role = msg.role,
-                content = normalize_content(msg.content)
-            }
-            table.insert(processed_messages, processed_msg)
+        elseif msg.role == "user" or msg.role == "system" or msg.role == "developer" then
+            table.insert(processed_messages, map_text_message(msg))
             i = i + 1
         elseif msg.role == "assistant" then
             -- Assistant messages - ALWAYS use simple string content for OpenRouter compatibility
@@ -209,6 +222,7 @@ function openai_mapper.map_messages(contract_messages, options)
             -- The prompt builder interleaves them: call_A, result_A, call_B, result_B
             local function_calls_found = {}
             local function_results_found = {}
+            local deferred_messages = {}
             local open_calls = 0
             local answered = {}
             local scan_end = i - 1
@@ -240,7 +254,11 @@ function openai_mapper.map_messages(contract_messages, options)
                     -- With every call answered the round is complete: a later call is
                     -- the next round, and this message stays in place between them.
                     break
+                elseif current_msg.role == "system" or current_msg.role == "developer" then
+                    table.insert(deferred_messages, map_text_message(current_msg))
+                    scan_end = j
                 end
+                if open_calls == 0 and #deferred_messages > 0 then break end
                 j = j + 1
             end
 
@@ -302,6 +320,9 @@ function openai_mapper.map_messages(contract_messages, options)
                 end
                 table.insert(processed_messages, tool_msg)
             end
+            for _, deferred in ipairs(deferred_messages) do
+                table.insert(processed_messages, deferred)
+            end
 
             -- Advance past all scanned messages
             i = scan_end + 1
@@ -338,24 +359,6 @@ function openai_mapper.map_messages(contract_messages, options)
             end
 
             table.insert(processed_messages, tool_msg)
-            i = i + 1
-        elseif msg.role == "developer" then
-            -- Convert developer messages to system messages
-            local content = ""
-            if type(msg.content) == "string" then
-                content = msg.content
-            elseif type(msg.content) == "table" then
-                for _, part in ipairs(msg.content) do
-                    if part.type == "text" then
-                        content = content .. part.text
-                    end
-                end
-            end
-
-            table.insert(processed_messages, {
-                role = "system",
-                content = normalize_content(content)
-            })
             i = i + 1
         elseif msg.role == "function_call" then
             -- Standalone function_calls without preceding assistant message
