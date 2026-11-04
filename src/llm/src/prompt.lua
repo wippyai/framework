@@ -52,6 +52,7 @@ type PromptBuilder = {
     add_function_call: (self: any, function_name: string, arguments: string, function_call_id: string?, options: FunctionCallOptions?) -> PromptBuilder,
     add_function_result: (self: any, name: string, content: any, function_call_id: string?, options: FunctionResultOptions?) -> PromptBuilder,
     add_cache_marker: (self: any, marker_id: string?) -> PromptBuilder,
+    drop_stale_thinking: (self: any, is_current: (msg: Message) -> boolean) -> (PromptBuilder?, string?),
     get_messages: (self: any) -> {Message},
     build: (self: any) -> {messages: {Message}},
     clone: (self: any) -> PromptBuilder,
@@ -130,6 +131,20 @@ function prompt.document_base64(mime_type: string, data: string): ContentPart
             data = data
         }
     }
+end
+
+-- A positional note is a system or developer message marked with
+-- metadata.preserve_position. Drivers render it at its conversation position
+-- instead of folding it into the top-level instructions.
+function prompt.is_positional_note(msg: Message): boolean
+    return (msg.role == prompt.ROLE.SYSTEM or msg.role == prompt.ROLE.DEVELOPER)
+        and type(msg.metadata) == "table" and msg.metadata.preserve_position == true
+end
+
+-- Text of a developer message as drivers without a developer role render it
+-- inside a user turn, so the model can tell host guidance from user prose.
+function prompt.developer_instruction(text: string): string
+    return "<developer-instruction>" .. text .. "</developer-instruction>"
 end
 
 ---------------------------
@@ -361,6 +376,138 @@ function prompt.new(messages: {Message}?)
         }
         table.insert(self.messages, message)
         return self
+    end
+
+    -- Remove thinking blocks the current request can no longer replay.
+    -- Providers bind each block to the exact prefix before it and chain it to
+    -- the previous block, so blocks may be dropped only from the front: every
+    -- block up to the last stale one goes. An assistant turn (a run of
+    -- assistant and function call messages) whose calls still await results
+    -- keeps its blocks, because the provider needs them to continue the round.
+    builder.drop_stale_thinking = function(self: any, is_current: (msg: Message) -> boolean): (PromptBuilder?, string?)
+        local messages: {Message} = self.messages :: {Message}
+        local resolved: {[string]: boolean} = {}
+        for _, msg in ipairs(messages) do
+            if msg.role == prompt.ROLE.FUNCTION_RESULT and msg.function_call_id then
+                resolved[msg.function_call_id] = true
+            end
+        end
+
+        local function in_turn(msg: Message): boolean
+            return msg.role == prompt.ROLE.ASSISTANT or msg.role == prompt.ROLE.FUNCTION_CALL
+        end
+
+        local function carries(msg: Message): boolean
+            if not in_turn(msg) or type(msg.metadata) ~= "table" then return false end
+            local blocks = msg.metadata.thinking_blocks
+            return type(blocks) == "table" and #blocks > 0
+        end
+
+        -- First unanswered call of each assistant turn, keyed by message index.
+        local open_call: {[integer]: string} = {}
+        local turn_start: integer? = nil
+        for index, msg in ipairs(messages) do
+            if in_turn(msg) then
+                turn_start = turn_start or index
+            else
+                turn_start = nil
+            end
+            if turn_start then
+                local ids: {any} = {}
+                if msg.role == prompt.ROLE.FUNCTION_CALL then
+                    table.insert(ids, {
+                        id = msg.function_call and msg.function_call.id or false,
+                        name = msg.function_call and msg.function_call.name,
+                    })
+                else
+                    for _, part in ipairs(msg.content or {}) do
+                        if (part :: any).type == "function_call" then
+                            table.insert(ids, { id = (part :: any).id or false, name = (part :: any).name })
+                        end
+                    end
+                end
+                for _, call in ipairs(ids) do
+                    if not open_call[turn_start] and not (call.id and resolved[call.id]) then
+                        open_call[turn_start] = string.format("%s (%s)",
+                            call.id and tostring(call.id) or "without id", tostring(call.name or "unnamed"))
+                    end
+                end
+            end
+        end
+
+        -- The current round is the last assistant turn while the request still
+        -- continues it: the provider requires the final assistant turn of a
+        -- tool round to keep its thinking. User content (user, developer and
+        -- positional notes) after the round's tool results joins that
+        -- tool-result turn (steering, tool images, reminders), so only user
+        -- content with no tool result after the turn ends it. System messages
+        -- that drivers hoist into the top-level system do not. The
+        -- round's blocks are never stripped here; a provider that can drop
+        -- mismatched blocks handles them.
+        local current_round = #messages + 1
+        local seen_result, seen_user = false, false
+        local index = #messages
+        while index >= 1 and not in_turn(messages[index]) do
+            local role = messages[index].role
+            if role == prompt.ROLE.FUNCTION_RESULT then seen_result = true end
+            if role == prompt.ROLE.USER or role == prompt.ROLE.DEVELOPER
+                or prompt.is_positional_note(messages[index]) then
+                seen_user = true
+            end
+            index = index - 1
+        end
+        if index >= 1 and not (seen_user and not seen_result) then
+            while index >= 1 and in_turn(messages[index]) do
+                current_round = index
+                index = index - 1
+            end
+        end
+
+        local last_stale: integer? = nil
+        for index = 1, current_round - 1 do
+            local msg = messages[index]
+            if carries(msg) and not is_current(msg) then
+                last_stale = index
+            end
+        end
+        if not last_stale then
+            return self, nil
+        end
+
+        local stale: {integer} = {}
+        turn_start = nil
+        for index = 1, last_stale do
+            local msg = messages[index]
+            if in_turn(msg) then
+                turn_start = turn_start or index
+            else
+                turn_start = nil
+            end
+            if carries(msg) then
+                local open = turn_start and open_call[turn_start]
+                if open then
+                    return nil, string.format(
+                        "thinking blocks of message %d must stay: its turn has open tool call %s", index, open)
+                end
+                table.insert(stale, index)
+            end
+        end
+
+        -- Stripped messages are replaced by copies, so message tables the
+        -- caller shares with the builder keep their blocks.
+        for _, index in ipairs(stale) do
+            local copy: Message = {} :: Message
+            for key, value in pairs(messages[index] :: table) do
+                (copy :: any)[key] = value
+            end
+            local metadata = {}
+            for key, value in pairs(messages[index].metadata :: table) do
+                if key ~= "thinking_blocks" then metadata[key] = value end
+            end
+            copy.metadata = metadata
+            messages[index] = copy
+        end
+        return self, nil
     end
 
     -- Get all messages in the current builder (with image processing)

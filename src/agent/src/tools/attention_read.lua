@@ -1,4 +1,5 @@
 local json = require("json")
+local canonical = require("canonical")
 
 local M = {}
 local PREFIX = "wippy.agent.tools:"
@@ -105,18 +106,7 @@ function M.normalize(name, args)
 end
 
 -- Sorted serialization is used only for local deduplication, never as authority.
-function M.canonical(value: any): string
-    if type(value) ~= "table" then return json.encode(value) or "null" end
-    local keys, out = {}, {}
-    for key in pairs(value) do keys[#keys+1] = tostring(key) end
-    table.sort(keys)
-    for _, key in ipairs(keys) do
-        local child = value[key]
-        if child == nil then child = value[tonumber(key)] end
-        out[#out+1] = (json.encode(key) or '""') .. ":" .. M.canonical(child)
-    end
-    return "{" .. table.concat(out, ",") .. "}"
-end
+M.canonical = canonical.encode
 
 M.validation_errors = {
     ["invalid-request"]=true, ["semantic-filter-required"]=true, ["css-root-required"]=true,

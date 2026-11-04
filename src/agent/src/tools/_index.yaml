@@ -46,6 +46,8 @@ entries:
     source: file://attention_read.lua
     modules:
       - json
+    imports:
+      canonical: wippy.agent:canonical
 
   - name: attention_find_semantic
     kind: function.lua

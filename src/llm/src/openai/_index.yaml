@@ -156,6 +156,7 @@ entries:
     imports:
       output: wippy.llm:output
       route: wippy.llm.util:route
+      prompt: wippy.llm:prompt
 
   # wippy.llm.openai:organization
   - name: organization

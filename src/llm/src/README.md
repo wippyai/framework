@@ -228,6 +228,40 @@ builder:add_cache_marker("system_cache")
 builder:add_user("Question")
 ```
 
+### Positional Notes
+
+A system or developer message with `metadata.preserve_position = true` is a positional note. It stays at its conversation position on every driver and is never merged with neighbouring messages:
+
+- Claude and Bedrock append it as text blocks after the content of the user turn it follows (including a turn of tool results). At the start of the conversation or after an assistant turn it opens a new user turn; it is never merged into earlier blocks. The top-level system prompt never contains it.
+- Google sends it as a user turn; `systemInstruction` holds only ordinary system messages.
+- OpenAI Responses keeps it in `input`; OpenAI-compatible keeps it as a `system` message in place.
+
+A positional note travels with the message it follows. Slicing a history (compaction, windowing) keeps or drops the note together with that message; a slice that keeps the note but drops its user turn renders the note as a user turn of its own, which changes the prefix from that point.
+
+Per-turn and per-step context (current time, recalled memory, lifecycle notes) belongs in positional notes written once and persisted in the history. A note that is sent once and then removed, rebuilt or moved, and any change to the top-level system prompt, the tools or an earlier message, changes the provider prefix: the prompt cache restarts from that point and every later thinking block is invalidated (the provider rejects or drops it), not only cached.
+
+```lua
+builder:add_user("What is on my calendar?")
+builder:add_system("The current date and time is Tuesday, November 3, 2026 at 09:41 UTC.",
+    { preserve_position = true })
+```
+
+Developer messages, positional or not, render the same way on Claude and Bedrock: each text part becomes its own text block, `<developer-instruction>` + text + `</developer-instruction>`, after the content of the user turn it follows, or a new user turn at the start or after an assistant turn. The wrapper tells the model host guidance apart from the user's prose. Positional system notes render as plain text. Existing blocks are never edited, so the rendering does not depend on where cache markers sit.
+
+Bedrock sends developer messages as user text instead of `system` blocks. A Bedrock conversation stored before this change therefore renders a different prefix once after upgrading: its cache restarts and its earlier thinking blocks no longer match. The provider rejects such blocks unless the request lets it drop them; hosts that keep thinking blocks across the upgrade strip them with `drop_stale_thinking`.
+
+### Thinking Blocks
+
+Assistant and function call messages carry provider reasoning in `metadata.thinking_blocks`. Each block is bound to the prefix before it and chained to the previous block, so blocks can be dropped only from the front of the history. `drop_stale_thinking` takes a predicate that reports whether a message's blocks are still valid and removes the blocks of every message up to and including the last one the predicate rejects:
+
+```lua
+local builder, err = builder:drop_stale_thinking(function(msg)
+    return msg.metadata.prefix_fingerprint == current_fingerprint
+end)
+```
+
+An empty `thinking_blocks` list counts as no blocks; messages without blocks are not consulted. The current round, the last assistant turn while the request continues it, is never stripped and never consulted: the provider requires the final assistant turn of a tool round to keep its thinking. The round continues while only its function results and user content that joins the tool-result turn follow it (a steering message, a developer or positional note, or the image message `get_messages` inserts after a tool result with `_images`). User content after the turn with no function result in between ends it: a user message, a developer message or a positional system note, which drivers render as a new user turn. Ordinary system messages, which drivers hoist into the top-level system, and cache markers do not. Stale blocks in the current round are left to the provider's own drop-on-mismatch handling; once a later assistant turn exists, or the turn is answered without tools and a user message follows, it is strippable like any other. An assistant turn is the run of consecutive assistant and function call messages. If a turn whose blocks would be removed still has a function call without a result (a function call message or a `function_call` content part), the call fails and leaves the history unchanged: the provider needs those blocks to continue the tool round.
+
 ### Builder Operations
 
 ```lua

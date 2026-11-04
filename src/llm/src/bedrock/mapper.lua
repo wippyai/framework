@@ -141,6 +141,33 @@ local function convert_document_to_converse(content_part)
     return nil
 end
 
+local function user_content_blocks(content, developer: boolean)
+    local content_blocks = {}
+    local function text_of(value: string): string
+        return developer and prompt.developer_instruction(value) or value
+    end
+    if type(content) == "string" then
+        table.insert(content_blocks, { text = text_of(content) })
+    elseif type(content) == "table" then
+        for _, part in ipairs(content) do
+            if part.type == "text" and part.text then
+                table.insert(content_blocks, { text = text_of(part.text) })
+            elseif part.type == "image" then
+                local img = convert_image_to_converse(part)
+                if img then
+                    table.insert(content_blocks, img)
+                end
+            elseif part.type == "document" then
+                local doc = convert_document_to_converse(part)
+                if doc then
+                    table.insert(content_blocks, doc)
+                end
+            end
+        end
+    end
+    return content_blocks
+end
+
 local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
     if type(arguments) == "string" then
@@ -225,7 +252,7 @@ function mapper.map_messages(contract_messages)
     local message_cache_positions = {}
 
     for _, msg in ipairs(contract_messages) do
-        if msg.role == prompt.ROLE.SYSTEM then
+        if msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg) then
             if type(msg.content) == "string" then
                 table.insert(system_blocks, { text = msg.content })
             elseif type(msg.content) == "table" then
@@ -248,13 +275,6 @@ function mapper.map_messages(contract_messages)
                 if position then
                     message_cache_positions[#message_cache_positions + 1] = position
                 end
-            end
-        elseif msg.role == prompt.ROLE.DEVELOPER then
-            local dev_text = type(msg.content) == "string" and msg.content or
-                (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
-
-            if dev_text ~= "" then
-                table.insert(system_blocks, { text = dev_text })
             end
         elseif msg.role == prompt.ROLE.FUNCTION_RESULT then
             local result_text = type(msg.content) == "string" and msg.content or
@@ -348,29 +368,11 @@ function mapper.map_messages(contract_messages)
                 })
             end
         else
-            -- User messages
-            local content_blocks = {}
-            local content = msg.content
-            if type(content) == "string" then
-                table.insert(content_blocks, { text = content })
-            elseif type(content) == "table" then
-                for _, part in ipairs(content) do
-                    if part.type == "text" and part.text then
-                        table.insert(content_blocks, { text = part.text })
-                    elseif part.type == "image" then
-                        local img = convert_image_to_converse(part)
-                        if img then
-                            table.insert(content_blocks, img)
-                        end
-                    elseif part.type == "document" then
-                        local doc = convert_document_to_converse(part)
-                        if doc then
-                            table.insert(content_blocks, doc)
-                        end
-                    end
-                end
-            end
-
+            -- User messages, developer guidance and positional notes. Notes
+            -- render as user text, so they never rewrite the system blocks;
+            -- consolidation appends them as blocks after the user turn they
+            -- follow, or they open a user turn after an assistant turn.
+            local content_blocks = user_content_blocks(msg.content, msg.role == prompt.ROLE.DEVELOPER)
             if #content_blocks > 0 then
                 table.insert(converse_messages, {
                     role = "user",

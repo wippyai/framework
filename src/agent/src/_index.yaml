@@ -37,7 +37,7 @@ entries:
     meta:
       description: "LLM component"
     component: "wippy/llm"
-    version: ">=v0.5.8"
+    version: ">=v0.5.13"
 
   # wippy.agent:agent
   - name: agent
@@ -50,10 +50,32 @@ entries:
       - json
       - contract
       - funcs
+      - hash
     imports:
       prompt: wippy.llm:prompt
       llm: wippy.llm:llm
       output: wippy.llm:output
+      canonical: wippy.agent:canonical
+
+  # wippy.agent:canonical
+  - name: canonical
+    kind: library.lua
+    meta:
+      type: library
+      comment: Order-independent JSON serialization for comparing and hashing values
+    source: file://canonical.lua
+    modules:
+      - json
+
+  # wippy.agent:turn_context
+  - name: turn_context
+    kind: library.lua
+    meta:
+      type: library
+      comment: Renders the per-turn context note a host persists with each user turn
+    source: file://turn_context.lua
+    modules:
+      - time
 
   # wippy.agent:context
   - name: context
@@ -423,10 +445,14 @@ entries:
         get_history, or get_prompt with the supplied host.
 
         Returned messages are appended to the current prompt only by phases that
-        run before an LLM step (activate and before_step today). They are
-        per-step context: developer messages sit after the conversation cache
-        breakpoint, so they never alter the cached prompt prefix. Durable memory,
-        checkpoint, or audit writes belong inside the binding implementation.
+        run before an LLM step (activate and before_step today). The provider
+        prefix includes every message sent: a lifecycle message the host sends
+        for one step and then drops or rebuilds changes the prefix of the next
+        request, restarting the prompt cache and invalidating later thinking
+        blocks. Hosts persist returned messages in place as positional notes
+        (metadata.preserve_position) so later requests replay them unchanged.
+        Durable memory, checkpoint, or audit writes belong inside the binding
+        implementation.
         Multiple bindings may be attached by multiple traits; the compiler orders
         them by priority and declaration order.
 

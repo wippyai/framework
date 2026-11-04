@@ -866,10 +866,11 @@ local function define_tests()
                 local result = test_agent:step(prompt_builder)
 
                 test.not_nil(result.memory_recall)
-                test.not_nil(result.memory_prompt)
+                test.eq(#result.context_notes, 1)
 
-                local memory_prompt = result.memory_prompt
+                local memory_prompt = result.context_notes[1]
                 test.eq(memory_prompt.role, "developer")
+                test.is_true(memory_prompt.metadata.preserve_position)
                 local memory_text = memory_prompt.content[1].text
                 test.contains(memory_text, "Background context from memory")
                 test.contains(memory_text, "- First memory")
@@ -906,7 +907,7 @@ local function define_tests()
                 local result = test_agent:step(prompt_builder)
 
                 test.is_nil(result.memory_recall) -- No memories returned
-                test.is_nil(result.memory_prompt)
+                test.is_nil(result.context_notes)
             end)
 
             it("should inject memory into internal message flow", function()

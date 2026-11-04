@@ -165,6 +165,7 @@ entries:
     imports:
       output: wippy.llm:output
       route: wippy.llm.util:route
+      prompt: wippy.llm:prompt
 
   # wippy.llm.google:status
   - name: status

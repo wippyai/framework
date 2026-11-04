@@ -72,6 +72,22 @@ local function define_tests()
                 end
             end)
         end)
+        it("keeps instructions identical when positional note text changes", function()
+            local function build(note_text)
+                local messages = {
+                    { role = "system", content = "Global guidance" },
+                    { role = "user", content = "Request" },
+                    { role = "system", content = note_text, metadata = { preserve_position = true } },
+                }
+                return openai_mapper.extract_instructions(messages), openai_mapper.map_messages(messages)
+            end
+            local first_instructions, first_input = build("Monday 09:00")
+            local second_instructions, second_input = build("Tuesday 10:30")
+            test.eq(first_instructions, "Global guidance")
+            test.eq(second_instructions, first_instructions)
+            test.eq(first_input[2].content[1].text, "Monday 09:00")
+            test.eq(second_input[2].content[1].text, "Tuesday 10:30")
+        end)
         it("keeps positional instructions in the Responses input stream", function()
             for _, role in ipairs({ "system", "developer" }) do
                 local messages = {
