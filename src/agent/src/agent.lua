@@ -447,31 +447,39 @@ local function has_tools_with_schemas(tools: any): boolean
 end
 
 -- What providers bind cached prefixes and thinking blocks to, as drivers send
--- it: the system text (the compiled prompt plus conversation system messages,
--- which Claude and Bedrock hoist into the top-level system) and each tool's
--- name, description, schema and native definition. Registry ids and registry
--- metadata never reach the provider. The model is left out: providers drop
--- blocks a different model cannot read on their own.
+-- it: the visible system text (the compiled prompt plus conversation system
+-- messages, which Claude and Bedrock hoist into the top-level system) and each
+-- tool's name, description, schema and native definition. A meta.claude is a
+-- native definition only when it names a type; registry ids and other registry
+-- metadata never reach the provider. The model is left out: providers drop blocks
+-- a different model cannot read on their own.
 local function prefix_projection(messages: {any}, tools: {any}?): table
     local system = {}
     for _, message in ipairs(messages) do
         if message.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(message) then
             if type(message.content) == "string" then
-                table.insert(system, message.content)
+                if not prompt.is_blank(message.content) then
+                    table.insert(system, message.content)
+                end
             elseif type(message.content) == "table" then
                 for _, part in ipairs(message.content) do
-                    table.insert(system, part.type == "text" and part.text or part)
+                    if part.type ~= "text" then
+                        table.insert(system, part)
+                    elseif not prompt.is_blank(part.text) then
+                        table.insert(system, part.text)
+                    end
                 end
             end
         end
     end
     local projected_tools = {}
     for _, tool in ipairs(tools or {}) do
+        local native = type(tool.meta) == "table" and tool.meta.claude or nil
         table.insert(projected_tools, {
             name = tool.name,
             description = tool.description,
             schema = tool.schema,
-            native = type(tool.meta) == "table" and tool.meta.claude or nil,
+            native = type(native) == "table" and native.type and native or nil,
         })
     end
     return { system = system, tools = projected_tools }
@@ -674,16 +682,25 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         end
         local is_current = runtime_options.thinking_is_current
         local working = prompt.new(messages)
-        local _, strip_err = working:drop_stale_thinking(function(msg)
-            if is_current then
-                return is_current(msg, fingerprint) == true
+        -- Stripping and marking read the same verdict, so a host predicate decides
+        -- each message once.
+        local verdicts = {}
+        local function current(msg)
+            if verdicts[msg] == nil then
+                if is_current then
+                    verdicts[msg] = is_current(msg, fingerprint) == true
+                else
+                    verdicts[msg] = msg.metadata.prefix_fingerprint == fingerprint
+                end
             end
-            return msg.metadata.prefix_fingerprint == fingerprint
-        end)
+            return verdicts[msg]
+        end
+        local _, strip_err = working:drop_stale_thinking(current)
         if strip_err then
             return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
                 :message(tostring(strip_err)):build()
         end
+        working:mark_stale_thinking(current)
         return working:get_messages(), nil
     end
 

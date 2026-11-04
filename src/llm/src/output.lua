@@ -470,6 +470,9 @@ function output.stream_error_details(started: boolean, deferred: ErrorInfo?): { 
 end
 
 -- Message injected into conversation when LLM output is truncated mid-tool-call
+-- The driver error for a request whose mapped conversation holds nothing to answer.
+output.NO_TURN_MESSAGE = "Request has no conversation turn: every message is instructions or blank"
+
 output.TRUNCATION_MSG = "Your previous response was truncated because it exceeded the maximum token limit. The tool calls you attempted were incomplete and have been discarded. Please retry with a shorter response. Break your work into smaller steps if needed."
 
 -- Detect LLM responses cut off by the token limit that produced nothing

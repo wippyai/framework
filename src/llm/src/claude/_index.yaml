@@ -40,6 +40,7 @@ entries:
     imports:
       mapper: wippy.llm.claude:mapper
       output: wippy.llm:output
+      thinking: wippy.llm.util:thinking
       transport: wippy.llm.util:transport
 
   # wippy.llm.claude:driver
@@ -48,6 +49,9 @@ entries:
     meta:
       name: Claude LLM Driver
       comment: Claude implementation of LLM contracts with context-based configuration and streaming support
+      output_policy:
+        thinking: budget
+        default_max_tokens: 2000
       tags:
         - claude
         - llm

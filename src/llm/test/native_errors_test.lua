@@ -32,7 +32,7 @@ return test.run_cases(function()
                         local cause = errors.new({ kind = kind, retryable = kind == errors.INTERNAL,
                             message = "provider refused", details = { operation = method } })
                         llm._providers = {
-                            driver_declares_legacy_reasoning_flag = function() return false end,
+                            driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end,
                             open = function() return { [method] = function() return nil, cause end } end,
                         }
                         local result, err = call(method, { model = "test-model", provider_id = direct and "provider" or nil, fallback = false })
@@ -94,7 +94,7 @@ return test.run_cases(function()
 
             it("retains the exact text of untyped " .. method .. " provider failures", function()
                 llm._providers = {
-                    driver_declares_legacy_reasoning_flag = function() return false end,
+                    driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end,
                     open = function() return { [method] = function() return nil, "provider refused" end } end,
                 }
                 local result, err = call(method, { model = "test-model" })
@@ -159,7 +159,7 @@ return test.run_cases(function()
                 {name = "large", max_tokens = 2000, providers = {{id = "provider", provider_model = "large"}}},
             } end}
             llm._providers = {
-                driver_declares_legacy_reasoning_flag = function() return false end,
+                driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end,
                 open = function() return {generate = function(_, args)
                     if args.model == "small" then
                         return nil, errors.new({kind = errors.INVALID, message = "context too large",
@@ -303,7 +303,7 @@ return test.run_cases(function()
                 } }
             end }
             llm._providers = {
-                driver_declares_legacy_reasoning_flag = function() return false end,
+                driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end,
                 open = function(id)
                     return { generate = function()
                         return nil, errors.new({ kind = errors.RATE_LIMITED, retryable = true,

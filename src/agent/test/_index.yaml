@@ -99,6 +99,24 @@ entries:
       tool_caller: wippy.agent.tools:caller
     method: run_tests
 
+  # app:replay_safety_test
+  - name: replay_safety_test
+    kind: function.lua
+    meta:
+      name: Agent Replay Safety Test
+      type: test
+      group: Agent Framework
+    source: file://replay_safety_test.lua
+    modules: [json]
+    imports:
+      prompt: wippy.llm:prompt
+      agent: wippy.agent:agent
+      llm: wippy.llm:llm
+      claude_generate: wippy.llm.claude:generate
+      bedrock_generate: wippy.llm.bedrock:generate
+      test: wippy.test:test
+    method: run_tests
+
   # app:context_test
   - name: context_test
     kind: function.lua

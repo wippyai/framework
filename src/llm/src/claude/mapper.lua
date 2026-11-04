@@ -55,6 +55,10 @@ mapper.HTTP_STATUS_MAP[502] = output.ERROR_TYPE.SERVER_ERROR
 mapper.HTTP_STATUS_MAP[503] = output.ERROR_TYPE.SERVER_ERROR
 mapper.HTTP_STATUS_MAP[529] = output.ERROR_TYPE.SERVER_ERROR
 
+-- Output sent for a request that leaves max_tokens unset; the driver binding's
+-- meta.output_policy declares the same value so admission can reserve it.
+mapper.DEFAULT_MAX_TOKENS = 2000
+
 -- Claude API cache control limit
 local MAX_CACHE_BREAKPOINTS = 4
 
@@ -112,7 +116,7 @@ local function last_cacheable_message_position(messages)
         for block_index = #content, 1, -1 do
             local block = content[block_index]
             if block and (
-                (block.type == "text" and block.text and block.text ~= "")
+                (block.type == "text" and not prompt.is_blank(block.text))
                 or block.type == "tool_use" or block.type == "tool_result"
                 or block.type == "image" or block.type == "document"
             ) then
@@ -230,7 +234,8 @@ local STALE_THINKING_FIELDS: {[string]: {[string]: boolean}} = {
 }
 
 -- A thinking or redacted_thinking block as the API takes it back: every field passes
--- through unchanged except the stale fields of its type; other blocks yield nil.
+-- through unchanged except the stale fields of its type and the recorded response
+-- position, which only orders the replay; other blocks yield nil.
 local function thinking_block_shape(block)
     local stale = STALE_THINKING_FIELDS[block.type]
     if not stale then
@@ -238,7 +243,7 @@ local function thinking_block_shape(block)
     end
     local shaped = {}
     for key, value in pairs(block) do
-        if not stale[key] then
+        if not stale[key] and key ~= "position" then
             shaped[key] = value
         end
     end
@@ -375,13 +380,24 @@ local function consolidate_messages(messages)
     return result
 end
 
-local function ensure_content_exists(messages)
-    for i = 1, #messages - 1 do
-        if not messages[i].content or #messages[i].content == 0 then
-            messages[i].content = {{ type = "text", text = "intercepted" }}
+-- An assistant turn with no visible text and no call renders as nothing, thinking
+-- included: there is nothing in it to replay against.
+local function without_blank_turns(messages)
+    local kept = {}
+    for _, msg in ipairs(messages) do
+        local visible = msg.role ~= "assistant"
+        for _, block in ipairs(msg.role == "assistant" and msg.content or {}) do
+            if block.type == "text" then
+                visible = visible or not prompt.is_blank(block.text)
+            elseif block.type ~= "thinking" and block.type ~= "redacted_thinking" then
+                visible = true
+            end
+        end
+        if visible then
+            table.insert(kept, msg)
         end
     end
-    return messages
+    return kept
 end
 
 function mapper.map_messages(contract_messages)
@@ -392,7 +408,25 @@ function mapper.map_messages(contract_messages)
         }
     end
 
+    contract_messages = prompt.without_blank_text(contract_messages)
     local tool_id = tool_id_mapper(contract_messages)
+    local order = thinking.new_turn_order()
+    local stale_thinking = {}
+
+    local function add_thinking_blocks(content_blocks, msg)
+        if not (msg.metadata and msg.metadata.thinking_blocks) then
+            return
+        end
+        for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
+            local wire_block = thinking_block_shape(thinking_block) or thinking_block
+            order.place_thinking(wire_block, thinking_block)
+            if msg.metadata.stale_thinking then
+                stale_thinking[wire_block] = true
+            end
+            table.insert(content_blocks, wire_block)
+        end
+    end
+
     local claude_messages = {}
     local system_blocks = {}
     local system_cache_positions = {}
@@ -400,6 +434,9 @@ function mapper.map_messages(contract_messages)
     local in_system_phase = true
 
     for i, msg in ipairs(contract_messages) do
+        if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL and msg.role ~= "cache_marker" then
+            order.leave_turn()
+        end
         if prompt.is_positional_note(msg) or msg.role == prompt.ROLE.DEVELOPER then
             -- Notes join the user turn they follow as blocks after that turn's
             -- content. Existing blocks are never edited, so the rendering does
@@ -467,18 +504,17 @@ function mapper.map_messages(contract_messages)
             local arguments = normalize_tool_arguments(msg.function_call.arguments)
             local content_blocks = {}
 
-            if msg.metadata and msg.metadata.thinking_blocks then
-                for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    table.insert(content_blocks, thinking_block_shape(thinking_block) or thinking_block)
-                end
-            end
+            order.enter_row(msg)
+            add_thinking_blocks(content_blocks, msg)
 
-            table.insert(content_blocks, {
+            local tool_use = {
                 type = "tool_use",
                 id = tool_id(msg.function_call.id),
                 name = msg.function_call.name,
                 input = arguments
-            })
+            }
+            order.place_call(tool_use, msg.function_call.id)
+            table.insert(content_blocks, tool_use)
 
             table.insert(claude_messages, {
                 role = "assistant",
@@ -488,15 +524,20 @@ function mapper.map_messages(contract_messages)
             in_system_phase = false
             local content_blocks = {}
 
-            if msg.metadata and msg.metadata.thinking_blocks then
-                for _, thinking_block in ipairs(msg.metadata.thinking_blocks) do
-                    table.insert(content_blocks, thinking_block_shape(thinking_block) or thinking_block)
-                end
-            end
+            local layout = order.enter_row(msg)
+            add_thinking_blocks(content_blocks, msg)
 
             local regular_content = process_content_array(msg.content)
 
-            if type(regular_content) == "string" and regular_content ~= "" then
+            if layout then
+                for _, entry in ipairs(layout.texts) do
+                    local text_block = { type = "text", text = entry.text }
+                    order.place_text(text_block, entry.position)
+                    table.insert(content_blocks, text_block)
+                end
+            end
+
+            if type(regular_content) == "string" and regular_content ~= "" and not layout then
                 table.insert(content_blocks, {
                     type = "text",
                     text = regular_content
@@ -505,13 +546,15 @@ function mapper.map_messages(contract_messages)
                 for _, part in ipairs(regular_content) do
                     if part.type == "function_call" then
                         local arguments = normalize_tool_arguments(part.arguments)
-                        table.insert(content_blocks, {
+                        local tool_use = {
                             type = "tool_use",
                             id = tool_id(part.id),
                             name = part.name,
                             input = arguments
-                        })
-                    elseif part.type == "text" and part.text and part.text ~= "" then
+                        }
+                        order.place_call(tool_use, part.id)
+                        table.insert(content_blocks, tool_use)
+                    elseif part.type == "text" and part.text and part.text ~= "" and not layout then
                         table.insert(content_blocks, part)
                     elseif part.type ~= "text" then
                         table.insert(content_blocks, part)
@@ -562,11 +605,17 @@ function mapper.map_messages(contract_messages)
     end
 
     claude_messages = consolidate_messages(claude_messages)
-    claude_messages = ensure_content_exists(claude_messages)
+    for _, msg in ipairs(claude_messages) do
+        if msg.role == "assistant" then
+            msg.content = order.rebuild(msg.content)
+        end
+    end
+    claude_messages = without_blank_turns(claude_messages)
 
     return {
         messages = claude_messages,
-        system = #system_blocks > 0 and system_blocks or nil
+        system = #system_blocks > 0 and system_blocks or nil,
+        stale_thinking = next(stale_thinking) and stale_thinking or nil
     }
 end
 
@@ -671,8 +720,7 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
             claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
         end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
-        local thinking_budget = 1024 + (24000 - 1024) * (contract_options.thinking_effort / 100)
-        thinking_budget = math.floor(thinking_budget + 0.5)
+        local thinking_budget, max_tokens = route.budget_output(contract_options)
 
         claude_options.thinking = {
             type = "enabled",
@@ -686,9 +734,7 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
             claude_options.temperature = nil
         end
 
-        if not claude_options.max_tokens or claude_options.max_tokens <= thinking_budget then
-            claude_options.max_tokens = thinking_budget + 1024
-        end
+        claude_options.max_tokens = max_tokens
     end
 
     return claude_options, adjusted
@@ -708,8 +754,13 @@ local function replays_thinking(messages): boolean
 end
 
 -- Binds the thinking blocks a Messages payload replays to drop_block and returns the
--- request betas its block_binding requires, or nil when the payload carries none.
-function mapper.bind_thinking(payload): {string}?
+-- request betas its block_binding requires, or nil when the payload carries none. A
+-- thinking object that cannot carry a binding sends none of the blocks in
+-- `stale_blocks` (from map_messages): unbound, the API would reject them.
+function mapper.bind_thinking(payload, stale_blocks): {string}?
+    if not thinking.is_bindable(payload.thinking) then
+        thinking.remove_blocks(payload.messages, stale_blocks)
+    end
     if replays_thinking(payload.messages) then
         thinking.bind_replayed_blocks(payload.thinking)
     end
@@ -723,6 +774,7 @@ function mapper.extract_response_content(claude_response)
     local content_text = ""
     local tool_calls = {}
     local thinking_blocks = {}
+    local entries = {}
 
     if not claude_response or not claude_response.content then
         return {
@@ -735,21 +787,26 @@ function mapper.extract_response_content(claude_response)
     for _, block in ipairs(claude_response.content) do
         if block.type == "text" then
             content_text = content_text .. (block.text or "")
+            table.insert(entries, { kind = "text", text = block.text })
         elseif block.type == "tool_use" then
+            table.insert(entries, { kind = "tool_use", id = block.id })
             table.insert(tool_calls, {
                 id = block.id,
                 name = block.name or "",
                 arguments = block.input or {}
             })
         elseif block.type == "thinking" or block.type == "redacted_thinking" then
-            table.insert(thinking_blocks, thinking_block_shape(block))
+            local shaped = thinking_block_shape(block)
+            table.insert(entries, { kind = "thinking", block = shaped })
+            table.insert(thinking_blocks, shaped)
         end
     end
 
     return {
         content = content_text,
         tool_calls = tool_calls,
-        thinking_blocks = thinking_blocks
+        thinking_blocks = thinking_blocks,
+        content_positions = thinking.record_positions(entries)
     }
 end
 
@@ -793,6 +850,7 @@ function mapper.format_success_response(claude_response, model, name_to_id_map)
 
     result.metadata.thinking = thinking_content
     result.metadata.thinking_blocks = extracted.thinking_blocks
+    result.metadata.content_positions = extracted.content_positions
 
     return result
 end
@@ -822,6 +880,7 @@ function mapper.format_streaming_response(client_result, name_to_id_map, usage, 
 
     result.metadata.thinking = thinking_content
     result.metadata.thinking_blocks = thinking_blocks
+    result.metadata.content_positions = client_result.content_positions
 
     return result
 end

@@ -145,6 +145,7 @@ end
 
 function mapper.map_messages(contract_messages, options)
     options = options or {}
+    contract_messages = prompt.without_blank_text(contract_messages)
     local processed_messages = {}
     local system_instructions = {}
     local provider_call_ids = {}
@@ -180,7 +181,7 @@ function mapper.map_messages(contract_messages, options)
             i = i + 1
         elseif msg.role == "assistant" then
             local assistant_msg = mapper.standardize_content(msg.content)
-            if assistant_msg ~= "" then
+            if not prompt.is_blank(assistant_msg) then
                 table.insert(processed_messages, { role = "model", parts = {{ text = assistant_msg }} })
             end
 

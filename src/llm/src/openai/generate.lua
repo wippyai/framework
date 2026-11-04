@@ -129,6 +129,10 @@ function generate_handler.handler(contract_args)
         model = contract_args.model
     })
 
+    if #input_items == 0 then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
+    end
+
     local payload = {
         model = contract_args.model,
         input = input_items

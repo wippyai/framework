@@ -1,6 +1,7 @@
 local json = require("json")
 local output = require("output")
 local route = require("route")
+local prompt = require("prompt")
 
 local openai_mapper = {}
 local MAX_CACHE_BREAKPOINTS = 4
@@ -158,6 +159,7 @@ end
 
 function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
+    contract_messages = prompt.without_blank_text(contract_messages)
     local processed_messages = {}
     local i = 1
     local is_claude = is_claude_model(options.model)
@@ -207,6 +209,8 @@ function openai_mapper.map_messages(contract_messages, options)
             -- The prompt builder interleaves them: call_A, result_A, call_B, result_B
             local function_calls_found = {}
             local function_results_found = {}
+            local open_calls = 0
+            local answered = {}
             local scan_end = i - 1
             local j = i
             while j <= #contract_messages do
@@ -214,11 +218,27 @@ function openai_mapper.map_messages(contract_messages, options)
 
                 if current_msg.role == "function_call" and current_msg.function_call and current_msg.function_call.id then
                     table.insert(function_calls_found, current_msg)
+                    if not answered[current_msg.function_call.id] then
+                        open_calls = open_calls + 1
+                    end
                     scan_end = j
                 elseif current_msg.role == "function_result" then
                     table.insert(function_results_found, current_msg)
+                    if current_msg.function_call_id and not answered[current_msg.function_call_id] then
+                        answered[current_msg.function_call_id] = true
+                        for _, found in ipairs(function_calls_found) do
+                            if found.function_call.id == current_msg.function_call_id then
+                                open_calls = open_calls - 1
+                                break
+                            end
+                        end
+                    end
                     scan_end = j
                 elseif current_msg.role == "assistant" or current_msg.role == "user" then
+                    break
+                elseif current_msg.role ~= "function_call" and current_msg.role ~= "cache_marker" and open_calls == 0 then
+                    -- With every call answered the round is complete: a later call is
+                    -- the next round, and this message stays in place between them.
                     break
                 end
                 j = j + 1
@@ -246,7 +266,10 @@ function openai_mapper.map_messages(contract_messages, options)
                 assistant_msg.tool_calls = nil
             end
 
-            table.insert(processed_messages, assistant_msg)
+            -- A turn with no visible text and no call renders as nothing.
+            if assistant_msg.tool_calls or not prompt.is_blank(assistant_msg.content) then
+                table.insert(processed_messages, assistant_msg)
+            end
 
             -- Emit function results as tool messages in order
             for _, result_msg in ipairs(function_results_found) do

@@ -92,6 +92,9 @@ function structured_output_handler.handler(contract_args)
     end
 
     local mapped = structured_output_handler._mapper.map_messages(contract_args.messages)
+    if #mapped.messages == 0 then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
+    end
     local inference_config, additional_fields, adjusted, options_err = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
     if options_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
@@ -102,7 +105,7 @@ function structured_output_handler.handler(contract_args)
     end
 
     if not inference_config.maxTokens then
-        inference_config.maxTokens = 2000
+        inference_config.maxTokens = mapper.DEFAULT_MAX_TOKENS
     end
 
     -- Build tool for structured output extraction
@@ -144,7 +147,7 @@ function structured_output_handler.handler(contract_args)
     end
 
     -- The binding depends on the thinking object as sent, so it is the last change to the payload.
-    local bind_err = structured_output_handler._mapper.bind_thinking(converse_payload)
+    local bind_err = structured_output_handler._mapper.bind_thinking(converse_payload, mapped.stale_thinking)
     if bind_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(bind_err):build()
     end

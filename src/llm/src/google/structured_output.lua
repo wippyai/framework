@@ -75,6 +75,10 @@ function structured_output.handler(contract_args)
         model = contract_args.model
     })
 
+    if #messages == 0 then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
+    end
+
     local payload = {
         contents = messages,
         generationConfig = {

@@ -102,20 +102,24 @@ local function to_output_content_part(part)
     return { type = "output_text", text = tostring(part.text or "") }
 end
 
+-- Input parts of a message, or nil when none has anything to send.
 local function normalize_input_content(content)
-    if content == nil or content == "" then
-        return { { type = "input_text", text = "" } }
+    if prompt.is_blank(content) then
+        return nil
     end
     if type(content) == "string" then
         return { { type = "input_text", text = content } }
     end
     if type(content) == "table" then
         local parts = {}
-        for i, p in ipairs(content) do
-            parts[i] = to_input_content_part(p)
+        for _, p in ipairs(content) do
+            local part = to_input_content_part(p)
+            if part.type ~= "input_text" or not prompt.is_blank(part.text) then
+                table.insert(parts, part)
+            end
         end
         if #parts == 0 then
-            return { { type = "input_text", text = "" } }
+            return nil
         end
         return parts
     end
@@ -123,7 +127,7 @@ local function normalize_input_content(content)
 end
 
 local function normalize_output_content(content)
-    if content == nil or content == "" then
+    if prompt.is_blank(content) then
         return nil
     end
     if type(content) == "string" then
@@ -131,8 +135,11 @@ local function normalize_output_content(content)
     end
     if type(content) == "table" then
         local parts = {}
-        for i, p in ipairs(content) do
-            parts[i] = to_output_content_part(p)
+        for _, p in ipairs(content) do
+            local part = to_output_content_part(p)
+            if not prompt.is_blank(part.text) then
+                table.insert(parts, part)
+            end
         end
         if #parts == 0 then return nil end
         return parts
@@ -175,6 +182,7 @@ end
 function openai_mapper.extract_instructions(contract_messages)
     if not contract_messages then return nil, {} end
 
+    contract_messages = prompt.without_blank_text(contract_messages)
     local parts = {}
     local consumed = {}
     for i, msg in ipairs(contract_messages) do
@@ -197,17 +205,21 @@ function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
     if not contract_messages then return {} end
 
+    contract_messages = prompt.without_blank_text(contract_messages)
     local _, consumed = openai_mapper.extract_instructions(contract_messages)
     local items = {}
 
     for i, msg in ipairs(contract_messages) do
         if not consumed[i] and msg.role ~= "cache_marker" then
             if msg.role == "user" or msg.role == "system" or msg.role == "developer" then
-                table.insert(items, {
-                    type = "message",
-                    role = msg.role,
-                    content = normalize_input_content(msg.content)
-                })
+                local content = normalize_input_content(msg.content)
+                if content then
+                    table.insert(items, {
+                        type = "message",
+                        role = msg.role,
+                        content = content
+                    })
+                end
             elseif msg.role == "assistant" then
                 local content = normalize_output_content(msg.content)
                 if content then

@@ -109,11 +109,9 @@ function providers.open(provider_id, context_overrides)
     return instance
 end
 
--- Whether the provider's driver binding declares that it owns the legacy
--- reasoning_model_request meaning (contract.binding meta.legacy_reasoning_flag).
--- Resolves the provider entry's data.driver.id the same way providers.open does,
--- so a custom provider entry bound to a framework driver is covered too.
-function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?, string | error | nil)
+-- The contract.binding entry behind a provider entry's data.driver.id, resolved the
+-- way providers.open does; nil for a provider entry without a driver.
+local function driver_binding(provider_id): (any?, string | error | nil)
     local provider_entry, err = providers._registry.get(provider_id)
     if err then
         return nil, error_context.prefix(err, "Registry error: ")
@@ -124,7 +122,7 @@ function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?
 
     local driver = provider_entry.data and provider_entry.data.driver
     if not driver or not driver.id then
-        return false, nil
+        return nil, nil
     end
 
     local binding_entry, binding_err = providers._registry.get(tostring(driver.id))
@@ -134,8 +132,31 @@ function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?
     if not binding_entry then
         return nil, "Driver binding not found: " .. tostring(driver.id)
     end
+    return binding_entry, nil
+end
 
-    return binding_entry.meta ~= nil and binding_entry.meta.legacy_reasoning_flag == true, nil
+
+-- Whether the provider's driver binding declares that it owns the legacy
+-- reasoning_model_request meaning (contract.binding meta.legacy_reasoning_flag).
+-- Resolves the provider entry's data.driver.id the same way providers.open does,
+-- so a custom provider entry bound to a framework driver is covered too.
+function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?, string | error | nil)
+    local binding, err = driver_binding(provider_id)
+    if err then
+        return nil, err
+    end
+    return binding ~= nil and binding.meta ~= nil and binding.meta.legacy_reasoning_flag == true, nil
+end
+
+-- What a driver sends when a request leaves the output unset
+-- (contract.binding meta.output_policy): { thinking, default_max_tokens }.
+-- A driver that declares none lets the provider decide, so nothing can be reserved.
+function providers.driver_output_policy(provider_id): (table?, string | error | nil)
+    local binding, err = driver_binding(provider_id)
+    if err then
+        return nil, err
+    end
+    return binding and binding.meta and binding.meta.output_policy or nil, nil
 end
 
 return providers

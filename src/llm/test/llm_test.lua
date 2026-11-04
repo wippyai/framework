@@ -232,6 +232,7 @@ local function define_tests()
                 driver_declares_legacy_reasoning_flag = function(provider_id)
                     return provider_id == "wippy.llm.openai:provider"
                 end,
+                driver_output_policy = function() return nil, nil end,
                 last_structured_output_args = nil,
                 last_embed_args = nil,
                 last_status_args = nil,

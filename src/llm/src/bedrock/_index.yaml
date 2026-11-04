@@ -121,6 +121,7 @@ entries:
     imports:
       sigv4: wippy.llm.bedrock:sigv4
       bedrock_credentials: wippy.llm.bedrock:credentials
+      thinking: wippy.llm.util:thinking
       transport: wippy.llm.util:transport
 
   - name: mapper
@@ -240,6 +241,9 @@ entries:
     meta:
       name: AWS Bedrock LLM Driver
       comment: AWS Bedrock provider using Converse API for text generation and InvokeModel for embeddings
+      output_policy:
+        thinking: budget
+        default_max_tokens: 2000
       tags:
         - bedrock
         - aws

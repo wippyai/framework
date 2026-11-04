@@ -593,11 +593,25 @@ local function prepare_route(contract_args, provider_info: any, options, provide
         remove("thinking_effort")
     end
 
-    local limit = output_limit(card)
+    local policy, policy_err = providers_module.driver_output_policy(provider_info.id)
+    if policy_err then
+        return nil, native_error(policy_err, errors.INTERNAL, false)
+    end
     local requested = tonumber(contract_args.options.max_tokens)
-    if limit ~= nil and requested ~= nil and requested > limit then
-        adjusted.max_tokens = { requested = requested, sent = limit }
-        contract_args.options.max_tokens = limit
+    local plan = route.plan_output(requested, contract_args.options.thinking_effort,
+        policy and (accepts.thinking or policy.thinking), policy and policy.default_max_tokens, output_limit(card))
+    if plan.max_tokens ~= requested then
+        contract_args.options.max_tokens = plan.max_tokens
+        if requested ~= nil then
+            adjusted.max_tokens = { requested = requested, sent = plan.max_tokens }
+        end
+    end
+    if plan.dropped_thinking then
+        remove("thinking_effort")
+    end
+    contract_args.options.thinking_budget_tokens = plan.budget
+    if plan.budget ~= plan.wanted_budget then
+        adjusted.thinking_budget = { requested = plan.wanted_budget, sent = plan.budget }
     end
 
     local strict_err = route.strict_error(tostring(provider_info.id), strict, adjusted)

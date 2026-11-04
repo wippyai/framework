@@ -174,6 +174,9 @@ function structured_output_handler.handler(contract_args)
     end
 
     local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages)
+    if #mapped_messages.messages == 0 then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
+    end
     local mapped_options, adjusted, options_err = structured_output_handler._mapper.map_options(contract_args.options or {}, contract_args.accepts)
     if options_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(options_err):build()
@@ -190,7 +193,7 @@ function structured_output_handler.handler(contract_args)
         local native_payload = {
             model = contract_args.model,
             messages = mapped_messages.messages,
-            max_tokens = mapped_options.max_tokens or 2000
+            max_tokens = mapped_options.max_tokens or mapper.DEFAULT_MAX_TOKENS
         }
         if mapped_messages.system then
             native_payload.system = mapped_messages.system
@@ -208,7 +211,7 @@ function structured_output_handler.handler(contract_args)
         end
 
         -- The binding depends on the thinking object as sent, so it is the last change to the payload.
-        local native_betas = structured_output_handler._mapper.bind_thinking(native_payload)
+        local native_betas = structured_output_handler._mapper.bind_thinking(native_payload, mapped_messages.stale_thinking)
         local response, request_err = structured_output_handler._client.request(
             structured_output_handler._client.ENDPOINTS.MESSAGES,
             native_payload,
@@ -259,7 +262,7 @@ function structured_output_handler.handler(contract_args)
         messages = mapped_messages.messages,
         tools = claude_tools,
         tool_choice = tool_choice,
-        max_tokens = mapped_options.max_tokens or 2000
+        max_tokens = mapped_options.max_tokens or mapper.DEFAULT_MAX_TOKENS
     }
 
     if mapped_messages.system then
@@ -283,7 +286,7 @@ function structured_output_handler.handler(contract_args)
     }
 
     -- The binding depends on the thinking object as sent, so it is the last change to the payload.
-    request_options.beta_features = structured_output_handler._mapper.bind_thinking(claude_payload)
+    request_options.beta_features = structured_output_handler._mapper.bind_thinking(claude_payload, mapped_messages.stale_thinking)
 
     local response, request_err = structured_output_handler._client.request(
         structured_output_handler._client.ENDPOINTS.MESSAGES,

@@ -720,8 +720,7 @@ local function define_tests()
                 })
 
                 test.not_nil((result.messages[1].content[1] :: any).cache_control)
-                test.eq(result.messages[2].content[1].type, "thinking")
-                test.is_nil(result.messages[2].content[1].cache_control)
+                test.is_nil(result.messages[2])
             end)
 
             it("should keep the marked prefix stable when a dynamic developer note follows", function()
