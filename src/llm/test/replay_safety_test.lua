@@ -478,6 +478,18 @@ local function define_tests()
             end)
 
             for _, path in ipairs(EXTRACTION_PATHS) do
+                it("keeps an edited response out of the preceding layout: " .. path.name, function()
+                    local rows = stored_rows(path.extract({ "a", "s1", "b" }, false, "end_turn"))
+                    local second = stored_rows(path.extract({ "s2", "c", "d" }, false, "end_turn"))[2]
+                    test.not_nil(rows[2].metadata.content_positions)
+                    test.not_nil(second.metadata.content_positions)
+                    second.content = text("edited")
+                    table.insert(rows, second)
+                    local payload = path.replay(rows)
+                    test.eq(#payload.messages, 2)
+                    assert_order(path.order(payload.messages[2]), { "a", "s1", "b", "s2", "edited" })
+                end)
+
                 it("renders no blank layout text beside visible text: " .. path.name, function()
                     local result: any = path.extract({ "s1", "A", { "c1" }, "s2", "\n\n", { "c2" } })
                     test.eq(result.result.content, "A\n\n")

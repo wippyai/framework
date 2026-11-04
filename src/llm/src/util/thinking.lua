@@ -190,7 +190,9 @@ function thinking.new_turn_order()
     -- Returns the row's own layout, whose text blocks replace the row's text.
     function order.enter_row(msg: any): any?
         local layout = read_layout(msg)
-        if layout then active = layout end
+        if type(msg.metadata) == "table" and msg.metadata.content_positions ~= nil then
+            active = layout
+        end
         return layout
     end
 
