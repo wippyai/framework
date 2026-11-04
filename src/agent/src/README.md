@@ -451,6 +451,43 @@ for call_id, result in pairs(results) do
 end
 ```
 
+### Result Listener
+
+A host that persists each tool result as soon as its call finishes registers a
+listener. It receives the call ID and that call's final result, the same table
+the batch returns under that ID:
+
+```lua
+caller:set_result_listener(function(call_id, result)
+    local _, err = store:save_observation(call_id, result)
+    if err then return nil, err end
+end)
+
+local results, err = caller:execute(context, validated, cancel)
+if err then
+    -- the listener failed; calls whose results it did not accept run again on recovery
+end
+```
+
+- Each call ID is delivered exactly once, including invalid calls, argument
+  parse failures, start failures, tool errors and cancelled calls. Explicit
+  failure payloads (`success = false` with an `error` string) are already
+  reflected in `result.error`.
+- Sequential execution delivers each result before the next call starts.
+  Parallel execution delivers results in completion order, so a fast call is
+  delivered while slower peers are still running. Calls that fail before they
+  start are delivered as soon as the failure is known.
+- Delivery happens before `after_execute` wrappers run; the wrappers and the
+  return value still receive the complete batch keyed by call ID.
+- A listener fails by raising or by returning a non-nil second value. The batch
+  then stops: no further call starts, calls still running are cancelled, results
+  of calls that finished but were not yet delivered are dropped without
+  cancelling them, `after_execute` wrappers do not run, and `execute` returns
+  `nil` and an error naming the call ID whose delivery failed. Every result
+  delivered before that call was accepted by the listener.
+- The listener must not mutate the result; it is the table the batch returns.
+- `set_result_listener(nil)` removes the listener.
+
 ### Exclusive Tools
 
 Tools with `meta.exclusive = true` in their registry entry cancel all other concurrent tool calls in the same batch. Only one exclusive tool is allowed per batch.
