@@ -53,6 +53,8 @@ entries:
   - name: thinking
     kind: library.lua
     source: file://thinking.lua
+    imports:
+      prompt: wippy.llm:prompt
 
   # wippy.llm.util:wire_request
   - name: wire_request

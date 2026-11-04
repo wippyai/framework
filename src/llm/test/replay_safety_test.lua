@@ -139,9 +139,9 @@ local function sse_stream(events)
     end }, metadata = {} }
 end
 
-local function claude_stream_events()
+local function claude_stream_events(response)
     local events = { { "message_start", { message = { usage = { input_tokens = 1 } } } } }
-    for index, block in ipairs(CLAUDE_RESPONSE) do
+    for index, block in ipairs(response) do
         local at = index - 1
         if block.type == "thinking" then
             table.insert(events, { "content_block_start", { index = at, content_block = { type = "thinking", thinking = "", signature = "" } } })
@@ -171,10 +171,10 @@ local function eventstream_message(event_type, body)
     return string.pack(">I4I4I4", total, #headers, 0) .. headers .. payload .. string.pack(">I4", 0)
 end
 
-local function bedrock_stream()
+local function bedrock_stream(response)
     local chunks = { eventstream_message("messageStart", { role = "assistant" }) }
     local function add(name, body) table.insert(chunks, eventstream_message(name, body)) end
-    for index, block in ipairs(BEDROCK_RESPONSE) do
+    for index, block in ipairs(response) do
         local at = index - 1
         if block.reasoningContent then
             add("contentBlockDelta", { contentBlockIndex = at, delta = { reasoningContent = {
@@ -277,6 +277,55 @@ local function use_card(card)
 end
 
 local BUDGET_POLICY = { thinking = "budget", default_max_tokens = 2000 }
+
+-- A response as the wire blocks of each driver, from { "s1", "text", { "c1" } } shorthand.
+local function claude_blocks(shape)
+    local blocks = {}
+    for _, item in ipairs(shape) do
+        if type(item) == "table" then
+            table.insert(blocks, { type = "tool_use", id = item[1], name = "t", input = { a = 1 } })
+        elseif item:match("^s%d$") then
+            table.insert(blocks, { type = "thinking", thinking = "", signature = item })
+        else
+            table.insert(blocks, { type = "text", text = item })
+        end
+    end
+    return blocks
+end
+
+local function bedrock_blocks(shape)
+    local blocks = {}
+    for _, item in ipairs(shape) do
+        if type(item) == "table" then
+            table.insert(blocks, { toolUse = { toolUseId = item[1], name = "t", input = { a = 1 } } })
+        elseif item:match("^s%d$") then
+            table.insert(blocks, reasoning_block(item))
+        else
+            table.insert(blocks, { text = item })
+        end
+    end
+    return blocks
+end
+
+-- The four extraction paths, each returning a response as llm hands it to a host.
+local EXTRACTION_PATHS = {
+    { name = "Claude JSON", replay = claude_replay, order = claude_order, extract = function(shape)
+        return claude_mapper.format_success_response({ content = claude_blocks(shape), stop_reason = "tool_use",
+            usage = { input_tokens = 1, output_tokens = 1 } }, "m", {})
+    end },
+    { name = "Claude stream", replay = claude_replay, order = claude_order, extract = function(shape)
+        local _, _, stream = claude_client.process_stream(sse_stream(claude_stream_events(claude_blocks(shape))), {})
+        return claude_mapper.format_streaming_response(stream, {}, stream.usage, stream.finish_reason, stream.metadata)
+    end },
+    { name = "Bedrock JSON", replay = bedrock_replay, order = bedrock_order, extract = function(shape)
+        return bedrock_mapper.format_success_response({ output = { message = { role = "assistant", content = bedrock_blocks(shape) } },
+            stopReason = "tool_use", usage = { inputTokens = 1, outputTokens = 1 } }, {})
+    end },
+    { name = "Bedrock stream", replay = bedrock_replay, order = bedrock_order, extract = function(shape)
+        local _, _, stream = bedrock_client.process_converse_stream(bedrock_stream(bedrock_blocks(shape)), {})
+        return bedrock_mapper.format_streaming_response(stream, {}, stream.usage, stream.finish_reason, stream.metadata)
+    end },
+}
 
 local function define_tests()
     describe("Replay safety", function()
@@ -392,7 +441,7 @@ local function define_tests()
             end)
 
             it("replays Claude stream exactly", function()
-                local _, stream_err, stream_result = claude_client.process_stream(sse_stream(claude_stream_events()), {})
+                local _, stream_err, stream_result = claude_client.process_stream(sse_stream(claude_stream_events(CLAUDE_RESPONSE)), {})
                 test.is_nil(stream_err)
                 local result = claude_mapper.format_streaming_response(stream_result, {}, stream_result.usage, stream_result.finish_reason, stream_result.metadata)
                 assert_order(claude_replay_order(result), RESPONSE_ORDER)
@@ -405,11 +454,58 @@ local function define_tests()
             end)
 
             it("replays Bedrock stream exactly", function()
-                local _, stream_err, stream_result = bedrock_client.process_converse_stream(bedrock_stream(), {})
+                local _, stream_err, stream_result = bedrock_client.process_converse_stream(bedrock_stream(BEDROCK_RESPONSE), {})
                 test.is_nil(stream_err)
                 local result = bedrock_mapper.format_streaming_response(stream_result, {}, stream_result.usage, stream_result.finish_reason, stream_result.metadata)
                 assert_order(bedrock_replay_order(result), RESPONSE_ORDER)
             end)
+
+            for _, path in ipairs(EXTRACTION_PATHS) do
+                it("renders no blank layout text beside visible text: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "A", { "c1" }, "s2", "\n\n", { "c2" } })
+                    test.eq(result.result.content, "A\n\n")
+                    local payload = path.replay(stored_rows(result))
+                    assert_order(path.order(payload.messages[2]), { "s1", "A", "c1", "s2", "c2" })
+                end)
+
+                for label, stored in pairs({
+                    ["as received"] = " \n", ["as empty text"] = "", ["as other whitespace"] = "\t",
+                }) do
+                    it("keeps the order of a layout with only blank text stored " .. label .. ": " .. path.name, function()
+                        local result: any = path.extract({ "s1", " ", { "c1" }, "s2", "\n", { "c2" } })
+                        local rows = stored_rows(result)
+                        rows[2].content = text(stored)
+                        local payload = path.replay(rows)
+                        assert_order(path.order(payload.messages[2]), { "s1", "c1", "s2", "c2" })
+                    end)
+                end
+
+                it("keeps the order of a layout with only blank text stored with no content: " .. path.name, function()
+                    local result: any = path.extract({ "s1", " ", { "c1" }, "s2", "\n", { "c2" } })
+                    local rows = stored_rows(result)
+                    rows[2].content = {}
+                    local payload = path.replay(rows)
+                    assert_order(path.order(payload.messages[2]), { "s1", "c1", "s2", "c2" })
+                end)
+
+                it("keeps the layout when the host trimmed the text: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "A", { "c1" }, "s2", "\n\n", { "c2" } })
+                    local rows = stored_rows(result)
+                    rows[2].content = text("A")
+                    local payload = path.replay(rows)
+                    assert_order(path.order(payload.messages[2]), { "s1", "A", "c1", "s2", "c2" })
+                end)
+
+                it("renders a turn with only blank layout text and no call as nothing: " .. path.name, function()
+                    local result: any = path.extract({ "s1", " ", "s2", "\n" })
+                    local rows = stored_rows(result)
+                    table.insert(rows, { role = "user", content = text("next") })
+                    local payload = path.replay(rows)
+                    for _, message in ipairs(payload.messages) do
+                        test.eq(message.role, "user")
+                    end
+                end)
+            end
 
             it("sends no position field on the wire", function()
                 local result = claude_mapper.format_success_response({ content = CLAUDE_RESPONSE, stop_reason = "tool_use",

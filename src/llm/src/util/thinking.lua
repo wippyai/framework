@@ -1,3 +1,5 @@
+local prompt = require("prompt")
+
 local thinking = {}
 
 -- Beta that admits thinking.block_binding and adds input_transformations to responses.
@@ -97,8 +99,15 @@ local function row_text(content: any): string
     return text
 end
 
+local function without_outer_whitespace(text: string): string
+    return text:match("^%s*(.-)%s*$") :: string
+end
+
 -- A row's recorded layout, or nil when it has none or its text is no longer the
--- text the layout recorded: the row is what the host stands behind.
+-- text the layout recorded: the row is what the host stands behind. Providers
+-- compare neither whitespace-only text blocks nor the outer whitespace of a block, so
+-- the layout holds only visible text, and whitespace a host stripped from the row's
+-- ends is not an edit.
 local function read_layout(msg: any): any?
     local positions = type(msg.metadata) == "table" and msg.metadata.content_positions or nil
     if type(positions) ~= "table" then
@@ -108,13 +117,15 @@ local function read_layout(msg: any): any?
     local text = ""
     for _, entry in ipairs(positions) do
         if entry.type == "text" then
-            table.insert(layout.texts, entry)
+            if not prompt.is_blank(entry.text) then
+                table.insert(layout.texts, entry)
+            end
             text = text .. entry.text
         elseif entry.type == "tool_use" then
             layout.calls[entry.id] = entry.position
         end
     end
-    if text ~= row_text(msg.content) then
+    if without_outer_whitespace(text) ~= without_outer_whitespace(row_text(msg.content)) then
         return nil
     end
     return layout
