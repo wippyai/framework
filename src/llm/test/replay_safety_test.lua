@@ -496,6 +496,13 @@ local function define_tests()
                     assert_order(path.order(payload.messages[2]), { "s1", "A", "c1", "s2", "c2" })
                 end)
 
+                it("renders no whitespace text of a plain-order response: " .. path.name, function()
+                    local result: any = path.extract({ "s1", "\n\n", { "c1" } })
+                    test.is_nil(result.metadata.content_positions)
+                    local payload = path.replay(stored_rows(result))
+                    assert_order(path.order(payload.messages[2]), { "s1", "c1" })
+                end)
+
                 it("renders a turn with only blank layout text and no call as nothing: " .. path.name, function()
                     local result: any = path.extract({ "s1", " ", "s2", "\n" })
                     local rows = stored_rows(result)
@@ -703,14 +710,49 @@ local function define_tests()
                 test.not_nil(google_mapper.map_messages(rows, {})[2].parts[1].functionCall)
             end)
 
-            it("keeps whitespace text inside a Claude turn with a call for an exact replay", function()
+            it("sends no whitespace text inside a turn with a call on any driver", function()
                 local rows = {
                     { role = "user", content = text("Q") },
                     { role = "assistant", content = text("\n\n") },
                     { role = "function_call", content = {}, function_call = { id = "c1", name = "t", arguments = "{}" } },
                     { role = "function_result", name = "t", function_call_id = "c1", content = text("r") },
                 }
-                assert_order(claude_order(claude_mapper.map_messages(rows).messages[2]), { "\n\n", "c1" })
+                assert_order(claude_order(claude_mapper.map_messages(rows).messages[2]), { "c1" })
+                assert_order(bedrock_order(bedrock_mapper.map_messages(rows).messages[2]), { "c1" })
+                test.eq(openai_mapper.map_messages(rows, {})[2].type, "function_call")
+                test.not_nil(google_mapper.map_messages(rows, {})[2].parts[1].functionCall)
+                test.eq((compat_mapper.map_messages(rows, {}) :: any)[2].content, "")
+            end)
+
+            it("sends no whitespace string content inside a turn with a call", function()
+                local rows = {
+                    { role = "user", content = text("Q") },
+                    { role = "assistant", content = "  " },
+                    { role = "function_call", content = {}, function_call = { id = "c1", name = "t", arguments = "{}" } },
+                    { role = "function_result", name = "t", function_call_id = "c1", content = text("r") },
+                }
+                assert_order(claude_order(claude_mapper.map_messages(rows).messages[2]), { "c1" })
+                assert_order(bedrock_order(bedrock_mapper.map_messages(rows).messages[2]), { "c1" })
+            end)
+
+            it("drops a whitespace part beside visible text", function()
+                local rows = {
+                    { role = "user", content = text("Q") },
+                    { role = "assistant", content = { { type = "text", text = " " }, { type = "text", text = "kept" } } },
+                    { role = "user", content = text("Q2") },
+                }
+                assert_order(claude_order(claude_mapper.map_messages(rows).messages[2]), { "kept" })
+                assert_order(bedrock_order(bedrock_mapper.map_messages(rows).messages[2]), { "kept" })
+            end)
+
+            it("keeps outer whitespace of visible text", function()
+                local rows = {
+                    { role = "user", content = text("Q") },
+                    { role = "assistant", content = text(" kept\n") },
+                    { role = "user", content = text("Q2") },
+                }
+                assert_order(claude_order(claude_mapper.map_messages(rows).messages[2]), { " kept\n" })
+                assert_order(bedrock_order(bedrock_mapper.map_messages(rows).messages[2]), { " kept\n" })
             end)
 
             it("moves a cache marker off a blank turn", function()

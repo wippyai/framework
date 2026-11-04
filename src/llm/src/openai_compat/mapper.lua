@@ -266,8 +266,12 @@ function openai_mapper.map_messages(contract_messages, options)
                 assistant_msg.tool_calls = nil
             end
 
-            -- A turn with no visible text and no call renders as nothing.
-            if assistant_msg.tool_calls or not prompt.is_blank(assistant_msg.content) then
+            -- A turn with no visible text and no call renders as nothing; a turn with
+            -- calls and no visible text sends the empty content its calls need.
+            if prompt.is_blank(assistant_msg.content) then
+                assistant_msg.content = ""
+            end
+            if assistant_msg.tool_calls or assistant_msg.content ~= "" then
                 table.insert(processed_messages, assistant_msg)
             end
 

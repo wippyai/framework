@@ -266,9 +266,7 @@ local function without_blank_turns(messages)
     for _, msg in ipairs(messages) do
         local visible = msg.role ~= "assistant"
         for _, block in ipairs(msg.role == "assistant" and msg.content or {}) do
-            if block.text then
-                visible = visible or not prompt.is_blank(block.text)
-            elseif not block.reasoningContent and not block.cachePoint then
+            if not block.reasoningContent and not block.cachePoint then
                 visible = true
             end
         end
@@ -391,12 +389,12 @@ function mapper.map_messages(contract_messages)
 
             local content = msg.content
             if type(content) == "string" then
-                if content ~= "" and not layout then
+                if not prompt.is_blank(content) and not layout then
                     table.insert(content_blocks, { text = content })
                 end
             elseif type(content) == "table" then
                 for _, part in ipairs(content) do
-                    if part.type == "text" and part.text and part.text ~= "" and not layout then
+                    if part.type == "text" and not prompt.is_blank(part.text) and not layout then
                         table.insert(content_blocks, { text = part.text })
                     elseif part.type == "function_call" then
                         local args = normalize_tool_arguments(part.arguments)

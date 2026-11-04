@@ -387,9 +387,7 @@ local function without_blank_turns(messages)
     for _, msg in ipairs(messages) do
         local visible = msg.role ~= "assistant"
         for _, block in ipairs(msg.role == "assistant" and msg.content or {}) do
-            if block.type == "text" then
-                visible = visible or not prompt.is_blank(block.text)
-            elseif block.type ~= "thinking" and block.type ~= "redacted_thinking" then
+            if block.type ~= "thinking" and block.type ~= "redacted_thinking" then
                 visible = true
             end
         end
@@ -537,7 +535,7 @@ function mapper.map_messages(contract_messages)
                 end
             end
 
-            if type(regular_content) == "string" and regular_content ~= "" and not layout then
+            if type(regular_content) == "string" and not prompt.is_blank(regular_content) and not layout then
                 table.insert(content_blocks, {
                     type = "text",
                     text = regular_content
@@ -554,7 +552,7 @@ function mapper.map_messages(contract_messages)
                         }
                         order.place_call(tool_use, part.id)
                         table.insert(content_blocks, tool_use)
-                    elseif part.type == "text" and part.text and part.text ~= "" and not layout then
+                    elseif part.type == "text" and not prompt.is_blank(part.text) and not layout then
                         table.insert(content_blocks, part)
                     elseif part.type ~= "text" then
                         table.insert(content_blocks, part)

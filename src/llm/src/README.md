@@ -259,9 +259,9 @@ Bedrock sends developer messages as user text instead of `system` blocks. A Bedr
 One rule decides what is blank: text with no non-whitespace character.
 
 - Blank text in user, system and developer messages never reaches a driver. A message left with no content goes entirely, and an image beside blank text stays. Tool results are sent as they are.
-- An assistant turn, after consolidating its assistant and function call rows, with no visible text and no call renders as nothing on every driver, its thinking blocks included. Claude invents no text for it. Whitespace text in a turn with a call stays on Claude and Bedrock when the row has no recorded layout; a recorded layout never renders it.
+- An assistant turn, after consolidating its assistant and function call rows, with no visible text and no call renders as nothing on every driver, its thinking blocks included. Claude invents no text for it. Inside a turn that stays, whitespace-only assistant text is not rendered either, on any driver and whether or not the row has a recorded layout; text with something visible keeps its outer whitespace.
 
-A stored conversation with such a row renders a different prefix once after upgrading (Claude sent the text `intercepted`, Bedrock the thinking blocks alone, OpenAI-compatible an empty assistant message): its cache restarts from that row and later thinking blocks no longer match.
+A stored conversation with such a row renders a different prefix once after upgrading (Claude sent the text `intercepted`, Bedrock the thinking blocks alone, OpenAI-compatible an empty assistant message): its cache restarts from that row and later thinking blocks no longer match. A stored row with whitespace-only text beside a call also renders differently once after upgrading: its prompt cache restarts one time from that row, while thinking blocks stay valid, because the API does not compare whitespace-only text blocks.
 
 A request whose mapped conversation is empty fails with `invalid_request` before any HTTP request on Claude, Bedrock, Google and OpenAI. A system-role note as the only content stays a valid request on OpenAI, as does any system message on OpenAI-compatible.
 
