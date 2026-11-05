@@ -38,6 +38,7 @@ type TokenUsage = {
     cache_read_tokens: number?,
     cache_creation_input_tokens: number?,
     cache_write_tokens: number?,
+    cache_write_by_ttl: {[string]: number}?,
     context_tokens: number?
 }
 
@@ -154,7 +155,8 @@ type GenerateOptions = {
     max_tokens: number?,
     fallback: any?,
     route: table?,
-    deadline_ms: number?
+    deadline_ms: number?,
+    cache_ttl: string?
 }
 
 type EmbedOptions = {
@@ -555,6 +557,14 @@ local function output_limit(card: any): number?
     return nil
 end
 
+local function cache_ttl_error(cache_ttl: any): error?
+    if cache_ttl == nil or (type(cache_ttl) == "string" and cache_ttl ~= "") then
+        return nil
+    end
+    return errors.new({ kind = errors.INVALID, retryable = false,
+        message = "cache_ttl must be a non-empty string such as \"1h\", got " .. tostring(cache_ttl) })
+end
+
 local function prepare_route(contract_args, provider_info: any, options, providers_module, card: any?)
     local legacy_reasoning_flag, flag_err = providers_module.driver_declares_legacy_reasoning_flag(provider_info.id)
     if flag_err then
@@ -565,6 +575,10 @@ local function prepare_route(contract_args, provider_info: any, options, provide
     if not accepts then return nil, errors.new({ kind = errors.INVALID, retryable = false, message = err }) end
     contract_args.accepts = accepts
     contract_args.options = route.clean_options(contract_args.options)
+    local ttl_err = cache_ttl_error(contract_args.options.cache_ttl)
+    if ttl_err then
+        return nil, ttl_err
+    end
     local strict = contract_args.options.strict == true
     contract_args.options.strict = nil
     contract_args._strict = strict
@@ -1344,6 +1358,11 @@ function llm.generate(prompt_input, options)
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
 
+    local ttl_err = cache_ttl_error(options.cache_ttl)
+    if ttl_err then
+        return nil, ttl_err
+    end
+
     options = options_for_actor(options)
 
     local request = { messages = {} }
@@ -1392,6 +1411,11 @@ function llm.structured_output(schema, prompt_input, options): (GenerateResponse
 
     if not schema then
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Schema is required" })
+    end
+
+    local ttl_err = cache_ttl_error(options.cache_ttl)
+    if ttl_err then
+        return nil, ttl_err
     end
 
     options = options_for_actor(options)
@@ -1581,12 +1605,14 @@ function llm.track_usage(response, model_id, options): (string?, string?)
     local thinking_tokens = 0
     local cache_read_tokens = 0
     local cache_write_tokens = 0
+    local cache_write_by_ttl = nil
 
     if response and response.tokens then
         prompt_tokens = response.tokens.prompt_tokens or 0
         completion_tokens = response.tokens.completion_tokens or 0
         thinking_tokens = response.tokens.thinking_tokens or 0
         cache_read_tokens, cache_write_tokens = cached_input_tokens(response.tokens)
+        cache_write_by_ttl = response.tokens.cache_write_by_ttl
     end
 
     -- Prepare tracking options
@@ -1598,6 +1624,10 @@ function llm.track_usage(response, model_id, options): (string?, string?)
 
     if options.metadata then
         tracking_options.metadata = options.metadata
+    end
+
+    if type(cache_write_by_ttl) == "table" then
+        tracking_options.cache_write_by_ttl = cache_write_by_ttl
     end
 
     -- Call usage tracker contract

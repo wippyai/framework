@@ -229,6 +229,7 @@ local response, err = runner:step(builder, {
     previous_memory_ids = { "mem_1", "mem_2" },
     stop_check = function() return stop_requested end,
     cancel = turn_cancel,
+    cache_ttl = "1h",              -- optional: replaces agent_options.prompt_cache.ttl for this step
     route = earlier_response.route_pin  -- later steps of a turn: stay on the model that answered
 })
 ```
@@ -400,6 +401,29 @@ return the same text on every step of a conversation: anything that changes per
 step or per turn (the current time, recalled facts, status) changes the prefix
 before every earlier message. Put such context in positional notes the host
 persists instead (see Turn context).
+
+`agent_options.prompt_cache.ttl` sets the cache lifetime the runner asks for on
+every step, as the `cache_ttl` option of `llm.generate`. A trait can set it for
+every agent that carries the trait, and the agent's own `agent_options`
+override the trait. A `prompt_cache` that is not a table, or a `ttl` that is not
+a non-empty string, fails compilation; the model driver checks the value itself
+(Claude accepts `"5m"` and `"1h"`). A host replaces it for one step with
+`cache_ttl` in the runtime options. With neither, the model route decides.
+Set the lifetime from the first step of a conversation: a step that switches to
+`"1h"` writes only its new tail for an hour, while the prefix cached by earlier
+steps keeps its five-minute lifetime.
+
+```yaml
+  - name: long_waits
+    kind: registry.entry
+    meta:
+      type: agent.trait
+      name: Long waits
+      comment: Keeps the prompt cache across long tool calls and user pauses
+    agent_options:
+      prompt_cache:
+        ttl: 1h
+```
 
 ### Turn context
 

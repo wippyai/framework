@@ -18,6 +18,8 @@ entries:
         path: .default
       - entry: wippy.usage.migrations:01_create_token_usage_table
         path: ".meta.target_db"
+      - entry: wippy.usage.migrations:02_create_token_usage_cache_writes
+        path: ".meta.target_db"
 
   # Dependencies
   - name: dep.wippy.migration
@@ -64,6 +66,7 @@ entries:
     modules:
       - security
       - ctx
+      - logger
     imports:
       token_usage_repo: wippy.usage:token_usage_repo
     method: track_usage

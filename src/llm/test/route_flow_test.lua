@@ -575,6 +575,138 @@ local function define_tests()
                 test.contains(err:message(), "adaptive")
             end)
         end
+
+        describe("Prompt cache lifetime", function()
+            local cached_prompt = {
+                { role = "system", content = "Base instructions" },
+                { role = "cache_marker" },
+                { role = "user", content = { { type = "text", text = "Answer" } } },
+                { role = "cache_marker", marker_id = "history_tail" }
+            }
+
+            local function driver_named(name)
+                for _, candidate in ipairs(drivers) do
+                    if candidate.name == name then return candidate end
+                end
+            end
+
+            local function route_through(driver, method, route_options)
+                local handler = driver[method]
+                local sent: any = {}
+                driver.install(handler, sent)
+                local ref = { id = "route", provider_model = "wire", options = route_options }
+                for key, value in pairs(driver.accepts) do ref[key] = value end
+                local card = { name = "route-model", providers = { ref } }
+                llm._model_resolver = { resolve = function() return card end }
+                llm._providers = { driver_declares_legacy_reasoning_flag = function() return false end, driver_output_policy = function() return nil, nil end, open = function()
+                    return { [method] = function(_, args) return handler.handler(args) end }
+                end }
+                return sent
+            end
+
+            local function cached_call(method, options)
+                if method == "generate" then return llm.generate(cached_prompt, options) end
+                return llm.structured_output(schema, cached_prompt, options)
+            end
+
+            local function lifetimes(payload)
+                local found = {}
+                for _, block in ipairs(payload.system or {}) do
+                    if block.cache_control then found[#found + 1] = block.cache_control.ttl or "5m" end
+                end
+                for _, message in ipairs(payload.messages or {}) do
+                    for _, block in ipairs(message.content or {}) do
+                        if type(block) == "table" and block.cache_control then
+                            found[#found + 1] = block.cache_control.ttl or "5m"
+                        end
+                    end
+                end
+                return table.concat(found, ",")
+            end
+
+            local function mentions(value, key)
+                if type(value) ~= "table" then return false end
+                for item_key, item in pairs(value) do
+                    if item_key == key or mentions(item, key) then return true end
+                end
+                return false
+            end
+
+            for _, method in ipairs({ "generate", "structured_output" }) do
+                it("applies the route's cache lifetime to every Claude " .. method .. " breakpoint", function()
+                    local sent = route_through(driver_named("claude"), method, { cache_ttl = "1h" })
+                    local _, err = cached_call(method, { model = "route-model" })
+                    test.is_nil(err)
+                    test.eq(lifetimes(sent.payload), "1h,1h")
+                    test.is_true(not mentions(sent.payload, "cache_ttl"))
+                end)
+
+                it("lets the caller's cache lifetime replace the route's on Claude " .. method, function()
+                    local sent = route_through(driver_named("claude"), method, { cache_ttl = "1h" })
+                    local _, err = cached_call(method, { model = "route-model", cache_ttl = "5m" })
+                    test.is_nil(err)
+                    test.eq(lifetimes(sent.payload), "5m,5m")
+                end)
+
+                it("rejects a lifetime Claude does not offer on " .. method .. " before HTTP", function()
+                    for _, value in ipairs({ "50m", "12h" }) do
+                        local sent = route_through(driver_named("claude"), method, nil)
+                        local result, err = cached_call(method, { model = "route-model", cache_ttl = value })
+                        test.is_nil(result)
+                        test.eq(err:kind(), errors.INVALID)
+                        test.contains(err:message(), "cache_ttl")
+                        test.contains(err:message(), value)
+                        test.is_nil(sent.payload)
+                    end
+                end)
+            end
+
+            for _, method in ipairs({ "generate", "structured_output" }) do
+                it("applies the route's cache lifetime on the native Claude " .. method .. " route", function()
+                    local sent = route_through(driver_named("claude native"), method, { cache_ttl = "1h" })
+                    local _, err = cached_call(method, { model = "route-model" })
+                    test.is_nil(err)
+                    test.eq(lifetimes(sent.payload), "1h,1h")
+                end)
+
+                it("applies a direct call's cache lifetime on Claude " .. method, function()
+                    local sent = route_through(driver_named("claude"), method, nil)
+                    local _, err = cached_call(method, { provider_id = "route", model = "wire", cache_ttl = "1h" })
+                    test.is_nil(err)
+                    test.eq(lifetimes(sent.payload), "1h,1h")
+                end)
+
+                it("rejects an unsupported cache lifetime on a direct " .. method .. " call before HTTP", function()
+                    local sent = route_through(driver_named("claude"), method, nil)
+                    local result, err = cached_call(method, { provider_id = "route", model = "wire", cache_ttl = "50m" })
+                    test.is_nil(result)
+                    test.eq(err:kind(), errors.INVALID)
+                    test.contains(err:message(), "cache_ttl")
+                    test.is_nil(sent.payload)
+                end)
+            end
+
+            for _, name in ipairs({ "claude", "openai" }) do
+                it("rejects a route cache lifetime that is not a string on the " .. name .. " route before HTTP", function()
+                    local sent = route_through(driver_named(name), "generate", { cache_ttl = 60 })
+                    local result, err = cached_call("generate", { model = "route-model" })
+                    test.is_nil(result)
+                    test.eq(err:kind(), errors.INVALID)
+                    test.contains(err:message(), "cache_ttl")
+                    test.is_nil(sent.payload)
+                end)
+            end
+
+            for _, name in ipairs({ "bedrock", "openai", "openai_compat", "google" }) do
+                it("passes a lifetime it does not use on the " .. name .. " route and keeps it off the wire", function()
+                    local sent = route_through(driver_named(name), "generate", { cache_ttl = "12h" })
+                    local _, err = cached_call("generate", { model = "route-model" })
+                    test.is_nil(err)
+                    test.not_nil(sent.payload)
+                    test.is_true(not mentions(sent.payload, "cache_ttl"))
+                end)
+            end
+        end)
     end)
 end
 

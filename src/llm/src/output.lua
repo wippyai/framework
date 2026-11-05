@@ -30,6 +30,7 @@ type UsageInfo = {
     cache_write_tokens: number,
     cache_read_tokens: number,
     total_tokens: number,
+    cache_write_by_ttl: {[string]: number}?,
 }
 
 type DoneMeta = {

@@ -15,6 +15,40 @@ local function define_tests()
         end)
 
         describe("Contract Argument Validation", function()
+            it("rejects an unsupported cache lifetime before the request", function()
+                local saved_client = structured_output_handler._client
+                local requested = { count = 0 }
+                structured_output_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        requested.count = requested.count + 1
+                        return nil, { message = "unexpected request" }
+                    end
+                }
+
+                local response, err = structured_output_handler.handler({
+                    model = "claude-sonnet-4-6",
+                    messages = {
+                        { role = "system", content = "System prompt" },
+                        { role = "cache_marker" },
+                        { role = "user", content = {{ type = "text", text = "Generate data" }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { name = { type = "string" } },
+                        required = { "name" },
+                        additionalProperties = false
+                    },
+                    options = { cache_ttl = "2h" }
+                })
+                structured_output_handler._client = saved_client
+
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "cache_ttl")
+                test.eq(requested.count, 0)
+            end)
+
             it("should require model parameter", function()
                 local contract_args = {
                     messages = {

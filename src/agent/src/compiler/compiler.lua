@@ -177,6 +177,21 @@ local function is_map(value: any): boolean
     return type(value) == "table" and value[1] == nil
 end
 
+local function prompt_cache_error(agent_id: any, prompt_cache: any): string?
+    if prompt_cache == nil then
+        return nil
+    end
+    local prefix = "agent " .. tostring(agent_id) .. ": agent_options.prompt_cache"
+    if type(prompt_cache) ~= "table" then
+        return prefix .. " must be a table such as { ttl = \"1h\" }"
+    end
+    local ttl = prompt_cache.ttl
+    if ttl ~= nil and (type(ttl) ~= "string" or ttl == "") then
+        return prefix .. ".ttl must be a non-empty string such as \"1h\", got " .. tostring(ttl)
+    end
+    return nil
+end
+
 local function merge_agent_options(base_options: any, override_options: any): table
     local merged = {}
 
@@ -1476,6 +1491,12 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
         final_prompt = table.concat(all_prompts, "\n\n")
     end
 
+    local agent_options = merge_agent_options(trait_agent_options, raw_spec.agent_options)
+    local cache_err = prompt_cache_error(raw_spec.id, agent_options.prompt_cache)
+    if cache_err then
+        return nil, cache_err
+    end
+
     local compiled_spec = {
         id = raw_spec.id,
         name = raw_spec.name,
@@ -1489,7 +1510,7 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
         tools = tools,
         memory = raw_spec.memory or {},
         memory_contract = memory_contract,
-        agent_options = merge_agent_options(trait_agent_options, raw_spec.agent_options),
+        agent_options = agent_options,
         prompt_funcs = prompt_funcs,
         step_funcs = step_funcs,
         tool_wrappers = tool_wrappers,
