@@ -54,12 +54,17 @@ jobs:
           persist-credentials: false
 
       - name: Validate module and build notes
+        id: module
         env:
           COMPONENT: ${{ inputs.component }}
           RELEASE_VERSION: ${{ steps.source.outputs.version }}
         run: |
           set -euo pipefail
-          test "$(awk '/^module:/ {print $2; exit}' module/wippy.yaml)" = "$COMPONENT"
+          # A manifest in src/ lists `embed` entries that resolve against that directory.
+          config=module
+          if [ -f module/src/wippy.yaml ]; then config=module/src; fi
+          echo "config=$config" >> "$GITHUB_OUTPUT"
+          test "$(awk '/^module:/ {print $2; exit}' "$config/wippy.yaml")" = "$COMPONENT"
           if [ "$COMPONENT" = session ]; then version_file=module/src/_index.yaml; else version_file=module/wippy.yaml; fi
           test "$(awk '/^version:/ {gsub(/"/, "", $2); print $2; exit}' "$version_file")" = "$RELEASE_VERSION"
           python3 framework/scripts/release_notes.py --line module/CHANGELOG.md "$RELEASE_VERSION" > release-notes.txt
@@ -70,8 +75,14 @@ jobs:
           WIPPY: ${{ steps.wippy.outputs.path }}
           WIPPY_TOKEN: ${{ secrets.WIPPY_TOKEN }}
           RELEASE_VERSION: ${{ steps.source.outputs.version }}
+          CONFIG: ${{ steps.module.outputs.config }}
         run: |
           set -euo pipefail
           test -n "${WIPPY_TOKEN:-}"
-          "$WIPPY" publish --config module --version "$RELEASE_VERSION" --dry-run
-          "$WIPPY" publish --config module --version "$RELEASE_VERSION" --release-notes "$(cat release-notes.txt)"
+          "$WIPPY" publish --config "$CONFIG" --version "$RELEASE_VERSION" --dry-run 2>&1 | tee pack.txt
+          # A pack without its embedded form bundles still succeeds, and the hub has no yank.
+          # Session is 521.5 KB with the bundles and 219.2 KB without them.
+          if [ "$CONFIG" = module/src ]; then
+            awk '/Pack created:/ { gsub(/[()]/, ""); size = $(NF - 1); if ($NF == "MB") size *= 1024; found = 1 } END { exit !(found && size >= 400) }' pack.txt
+          fi
+          "$WIPPY" publish --config "$CONFIG" --version "$RELEASE_VERSION" --release-notes "$(cat release-notes.txt)"
