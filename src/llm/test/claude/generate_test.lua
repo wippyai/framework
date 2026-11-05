@@ -495,6 +495,60 @@ local function define_tests()
                 test.eq(response.tokens.cache_write_tokens, 20)
                 test.eq(response.tokens.cache_read_tokens, 0)
             end)
+
+            it("sends the requested cache lifetime on every breakpoint", function()
+                local captured: any = {}
+                generate_handler._client = capturing_client(captured, {
+                    content = { { type = "text", text = "Cached for an hour" } },
+                    stop_reason = "end_turn",
+                    usage = {
+                        input_tokens = 4,
+                        output_tokens = 5,
+                        cache_creation_input_tokens = 30,
+                        cache_read_input_tokens = 0,
+                        cache_creation = { ephemeral_5m_input_tokens = 0, ephemeral_1h_input_tokens = 30 }
+                    },
+                    metadata = {}
+                })
+
+                local response = generate_handler.handler({
+                    model = "claude-sonnet-4-6",
+                    messages = {
+                        { role = "system", content = "System prompt" },
+                        { role = "cache_marker" },
+                        { role = "user", content = { { type = "text", text = "Hello" } } },
+                        { role = "cache_marker", marker_id = "history_tail" }
+                    },
+                    options = { cache_ttl = "1h" }
+                })
+
+                test.is_true(response.success)
+                test.eq(captured.payload.system[1].cache_control.ttl, "1h")
+                test.eq(captured.payload.messages[1].content[1].cache_control.ttl, "1h")
+                test.is_nil(captured.payload.cache_ttl)
+                test.eq(response.tokens.cache_write_by_ttl["1h"], 30)
+            end)
+
+            it("rejects an unsupported cache lifetime before the request", function()
+                local captured: any = {}
+                generate_handler._client = capturing_client(captured)
+
+                local response, err = generate_handler.handler({
+                    model = "claude-sonnet-4-6",
+                    messages = {
+                        { role = "system", content = "System prompt" },
+                        { role = "cache_marker" },
+                        { role = "user", content = { { type = "text", text = "Hello" } } }
+                    },
+                    options = { cache_ttl = "2h" }
+                })
+
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "cache_ttl")
+                test.contains(err:message(), "2h")
+                test.is_nil(captured.payload)
+            end)
         end)
 
         describe("Image Content", function()
@@ -930,6 +984,48 @@ local function define_tests()
                 test.is_true(response.success)
                 assert(response.success)
                 test.eq(response.result.content, "Hello world")
+            end)
+
+            it("reports one-hour cache writes from a streamed response", function()
+                local usage = {
+                    input_tokens = 4,
+                    output_tokens = 5,
+                    cache_creation_input_tokens = 30,
+                    cache_read_input_tokens = 0,
+                    cache_creation = { ephemeral_5m_input_tokens = 0, ephemeral_1h_input_tokens = 30 }
+                }
+                generate_handler._output = {
+                    streamer = function()
+                        return {
+                            buffer_content = function() end,
+                            send_tool_call = function() end,
+                            flush = function() end
+                        }
+                    end,
+                    FINISH_REASON = { TOOL_CALL = "tool_call" }
+                }
+                generate_handler._client = {
+                    ENDPOINTS = { MESSAGES = "/v1/messages" },
+                    request = function()
+                        return { stream = {}, metadata = {} }
+                    end,
+                    process_stream = function(_, callbacks)
+                        callbacks.on_content("Cached")
+                        callbacks.on_done({ finish_reason = "end_turn", usage = usage })
+                        return "Cached", nil, { content = "Cached", finish_reason = "end_turn", usage = usage }
+                    end
+                }
+
+                local response = generate_handler.handler({
+                    model = "claude-sonnet-4-6",
+                    messages = { { role = "user", content = { { type = "text", text = "Hello" } } } },
+                    options = { cache_ttl = "1h" },
+                    stream = { reply_to = "test-process", topic = "test_stream" }
+                })
+
+                test.is_true(response.success)
+                test.eq(response.tokens.cache_write_tokens, 30)
+                test.eq(response.tokens.cache_write_by_ttl["1h"], 30)
             end)
 
             it("should handle streaming tool calls", function()

@@ -41,6 +41,7 @@ local result = llm.generate(builder, {
     presence_penalty = 0.5,
     stop_sequences = {"END"},
     seed = 12345,
+    cache_ttl = "1h",       -- prompt cache lifetime: "5m" (default) or "1h"
     stream = {
         reply_to = process.self(),
         topic = "llm_stream",
@@ -186,6 +187,20 @@ A per-call `retry` replaces the provider policy, which is set in the provider en
 
 Retries stay on one route. Moving to other routes and models is [Fallback](#fallback); a call's `deadline_ms` also stops a retry whose backoff would end past the deadline.
 
+### Prompt cache lifetime
+
+`cache_ttl` asks the provider to keep the cached prompt prefix of `llm.generate` and `llm.structured_output` calls for a lifetime. `llm` hands any non-empty string to the driver, and each driver accepts the lifetimes its provider offers; a value that is not a non-empty string fails with `invalid_request` before any driver runs. A route's `options.cache_ttl` is the default for that route, and a call's `cache_ttl` replaces it.
+
+The Claude driver accepts `"5m"`, the default, and `"1h"`, and puts the lifetime on every cache breakpoint of the request, so one request never mixes lifetimes; `"5m"` and an unset value send no `ttl`, leaving the request unchanged. Any other value fails with `invalid_request` before the provider request; with the default `fallback_on` the call does not move to a fallback route. The other drivers do not use the option yet and send their requests without it; Bedrock cache points keep their default lifetime. `llm.evaluate` on [OpenAI Decisions](#openai-decisions) rejects `cache_ttl` like any other option it does not support, so keep a route default out of models that serve evaluations.
+
+```lua
+llm.generate(builder, { model = "claude", cache_ttl = "1h" })
+```
+
+The lifetime counts from the start of the request that writes or reads the entry, and every cache read restarts it, so requests sharing a prefix that start less than five minutes apart keep the default cache warm. A one-hour entry costs more to write than a five-minute one: it pays off when requests sharing a prefix start five to sixty minutes apart, such as an agent waiting on a long tool call or on a user's reply, and only adds cost otherwise. The lifetime applies to what a request writes: the prefix it reads from the cache is not rewritten and keeps the lifetime it was written with, so set the lifetime from the first request of a conversation.
+
+`tokens.cache_write_by_ttl` breaks `cache_write_tokens` down by lifetime, such as `{ ["5m"] = 120, ["1h"] = 4800 }`, because providers bill each lifetime at its own rate. Only lifetimes with writes appear, and the field is absent when the response carries no breakdown. The Claude driver reads every per-lifetime count the API reports.
+
 ### Response Format
 
 ```lua
@@ -253,6 +268,8 @@ builder:add_system("Long system prompt...")
 builder:add_cache_marker("system_cache")
 builder:add_user("Question")
 ```
+
+Every marker of a request gets the lifetime the call's `cache_ttl` sets (see [Prompt cache lifetime](#prompt-cache-lifetime)).
 
 ### Positional Notes
 

@@ -748,6 +748,43 @@ local function define_tests()
                 test.eq(finish_reason, "end_turn")
             end)
 
+            it("keeps the cache write breakdown of a streamed response", function()
+                local stream_chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":4,"output_tokens":0,"cache_creation_input_tokens":30,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":20}}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+                    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Cached"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+                local mock_stream = { chunks = stream_chunks, current = 0 }
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            if self.current <= #self.chunks then
+                                return self.chunks[self.current]
+                            end
+                            return nil
+                        end
+                    }
+                })
+
+                local done_usage: any = nil
+                local _, err = claude_client.process_stream({ stream = mock_stream, metadata = {} }, {
+                    on_content = function() end,
+                    on_done = function(result)
+                        done_usage = result.usage
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(done_usage.cache_creation_input_tokens, 30)
+                test.eq(done_usage.cache_creation.ephemeral_1h_input_tokens, 20)
+                test.eq(done_usage.cache_creation.ephemeral_5m_input_tokens, 10)
+                test.eq(done_usage.output_tokens, 5)
+            end)
+
             it("should process streaming tool calls", function()
                 local stream_chunks = {
                     'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"output_tokens":0}}}\n\n',

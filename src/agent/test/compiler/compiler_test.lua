@@ -1147,6 +1147,46 @@ local function define_tests()
                     "agent-level option overlays trait and attachment options")
             end)
 
+            it("keeps any prompt cache lifetime string for the model driver to judge", function()
+                for _, ttl in ipairs({ "1h", "12h" }) do
+                    local compiled_spec, err = compiler.compile({
+                        id = "test:prompt_cache",
+                        name = "Prompt Cache Agent",
+                        description = "Keeps its prompt cache across long waits",
+                        prompt = "You coordinate long sub-tasks.",
+                        tools = {},
+                        traits = {},
+                        agent_options = { prompt_cache = { ttl = ttl } }
+                    })
+
+                    test.is_nil(err)
+                    test.eq(compiled_spec.agent_options.prompt_cache.ttl, ttl)
+                end
+            end)
+
+            it("rejects a malformed prompt cache setting at compile time", function()
+                local cases = {
+                    { agent_options = { prompt_cache = { ttl = 60 } }, traits = {} },
+                    { agent_options = { prompt_cache = { ttl = "" } }, traits = {} },
+                    { agent_options = { prompt_cache = "1h" }, traits = {} },
+                    { traits = { { id = "tool_wrapper_trait", agent_options = { prompt_cache = { ttl = true } } } } },
+                }
+                for _, case in ipairs(cases) do
+                    local compiled_spec, err = compiler.compile({
+                        id = "test:bad_prompt_cache",
+                        name = "Bad Prompt Cache Agent",
+                        description = "Declares an unsupported cache lifetime",
+                        prompt = "You coordinate long sub-tasks.",
+                        tools = {},
+                        traits = case.traits,
+                        agent_options = case.agent_options
+                    })
+
+                    test.is_nil(compiled_spec)
+                    test.contains(tostring(err), "prompt_cache")
+                end
+            end)
+
             it("should merge trait instance, agent, and wrapper context for tool wrappers", function()
                 local compiled_spec, err = compiler.compile(spec_with_tool_wrapper_trait)
 

@@ -62,6 +62,20 @@ mapper.DEFAULT_MAX_TOKENS = 2000
 -- Claude API cache control limit
 local MAX_CACHE_BREAKPOINTS = 4
 
+local function cache_control(ttl: string?): table
+    if ttl == "1h" then
+        return { type = "ephemeral", ttl = ttl }
+    end
+    return { type = "ephemeral" }
+end
+
+function mapper.cache_ttl_error(ttl: any): string?
+    if ttl == nil or ttl == "5m" or ttl == "1h" then
+        return nil
+    end
+    return "cache_ttl must be \"5m\" or \"1h\", got " .. tostring(ttl)
+end
+
 -- Approximate token count from text (rough estimation: ~4 chars per token)
 local function approximate_token_count(text)
     if not text or text == "" then return 0 end
@@ -172,6 +186,20 @@ function mapper.map_tokens(claude_usage)
     -- Contract-standard names
     tokens.cache_write_tokens = claude_usage.cache_creation_input_tokens or 0
     tokens.cache_read_tokens = claude_usage.cache_read_input_tokens or 0
+    local by_ttl: {[string]: number} = {}
+    local creation = claude_usage.cache_creation
+    if type(creation) == "table" then
+        for key, value in pairs(creation) do
+            local ttl = type(key) == "string" and key:match("^ephemeral_(.+)_input_tokens$") or nil
+            local amount = tonumber(value)
+            if ttl and amount and amount > 0 then
+                by_ttl[ttl] = amount
+            end
+        end
+    end
+    if next(by_ttl) ~= nil then
+        tokens.cache_write_by_ttl = by_ttl
+    end
 
     -- Preserve Claude-specific field names
     tokens.cache_creation_input_tokens = claude_usage.cache_creation_input_tokens or 0
@@ -358,13 +386,15 @@ local function without_blank_turns(messages)
     return kept
 end
 
-function mapper.map_messages(contract_messages)
+function mapper.map_messages(contract_messages, options)
     if not contract_messages or #contract_messages == 0 then
         return {
             messages = {},
             system = nil
         }
     end
+
+    local cache_ttl = options and options.cache_ttl
 
     contract_messages = prompt.without_blank_text(contract_messages)
     local tool_id = tool_ids.mapper(contract_messages, { pattern = tool_ids.NATIVE_PATTERN })
@@ -550,7 +580,7 @@ function mapper.map_messages(contract_messages)
     if #final_system_positions > 0 and #system_blocks > 0 then
         for _, pos in ipairs(final_system_positions) do
             if pos > 0 and pos <= #system_blocks then
-                system_blocks[pos].cache_control = { type = "ephemeral" }
+                system_blocks[pos].cache_control = cache_control(cache_ttl)
             end
         end
     end
@@ -560,7 +590,7 @@ function mapper.map_messages(contract_messages)
         for _, pos in ipairs(final_message_positions) do
             local msg: any = (claude_messages :: any)[pos.message]
             if msg and msg.content and msg.content[pos.block] then
-                msg.content[pos.block].cache_control = { type = "ephemeral" }
+                msg.content[pos.block].cache_control = cache_control(cache_ttl)
             end
         end
     end

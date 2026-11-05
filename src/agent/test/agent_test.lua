@@ -1451,6 +1451,45 @@ local function define_tests()
                 end
             end)
 
+            describe("Cache lifetime", function()
+                local function requested_options(agent_options, runtime_options)
+                    local seen = nil
+                    agent._llm = {
+                        generate = function(_, options)
+                            seen = options
+                            return { result = "ok", tokens = {}, finish_reason = "stop" }
+                        end
+                    }
+                    local test_agent = agent.new({
+                        id = "cache-lifetime-agent",
+                        name = "Cache Lifetime Agent",
+                        description = "Waits on long sub-tasks between steps",
+                        prompt = "You coordinate long sub-tasks.",
+                        agent_options = agent_options
+                    })
+                    local runtime = runtime_options or {}
+                    runtime.disable_memory_recall = true
+                    local _, err = test_agent:step(mock_prompt.new(), runtime)
+                    agent._llm = nil
+                    test.is_nil(err)
+                    return seen :: any
+                end
+
+                it("asks the model for the cache lifetime its agent options set", function()
+                    test.eq(requested_options({ prompt_cache = { ttl = "1h" } }).cache_ttl, "1h")
+                end)
+
+                it("lets the host set the cache lifetime for a step", function()
+                    test.eq(requested_options({ prompt_cache = { ttl = "1h" } }, { cache_ttl = "5m" }).cache_ttl, "5m")
+                    test.eq(requested_options(nil, { cache_ttl = "1h" }).cache_ttl, "1h")
+                end)
+
+                it("leaves the cache lifetime to the model route when nothing sets it", function()
+                    test.is_nil(requested_options(nil).cache_ttl)
+                    test.is_nil(requested_options({ prompt_cache = "1h" }).cache_ttl)
+                end)
+            end)
+
             describe("Stable prefix", function()
                 it("requires an llm package that provides positional notes", function()
                     if type(prompt.is_positional_note) ~= "function" then
