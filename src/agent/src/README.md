@@ -570,6 +570,11 @@ remain separate entries. Options for a behavior merge in this order: trait
 options, behavior options, attachment options, then phase options. Legacy
 lifecycle and tool-wrapper binding option precedence remains unchanged.
 
+`agent_options.thinking_effort` (0-100) overrides the definition's `thinking_effort`. A trait can
+set it in its own `agent_options`, so the effort follows the work the trait brings: a drafting trait
+may run at low effort on an agent whose default is medium. As with every agent option, the agent's
+own `agent_options` win over a trait's. A value outside 0-100, or not a number, is ignored.
+
 Checkpoint scheduling uses trait defaults, then explicit `agent_options.checkpoint`,
 then session/node checkpoint overrides. Maps merge recursively; lists replace
 (an empty list clears); `false`, zero, and empty strings are explicit overrides.
