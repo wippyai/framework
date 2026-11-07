@@ -2357,6 +2357,52 @@ local function define_tests()
                 agent._llm = nil
             end)
 
+            it("lets agent_options.thinking_effort override the spec's effort", function()
+                local captured_options = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+
+                -- a trait (merged into agent_options by the compiler) lowers the agent's medium effort
+                local lowered = agent.new({
+                    id = "drafter", name = "Drafter", model = "claude-sonnet", thinking_effort = 30,
+                    agent_options = { thinking_effort = 15 }, prompt = "Draft.", tools = {}
+                })
+                test.eq(lowered.thinking_effort, 15)
+                local builder = mock_prompt.new()
+                builder:add_user("Go")
+                lowered:step(builder)
+                test.eq((captured_options :: any).thinking_effort, 15)
+
+                -- 0 turns thinking effort off even when the spec sets one
+                local off = agent.new({
+                    id = "fast", name = "Fast", model = "claude-sonnet", thinking_effort = 30,
+                    agent_options = { thinking_effort = 0 }, prompt = "Fast.", tools = {}
+                })
+                test.eq(off.thinking_effort, 0)
+
+                -- out of range or not a number: the spec's effort stands
+                local bad = agent.new({
+                    id = "bad", name = "Bad", model = "claude-sonnet", thinking_effort = 30,
+                    agent_options = { thinking_effort = 150 }, prompt = "Bad.", tools = {}
+                })
+                test.eq(bad.thinking_effort, 30)
+                local plain = agent.new({
+                    id = "plain", name = "Plain", model = "claude-sonnet", thinking_effort = 30,
+                    agent_options = { thinking_effort = "low" }, prompt = "Plain.", tools = {}
+                })
+                test.eq(plain.thinking_effort, 30)
+
+                agent._llm = nil
+            end)
+
             it("should handle combined runtime options", function()
                 local test_agent = agent.new(basic_compiled_spec)
                 local prompt_builder = mock_prompt.new()

@@ -504,6 +504,19 @@ local function route_pin(current: any, metadata: any): any?
     }
 end
 
+-- The thinking effort a runner uses. `agent_options.thinking_effort` (0-100) wins over the spec's own
+-- `thinking_effort`, so a trait can set the effort for the work it brings (a drafting trait may run at
+-- low effort on an agent whose default is medium). The agent's own agent_options still win over a
+-- trait's, as for every agent option.
+local function effective_thinking_effort(compiled_spec)
+    local opts = compiled_spec.agent_options
+    local override = type(opts) == "table" and tonumber(opts.thinking_effort) or nil
+    if override and override >= 0 and override <= 100 then
+        return override
+    end
+    return compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort
+end
+
 function agent.new(compiled_spec: any): (any, string?)
     if not compiled_spec then
         return nil, "Compiled spec is required"
@@ -519,7 +532,7 @@ function agent.new(compiled_spec: any): (any, string?)
         -- temperature, top_p and top_k outright, and a value the author never
         -- asked for is not ours to invent.
         temperature = compiled_spec.temperature,
-        thinking_effort = compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort,
+        thinking_effort = effective_thinking_effort(compiled_spec),
         tools = compiled_spec.tools or {},
         memory = compiled_spec.memory or {},
         memory_contract = compiled_spec.memory_contract,
