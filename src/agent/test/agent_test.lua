@@ -2357,6 +2357,40 @@ local function define_tests()
                 agent._llm = nil
             end)
 
+            it("should pass cache_ttl to the LLM only when configured", function()
+                local captured_options = nil
+                agent._llm = {
+                    generate = function(messages, options)
+                        captured_options = options
+                        return {
+                            result = "ok",
+                            tokens = { prompt_tokens = 10, completion_tokens = 5, total_tokens = 15 },
+                            finish_reason = "stop"
+                        }
+                    end
+                }
+
+                local long_agent = agent.new({
+                    id = "long-agent", name = "Long Agent", model = "claude-sonnet",
+                    cache_ttl = "1h", prompt = "I run long steps.", tools = {}
+                })
+                local builder = mock_prompt.new()
+                builder:add_user("Go")
+                long_agent:step(builder)
+                test.eq((captured_options :: any).cache_ttl, "1h")
+
+                local plain_agent = agent.new({
+                    id = "plain-agent", name = "Plain Agent", model = "claude-sonnet",
+                    prompt = "Plain.", tools = {}
+                })
+                local plain_builder = mock_prompt.new()
+                plain_builder:add_user("Go")
+                plain_agent:step(plain_builder)
+                test.is_nil((captured_options :: any).cache_ttl)
+
+                agent._llm = nil
+            end)
+
             it("should handle combined runtime options", function()
                 local test_agent = agent.new(basic_compiled_spec)
                 local prompt_builder = mock_prompt.new()

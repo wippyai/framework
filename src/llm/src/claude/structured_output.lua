@@ -173,7 +173,11 @@ function structured_output_handler.handler(contract_args)
         end
     end
 
-    local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages)
+    local cache_ttl = (contract_args.options or {}).cache_ttl
+    if not structured_output_handler._mapper.valid_cache_ttl(cache_ttl) then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message("cache_ttl must be \"5m\" or \"1h\""):build()
+    end
+    local mapped_messages = structured_output_handler._mapper.map_messages(contract_args.messages, { cache_ttl = cache_ttl })
     if #mapped_messages.messages == 0 then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
     end

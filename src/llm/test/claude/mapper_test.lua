@@ -641,6 +641,32 @@ local function define_tests()
                 test.eq(first_system.cache_control.type, "ephemeral")
             end)
 
+            it("applies a 1h cache ttl to every marker when asked", function()
+                local rows = {
+                    { role = "system", content = { { type = "text", text = "Base" } } },
+                    { role = "cache_marker" },
+                    { role = "user", content = { { type = "text", text = "Question" } } },
+                    { role = "cache_marker" },
+                }
+                local long = mapper.map_messages(rows, { cache_ttl = "1h" })
+                test.eq(long.system[1].cache_control.type, "ephemeral")
+                test.eq(long.system[1].cache_control.ttl, "1h")
+                test.eq(long.messages[1].content[1].cache_control.ttl, "1h")
+
+                local default = mapper.map_messages(rows)
+                test.eq(default.system[1].cache_control.type, "ephemeral")
+                test.is_nil(default.system[1].cache_control.ttl)
+                test.is_nil(default.messages[1].content[1].cache_control.ttl)
+            end)
+
+            it("accepts only the cache ttls Claude supports", function()
+                test.is_true(mapper.valid_cache_ttl(nil))
+                test.is_true(mapper.valid_cache_ttl("5m"))
+                test.is_true(mapper.valid_cache_ttl("1h"))
+                test.is_false(mapper.valid_cache_ttl("2h"))
+                test.is_false(mapper.valid_cache_ttl(3600))
+            end)
+
             it("marks copies of caller system, user and assistant text blocks", function()
                 local rows = {
                     { role = "system", content = { { type = "text", text = "Base" } } },

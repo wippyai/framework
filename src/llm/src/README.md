@@ -36,6 +36,7 @@ local result = llm.generate(builder, {
     temperature = 0.7,
     max_tokens = 1000,
     thinking_effort = 50,   -- 0-100, for thinking-capable models
+    cache_ttl = "1h",       -- Claude prompt-cache lifetime: "5m" (default) or "1h"
     top_p = 0.9,
     frequency_penalty = 0.5,
     presence_penalty = 0.5,
