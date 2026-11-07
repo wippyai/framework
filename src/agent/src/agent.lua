@@ -25,6 +25,7 @@ type CompiledAgentSpec = {
     max_tokens: number?,
     temperature: number?,
     thinking_effort: number?,
+    cache_ttl: string?,
     prompt: string,
     tools: {[string]: UnifiedTool},
     memory: {string},
@@ -51,6 +52,7 @@ type AgentRunner = {
     max_tokens: number,
     temperature: number?,
     thinking_effort: number,
+    cache_ttl: string?,
     tools: {[string]: UnifiedTool},
     memory: {string},
     memory_contract: table?,
@@ -520,6 +522,7 @@ function agent.new(compiled_spec: any): (any, string?)
         -- asked for is not ours to invent.
         temperature = compiled_spec.temperature,
         thinking_effort = compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort,
+        cache_ttl = compiled_spec.cache_ttl,
         tools = compiled_spec.tools or {},
         memory = compiled_spec.memory or {},
         memory_contract = compiled_spec.memory_contract,
@@ -592,6 +595,11 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
     if self.thinking_effort and self.thinking_effort > 0 then
         options.thinking_effort = self.thinking_effort
+    end
+
+    -- Prompt-cache lifetime for drivers that support it (Claude: "5m" default, "1h").
+    if self.cache_ttl then
+        options.cache_ttl = self.cache_ttl
     end
 
     if runtime_options.tool_call ~= nil then

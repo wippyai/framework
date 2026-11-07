@@ -108,6 +108,7 @@ entries:
     max_tokens: 4096
     temperature: 0.7
     thinking_effort: 50
+    cache_ttl: 1h        # optional: Claude prompt-cache lifetime, "5m" (default) or "1h"
     tools:
       - my_ns:tool_one
       - id: my_ns:tool_two

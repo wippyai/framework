@@ -358,7 +358,25 @@ local function without_blank_turns(messages)
     return kept
 end
 
-function mapper.map_messages(contract_messages)
+-- The cache_control a marker gets. Claude caches a prefix for 5 minutes by
+-- default; ttl "1h" keeps it for an hour (writes cost more, reads the same).
+-- An agent step that thinks or runs a tool for longer than 5 minutes otherwise
+-- pays the whole prefix again on its next request.
+local CACHE_TTLS = { ["5m"] = true, ["1h"] = true }
+
+function mapper.cache_control(ttl: string?): table
+    if ttl == "1h" then
+        return { type = "ephemeral", ttl = "1h" }
+    end
+    return { type = "ephemeral" }
+end
+
+function mapper.valid_cache_ttl(ttl: any): boolean
+    return ttl == nil or CACHE_TTLS[ttl] == true
+end
+
+function mapper.map_messages(contract_messages, map_opts: table?)
+    local cache_ttl = map_opts and map_opts.cache_ttl or nil
     if not contract_messages or #contract_messages == 0 then
         return {
             messages = {},
@@ -550,7 +568,7 @@ function mapper.map_messages(contract_messages)
     if #final_system_positions > 0 and #system_blocks > 0 then
         for _, pos in ipairs(final_system_positions) do
             if pos > 0 and pos <= #system_blocks then
-                system_blocks[pos].cache_control = { type = "ephemeral" }
+                system_blocks[pos].cache_control = mapper.cache_control(cache_ttl)
             end
         end
     end
@@ -560,7 +578,7 @@ function mapper.map_messages(contract_messages)
         for _, pos in ipairs(final_message_positions) do
             local msg: any = (claude_messages :: any)[pos.message]
             if msg and msg.content and msg.content[pos.block] then
-                msg.content[pos.block].cache_control = { type = "ephemeral" }
+                msg.content[pos.block].cache_control = mapper.cache_control(cache_ttl)
             end
         end
     end
