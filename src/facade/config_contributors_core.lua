@@ -207,7 +207,16 @@ local function compose_requirements(overrides: {[string]: any}?): (table, table)
     return composed, diagnostics
 end
 
-    return { compose_requirements = compose_requirements }
+-- Requirement overrides for the full configuration: the application
+-- resolver's values, then valid module contributions. `warn` receives each
+-- diagnostic about a skipped contribution.
+local function resolve_requirements(warn: any): table
+    local composed, diagnostics = compose_requirements(theming.resolve_overrides())
+    for _, diagnostic in ipairs(diagnostics) do warn(diagnostic) end
+    return composed
+end
+
+    return { compose_requirements = compose_requirements, resolve_requirements = resolve_requirements }
 end
 
 return { new = new }

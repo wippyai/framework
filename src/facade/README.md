@@ -147,6 +147,8 @@ The function returns `{ overrides = {...}, diagnostics = {...} }`. It may write 
 
 The Facade limits discovery to 32 functions, checks no more than 32 input and output names, and caps serialized inputs and outputs at 256 KiB. A contributor should read through its own fixed actor and return only the configuration values it owns. The Facade grants calls only to entries ending in `:facade_config_contribute`.
 
+Other modules that need the Web Host URL call the `wippy.facade:host_url` function instead of reading the `fe_facade_url` requirement. It takes no arguments and returns the same string as `facade_url` in the `/facade/config` response: the resolver's value, then a module contribution, then the requirement default. The Views fragment gateway uses it, so fragment pages load the same Host as the shell, for example the app-served Host from `wippy/cdn-web-host`. The caller needs a policy that allows `funcs.call` on `wippy.facade:host_url`.
+
 ### Auth
 
 | Requirement | Default | Description |

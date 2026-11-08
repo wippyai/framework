@@ -78,6 +78,28 @@ local function define_tests()
             test.eq(scope:evaluate(actor, "registry.apply", "app:tenant_resolver"), "undefined")
         end)
 
+        test.it("gives host_url the config endpoint's resolver and contributor permissions, without file access", function()
+            local scope = handler_scope("host_url")
+            local actor = security.new_actor("wippy.facade:test", {})
+            for _, policy_id in ipairs({
+                "wippy.facade:config_read_runtime",
+                "wippy.facade:resolver_contract_read_runtime",
+                "wippy.facade:resolver_implementation_open_runtime",
+                "wippy.facade:resolver_method_call_runtime",
+                "wippy.facade:config_contributor_discovery_runtime",
+                "wippy.facade:config_contributor_read_runtime",
+                "wippy.facade:config_contributor_call_runtime",
+            }) do
+                test.eq(scope:contains(policy_id), true)
+            end
+            test.eq(scope:contains("wippy.facade:content_fs_runtime"), false)
+            test.eq(scope:evaluate(actor, "registry.get", "wippy.facade:fe_facade_url"), "allow")
+            test.eq(scope:evaluate(actor, "contract.call", "resolve"), "allow")
+            test.eq(scope:evaluate(actor, "funcs.call", "app.branding:facade_config_contribute"), "allow")
+            test.eq(scope:evaluate(actor, "funcs.call", "app:writer"), "undefined")
+            test.eq(scope:evaluate(actor, "fs.get", "app:app_fs"), "undefined")
+        end)
+
         test.it("calls only module-owned configuration contributors", function()
             local policy_id = "wippy.facade:config_contributor_call_runtime"
             test.eq(decision(policy_id, "funcs.call", "app.adapter:facade_config_contribute"), "allow")

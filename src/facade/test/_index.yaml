@@ -66,6 +66,54 @@ entries:
       - json
 
 
+  # A real configuration contributor for host_url_test. It contributes
+  # fe_facade_url only while app:contributed_host_url is a non-empty URL.
+  - name: facade_config_contribute
+    kind: function.lua
+    meta:
+      type: wippy.facade.config_contributor
+      config_inputs:
+        - fe_facade_url
+      config_outputs:
+        - fe_facade_url
+      comment: Test contributor for fe_facade_url
+    source: file://contributor_fixture.lua
+    method: contribute
+    modules:
+      - registry
+    security:
+      actor:
+        id: app:facade_config_contribute
+      policies:
+        - app:contributor_fixture_read
+
+  - name: contributor_fixture_read
+    kind: security.policy
+    meta:
+      comment: The test contributor reads only its test URL entry
+    policy:
+      resources:
+        - app:contributed_host_url
+      actions:
+        - registry.get
+      effect: allow
+
+  - name: host_url_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: facade
+      comment: wippy.facade:host_url returns the URL the config endpoint serves
+    source: file://host_url_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+    modules:
+      - funcs
+      - http_client
+      - json
+      - registry
+
   - name: config_dependency_test
     kind: function.lua
     meta:

@@ -8,34 +8,44 @@
 local http = require("http")
 local http_client = require("http_client")
 local registry = require("registry")
+local funcs = require("funcs")
 local json = require("json")
 local time = require("time")
 local logger = require("logger")
 local page_registry = require("page_registry")
 local bundled_meta = require("bundled_meta")
+local facade_host = require("facade_host")
 local fragment_service = require("fragment_service")
 
 local log = logger:named("wippy.views.fragment_gateway")
+
+local function warn(message, fields)
+    log:warn(message, fields)
+end
+
+local host_deps = {
+    registry_get = registry.get,
+    call = funcs.call,
+    log = warn,
+}
 
 local deps = {
     get_page = page_registry.get,
     can_access = page_registry.can_access,
     resolve_base_url = page_registry.resolve_base_url,
     page_meta = bundled_meta.fetch_for_page,
-    -- fe_facade_url (Web Host bundle URL), read the way the facade's config
-    -- handler reads it.
+    -- fe_facade_url (Web Host bundle URL), resolved the way the facade's
+    -- config endpoint resolves it, so fragment pages load the same Host as
+    -- the shell.
     facade_url = function()
-        local entry = registry.get("wippy.facade:fe_facade_url")
-        return entry and entry.data and entry.data.default or nil
+        return facade_host.url(host_deps)
     end,
     http_get = http_client.get,
     decode_json = json.decode,
     now = function()
         return time.now():unix()
     end,
-    log = function(message, fields)
-        log:warn(message, fields)
-    end,
+    log = warn,
 }
 
 local function handler()

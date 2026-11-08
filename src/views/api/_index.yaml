@@ -241,6 +241,13 @@ entries:
         fragment_bootstrap: wippy.views.api:fragment_bootstrap
         fragment_html: wippy.views.api:fragment_html
 
+    - name: facade_host
+      kind: library.lua
+      meta:
+        comment: Web Host URL for fragment pages, from wippy.facade:host_url or the static fe_facade_url default
+        description: Resolves the Web Host URL that the facade serves, with a fallback for an older facade
+      source: file://facade_host.lua
+
     - name: fragment_gateway
       kind: function.lua
       meta:
@@ -250,12 +257,14 @@ entries:
       imports:
         page_registry: wippy.views:page_registry
         bundled_meta: wippy.views:bundled_meta
+        facade_host: wippy.views.api:facade_host
         fragment_service: wippy.views.api:fragment_service
       method: handler
       modules:
         - http
         - http_client
         - registry
+        - funcs
         - json
         - time
         - logger
@@ -274,6 +283,8 @@ entries:
           # bundled_meta (the HTML entry of a page without a YAML entry_point)
           # records its once-only warning in a memory store.
           - wippy.views:public_metadata_store_runtime
+          # facade_host calls wippy.facade:host_url for the Web Host URL.
+          - wippy.views:facade_host_url_call_runtime
       pool:
         size: 4
         workers: 4

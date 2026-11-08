@@ -340,6 +340,16 @@ entries:
         actions:
           - fs.get
         effect: allow
+    - name: facade_host_url_call_runtime
+      kind: security.policy
+      meta:
+        comment: The fragment gateway may call only wippy.facade:host_url, which returns the Web Host URL that the facade serves.
+      policy:
+        resources:
+          - wippy.facade:host_url
+        actions:
+          - funcs.call
+        effect: allow
     - name: public_metadata_reader_runtime
       kind: security.policy
       meta:
