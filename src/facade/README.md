@@ -2,7 +2,7 @@
 
 Portable iframe facade for the Wippy frontend. Serves a thin HTML shell that loads the Wippy frontend bundle from a CDN via iframe, with all configuration driven through `ns.requirement` entries.
 
-Facade 0.6.50 selects Web Host 1.0.68 by default. Its public npm packages are 0.0.68. Facade accepts generic configuration contributors without depending on the modules that provide them, and its config and CSS variable handlers can call an application-bound `wippy.facade:resolver`. The npm engine change and Views fragment fix remain outside this release.
+Facade 0.6.51 selects Web Host 1.0.68 by default. Its public npm packages are 0.0.68. Facade accepts generic configuration contributors without depending on the modules that provide them, and its config and CSS variable handlers can call an application-bound `wippy.facade:resolver`. It adds `wippy.facade:host_url`, which Views 0.5.14 and later use, so fragment pages load the same Web Host as the shell. The npm engine change remains outside this release.
 
 ## How it works
 
