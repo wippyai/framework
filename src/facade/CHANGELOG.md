@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.50](https://github.com/wippyai/framework/compare/facade-v0.6.49...facade-v0.6.50) (2026-11-08)
+
+- Target Web Host 1.0.68. The vendored `loading.js`, `import-map-bootstrap.js` and their source maps are unchanged from Web Host 1.0.67.
+
 ## [0.6.49](https://github.com/wippyai/framework/compare/facade-v0.6.48...facade-v0.6.49) (2026-10-26)
 
 
