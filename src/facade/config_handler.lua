@@ -65,16 +65,10 @@ local function handler()
     -- Optional view-config resolver (wippy.facade:resolver): when an application
     -- binds one, its overrides replace matching requirement values below; with no
     -- binding this is {} and every read falls back to the static ns.requirement.
-    local overrides = theming.resolve_overrides()
-    -- Contributions apply only to the full config response. The CSS variables
-    -- endpoint continues to use the application resolver directly.
-    local contributor_diagnostics
-    overrides, contributor_diagnostics = config_contributors.compose_requirements(overrides)
-    for _, diagnostic in ipairs(contributor_diagnostics) do
-        require("logger"):named("facade.config_contributors"):warn("configuration contribution was skipped", {
-            diagnostic = diagnostic,
-        })
-    end
+    -- Module contributions apply on top of it. They apply only to the full
+    -- config response and to wippy.facade:host_url; the CSS variables endpoint
+    -- continues to use the application resolver directly.
+    local overrides = config_contributors.resolve_requirements()
 
     local function get_req(name: string): string
         return theming.requirement(name, overrides)

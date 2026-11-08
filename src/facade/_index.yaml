@@ -640,12 +640,35 @@ entries:
       - json
       - registry
       - funcs
+      - logger
 
   - name: config_contributors_core
     kind: library.lua
     meta:
       comment: Validates and composes configuration contributor inputs and results
     source: file://config_contributors_core.lua
+
+  # Resolved Web Host URL for other modules (the views fragment gateway)
+  - name: host_url
+    kind: function.lua
+    meta:
+      comment: Returns the Web Host URL that the config endpoint serves, after the resolver and module contributions
+    source: file://host_url.lua
+    method: resolve
+    imports:
+      theming_helpers: wippy.facade:theming_helpers
+      config_contributors: wippy.facade:config_contributors
+    security:
+      actor:
+        id: wippy.facade:host_url
+      policies:
+        - wippy.facade:config_read_runtime
+        - wippy.facade:resolver_contract_read_runtime
+        - wippy.facade:resolver_implementation_open_runtime
+        - wippy.facade:resolver_method_call_runtime
+        - wippy.facade:config_contributor_discovery_runtime
+        - wippy.facade:config_contributor_read_runtime
+        - wippy.facade:config_contributor_call_runtime
 
   - name: config_endpoint
     kind: http.endpoint

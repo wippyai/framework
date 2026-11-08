@@ -368,6 +368,22 @@ entries:
     modules:
       - fs
 
+  # app:facade_host_test
+  - name: facade_host_test
+    kind: function.lua
+    meta:
+      type: test
+      suite: views
+      comment: Fragment gateway Host URL lookup (wippy.facade:host_url with a static fallback) and its call permission
+    source: file://facade_host_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      facade_host: wippy.views.api:facade_host
+    modules:
+      - registry
+      - security
+
   # app:public_security_test
   - name: public_security_test
     kind: function.lua
