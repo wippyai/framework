@@ -100,7 +100,15 @@ function generate_handler.handler(contract_args)
         name_to_id_map = {}
     }
 
-    local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages)
+    local cache_ttl = (contract_args.options or {}).cache_ttl
+    local cache_ttl_err = mapper.cache_ttl_error(cache_ttl)
+    if cache_ttl_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(cache_ttl_err):build()
+    end
+
+    local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages, {
+        cache_ttl = cache_ttl
+    })
     if #mapped_messages.messages == 0 then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
     end

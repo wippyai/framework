@@ -80,6 +80,7 @@ local function define_tests()
 
             -- Only delete our specific test records by using the collected usage_ids
             for _, usage_id in ipairs(created_records) do
+                db:execute("DELETE FROM token_usage_cache_writes WHERE usage_id = $1", {usage_id})
                 db:execute("DELETE FROM token_usage WHERE usage_id = $1", {usage_id})
             end
 
@@ -202,6 +203,177 @@ local function define_tests()
                 end
             end
             test.is_true(found_test_users >= 2)
+        end)
+
+        local function stored_cache_writes(usage_id)
+            local entry, _ = registry.get("wippy.usage:target_db")
+            local db, db_err = sql.get(tostring(entry.data.default))
+            if db_err then error(db_err) end
+            local rows, query_err = db:query(
+                "SELECT ttl, tokens FROM token_usage_cache_writes WHERE usage_id = $1 ORDER BY ttl",
+                { usage_id }
+            )
+            db:release()
+            if query_err then error(query_err) end
+            return rows
+        end
+
+        it("stores the cache write breakdown by lifetime in its own table", function()
+            local record, err = token_usage_repo.create(test_data.user_id, test_data.model_id, 10, 5, {
+                cache_write_tokens = 300,
+                cache_write_by_ttl = { ["5m"] = 100, ["1h"] = 200 }
+            })
+
+            test.is_nil(err)
+            table.insert(created_records, record.usage_id)
+            test.eq(record.cache_write_by_ttl["1h"], 200)
+            local rows = stored_cache_writes(record.usage_id)
+            test.eq(#rows, 2)
+            test.eq(rows[1].ttl, "1h")
+            test.eq(rows[1].tokens, 200)
+            test.eq(rows[2].ttl, "5m")
+            test.eq(rows[2].tokens, 100)
+        end)
+
+        it("stores no breakdown rows without positive writes by lifetime", function()
+            for _, case in ipairs({ { breakdown = nil }, { breakdown = { ["5m"] = 0 } } }) do
+                local record, err = token_usage_repo.create(test_data.user_id, test_data.model_id, 10, 5, {
+                    cache_write_tokens = 40,
+                    cache_write_by_ttl = case.breakdown
+                })
+
+                test.is_nil(err)
+                table.insert(created_records, record.usage_id)
+                test.eq(#stored_cache_writes(record.usage_id), 0)
+            end
+        end)
+
+        it("sums the cache write breakdown by lifetime in every usage report", function()
+            local model_id = "test-model-by-ttl-" .. uuid.v7()
+            local user_id = "test-user-by-ttl-" .. uuid.v7()
+            for _, breakdown in ipairs({ { ["1h"] = 200, ["5m"] = 10 }, { ["1h"] = 50 } }) do
+                local record, err = token_usage_repo.create(user_id, model_id, 1, 1, {
+                    cache_write_tokens = 300,
+                    cache_write_by_ttl = breakdown,
+                    timestamp = test_data.base_time - 600
+                })
+                test.is_nil(err)
+                table.insert(created_records, record.usage_id)
+            end
+            local start_time = test_data.base_time - 7200
+            local end_time = test_data.base_time + 3600
+
+            local summary, summary_err = token_usage_repo.get_summary(start_time, end_time)
+            test.is_nil(summary_err)
+            local summary_breakdown = summary.cache_write_by_ttl or {}
+            test.is_true((summary_breakdown["1h"] or 0) >= 250)
+            test.is_true((summary_breakdown["5m"] or 0) >= 10)
+
+            local by_model, model_err = token_usage_repo.get_usage_by_model(start_time, end_time)
+            test.is_nil(model_err)
+            local model_breakdown = {}
+            for _, row in ipairs(by_model) do
+                if row.model_id == model_id then model_breakdown = row.cache_write_by_ttl end
+            end
+            test.eq(model_breakdown["1h"], 250)
+            test.eq(model_breakdown["5m"], 10)
+
+            local by_user, user_err = token_usage_repo.get_usage_by_user(start_time, end_time)
+            test.is_nil(user_err)
+            local user_breakdown = {}
+            for _, row in ipairs(by_user) do
+                if row.user_id == user_id then user_breakdown = row.cache_write_by_ttl end
+            end
+            test.eq(user_breakdown["1h"], 250)
+            test.eq(user_breakdown["5m"], 10)
+
+            local by_time, time_err = token_usage_repo.get_usage_by_time(start_time, end_time, token_usage_repo.INTERVAL.DAY)
+            test.is_nil(time_err)
+            local period_total = 0
+            for _, period in ipairs(by_time) do
+                period_total = period_total + ((period.cache_write_by_ttl or {})["1h"] or 0)
+            end
+            test.is_true(period_total >= 250)
+        end)
+
+        it("leaves the cache write breakdown out of reports without writes by lifetime", function()
+            local model_id = "test-model-no-ttl-" .. uuid.v7()
+            local user_id = "test-user-no-ttl-" .. uuid.v7()
+            local record, err = token_usage_repo.create(user_id, model_id, 1, 1, {
+                cache_write_tokens = 40,
+                timestamp = test_data.base_time - 600
+            })
+            test.is_nil(err)
+            table.insert(created_records, record.usage_id)
+            test.is_nil(record.cache_write_by_ttl)
+            local start_time = test_data.base_time - 7200
+            local end_time = test_data.base_time + 3600
+
+            local by_model, model_err = token_usage_repo.get_usage_by_model(start_time, end_time)
+            test.is_nil(model_err)
+            local model_rows = 0
+            for _, row in ipairs(by_model) do
+                if row.model_id == model_id then
+                    model_rows = model_rows + 1
+                    test.is_nil(row.cache_write_by_ttl)
+                end
+            end
+            test.eq(model_rows, 1)
+
+            local by_user, user_err = token_usage_repo.get_usage_by_user(start_time, end_time)
+            test.is_nil(user_err)
+            local user_rows = 0
+            for _, row in ipairs(by_user) do
+                if row.user_id == user_id then
+                    user_rows = user_rows + 1
+                    test.is_nil(row.cache_write_by_ttl)
+                end
+            end
+            test.eq(user_rows, 1)
+
+            local quiet_start = 978307200
+            local quiet_end = quiet_start + 2 * 86400
+            local summary, summary_err = token_usage_repo.get_summary(quiet_start, quiet_end)
+            test.is_nil(summary_err)
+            test.is_nil(summary.cache_write_by_ttl)
+
+            local by_time, time_err = token_usage_repo.get_usage_by_time(quiet_start, quiet_end, token_usage_repo.INTERVAL.DAY)
+            test.is_nil(time_err)
+            test.is_true(#by_time >= 1)
+            for _, period in ipairs(by_time) do
+                test.is_nil(period.cache_write_by_ttl)
+            end
+        end)
+
+        it("gives every time bucket its own cache write breakdown", function()
+            local first_bucket = 946684800
+            local month = 2592000
+            local writes = {
+                { at = first_bucket + 3600, breakdown = { ["1h"] = 200 } },
+                { at = first_bucket + month + 3600, breakdown = { ["1h"] = 50, ["5m"] = 10 } },
+            }
+            for _, write in ipairs(writes) do
+                local record, err = token_usage_repo.create(test_data.user_id, test_data.model_id, 1, 1, {
+                    cache_write_tokens = 300,
+                    cache_write_by_ttl = write.breakdown,
+                    timestamp = write.at
+                })
+                test.is_nil(err)
+                table.insert(created_records, record.usage_id)
+            end
+
+            local by_time, err = token_usage_repo.get_usage_by_time(first_bucket, first_bucket + month + 86400,
+                token_usage_repo.INTERVAL.MONTH)
+
+            test.is_nil(err)
+            test.eq(#by_time, 2)
+            test.eq(by_time[1].cache_write_tokens, 300)
+            test.eq(by_time[1].cache_write_by_ttl["1h"], 200)
+            test.is_nil(by_time[1].cache_write_by_ttl["5m"])
+            test.eq(by_time[2].cache_write_tokens, 300)
+            test.eq(by_time[2].cache_write_by_ttl["1h"], 50)
+            test.eq(by_time[2].cache_write_by_ttl["5m"], 10)
+            test.is_nil(by_time[1].bucket_key)
         end)
 
         it("should handle validation errors", function()

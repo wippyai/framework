@@ -608,6 +608,15 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.route = runtime_options.route
     end
 
+    local cache_ttl = runtime_options.cache_ttl
+    local prompt_cache = self.agent_options and self.agent_options.prompt_cache
+    if cache_ttl == nil and type(prompt_cache) == "table" then
+        cache_ttl = prompt_cache.ttl
+    end
+    if cache_ttl ~= nil then
+        options.cache_ttl = cache_ttl
+    end
+
     local system_message = {
         role = prompt.ROLE.SYSTEM,
         content = { prompt.text(complete_system_prompt) }

@@ -460,6 +460,30 @@ local function define_tests()
 
                 test.is_nil(mapper.map_tokens(nil))
             end)
+
+            it("breaks cache writes down by lifetime", function()
+                local result = mapper.map_tokens({
+                    input_tokens = 10,
+                    output_tokens = 5,
+                    cache_creation_input_tokens = 307,
+                    cache_read_input_tokens = 40,
+                    cache_creation = {
+                        ephemeral_5m_input_tokens = 100,
+                        ephemeral_1h_input_tokens = 200,
+                        ephemeral_24h_input_tokens = 7
+                    }
+                })
+
+                test.eq(result.cache_write_tokens, 307)
+                test.is_true(same(result.cache_write_by_ttl, { ["5m"] = 100, ["1h"] = 200, ["24h"] = 7 }))
+            end)
+
+            it("reports no cache write breakdown when nothing was written by lifetime", function()
+                test.is_nil(mapper.map_tokens({ cache_creation_input_tokens = 25 }).cache_write_by_ttl)
+                test.is_nil(mapper.map_tokens({
+                    cache_creation = { ephemeral_5m_input_tokens = 0, ephemeral_1h_input_tokens = 0 }
+                }).cache_write_by_ttl)
+            end)
         end)
 
         describe("Finish Reason Mapping", function()
@@ -726,6 +750,52 @@ local function define_tests()
                 end
                 test.eq(count, 4)
                 test.not_nil((result.messages[1].content[1] :: any).cache_control)
+            end)
+
+            local function cache_controls(mapped)
+                local controls = {}
+                for _, block in ipairs(mapped.system or {}) do
+                    if block.cache_control then controls[#controls + 1] = block.cache_control end
+                end
+                for _, message in ipairs(mapped.messages) do
+                    for _, block in ipairs(message.content) do
+                        if block.cache_control then controls[#controls + 1] = block.cache_control end
+                    end
+                end
+                return controls
+            end
+
+            local cached_history = {
+                { role = "system", content = "Base instructions" },
+                { role = "cache_marker" },
+                { role = "system", content = "Session context" },
+                { role = "cache_marker", marker_id = "context" },
+                { role = "user", content = {{ type = "text", text = "Weather?" }} },
+                { role = "function_call", function_call = {
+                    id = "call-1", name = "weather", arguments = { city = "NYC" }
+                } },
+                { role = "function_result", function_call_id = "call-1", content = "Sunny" },
+                { role = "cache_marker", marker_id = "history_tail" }
+            }
+
+            it("gives every breakpoint of the request the one-hour lifetime", function()
+                local controls = cache_controls(mapper.map_messages(cached_history, { cache_ttl = "1h" }))
+
+                test.eq(#controls, 3)
+                for _, control in ipairs(controls) do
+                    test.is_true(same(control, { type = "ephemeral", ttl = "1h" }))
+                end
+            end)
+
+            it("sends no ttl for the default five-minute lifetime", function()
+                for _, options in ipairs({ {}, { cache_ttl = "5m" } }) do
+                    local controls = cache_controls(mapper.map_messages(cached_history, options))
+
+                    test.eq(#controls, 3)
+                    for _, control in ipairs(controls) do
+                        test.is_true(same(control, { type = "ephemeral" }))
+                    end
+                end
             end)
 
             it("should not place cache_control on a thinking-only tail", function()

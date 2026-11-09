@@ -17,4 +17,20 @@ entries:
     imports:
       migration: wippy.migration:migration
     method: migrate
+
+  # wippy.usage.migrations:02_create_token_usage_cache_writes
+  - name: 02_create_token_usage_cache_writes
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - usage
+        - tokens
+        - database
+      description: Create token_usage_cache_writes, the cache writes of each usage record by cache lifetime
+      timestamp: "2026-11-05T00:00:00Z"
+    source: file://02_create_token_usage_cache_writes.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
     

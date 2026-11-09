@@ -1772,6 +1772,61 @@ local function define_tests()
                 test.is_nil(mock_usage_tracker.last_options.context_id)
             end)
 
+            it("forwards the cache write breakdown by lifetime to the tracker", function()
+                local seen_write
+                mock_usage_tracker.track_usage = function(self, _model, _input, _completion, _thinking, _read, write, options)
+                    seen_write = write
+                    self.last_options = options
+                    return "usage_by_ttl"
+                end
+
+                local _, err = llm.track_usage({ tokens = {
+                    cache_creation_input_tokens = 300,
+                    cache_write_by_ttl = { ["5m"] = 100, ["1h"] = 200 }
+                } }, "claude-sonnet", {})
+
+                test.is_nil(err)
+                test.eq(seen_write, 300)
+                test.eq(mock_usage_tracker.last_options.cache_write_by_ttl["5m"], 100)
+                test.eq(mock_usage_tracker.last_options.cache_write_by_ttl["1h"], 200)
+            end)
+
+            it("sends no cache write breakdown when the provider reports none", function()
+                local _, err = llm.track_usage({ tokens = { cache_creation_input_tokens = 300 } }, "gpt-4o", {})
+                test.is_nil(err)
+                test.is_nil(mock_usage_tracker.last_options.cache_write_by_ttl)
+            end)
+
+            it("hands the generated cache write breakdown to the tracker", function()
+                local seen_write
+                mock_usage_tracker.track_usage = function(self, _model, _input, _completion, _thinking, _read, write, options)
+                    seen_write = write
+                    self.last_options = options
+                    return "usage_generated_by_ttl"
+                end
+                local open = mock_providers.open
+                mock_providers.open = function(provider_id, options)
+                    local instance = open(provider_id, options)
+                    local generate = instance.generate
+                    instance.generate = function(self, args)
+                        local response = generate(self, args)
+                        response.tokens.cache_write_tokens = 300
+                        response.tokens.cache_write_by_ttl = { ["1h"] = 200, ["5m"] = 100 }
+                        return response
+                    end
+                    return instance
+                end
+
+                local result, err = llm.generate("Hello", { model = "gpt-4o" })
+                mock_providers.open = open
+
+                test.is_nil(err)
+                test.eq(result.usage_record.usage_id, "usage_generated_by_ttl")
+                test.eq(seen_write, 300)
+                test.eq(mock_usage_tracker.last_options.cache_write_by_ttl["1h"], 200)
+                test.eq(mock_usage_tracker.last_options.cache_write_by_ttl["5m"], 100)
+            end)
+
             it("correlates generated usage with the supplied context", function()
                 local result, err = llm.generate("Hello", { model = "gpt-4o", context_id = "session-context" })
                 test.is_nil(err)
@@ -1795,6 +1850,43 @@ local function define_tests()
                 test.is_nil(err)
                 test.not_nil(usage_id)
                 test.contains(usage_id, "usage_")
+            end)
+        end)
+
+        describe("Prompt cache lifetime", function()
+            it("names a cache lifetime that is not a string when the model is a class", function()
+                local schema = { type = "object", properties = { name = { type = "string" } } }
+                local calls = {
+                    function(options) return llm.generate("Hello", options) end,
+                    function(options) return llm.structured_output(schema, "Hello", options) end,
+                }
+                for _, call in ipairs(calls) do
+                    local result, err = call({ model = "class:coder", cache_ttl = 60 })
+                    test.is_nil(result)
+                    test.eq(err:kind(), errors.INVALID)
+                    test.contains(err:message(), "cache_ttl")
+                end
+            end)
+
+            it("hands any lifetime string to the driver to judge", function()
+                local seen = {}
+                local open = mock_providers.open
+                mock_providers.open = function(provider_id, options)
+                    local instance = open(provider_id, options)
+                    local generate = instance.generate
+                    instance.generate = function(self, args)
+                        seen.cache_ttl = args.options and args.options.cache_ttl
+                        return generate(self, args)
+                    end
+                    return instance
+                end
+
+                local result, err = llm.generate("Hello", { model = "class:coder", cache_ttl = "12h" })
+                mock_providers.open = open
+
+                test.is_nil(err)
+                test.not_nil(result)
+                test.eq(seen.cache_ttl, "12h")
             end)
         end)
 

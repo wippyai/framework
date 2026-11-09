@@ -15,6 +15,17 @@ entries:
       comment: In-memory database for usage tests
     file: ":memory:"
 
+  # Used only by the test-postgres target against a disposable test database.
+  - name: postgres_db
+    kind: db.sql.postgres
+    host: localhost
+    port: 5433
+    database: up_migration_concurrency
+    username: kickside
+    password: kickside
+    options:
+      sslmode: disable
+
   - name: env_storage
     kind: env.storage.file
     meta:
@@ -51,4 +62,26 @@ entries:
     imports:
       test: wippy.test:test
       token_usage_repo: wippy.usage:token_usage_repo
+    method: run_tests
+
+  # app:usage_tracker_test
+  - name: usage_tracker_test
+    kind: function.lua
+    meta:
+      name: Usage Tracker Test
+      type: test
+      comment: Tests for the usage tracker contract handler
+      group: LLM / Usage Tests
+      tags:
+        - usage
+        - tokens
+        - tests
+    source: file://usage_tracker_test.lua
+    modules:
+      - sql
+      - uuid
+      - registry
+    imports:
+      test: wippy.test:test
+      usage_tracker: wippy.usage:usage_tracker
     method: run_tests
