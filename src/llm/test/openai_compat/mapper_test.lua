@@ -236,7 +236,8 @@ local function define_tests()
                         }}
                         history[#history + 1] = {role = "function_result", function_call_id = "empty-call", content = "[]"}
                         local mapped = openai_mapper.map_messages(history)
-                        test.eq(mapped[1].tool_calls[1]["function"].arguments, "{}")
+                        local calls = assert(mapped[1].tool_calls)
+                        test.eq(calls[1]["function"].arguments, "{}")
                         if type(arguments) == "table" then test.is_nil(next(arguments)) end
                     end
                 end
