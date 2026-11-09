@@ -50,7 +50,7 @@ type AgentRunner = {
     model: string,
     max_tokens: number,
     temperature: number?,
-    thinking_effort: number,
+    thinking_effort: number?,
     tools: {[string]: UnifiedTool},
     memory: {string},
     memory_contract: table?,
@@ -69,8 +69,7 @@ local agent = {}
 local AGENT_CONFIG = {
     defaults = {
         model = "",
-        max_tokens = 512,
-        thinking_effort = 0
+        max_tokens = 512
     },
     memory = {
         contract_id = "wippy.agent:memory",
@@ -504,6 +503,16 @@ local function route_pin(current: any, metadata: any): any?
     }
 end
 
+-- Preserve nil so an unset effort inherits the model route; explicit zero overrides it.
+local function effective_thinking_effort(compiled_spec)
+    local opts = compiled_spec.agent_options
+    local override = type(opts) == "table" and opts.thinking_effort or nil
+    if type(override) == "number" and override >= 0 and override <= 100 then
+        return override
+    end
+    return compiled_spec.thinking_effort
+end
+
 function agent.new(compiled_spec: any): (any, string?)
     if not compiled_spec then
         return nil, "Compiled spec is required"
@@ -519,7 +528,7 @@ function agent.new(compiled_spec: any): (any, string?)
         -- temperature, top_p and top_k outright, and a value the author never
         -- asked for is not ours to invent.
         temperature = compiled_spec.temperature,
-        thinking_effort = compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort,
+        thinking_effort = effective_thinking_effort(compiled_spec),
         tools = compiled_spec.tools or {},
         memory = compiled_spec.memory or {},
         memory_contract = compiled_spec.memory_contract,
@@ -590,7 +599,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.tools = extract_tool_schemas_for_llm(self.tools)
     end
 
-    if self.thinking_effort and self.thinking_effort > 0 then
+    if self.thinking_effort ~= nil then
         options.thinking_effort = self.thinking_effort
     end
 
