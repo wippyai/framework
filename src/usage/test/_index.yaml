@@ -15,6 +15,17 @@ entries:
       comment: In-memory database for usage tests
     file: ":memory:"
 
+  # Used only by the test-postgres target against a disposable test database.
+  - name: postgres_db
+    kind: db.sql.postgres
+    host: localhost
+    port: 5433
+    database: up_migration_concurrency
+    username: kickside
+    password: kickside
+    options:
+      sslmode: disable
+
   - name: env_storage
     kind: env.storage.file
     meta:

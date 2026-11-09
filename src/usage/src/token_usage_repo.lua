@@ -90,11 +90,9 @@ local function cache_writes_by(db, group_column, where_sql, params)
     return by_group
 end
 
-local function report_bounds(db, start_time, end_time)
-    if tostring(db:type()) == "postgres" then
-        return { os.date('%c', start_time), os.date('%c', end_time) }
-    end
-    return { time.unix(start_time, 0):format(time.RFC3339), time.unix(end_time, 0):format(time.RFC3339) }
+local function report_bounds(start_time, end_time)
+    return { time.unix(start_time, 0):utc():format(time.RFC3339),
+        time.unix(end_time, 0):utc():format(time.RFC3339) }
 end
 
 -- Create a new token usage record
@@ -137,12 +135,11 @@ function token_usage_repo.create(user_id, model_id, prompt_tokens, completion_to
         return nil, err
     end
 
-    -- local now = options.timestamp or os.time()
     local now
     if options.timestamp == nil then
         now = time.now():utc():format(time.RFC3339)
     else
-        now = time.unix(options.timestamp, 0):format(time.RFC3339) -- do not convert to UTC
+        now = time.unix(options.timestamp, 0):utc():format(time.RFC3339)
     end
 
     local usage_id = uuid.v7()
@@ -219,8 +216,8 @@ function token_usage_repo.get_summary(start_time, end_time)
         return nil, err
     end
 
-    local from_timestamp = time.unix(start_time, 0):format(time.RFC3339)
-    local to_timestamp = time.unix(end_time, 0):format(time.RFC3339)
+    local from_timestamp = time.unix(start_time, 0):utc():format(time.RFC3339)
+    local to_timestamp = time.unix(end_time, 0):utc():format(time.RFC3339)
 
     -- Build the query to get overall summary with timestamp filtering
     local query = sql.builder.select(
@@ -317,8 +314,8 @@ WITH interval_seconds AS (
 ),
 date_series AS (
     SELECT
-        to_timestamp(time_bucket) as bucket_start,
-        to_timestamp(time_bucket) + $1 as bucket_end
+        to_timestamp(time_bucket) AT TIME ZONE 'UTC' as bucket_start,
+        to_timestamp(time_bucket + (SELECT seconds FROM interval_seconds)) AT TIME ZONE 'UTC' as bucket_end
     FROM
         generate_series(
             $2,  -- date_from (Integer timestamp)
@@ -362,7 +359,9 @@ SELECT
     cache_write_tokens,
     request_count
 FROM
-    aggregated_data;
+    aggregated_data
+ORDER BY
+    bucket_start;
                         ]]
         breakdown_sql = series_sql .. [[
 SELECT
@@ -454,7 +453,7 @@ JOIN
 GROUP BY
     b.bucket_start, w.ttl
 ]]
-        params = { time.unix(start_time, 0):format(time.RFC3339), interval_seconds, time.unix(end_time, 0):format(time.RFC3339) }
+        params = { time.unix(start_time, 0):utc():format(time.RFC3339), interval_seconds, time.unix(end_time, 0):utc():format(time.RFC3339) }
 
     end
 
@@ -524,8 +523,8 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
             )
             :from("token_usage")
             :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                os.date('%c', start_time),
-                os.date('%c', end_time)
+                time.unix(start_time, 0):utc():format(time.RFC3339),
+                time.unix(end_time, 0):utc():format(time.RFC3339)
             ))
             :group_by("model_id")
             :order_by("(SUM(prompt_tokens), SUM(completion_tokens), SUM(thinking_tokens)) DESC")
@@ -541,8 +540,8 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
             )
             :from("token_usage")
             :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                time.unix(start_time, 0):format(time.RFC3339),
-                time.unix(end_time, 0):format(time.RFC3339)
+                time.unix(start_time, 0):utc():format(time.RFC3339),
+                time.unix(end_time, 0):utc():format(time.RFC3339)
             ))
             :group_by("model_id")
             :order_by("(prompt_tokens + completion_tokens + thinking_tokens) DESC")
@@ -554,7 +553,7 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
     local by_model, breakdown_err = nil, nil
     if not err then
         by_model, breakdown_err = cache_writes_by(db, "u.model_id", "u.timestamp >= $1 AND u.timestamp <= $2",
-            report_bounds(db, start_time, end_time))
+            report_bounds(start_time, end_time))
     end
 
     db:release()
@@ -607,8 +606,8 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
             )
             :from("token_usage")
             :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                os.date('%c', start_time),
-                os.date('%c', end_time)
+                time.unix(start_time, 0):utc():format(time.RFC3339),
+                time.unix(end_time, 0):utc():format(time.RFC3339)
             ))
             :group_by("user_id")
             :order_by("(SUM(prompt_tokens) + SUM(completion_tokens) + SUM(thinking_tokens)) DESC")
@@ -624,8 +623,8 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
             )
             :from("token_usage")
             :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                time.unix(start_time, 0):format(time.RFC3339),
-                time.unix(end_time, 0):format(time.RFC3339)
+                time.unix(start_time, 0):utc():format(time.RFC3339),
+                time.unix(end_time, 0):utc():format(time.RFC3339)
             ))
             :group_by("user_id")
             :order_by("(prompt_tokens + completion_tokens + thinking_tokens) DESC")
@@ -636,7 +635,7 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
     local by_user, breakdown_err = nil, nil
     if not err then
         by_user, breakdown_err = cache_writes_by(db, "u.user_id", "u.timestamp >= $1 AND u.timestamp <= $2",
-            report_bounds(db, start_time, end_time))
+            report_bounds(start_time, end_time))
     end
 
     db:release()

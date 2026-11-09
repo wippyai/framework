@@ -213,3 +213,12 @@ jobs:
       - name: Test both databases
         working-directory: src/migration/test
         run: make test-postgres
+
+      - name: Install usage test dependencies
+        working-directory: src/usage/test
+        run: wippy install
+      - name: Test usage accounting on PostgreSQL
+        working-directory: src/usage/test
+        env:
+          TZ: America/New_York
+        run: make test-postgres
