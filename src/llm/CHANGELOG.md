@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.15](https://github.com/wippyai/framework/compare/llm-v0.5.14...llm-v0.5.15) (2026-11-09)
+
+
+### Features
+
+* **llm,agent,usage:** add cache_ttl and track cache writes by lifetime ([#243](https://github.com/wippyai/framework/issues/243)) ([06d9f5f](https://github.com/wippyai/framework/commit/06d9f5f1e99a20a03c31e1eda7139cb7cd0f18e7))
+
 ## [0.5.14](https://github.com/wippyai/framework/compare/llm-v0.5.13...llm-v0.5.14) (2026-11-04)
 
 

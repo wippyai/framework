@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.14](https://github.com/wippyai/framework/compare/views-v0.5.13...views-v0.5.14) (2026-11-09)
+
+
+### Bug Fixes
+
+* **views,facade:** load fragment pages from the resolved Web Host URL ([#248](https://github.com/wippyai/framework/issues/248)) ([23f742d](https://github.com/wippyai/framework/commit/23f742d2c53099fbb86734dbb540236a82b1e53f))
+
 ## [0.5.13](https://github.com/wippyai/framework/compare/views-v0.5.12...views-v0.5.13) (2026-10-22)
 
 
