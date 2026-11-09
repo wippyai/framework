@@ -235,29 +235,8 @@ function tool_resolver.get_tool_schema(tool_id: string): (any, string?)
                 return nil, "Invalid schema format: " .. tostring(err)
             end
         end
-
-        -- Ensure there's at least one parameter for empty schemas
-        if not schema.properties or next(schema.properties) == nil then
-            schema.properties = {
-                placeholder = {
-                    type = "object",
-                    description = "Empty placeholder parameter",
-                    default = {}
-                }
-            }
-        end
     else
-        -- Create a default schema with placeholder if none exists
-        schema = {
-            type = "object",
-            properties = {
-                placeholder = {
-                    type = "object",
-                    description = "Empty placeholder parameter",
-                    default = {}
-                }
-            }
-        }
+        schema = {type = "object", properties = {}}
     end
 
     -- Get the tool name
