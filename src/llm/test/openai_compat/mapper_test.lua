@@ -226,6 +226,23 @@ local function define_tests()
                 test.contains(tostring(b64_content[1].image_url.url), "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
             end)
 
+            it("preserves empty tool arguments when replaying either assistant shape", function()
+                for _, preceding in ipairs({false, true}) do
+                    for _, arguments in ipairs({{}, "{}"}) do
+                        local history = {}
+                        if preceding then history[#history + 1] = {role = "assistant", content = "Discover resources"} end
+                        history[#history + 1] = {role = "function_call", function_call = {
+                            id = "empty-call", name = "ListResources", arguments = arguments,
+                        }}
+                        history[#history + 1] = {role = "function_result", function_call_id = "empty-call", content = "[]"}
+                        local mapped = openai_mapper.map_messages(history)
+                        local calls = assert(mapped[1].tool_calls)
+                        test.eq(calls[1]["function"].arguments, "{}")
+                        if type(arguments) == "table" then test.is_nil(next(arguments)) end
+                    end
+                end
+            end)
+
             it("should consolidate function_call messages into assistant message", function()
                 local contract_messages = {
                     {

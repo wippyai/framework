@@ -288,12 +288,31 @@ local function define_tests()
             test.not_nil(err:match("Invalid schema format"))
         end)
 
+        it("preserves closed argument-free schemas without adding parameters", function()
+            for _, declared in ipairs({
+                [[{"type":"object","properties":{},"additionalProperties":false,"required":[]}]],
+                {type = "object", properties = {}, additionalProperties = false, required = {}},
+            }) do
+                local entry = registry_entries["empty:tool"]
+                local previous = entry.meta.input_schema
+                entry.meta.input_schema = declared
+                local tool, err = tool_resolver.get_tool_schema("empty:tool")
+                entry.meta.input_schema = previous
+                test.is_nil(err)
+                test.eq(tool.schema.type, "object")
+                test.eq(tool.schema.additionalProperties, false)
+                test.is_nil(next(tool.schema.properties), "Discovery adds a parameter the tool rejects")
+                test.is_nil(next(tool.schema.required))
+            end
+        end)
+
         it("should handle empty schemas", function()
             local tool, err = tool_resolver.get_tool_schema("empty:tool")
 
             test.is_nil(err)
             test.not_nil(tool)
-            test.not_nil(tool.schema.properties.placeholder)
+            test.eq(tool.schema.type, "object")
+            test.is_nil(next(tool.schema.properties))
         end)
 
         it("should create default schema for tools without schema", function()
@@ -302,7 +321,9 @@ local function define_tests()
             test.is_nil(err)
             test.not_nil(tool)
             test.not_nil(tool.schema)
-            test.not_nil(tool.schema.properties.placeholder)
+            test.eq(tool.schema.type, "object")
+            test.is_nil(next(tool.schema.properties))
+            test.eq(json.encode(tool.schema.properties), "{}")
         end)
 
         it("should handle description priority correctly", function()

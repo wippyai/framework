@@ -175,6 +175,12 @@ local function map_text_message(msg)
     }
 end
 
+local function encode_arguments(arguments)
+    if type(arguments) ~= "table" then return tostring(arguments) end
+    if next(arguments) == nil then return "{}" end
+    return json.encode(arguments)
+end
+
 function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
     contract_messages = prompt.without_blank_text(contract_messages)
@@ -262,16 +268,13 @@ function openai_mapper.map_messages(contract_messages, options)
             -- Attach function calls as tool_calls on the assistant message
             for _, func_msg in ipairs(function_calls_found) do
                 local arguments = func_msg.function_call.arguments
-                if type(arguments) == "table" and not next(arguments) then
-                    arguments = { invoke = true }
-                end
 
                 table.insert(assistant_msg.tool_calls, {
                     id = func_msg.function_call.id,
                     type = "function",
                     ["function"] = {
                         name = func_msg.function_call.name,
-                        arguments = (type(arguments) == "table") and json.encode(arguments) or tostring(arguments)
+                        arguments = encode_arguments(arguments)
                     }
                 })
             end
@@ -374,15 +377,12 @@ function openai_mapper.map_messages(contract_messages, options)
                     local current = contract_messages[i]
                     if current.role == "function_call" and current.function_call and current.function_call.id then
                         local arguments = current.function_call.arguments
-                        if type(arguments) == "table" and not next(arguments) then
-                            arguments = { invoke = true }
-                        end
                         table.insert(assistant_msg.tool_calls, {
                             id = current.function_call.id,
                             type = "function",
                             ["function"] = {
                                 name = current.function_call.name,
-                                arguments = (type(arguments) == "table") and json.encode(arguments) or tostring(arguments)
+                                arguments = encode_arguments(arguments)
                             }
                         })
                         i = i + 1
