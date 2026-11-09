@@ -363,8 +363,10 @@ function openai_client.process_stream(stream_response, callbacks)
 
             -- Parse the JSON data
             local parsed, parse_err = json.decode(tostring(data_line))
-            if parse_err then
-                goto continue_line
+            if parse_err or type(parsed) ~= "table" then
+                local message = "Invalid OpenAI stream event: " .. tostring(parse_err or "expected a JSON object")
+                on_error({ message = message, status_code = 500 })
+                return nil, message
             end
 
             -- Process the delta if present
@@ -475,6 +477,12 @@ function openai_client.process_stream(stream_response, callbacks)
         end
 
         ::continue::
+    end
+
+    if finish_reason == nil then
+        local message = "OpenAI stream ends before a finish reason or [DONE]"
+        on_error({ message = message, status_code = 500 })
+        return nil, message
     end
 
     -- Process any remaining tool calls

@@ -777,7 +777,8 @@ entries:
         Resolves a model identifier (name, class, or "class:<name>") to a model card
         including provider details. When a binding exists, llm.lua uses it before the
         built-in registry-backed discovery; if it returns no card, discovery is used.
-        With no binding, model resolution is unchanged.
+        Class selections include the complete ranked cards in the optional candidates
+        field. With no binding, model resolution is unchanged.
     methods:
       - name: resolve
         description: Resolve a model identifier to a model card with provider details
@@ -827,6 +828,20 @@ entries:
                         "priority": {"type": "number", "description": "Routes are tried by descending priority; unset counts as 0 and ties keep list order"}
                       },
                       "required": ["id", "provider_model"],
+                      "additionalProperties": true
+                    }
+                  },
+                  "candidates": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Complete ranked selection, including the primary card, when the resolver resolves a class. Only these candidates participate in class failover; concrete model resolutions omit this field",
+                    "items": {
+                      "type": "object",
+                      "required": ["name", "providers"],
+                      "properties": {
+                        "name": {"type": "string"},
+                        "providers": {"type": "array", "items": {"type": "object"}}
+                      },
                       "additionalProperties": true
                     }
                   },
