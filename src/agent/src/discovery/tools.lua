@@ -236,7 +236,7 @@ function tool_resolver.get_tool_schema(tool_id: string): (any, string?)
             end
         end
     else
-        schema = {type = "object", properties = {}}
+        schema = assert(json.decode([[{"type":"object","properties":{}}]]))
     end
 
     -- Get the tool name

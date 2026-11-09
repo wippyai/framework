@@ -323,6 +323,7 @@ local function define_tests()
             test.not_nil(tool.schema)
             test.eq(tool.schema.type, "object")
             test.is_nil(next(tool.schema.properties))
+            test.eq(json.encode(tool.schema.properties), "{}")
         end)
 
         it("should handle description priority correctly", function()
