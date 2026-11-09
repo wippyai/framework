@@ -548,6 +548,9 @@ local function define_tests()
             agent._prompt = nil
             agent._contract = nil
             agent._funcs = nil
+            llm._model_resolver = nil
+            llm._providers = nil
+            llm._usage_tracker = nil
         end)
 
         describe("Agent Construction", function()
@@ -588,7 +591,7 @@ local function define_tests()
                 test.eq(test_agent.model, "")
                 test.eq(test_agent.max_tokens, 512)
                 test.is_nil(test_agent.temperature)
-                test.eq(test_agent.thinking_effort, 0)
+                test.is_nil(test_agent.thinking_effort)
                 test.is_nil(next(test_agent.tools)) -- Empty tools table
                 test.not_nil(test_agent.tool_wrappers)
                 test.eq(#test_agent.tool_wrappers, 0)
@@ -2387,6 +2390,18 @@ local function define_tests()
                     agent_options = { thinking_effort = 0 }, prompt = "Fast.", tools = {}
                 })
                 test.eq(off.thinking_effort, 0)
+                off:step(builder)
+                test.eq((captured_options :: any).thinking_effort, 0)
+
+                local explicit = agent.new({
+                    id = "explicit", model = "claude-sonnet", thinking_effort = 0
+                })
+                explicit:step(builder)
+                test.eq((captured_options :: any).thinking_effort, 0)
+
+                local inherited = agent.new({ id = "inherited", model = "claude-sonnet" })
+                inherited:step(builder)
+                test.is_nil((captured_options :: any).thinking_effort)
 
                 -- out of range or not a number: the spec's effort stands
                 local bad = agent.new({
@@ -2396,11 +2411,53 @@ local function define_tests()
                 test.eq(bad.thinking_effort, 30)
                 local plain = agent.new({
                     id = "plain", name = "Plain", model = "claude-sonnet", thinking_effort = 30,
-                    agent_options = { thinking_effort = "low" }, prompt = "Plain.", tools = {}
+                    agent_options = { thinking_effort = "15" }, prompt = "Plain.", tools = {}
                 })
                 test.eq(plain.thinking_effort, 30)
 
                 agent._llm = nil
+            end)
+
+            it("preserves zero effort through model route defaults", function()
+                local sent
+                agent._llm = llm
+                agent._prompt = nil
+                llm._model_resolver = { resolve = function()
+                    return { name = "effort-model", capabilities = { "generate" }, providers = {
+                        { id = "wippy.llm.claude:provider", provider_model = "wire-model",
+                            thinking = "budget", options = { thinking_effort = 60 } }
+                    } }
+                end }
+                llm._providers = {
+                    driver_declares_legacy_reasoning_flag = function() return false end,
+                    driver_output_policy = function() return { thinking = "budget", default_max_tokens = 4096 } end,
+                    open = function()
+                        return { generate = function(_, args)
+                            sent = args.options
+                            return { success = true, result = { content = "ok" }, tokens = {} }
+                        end }
+                    end
+                }
+                llm._usage_tracker = { track_usage = function() return "test-usage" end }
+
+                for _, case in ipairs({
+                    { options = { thinking_effort = 0 }, expected = 0 },
+                    { options = {}, expected = 60 }
+                }) do
+                    local runner = agent.new({ id = "effort-agent", model = "effort-model",
+                        max_tokens = 8192, agent_options = case.options })
+                    local builder = prompt.new()
+                    builder:add_user("Hello")
+                    local result, err = runner:step(builder)
+                    test.is_nil(err)
+                    test.not_nil(result)
+                    test.eq(sent.thinking_effort, case.expected)
+                    if case.expected == 0 then
+                        test.is_nil(sent.thinking_budget_tokens)
+                    else
+                        test.gt(sent.thinking_budget_tokens, 0)
+                    end
+                end
             end)
 
             it("should handle combined runtime options", function()

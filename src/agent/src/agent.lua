@@ -50,7 +50,7 @@ type AgentRunner = {
     model: string,
     max_tokens: number,
     temperature: number?,
-    thinking_effort: number,
+    thinking_effort: number?,
     tools: {[string]: UnifiedTool},
     memory: {string},
     memory_contract: table?,
@@ -69,8 +69,7 @@ local agent = {}
 local AGENT_CONFIG = {
     defaults = {
         model = "",
-        max_tokens = 512,
-        thinking_effort = 0
+        max_tokens = 512
     },
     memory = {
         contract_id = "wippy.agent:memory",
@@ -504,17 +503,14 @@ local function route_pin(current: any, metadata: any): any?
     }
 end
 
--- The thinking effort a runner uses. `agent_options.thinking_effort` (0-100) wins over the spec's own
--- `thinking_effort`, so a trait can set the effort for the work it brings (a drafting trait may run at
--- low effort on an agent whose default is medium). The agent's own agent_options still win over a
--- trait's, as for every agent option.
+-- Preserve nil so an unset effort inherits the model route; explicit zero overrides it.
 local function effective_thinking_effort(compiled_spec)
     local opts = compiled_spec.agent_options
-    local override = type(opts) == "table" and tonumber(opts.thinking_effort) or nil
-    if override and override >= 0 and override <= 100 then
+    local override = type(opts) == "table" and opts.thinking_effort or nil
+    if type(override) == "number" and override >= 0 and override <= 100 then
         return override
     end
-    return compiled_spec.thinking_effort or AGENT_CONFIG.defaults.thinking_effort
+    return compiled_spec.thinking_effort
 end
 
 function agent.new(compiled_spec: any): (any, string?)
@@ -603,7 +599,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.tools = extract_tool_schemas_for_llm(self.tools)
     end
 
-    if self.thinking_effort and self.thinking_effort > 0 then
+    if self.thinking_effort ~= nil then
         options.thinking_effort = self.thinking_effort
     end
 

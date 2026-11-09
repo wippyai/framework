@@ -574,6 +574,8 @@ lifecycle and tool-wrapper binding option precedence remains unchanged.
 set it in its own `agent_options`, so the effort follows the work the trait brings: a drafting trait
 may run at low effort on an agent whose default is medium. As with every agent option, the agent's
 own `agent_options` win over a trait's. A value outside 0-100, or not a number, is ignored.
+An explicit `0` is forwarded to override the route's thinking effort; an unset effort inherits
+the route default. The provider and model determine how zero maps to their supported thinking modes.
 
 Checkpoint scheduling uses trait defaults, then explicit `agent_options.checkpoint`,
 then session/node checkpoint overrides. Maps merge recursively; lists replace
