@@ -133,7 +133,8 @@ type ModelCard = {
     providers: {ProviderRef},
     dimensions: number?,
     fallback: {string}?,
-    fallback_on: {string}?
+    fallback_on: {string}?,
+    candidates: {ModelCard}?
 }
 
 type ModelClass = {
@@ -267,6 +268,9 @@ local function resolve_model_cards(model_identifier: string): ({ModelCard}?, err
         local card, resolve_err = resolver:resolve({ model = model_identifier })
         if card and not resolve_err then
             -- A bound resolver owns its selection; do not append registry models.
+            if type(card.candidates) == "table" and #card.candidates > 0 then
+                return card.candidates, nil, true
+            end
             return { card :: ModelCard }
         end
         -- resolver declined or errored: fall through to built-in discovery

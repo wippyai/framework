@@ -546,6 +546,42 @@ local function define_tests()
                 test.eq(finish_reason, "stop")
             end)
 
+            it("rejects malformed and incomplete streams without reporting completion", function()
+                for _, chunks in ipairs({
+                    { "{invalid-json" },
+                    { "data: {invalid-json\n\n" },
+                    { 'data: {"choices":[{"delta":{"content":"Partial answer. "}}]}\n\n' },
+                }) do
+                    local index, completed, reported = 0, false, nil
+                    local stream = { read = function()
+                        index = index + 1
+                        return chunks[index]
+                    end }
+                    local content, err = openai_client.process_stream({ stream = stream, metadata = {} }, {
+                        on_error = function(value) reported = value end,
+                        on_done = function() completed = true end,
+                    })
+                    test.is_nil(content)
+                    test.not_nil(err)
+                    test.not_nil(reported)
+                    test.is_false(completed)
+                end
+            end)
+
+            it("accepts a completed stream when the provider omits the done marker", function()
+                local index = 0
+                local chunks = { 'data: {"choices":[{"delta":{"content":"Complete"},"finish_reason":"stop"}]}\n\n' }
+                local content, err, result = openai_client.process_stream({
+                    stream = { read = function()
+                        index = index + 1
+                        return chunks[index]
+                    end }, metadata = {},
+                }, {})
+                test.is_nil(err)
+                test.eq(content, "Complete")
+                test.eq(result.finish_reason, "stop")
+            end)
+
             it("should process streaming tool calls", function()
                 local stream_chunks = {
                     'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"test_tool"}}]}}]}\n\n',

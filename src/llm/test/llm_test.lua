@@ -3262,6 +3262,14 @@ local function define_tests()
                     test.eq(called_models(), "a-1")
                 end)
 
+                it("moves to another class member when the primary provider has no quota", function()
+                    behaviour["a-1"] = fail_with("payment_required")
+                    local result, err = llm.generate("Hi", { model = "class:premium" })
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,b-1")
+                    test.eq(result.metadata.route.model, "backup")
+                end)
+
                 it("moves on when the top class member cannot serve the model or context", function()
                     for _, kind in ipairs({ "authentication_error", "model_error", "context_length_exceeded" }) do
                         calls = {}
@@ -3386,6 +3394,49 @@ local function define_tests()
                     test.is_nil(result)
                     test.not_nil(err)
                     test.eq(called_models(), "a-1")
+                end)
+
+                it("uses the ranked candidates supplied by a bound resolver", function()
+                    llm._model_resolver = { resolve = function(_, args)
+                        if args.model == "class:governed" then
+                            local selected = card("primary", cards.primary.providers)
+                            selected.candidates = { cards.primary, cards.backup }
+                            return selected
+                        end
+                        return cards[args.model]
+                    end }
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "class:governed" })
+                    test.is_nil(err)
+                    test.eq(called_models(), "a-1,b-1")
+                    test.eq(result.metadata.route.model, "backup")
+                    test.eq(#result.metadata.fallbacks, 1)
+                    calls = {}
+                    local pinned, pin_err = llm.generate("Continue", {
+                        model = "class:governed", route = result.metadata.route })
+                    test.is_nil(pin_err)
+                    test.eq(pinned.metadata.route.model, "backup")
+                    test.eq(called_models(), "b-1")
+                end)
+
+                it("preserves explicit fallback controls for resolver candidates", function()
+                    llm._model_resolver = { resolve = function(_, args)
+                        if args.model ~= "class:governed" then return cards[args.model] end
+                        local selected = card("primary", cards.primary.providers)
+                        selected.candidates = { cards.primary, cards.backup }
+                        return selected
+                    end }
+                    behaviour["a-1"] = fail_with("server_error")
+                    local result, err = llm.generate("Hi", { model = "class:governed", fallback = false })
+                    test.is_nil(result)
+                    test.not_nil(err)
+                    test.eq(called_models(), "a-1")
+                    calls = {}
+                    local explicit, explicit_err = llm.generate("Hi", {
+                        model = "class:governed", fallback = { "third" } })
+                    test.is_nil(explicit_err)
+                    test.eq(explicit.metadata.route.model, "third")
+                    test.eq(called_models(), "a-1,c-1")
                 end)
 
                 it("does not replace a bound resolver's class selection with registry models", function()
