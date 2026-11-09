@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.51](https://github.com/wippyai/framework/compare/facade-v0.6.49...facade-v0.6.51) (2026-11-09)
+
+
+### Bug Fixes
+
+* **views,facade:** load fragment pages from the resolved Web Host URL ([#248](https://github.com/wippyai/framework/issues/248)) ([23f742d](https://github.com/wippyai/framework/commit/23f742d2c53099fbb86734dbb540236a82b1e53f))
+
+
+### Documentation
+
+* **facade:** describe 0.6.51 and release it as 0.6.51 ([#250](https://github.com/wippyai/framework/issues/250)) ([7598a42](https://github.com/wippyai/framework/commit/7598a42150e69136c6df4771d9fcf4ea458fbe86))
+
 ## [0.6.50](https://github.com/wippyai/framework/compare/facade-v0.6.49...facade-v0.6.50) (2026-11-08)
 
 - Target Web Host 1.0.68. The vendored `loading.js`, `import-map-bootstrap.js` and their source maps are unchanged from Web Host 1.0.67.
