@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.16](https://github.com/wippyai/framework/compare/llm-v0.5.15...llm-v0.5.16) (2026-11-09)
+
+
+### Bug Fixes
+
+* **llm:** preserve resolver candidates and reject incomplete streams ([#252](https://github.com/wippyai/framework/issues/252)) ([5f9cb5e](https://github.com/wippyai/framework/commit/5f9cb5e89e057b07857382b7ae39e77e43ea17f7))
+* preserve empty tool arguments during discovery and replay ([#251](https://github.com/wippyai/framework/issues/251)) ([18dc3ab](https://github.com/wippyai/framework/commit/18dc3abab9a87793c7844547f4e8c650d3591132))
+
 ## [0.5.15](https://github.com/wippyai/framework/compare/llm-v0.5.14...llm-v0.5.15) (2026-11-09)
 
 
