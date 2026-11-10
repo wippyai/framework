@@ -83,7 +83,7 @@ function structured_output.handler(contract_args)
         contents = messages,
         generationConfig = {
             response_mime_type = "application/json",
-            responseSchema = contract_args.schema
+            responseJsonSchema = contract_args.schema
         }
     }
 
