@@ -228,6 +228,8 @@ function structured_output_handler.handler(contract_args)
         if request_err then
             return nil, err:from(request_err):build()
         end
+        err:response(response and structured_output_handler._mapper.map_tokens(response.usage) or nil,
+            response and structured_output_handler._mapper.map_finish_reason(response.stop_reason) or nil)
         if not response or not response.content then
             return nil, err
                 :kind(output.ERROR_TYPE.SERVER_ERROR)
@@ -305,6 +307,8 @@ function structured_output_handler.handler(contract_args)
     if request_err then
         return nil, err:from(request_err):build()
     end
+    err:response(response and structured_output_handler._mapper.map_tokens(response.usage) or nil,
+        response and structured_output_handler._mapper.map_finish_reason(response.stop_reason) or nil)
 
     if not response or not response.content then
         return nil, err
@@ -312,6 +316,11 @@ function structured_output_handler.handler(contract_args)
             :message("Invalid response structure from Claude")
             :details(response and response.metadata or nil)
             :build()
+    end
+
+    if response.stop_reason == "max_tokens" then
+        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output was truncated (stop_reason max_tokens)"):build()
     end
 
     local tool_use_block = nil

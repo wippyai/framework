@@ -152,6 +152,18 @@ function structured_output_handler.handler(contract_args)
         return nil, err:from(req_err):build()
     end
 
+    local has_tool_calls = false
+    for _, item in ipairs(response and response.output or {}) do
+        if item.type == "function_call" then has_tool_calls = true; break end
+    end
+    local tokens = response and structured_output_handler._mapper.map_tokens(response.usage) or nil
+    local finish_reason = response and structured_output_handler._mapper.map_finish_reason(
+        response.status,
+        has_tool_calls,
+        response.incomplete_details and response.incomplete_details.reason or nil
+    ) or nil
+    err:response(tokens, finish_reason)
+
     if not response or not response.output then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
@@ -182,6 +194,14 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
+    if finish_reason == output.FINISH_REASON.LENGTH then
+        return nil, err
+            :kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output was truncated (status incomplete)")
+            :details({ response_id = response.id })
+            :build()
+    end
+
     if not content_text or content_text == "" then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
@@ -199,11 +219,6 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    local has_tool_calls = false
-    for _, item in ipairs(response.output) do
-        if item.type == "function_call" then has_tool_calls = true; break end
-    end
-
     local meta = response.metadata or {}
     if response.id then meta.response_id = response.id end
 
@@ -212,12 +227,8 @@ function structured_output_handler.handler(contract_args)
         result = {
             data = parsed_content
         },
-        tokens = structured_output_handler._mapper.map_tokens(response.usage),
-        finish_reason = structured_output_handler._mapper.map_finish_reason(
-            response.status,
-            has_tool_calls,
-            response.incomplete_details and response.incomplete_details.reason or nil
-        ),
+        tokens = tokens,
+        finish_reason = finish_reason,
         metadata = meta
     }
 end

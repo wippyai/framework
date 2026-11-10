@@ -1918,6 +1918,59 @@ local function define_tests()
             end)
         end)
 
+        describe("Response-level failures", function()
+            local function respond(content, finish_reason)
+                structured_output._mapper = {
+                    map_messages = function() return { { role = "user", parts = {{ text = "Generate data" }} } }, {} end,
+                    map_options = function() return {} end,
+                    map_success_response = function()
+                        return {
+                            success = true,
+                            result = { content = content },
+                            tokens = { prompt_tokens = 120, completion_tokens = 64, total_tokens = 184 },
+                            finish_reason = finish_reason,
+                            metadata = {}
+                        }
+                    end,
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
+                    end
+                }
+                structured_output._ctx = { all = function() return {} end, get = function() return "test-client-id" end }
+                local client = { request = function() return { status_code = 200 } end }
+                structured_output._contract = {
+                    get = function()
+                        return { with_context = function(self) return self end, open = function() return client, nil end }, nil
+                    end
+                }
+                return structured_output.handler({
+                    model = "gemini-2.5-pro",
+                    messages = { { role = "user", content = {{ type = "text", text = "Generate data" }} } },
+                    schema = { type = "object", properties = { value = { type = "string" } } }
+                })
+            end
+
+            it("reports a reply cut by the output limit as truncated, with its usage", function()
+                local response, err = respond('{"value": "partial', "length")
+
+                tests.is_nil(response)
+                tests.contains(tostring(err:message()), "truncated")
+                tests.eq(err:details().error_type, "model_error")
+                tests.eq(err:details().finish_reason, "length")
+                tests.eq(err:details().tokens.prompt_tokens, 120)
+                tests.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("carries finish_reason and usage on a reply that is not JSON", function()
+                local response, err = respond("not json {", "stop")
+
+                tests.is_nil(response)
+                tests.contains(tostring(err:message()), "Model failed to return valid JSON")
+                tests.eq(err:details().finish_reason, "stop")
+                tests.eq(err:details().tokens.completion_tokens, 64)
+            end)
+        end)
+
         describe("Context Integration", function()
             it("should resolve API configuration from context", function()
                 structured_output._mapper = {

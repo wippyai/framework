@@ -145,6 +145,11 @@ function structured_output_handler.handler(contract_args)
         return nil, err:from(req_err):build()
     end
 
+    local first_choice = response and response.choices and response.choices[1] or nil
+    local tokens = response and structured_output_handler._mapper.map_tokens(response.usage) or nil
+    local finish_reason = first_choice and structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason) or nil
+    err:response(tokens, finish_reason)
+
     if not response or not response.choices or #response.choices == 0 then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
@@ -153,7 +158,6 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    local first_choice = response.choices[1]
     if not first_choice or not first_choice.message then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
@@ -166,6 +170,13 @@ function structured_output_handler.handler(contract_args)
             :kind(output.ERROR_TYPE.CONTENT_FILTER)
             :message("Request was refused: " .. first_choice.message.refusal)
             :details({ refusal = first_choice.message.refusal })
+            :build()
+    end
+
+    if finish_reason == output.FINISH_REASON.LENGTH then
+        return nil, err
+            :kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output was truncated (finish_reason length)")
             :build()
     end
 
@@ -190,8 +201,8 @@ function structured_output_handler.handler(contract_args)
         result = {
             data = parsed_content
         },
-        tokens = structured_output_handler._mapper.map_tokens(response.usage),
-        finish_reason = structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason),
+        tokens = tokens,
+        finish_reason = finish_reason,
         metadata = response.metadata or {}
     }
 end

@@ -161,6 +161,13 @@ function structured_output_handler.handler(contract_args)
     if request_err then
         return nil, err:from(request_err):build()
     end
+    err:response(response and structured_output_handler._mapper.map_tokens(response.usage) or nil,
+        response and structured_output_handler._mapper.map_finish_reason(response.stopReason) or nil)
+
+    if response and response.stopReason == "max_tokens" then
+        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output was truncated (stopReason max_tokens)"):build()
+    end
 
     -- Extract tool_use block from response (mapper handles text-JSON fallback
     -- for models that return tool calls as text instead of native toolUse blocks)

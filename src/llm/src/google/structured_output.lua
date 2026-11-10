@@ -145,6 +145,12 @@ function structured_output.handler(contract_args)
             :build()
     end
 
+    err:response(mapped_response.tokens, mapped_response.finish_reason)
+    if mapped_response.finish_reason == output.FINISH_REASON.LENGTH then
+        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
+            :message("Structured output was truncated (finishReason MAX_TOKENS)"):build()
+    end
+
     local result_table = mapped_response.result or {}
     local structured_data, decode_err = json.decode(tostring(result_table.content or ""))
     if decode_err then

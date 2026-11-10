@@ -349,6 +349,48 @@ local function define_tests()
                 test.not_nil(err)
                 test.contains(err:message(), "structured_output tool")
             end)
+
+            local function reply(content, stop_reason)
+                structured_output_handler._client = {
+                    converse = function()
+                        return {
+                            output = { message = { role = "assistant", content = content } },
+                            stopReason = stop_reason,
+                            usage = { inputTokens = 120, outputTokens = 64 },
+                            metadata = {}
+                        }
+                    end
+                }
+                return structured_output_handler.handler({
+                    model = "test-model",
+                    messages = { { role = "user", content = { { type = "text", text = "Extract" } } } },
+                    schema = {
+                        type = "object",
+                        properties = { x = { type = "number" } },
+                        required = { "x" },
+                        additionalProperties = false
+                    }
+                })
+            end
+
+            it("reports an answer cut by the output limit as truncated, with its usage", function()
+                local response, err = reply({ { text = "Working on it" } }, "max_tokens")
+
+                test.is_nil(response)
+                test.contains(err:message(), "truncated")
+                test.eq(err:details().error_type, "model_error")
+                test.eq(err:details().finish_reason, "length")
+                test.eq(err:details().tokens.prompt_tokens, 120)
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("carries finish_reason and usage when the tool is not used", function()
+                local response, err = reply({ { text = "I cannot do that" } }, "end_turn")
+
+                test.is_nil(response)
+                test.eq(err:details().finish_reason, "stop")
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
         end)
 
         describe("Route facts", function()

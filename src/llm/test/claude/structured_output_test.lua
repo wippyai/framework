@@ -907,6 +907,37 @@ local function define_tests()
                 test.contains(err:message(), "max_tokens")
             end)
 
+            it("should carry finish_reason length and usage on a truncated answer", function()
+                mock_reply({ content = { { type = "text", text = '{"answer":"h' } }, stop_reason = "max_tokens",
+                    usage = { input_tokens = 120, output_tokens = 64 } })
+                local response, err = structured_output_handler.handler(args(native))
+                test.is_nil(response)
+                test.eq(err:details().error_type, "model_error")
+                test.eq(err:details().finish_reason, "length")
+                test.eq(err:details().tokens.prompt_tokens, 120)
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("should carry finish_reason and usage when the text is not JSON", function()
+                mock_reply({ content = { { type = "text", text = "not json" } }, stop_reason = "end_turn",
+                    usage = { input_tokens = 120, output_tokens = 64 } })
+                local response, err = structured_output_handler.handler(args(native))
+                test.is_nil(response)
+                test.eq(err:details().finish_reason, "stop")
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("should report a forced-tool answer cut by the output limit as truncated, with its usage", function()
+                mock_reply({ content = { { type = "text", text = "Working on it" } }, stop_reason = "max_tokens",
+                    usage = { input_tokens = 120, output_tokens = 64 } })
+                local response, err = structured_output_handler.handler(args())
+                test.is_nil(response)
+                test.contains(err:message(), "truncated")
+                test.eq(err:details().error_type, "model_error")
+                test.eq(err:details().finish_reason, "length")
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
             it("should fail when the text is not JSON", function()
                 mock_reply({ content = { { type = "text", text = "not json" } }, stop_reason = "end_turn" })
                 local response, err = structured_output_handler.handler(args(native))

@@ -808,6 +808,24 @@ local function define_tests()
                 test.eq(err:details().error_type, "context_length_exceeded")
             end)
 
+            it("accounts the usage a failed model response reports", function()
+                local schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
+                local cause = output.errors.structured_output()
+                    :response({ prompt_tokens = 120, completion_tokens = 64, thinking_tokens = 0 }, output.FINISH_REASON.LENGTH)
+                    :kind(output.ERROR_TYPE.MODEL_ERROR):message("truncated"):build()
+                mock_providers.open = function()
+                    return { structured_output = function() return nil, cause end }
+                end
+                local result, err = llm.structured_output(schema, "hi", { model = "small", fallback = false })
+                test.is_nil(result)
+                test.eq(err:details().finish_reason, output.FINISH_REASON.LENGTH)
+                test.eq(#records, 1)
+                test.eq(records[1].input, 120)
+                test.eq(records[1].completion, 64)
+                test.eq(records[1].options.metadata.outcome, "rejected")
+                test.eq(records[1].options.metadata.finish_reason, output.FINISH_REASON.LENGTH)
+            end)
+
             it("retains native provider details when rejected usage tracking fails", function()
                 local cause = errors.new({ kind = errors.UNAVAILABLE, retryable = true, message = "provider unavailable",
                     details = { error_type = "server_error", operation = "generate" } })

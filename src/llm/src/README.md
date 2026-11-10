@@ -700,6 +700,8 @@ llm.ERROR_TYPE = {
 
 These are the types drivers report (`output.ERROR_TYPE`). A driver error keeps its type in `details.error_type`, which fallback decisions use; the stdlib error kind alone cannot tell `context_length_exceeded`, `content_filtered` and `invalid_request` apart.
 
+A structured output failure after the provider answered (a refusal, a reply that is not JSON, a missing tool call) carries that reply's usage in `details.tokens` and its normalized `details.finish_reason`. A reply cut by the output limit fails as `model_error` with `details.finish_reason = "length"`, before its partial text is decoded. A failure without a provider reply (transport, HTTP error status) has no `details.tokens`.
+
 HTTP 402 and HTTP 429 with an `insufficient_quota` machine code or type report non-retryable `payment_required` errors. These errors still advance to the next fallback candidate by default. Ordinary HTTP 429 responses remain retryable `rate_limit_exceeded` errors; message text alone does not identify exhausted quota.
 
 ## Registering Models
@@ -987,6 +989,7 @@ terminate the call.
 
 Admission and provider rejections use the existing usage tracker. Metadata adds
 `outcome = "rejected"`, the estimated prompt size, requested output size and the
-error type when available. Billable token fields contain only usage actually
-reported by the provider; absent usage remains zero. Caller metadata and the
+error type and finish reason when available. Billable token fields contain only usage
+actually reported by the provider (`details.tokens` of a failed reply); absent usage
+remains zero. Caller metadata and the
 optional `context_id` are preserved. No schema migration is required.
