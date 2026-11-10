@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.18](https://github.com/wippyai/framework/compare/llm-v0.5.17...llm-v0.5.18) (2026-11-10)
+
+
+### Bug Fixes
+
+* **llm:** carry usage and finish_reason on structured output failures ([#256](https://github.com/wippyai/framework/issues/256)) ([91957e2](https://github.com/wippyai/framework/commit/91957e2e75d5f260df550a36c16c7118809f27fb))
+
 ## [0.5.17](https://github.com/wippyai/framework/compare/llm-v0.5.16...llm-v0.5.17) (2026-11-10)
 
 
