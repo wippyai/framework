@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.17](https://github.com/wippyai/framework/compare/llm-v0.5.16...llm-v0.5.17) (2026-11-10)
+
+
+### Bug Fixes
+
+* **llm:** send Gemini structured output as JSON Schema ([#254](https://github.com/wippyai/framework/issues/254)) ([74138a2](https://github.com/wippyai/framework/commit/74138a2246bebc6b1a2c97a2c1f69ecc57041ed0))
+
 ## [0.5.16](https://github.com/wippyai/framework/compare/llm-v0.5.15...llm-v0.5.16) (2026-11-09)
 
 
