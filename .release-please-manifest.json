@@ -5,7 +5,7 @@
   "src/docs": "0.3.12",
   "src/embeddings": "0.3.17",
   "src/facade": "0.6.51",
-  "src/llm": "0.5.17",
+  "src/llm": "0.5.18",
   "src/migration": "0.3.26",
   "src/relay": "0.3.20",
   "src/security": "0.4.3",
