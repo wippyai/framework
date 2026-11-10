@@ -325,6 +325,23 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  - name: structured_failure_contract_test
+    kind: function.lua
+    meta:
+      name: Structured Failure Contract Test
+      type: test
+      group: LLM / General
+    source: file://structured_failure_contract_test.lua
+    modules: [json]
+    imports:
+      test: wippy.test:test
+      compat_structured: wippy.llm.openai_compat:structured_output
+      openai_structured: wippy.llm.openai:structured_output
+      claude_structured: wippy.llm.claude:structured_output
+      bedrock_structured: wippy.llm.bedrock:structured_output
+      google_structured: wippy.llm.google:structured_output
+    method: run_tests
+
   # app:output_test
   - name: output_test
     kind: function.lua

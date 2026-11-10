@@ -3,6 +3,39 @@ local time = require("time")
 
 local function define_tests()
     describe("Output Library", function()
+        it("adds reply metadata without replacing existing error details", function()
+            for _, reported in ipairs({ false, true }) do
+                local tokens = { prompt_tokens = 7 }
+                local builder = output.errors.structured_output()
+                    :details({ tokens = tokens, finish_reason = "kept", raw_content = "partial" })
+                if reported then builder:response({ prompt_tokens = 120 }, "length") end
+                local err = builder:message("unchanged"):build()
+                test.eq(err:details().tokens.prompt_tokens, tokens.prompt_tokens)
+                test.eq(err:details().finish_reason, "kept")
+                test.eq(err:details().raw_content, "partial")
+                test.eq(err:message(), "unchanged")
+            end
+            local err = output.errors.structured_output()
+                :classifier(function() return "server_error", "classified", {
+                    tokens = { prompt_tokens = 7 }, finish_reason = "kept", request_id = "kept"
+                } end)
+                :from({}):response({ prompt_tokens = 120 }, "length"):build()
+            test.eq(err:details().tokens.prompt_tokens, 7)
+            test.eq(err:details().finish_reason, "kept")
+            test.eq(err:details().request_id, "kept")
+            test.eq(err:message(), "classified")
+        end)
+
+        it("does not retain reply metadata when a builder is reused for another call", function()
+            local builder = output.errors.structured_output()
+            local first = builder:response({ prompt_tokens = 120 }, "length"):message("first"):build()
+            test.eq(first:details().tokens.prompt_tokens, 120)
+            test.eq(first:details().finish_reason, "length")
+            local next_error = builder:message("next"):build()
+            test.is_nil(next_error:details().tokens)
+            test.is_nil(next_error:details().finish_reason)
+        end)
+
         it("should create content responses", function()
             local response = output.content("Hello world")
 

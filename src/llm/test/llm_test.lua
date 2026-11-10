@@ -794,9 +794,10 @@ local function define_tests()
                         return nil, cause
                     end }
                 end
-                local result, err = llm.generate("hi", { model = "small", context_id = "conversation", metadata = { caller = "test" } })
+                local result, err = llm.generate("hi", { model = "small", context_id = "conversation", metadata = { caller = "test", finish_reason = "caller value" } })
                 test.is_nil(result)
                 test.not_nil(err)
+                test.eq(records[1].options.metadata.finish_reason, "caller value")
                 test.eq(#records, 1)
                 test.eq(records[1].input, 0)
                 test.eq(records[1].options.context_id, "conversation")
@@ -816,14 +817,37 @@ local function define_tests()
                 mock_providers.open = function()
                     return { structured_output = function() return nil, cause end }
                 end
-                local result, err = llm.structured_output(schema, "hi", { model = "small", fallback = false })
+                local metadata = { caller = "test" }
+                local result, err = llm.structured_output(schema, "hi", { model = "small", fallback = false,
+                    context_id = "conversation", metadata = metadata, max_tokens = 64 })
                 test.is_nil(result)
+                test.eq(records[1].model, "small")
+                test.eq(records[1].options.context_id, "conversation")
+                test.eq(records[1].options.metadata.caller, "test")
+                test.eq(records[1].options.metadata.requested_output_tokens, 40)
+                test.eq(records[1].options.metadata.error_type, "model_error")
+                test.gt(records[1].options.metadata.estimated_prompt_tokens, 0)
+                test.is_nil(metadata.finish_reason)
                 test.eq(err:details().finish_reason, output.FINISH_REASON.LENGTH)
                 test.eq(#records, 1)
                 test.eq(records[1].input, 120)
                 test.eq(records[1].completion, 64)
                 test.eq(records[1].options.metadata.outcome, "rejected")
                 test.eq(records[1].options.metadata.finish_reason, output.FINISH_REASON.LENGTH)
+            end)
+
+            it("preserves caller finish_reason when the failed reply reports one", function()
+                local cause = output.errors.generate()
+                    :response({ prompt_tokens = 120, completion_tokens = 64 }, "length")
+                    :kind("model_error"):message("invalid JSON"):build()
+                mock_providers.open = function()
+                    return { generate = function() return nil, cause end }
+                end
+                local metadata = { finish_reason = "caller value" }
+                local _, err = llm.generate("hi", { model = "small", metadata = metadata, fallback = false })
+                test.eq(err:details().finish_reason, "length")
+                test.eq(records[1].options.metadata.finish_reason, "caller value")
+                test.eq(metadata.finish_reason, "caller value")
             end)
 
             it("retains native provider details when rejected usage tracking fails", function()
@@ -3544,6 +3568,47 @@ local function define_tests()
                     test.is_nil(args.options.fallback)
                     test.is_nil(args.options.deadline_ms)
                     test.eq(args._provider_id, "p.direct")
+                end)
+
+                it("accounts failed and successful structured replies exactly once per attempt", function()
+                    local records = {}
+                    mock_usage_tracker.track_usage = function(_, model, input, completion, thinking, read, write, options)
+                        records[#records + 1] = { model = model, input = input, completion = completion, options = options }
+                        return "usage"
+                    end
+                    cards.primary = card("primary", { { id = "p.a", provider_model = "a-1" } }, { fallback = { "backup" } })
+                    cards.backup = card("backup", { { id = "p.b", provider_model = "b-1" } })
+                    behaviour["a-1"] = function()
+                        return nil, output.errors.structured_output()
+                            :response({ prompt_tokens = 120, completion_tokens = 64 }, "length")
+                            :kind("server_error"):message("missing tool"):build()
+                    end
+                    behaviour["b-1"] = function()
+                        return { result = { answer = "ok" }, tokens = { prompt_tokens = 10, completion_tokens = 2 },
+                            finish_reason = "stop", metadata = {} }
+                    end
+                    local result, err = llm.structured_output({ type = "object", properties = {} }, "Extract", {
+                        model = "primary", context_id = "conversation", metadata = { caller = "test" }
+                    })
+                    test.is_nil(err)
+                    test.eq(result.result.answer, "ok")
+                    test.eq(result.tokens.prompt_tokens, 10)
+                    test.eq(result.tokens.completion_tokens, 2)
+                    test.eq(#records, 2)
+                    test.eq(records[1].model, "primary")
+                    test.eq(records[1].input, 120)
+                    test.eq(records[1].completion, 64)
+                    test.eq(records[1].options.metadata.outcome, "rejected")
+                    test.eq(records[1].options.metadata.finish_reason, "length")
+                    test.eq(records[1].options.context_id, "conversation")
+                    test.eq(records[1].options.metadata.caller, "test")
+                    test.eq(records[2].model, "backup")
+                    test.eq(records[2].input, 10)
+                    test.eq(records[2].completion, 2)
+                    test.eq(records[2].options.context_id, "conversation")
+                    test.eq(records[2].options.metadata.caller, "test")
+                    test.is_nil(records[2].options.metadata.outcome)
+                    test.is_nil(records[2].options.metadata.finish_reason)
                 end)
 
                 it("falls back for structured output with the schema on every candidate", function()

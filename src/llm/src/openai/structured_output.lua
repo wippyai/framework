@@ -194,14 +194,6 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    if finish_reason == output.FINISH_REASON.LENGTH then
-        return nil, err
-            :kind(output.ERROR_TYPE.MODEL_ERROR)
-            :message("Structured output was truncated (status incomplete)")
-            :details({ response_id = response.id })
-            :build()
-    end
-
     if not content_text or content_text == "" then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)

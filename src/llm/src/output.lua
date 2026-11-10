@@ -191,8 +191,7 @@ function ErrorBuilder:from(http_err: any?): ErrorBuilder
     return self
 end
 
--- The usage and finish reason of the model response the call received. They
--- belong to the call, so every error built afterwards carries them.
+-- Attach the provider reply's usage and finish reason to this call's error.
 function ErrorBuilder:response(tokens: table?, finish_reason: string?): ErrorBuilder
     self._tokens = tokens
     self._finish_reason = finish_reason
@@ -207,12 +206,16 @@ function ErrorBuilder:build(): StructuredError
     local details      = s._details
     local http_err     = s._http_err
     local has_http_err = s._has_http_err
+    local tokens = s._tokens
+    local finish_reason = s._finish_reason
 
     s._kind         = nil
     s._message      = nil
     s._details      = nil
     s._http_err     = nil
     s._has_http_err = false
+    s._tokens = nil
+    s._finish_reason = nil
 
     local merged_details = {}
 
@@ -240,8 +243,8 @@ function ErrorBuilder:build(): StructuredError
     local md = merged_details :: any
     md.provider  = s._provider
     md.operation = s._operation
-    md.tokens = s._tokens
-    md.finish_reason = s._finish_reason
+    if md.tokens == nil then md.tokens = tokens end
+    if md.finish_reason == nil then md.finish_reason = finish_reason end
     if s._contract and s._contract.model then
         md.model = s._contract.model
     end

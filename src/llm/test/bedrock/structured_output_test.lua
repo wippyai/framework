@@ -373,12 +373,14 @@ local function define_tests()
                 })
             end
 
-            it("reports an answer cut by the output limit as truncated, with its usage", function()
+            it("preserves missing-tool errors and usage on a reply cut by the output limit", function()
                 local response, err = reply({ { text = "Working on it" } }, "max_tokens")
 
                 test.is_nil(response)
-                test.contains(err:message(), "truncated")
-                test.eq(err:details().error_type, "model_error")
+                test.eq(err:message(), "Model failed to use the structured_output tool")
+                test.eq(err:kind(), "Unavailable")
+                test.is_true(err:retryable())
+                test.eq(err:details().error_type, "server_error")
                 test.eq(err:details().finish_reason, "length")
                 test.eq(err:details().tokens.prompt_tokens, 120)
                 test.eq(err:details().tokens.completion_tokens, 64)

@@ -1089,11 +1089,11 @@ local function define_tests()
                 }
             end
 
-            it("reports a reply cut by the output limit as truncated, with its usage", function()
+            it("preserves JSON decoding errors and usage on a reply cut by the output limit", function()
                 local response, err = respond(reply('{"value": "partial', "incomplete", "max_output_tokens"))
 
                 test.is_nil(response)
-                test.contains(tostring(err:message()), "truncated")
+                test.contains(tostring(err:message()), "Model failed to return valid JSON")
                 test.eq(err:details().error_type, "model_error")
                 test.eq(err:details().finish_reason, "length")
                 test.eq(err:details().tokens.prompt_tokens, 120)

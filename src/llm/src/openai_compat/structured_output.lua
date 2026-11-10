@@ -173,13 +173,6 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    if finish_reason == output.FINISH_REASON.LENGTH then
-        return nil, err
-            :kind(output.ERROR_TYPE.MODEL_ERROR)
-            :message("Structured output was truncated (finish_reason length)")
-            :build()
-    end
-
     if not first_choice.message.content then
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)

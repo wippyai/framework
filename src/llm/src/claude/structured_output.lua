@@ -318,11 +318,6 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
-    if response.stop_reason == "max_tokens" then
-        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
-            :message("Structured output was truncated (stop_reason max_tokens)"):build()
-    end
-
     local tool_use_block = nil
     for _, block in ipairs(response.content) do
         if block.type == "tool_use" and block.name == "structured_output" then

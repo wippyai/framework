@@ -135,6 +135,10 @@ function structured_output.handler(contract_args)
         return nil, err:from(response):build()
     end
 
+    local candidate = response.candidates and response.candidates[1]
+    err:response(structured_output._mapper.map_tokens(response.usageMetadata),
+        candidate and structured_output._mapper.map_finish_reason(candidate.finishReason or "UNKNOWN") or nil)
+
     local success, mapped_response = pcall(function()
         return structured_output._mapper.map_success_response(response)
     end)
@@ -146,10 +150,6 @@ function structured_output.handler(contract_args)
     end
 
     err:response(mapped_response.tokens, mapped_response.finish_reason)
-    if mapped_response.finish_reason == output.FINISH_REASON.LENGTH then
-        return nil, err:kind(output.ERROR_TYPE.MODEL_ERROR)
-            :message("Structured output was truncated (finishReason MAX_TOKENS)"):build()
-    end
 
     local result_table = mapped_response.result or {}
     local structured_data, decode_err = json.decode(tostring(result_table.content or ""))
