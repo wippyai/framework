@@ -998,6 +998,83 @@ local function define_tests()
             end)
         end)
 
+        describe("Response-level failures", function()
+            local schema = {
+                type = "object",
+                properties = { value = { type = "string" } },
+                required = { "value" },
+                additionalProperties = false
+            }
+
+            local function respond(status_code, body)
+                structured_output_handler._client._ctx = { all = function() return { api_key = "test-api-key" } end }
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function()
+                        return { status_code = status_code, body = json.encode(body), headers = {} }
+                    end
+                }
+                return structured_output_handler.handler({
+                    model = "gpt-4o",
+                    messages = { { role = "user", content = {{ type = "text", text = "Generate data" }} } },
+                    schema = schema
+                })
+            end
+
+            local function reply(message, finish_reason)
+                return {
+                    choices = { { message = message, finish_reason = finish_reason } },
+                    usage = { prompt_tokens = 120, completion_tokens = 64, total_tokens = 184 }
+                }
+            end
+
+            it("preserves JSON decoding errors and usage on a reply cut by the output limit", function()
+                local response, err = respond(200, reply({ content = '{"value": "partial' }, "length"))
+
+                test.is_nil(response)
+                test.eq(err:kind(), "NotFound")
+                test.contains(tostring(err:message()), "Model failed to return valid JSON")
+                test.eq(err:details().error_type, "model_error")
+                test.eq(err:details().finish_reason, "length")
+                test.eq(err:details().tokens.prompt_tokens, 120)
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("carries finish_reason and usage on a reply that is not JSON", function()
+                local response, err = respond(200, reply({ content = "not json {" }, "stop"))
+
+                test.is_nil(response)
+                test.contains(tostring(err:message()), "Model failed to return valid JSON")
+                test.eq(err:details().finish_reason, "stop")
+                test.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("carries finish_reason and usage on a refusal", function()
+                local response, err = respond(200, reply({ refusal = "Declined." }, "stop"))
+
+                test.is_nil(response)
+                test.eq(err:details().error_type, "content_filtered")
+                test.eq(err:details().finish_reason, "stop")
+                test.eq(err:details().tokens.prompt_tokens, 120)
+            end)
+
+            it("carries usage on a reply without content", function()
+                local response, err = respond(200, reply({}, "stop"))
+
+                test.is_nil(response)
+                test.eq(err:details().finish_reason, "stop")
+                test.eq(err:details().tokens.prompt_tokens, 120)
+            end)
+
+            it("reports no usage for a failure without a model response", function()
+                local response, err = respond(503, { error = { message = "Service unavailable", type = "server_error" } })
+
+                test.is_nil(response)
+                test.is_nil(err:details().tokens)
+                test.is_nil(err:details().finish_reason)
+            end)
+        end)
+
         describe("Context Resolution", function()
             it("should resolve API configuration from context", function()
                 structured_output_handler._client._ctx = {

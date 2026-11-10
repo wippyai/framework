@@ -1,5 +1,6 @@
 local structured_output = require("google_structured_output")
 local tests = require("test")
+local google_mapper = structured_output._mapper
 
 local function define_tests()
     describe("Google Structured Output Handler", function()
@@ -13,6 +14,8 @@ local function define_tests()
         describe("Contract Argument Validation", function()
             it("should require model parameter", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -38,6 +41,8 @@ local function define_tests()
 
             it("should require messages parameter", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -61,6 +66,8 @@ local function define_tests()
 
             it("should require schema parameter", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -83,6 +90,8 @@ local function define_tests()
 
             it("should reject empty messages array", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -109,6 +118,8 @@ local function define_tests()
         describe("Schema Validation", function()
             it("should validate schema is a table", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -132,6 +143,8 @@ local function define_tests()
 
             it("should require root schema type to be object", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -158,6 +171,8 @@ local function define_tests()
 
             it("should accept valid object schema", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -242,6 +257,8 @@ local function define_tests()
 
             it("should handle nil schema", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -265,6 +282,8 @@ local function define_tests()
 
             it("should handle empty schema table", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -288,6 +307,8 @@ local function define_tests()
 
             it("should handle schema with missing type field", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     classify_error = function(http_err)
                         return "invalid_request", http_err and http_err.message or "Error", {}
                     end
@@ -315,6 +336,8 @@ local function define_tests()
 
             it("should accept schema with nested objects", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -415,6 +438,8 @@ local function define_tests()
         describe("Successful Structured Output", function()
             it("should handle successful structured response", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate person data" }} }
@@ -514,6 +539,8 @@ local function define_tests()
 
             it("should handle nested object schemas", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate person with address" }} }
@@ -608,6 +635,8 @@ local function define_tests()
 
             it("should handle arrays in schemas", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate person with skills" }} }
@@ -702,6 +731,8 @@ local function define_tests()
 
             it("should handle system instructions", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -795,6 +826,8 @@ local function define_tests()
         describe("Schema Name Generation", function()
             it("should generate schema name automatically", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -881,6 +914,8 @@ local function define_tests()
 
             it("should use custom schema name when provided", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -967,6 +1002,8 @@ local function define_tests()
                 -- This test verifies that schema name generation works
                 -- by ensuring two different schemas can be processed
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1069,6 +1106,8 @@ local function define_tests()
         describe("Options Handling", function()
             it("should handle standard model options", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1164,6 +1203,8 @@ local function define_tests()
 
             it("should handle nil options", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1247,6 +1288,8 @@ local function define_tests()
 
             it("should pass timeout to client request", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1332,6 +1375,8 @@ local function define_tests()
 
             it("should forward retry to client request", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1422,6 +1467,8 @@ local function define_tests()
 
             it("should merge options with response_mime_type and responseJsonSchema", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1520,6 +1567,8 @@ local function define_tests()
         describe("Error Handling", function()
             it("should handle invalid JSON in response", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1608,6 +1657,8 @@ local function define_tests()
 
             it("should handle API authentication errors", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1675,6 +1726,8 @@ local function define_tests()
 
             it("should handle contract retrieval errors", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1724,6 +1777,8 @@ local function define_tests()
 
             it("should handle client binding errors", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1782,6 +1837,8 @@ local function define_tests()
 
             it("should handle response mapping errors", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1852,6 +1909,8 @@ local function define_tests()
 
             it("should handle rate limit errors", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -1918,9 +1977,63 @@ local function define_tests()
             end)
         end)
 
+        describe("Response-level failures", function()
+            local function respond(content, finish_reason)
+                structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
+                    map_messages = function() return { { role = "user", parts = {{ text = "Generate data" }} } }, {} end,
+                    map_options = function() return {} end,
+                    map_success_response = google_mapper.map_success_response,
+                    classify_error = function(http_err)
+                        return "server_error", http_err and http_err.message or "Error", {}
+                    end
+                }
+                structured_output._ctx = { all = function() return {} end, get = function() return "test-client-id" end }
+                local client = { request = function()
+                    return { status_code = 200,
+                        candidates = { { content = { parts = { { text = content } } },
+                            finishReason = finish_reason == "length" and "MAX_TOKENS" or "STOP" } },
+                        usageMetadata = { promptTokenCount = 120, candidatesTokenCount = 64, totalTokenCount = 184 } }
+                end }
+                structured_output._contract = {
+                    get = function()
+                        return { with_context = function(self) return self end, open = function() return client, nil end }, nil
+                    end
+                }
+                return structured_output.handler({
+                    model = "gemini-2.5-pro",
+                    messages = { { role = "user", content = {{ type = "text", text = "Generate data" }} } },
+                    schema = { type = "object", properties = { value = { type = "string" } } }
+                })
+            end
+
+            it("preserves JSON decoding errors and usage on a reply cut by the output limit", function()
+                local response, err = respond('{"value": "partial', "length")
+
+                tests.is_nil(response)
+                tests.contains(tostring(err:message()), "Model failed to return valid JSON")
+                tests.eq(err:details().error_type, "model_error")
+                tests.eq(err:details().finish_reason, "length")
+                tests.eq(err:details().tokens.prompt_tokens, 120)
+                tests.eq(err:details().tokens.completion_tokens, 64)
+            end)
+
+            it("carries finish_reason and usage on a reply that is not JSON", function()
+                local response, err = respond("not json {", "stop")
+
+                tests.is_nil(response)
+                tests.contains(tostring(err:message()), "Model failed to return valid JSON")
+                tests.eq(err:details().finish_reason, "stop")
+                tests.eq(err:details().tokens.completion_tokens, 64)
+            end)
+        end)
+
         describe("Context Integration", function()
             it("should resolve API configuration from context", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -2012,6 +2125,8 @@ local function define_tests()
 
             it("should handle empty context", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -2095,6 +2210,8 @@ local function define_tests()
 
             it("should pass context through contract chain", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -2189,6 +2306,8 @@ local function define_tests()
 
             it("should handle context with metadata", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }
@@ -2285,6 +2404,8 @@ local function define_tests()
 
             it("should handle nil context gracefully", function()
                 structured_output._mapper = {
+                    map_tokens = google_mapper.map_tokens,
+                    map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function(messages, options)
                         return {
                             { role = "user", parts = {{ text = "Generate data" }} }

@@ -916,6 +916,9 @@ local function rejected_usage(raw_result, contract_args, candidate, options, det
     metadata.unestimated_media_parts = media_parts > 0 and media_parts or nil
     metadata.requested_output_tokens = tonumber(contract_args.options.max_tokens)
     metadata.error_type = details and details.error_type
+    if metadata.finish_reason == nil then
+        metadata.finish_reason = details and details.finish_reason
+    end
     local _, err = llm.track_usage(raw_result, candidate.card and card_name(candidate.card) or options.model, {
         context_id = options.context_id, timestamp = options.timestamp, metadata = metadata,
     })
@@ -1031,7 +1034,8 @@ local function execute(spec, candidate: any, options, deadline_at: number?, prov
     if err then
         err = native_error(err, errors.UNKNOWN)
         local details = fallback.error_details(err)
-        local _, usage_err = rejected_usage(raw_result, contract_args, candidate, options, details)
+        local reported = raw_result or (details and details.tokens and { tokens = details.tokens }) or nil
+        local _, usage_err = rejected_usage(reported, contract_args, candidate, options, details)
         if usage_err then
             err = errors.new({ kind = err:kind(), retryable = err:retryable(), details = err:details(),
                 message = err:message() .. "; usage tracking failed: " .. tostring(usage_err) })

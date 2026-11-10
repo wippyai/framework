@@ -112,12 +112,15 @@ type ErrorBuilder = {
     _details: table?,
     _http_err: any?,
     _has_http_err: boolean?,
+    _tokens: table?,
+    _finish_reason: string?,
     classifier:    (self: ErrorBuilder, fn: ClassifyError) -> ErrorBuilder,
     with_contract: (self: ErrorBuilder, contract_args: ErrorContract) -> ErrorBuilder,
     kind:          (self: ErrorBuilder, k: string) -> ErrorBuilder,
     message:       (self: ErrorBuilder, m: string) -> ErrorBuilder,
     details:       (self: ErrorBuilder, d: table) -> ErrorBuilder,
     from:          (self: ErrorBuilder, http_err: any?) -> ErrorBuilder,
+    response:      (self: ErrorBuilder, tokens: table?, finish_reason: string?) -> ErrorBuilder,
     build:         (self: ErrorBuilder) -> StructuredError,
 }
 type ErrorBuilderFactory = (arg: ErrorContract?) -> ErrorBuilder
@@ -188,6 +191,13 @@ function ErrorBuilder:from(http_err: any?): ErrorBuilder
     return self
 end
 
+-- Attach the provider reply's usage and finish reason to this call's error.
+function ErrorBuilder:response(tokens: table?, finish_reason: string?): ErrorBuilder
+    self._tokens = tokens
+    self._finish_reason = finish_reason
+    return self
+end
+
 function ErrorBuilder:build(): StructuredError
     local s = self :: any
     -- Snapshot per-call state, then reset so the builder is reusable.
@@ -196,12 +206,16 @@ function ErrorBuilder:build(): StructuredError
     local details      = s._details
     local http_err     = s._http_err
     local has_http_err = s._has_http_err
+    local tokens = s._tokens
+    local finish_reason = s._finish_reason
 
     s._kind         = nil
     s._message      = nil
     s._details      = nil
     s._http_err     = nil
     s._has_http_err = false
+    s._tokens = nil
+    s._finish_reason = nil
 
     local merged_details = {}
 
@@ -224,10 +238,13 @@ function ErrorBuilder:build(): StructuredError
         for k, v in pairs(details) do merged_details[k] = v end
     end
 
-    -- 3. Builder-level context (provider / operation / model from contract).
+    -- 3. Builder-level context (provider / operation / model from contract,
+    -- usage and finish reason of the received response).
     local md = merged_details :: any
     md.provider  = s._provider
     md.operation = s._operation
+    if md.tokens == nil then md.tokens = tokens end
+    if md.finish_reason == nil then md.finish_reason = finish_reason end
     if s._contract and s._contract.model then
         md.model = s._contract.model
     end
@@ -248,6 +265,8 @@ local function builder_factory(operation: string): ErrorBuilderFactory
             _details = nil,
             _http_err = nil,
             _has_http_err = false,
+            _tokens = nil,
+            _finish_reason = nil,
         }
         return setmetatable(self, ErrorBuilder) :: ErrorBuilder
     end

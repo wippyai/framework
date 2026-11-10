@@ -161,6 +161,15 @@ function structured_output_handler.handler(contract_args)
     if request_err then
         return nil, err:from(request_err):build()
     end
+    local usage = type(response) == "table" and response.usage
+    if type(usage) == "table" then
+        for _, key in ipairs({ "inputTokens", "outputTokens", "cacheWriteInputTokens", "cacheReadInputTokens" }) do
+            if usage[key] ~= nil and type(usage[key]) ~= "number" then usage = nil; break end
+        end
+    end
+    local tokens = type(usage) == "table" and structured_output_handler._mapper.map_tokens(usage) or nil
+    err:response(tokens, type(response) == "table" and type(response.stopReason) == "string"
+        and structured_output_handler._mapper.map_finish_reason(response.stopReason) or nil)
 
     -- Extract tool_use block from response (mapper handles text-JSON fallback
     -- for models that return tool calls as text instead of native toolUse blocks)
