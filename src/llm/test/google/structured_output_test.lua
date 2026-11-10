@@ -345,8 +345,11 @@ local function define_tests()
 
                 local mock_client_instance = {
                     request = function(self, args)
-                        tests.eq(args.payload.generationConfig.responseSchema.type, "object")
-                        tests.eq(args.payload.generationConfig.responseSchema.properties.person.type, "object")
+                        tests.eq(args.payload.generationConfig.responseJsonSchema.type, "object")
+                        tests.eq(args.payload.generationConfig.responseJsonSchema.additionalProperties, false)
+                        tests.eq(args.payload.generationConfig.responseJsonSchema.properties.person.additionalProperties, false)
+                        tests.is_nil(args.payload.generationConfig.responseSchema)
+                        tests.eq(args.payload.generationConfig.responseJsonSchema.properties.person.type, "object")
 
                         return {
                             status_code = 200,
@@ -389,9 +392,11 @@ local function define_tests()
                     },
                     schema = {
                         type = "object",
+                        additionalProperties = false,
                         properties = {
                             person = {
                                 type = "object",
+                                additionalProperties = false,
                                 properties = {
                                     name = { type = "string" },
                                     age = { type = "number" }
@@ -443,7 +448,7 @@ local function define_tests()
                         tests.eq(args.endpoint_path, "generateContent")
                         tests.eq(args.model, "gemini-2.5-pro")
                         tests.eq(args.payload.generationConfig.response_mime_type, "application/json")
-                        tests.not_nil(args.payload.generationConfig.responseSchema)
+                        tests.not_nil(args.payload.generationConfig.responseJsonSchema)
 
                         return {
                             status_code = 200,
@@ -1415,7 +1420,7 @@ local function define_tests()
                 tests.eq(options.retry.backoff_ms, 0)
             end)
 
-            it("should merge options with response_mime_type and responseSchema", function()
+            it("should merge options with response_mime_type and responseJsonSchema", function()
                 structured_output._mapper = {
                     map_messages = function(messages, options)
                         return {
@@ -1452,7 +1457,7 @@ local function define_tests()
                     request = function(self, args)
                         -- Verify all generationConfig fields are present
                         tests.eq(args.payload.generationConfig.response_mime_type, "application/json")
-                        tests.not_nil(args.payload.generationConfig.responseSchema)
+                        tests.not_nil(args.payload.generationConfig.responseJsonSchema)
                         tests.eq(args.payload.generationConfig.temperature, 0.5)
                         tests.eq(args.payload.generationConfig.topK, 40)
 
