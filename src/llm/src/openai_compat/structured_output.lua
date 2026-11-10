@@ -145,9 +145,28 @@ function structured_output_handler.handler(contract_args)
         return nil, err:from(req_err):build()
     end
 
-    local first_choice = response and response.choices and response.choices[1] or nil
-    local tokens = response and structured_output_handler._mapper.map_tokens(response.usage) or nil
-    local finish_reason = first_choice and structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason) or nil
+    local first_choice = type(response) == "table" and type(response.choices) == "table" and response.choices[1] or nil
+    local usage = type(response) == "table" and response.usage
+    if type(usage) == "table" then
+        for _, key in ipairs({ "prompt_tokens", "completion_tokens", "total_tokens" }) do
+            if usage[key] ~= nil and type(usage[key]) ~= "number" then usage = nil; break end
+        end
+    end
+    if type(usage) == "table" then
+        for _, key in ipairs({ "prompt_tokens_details", "completion_tokens_details" }) do
+            local detail = usage[key]
+            if detail ~= nil and type(detail) ~= "table" then usage = nil; break end
+            if type(detail) == "table" then
+                for _, field in ipairs({ "cached_tokens", "reasoning_tokens" }) do
+                    if detail[field] ~= nil and type(detail[field]) ~= "number" then usage = nil; break end
+                end
+                if not usage then break end
+            end
+        end
+    end
+    local tokens = type(usage) == "table" and structured_output_handler._mapper.map_tokens(usage) or nil
+    local finish_reason = type(first_choice) == "table" and type(first_choice.finish_reason) == "string"
+        and structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason) or nil
     err:response(tokens, finish_reason)
 
     if not response or not response.choices or #response.choices == 0 then
@@ -194,8 +213,8 @@ function structured_output_handler.handler(contract_args)
         result = {
             data = parsed_content
         },
-        tokens = tokens,
-        finish_reason = finish_reason,
+        tokens = structured_output_handler._mapper.map_tokens(response.usage),
+        finish_reason = structured_output_handler._mapper.map_finish_reason(first_choice.finish_reason),
         metadata = response.metadata or {}
     }
 end

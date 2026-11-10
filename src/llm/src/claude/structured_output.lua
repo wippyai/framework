@@ -228,8 +228,15 @@ function structured_output_handler.handler(contract_args)
         if request_err then
             return nil, err:from(request_err):build()
         end
-        err:response(response and structured_output_handler._mapper.map_tokens(response.usage) or nil,
-            response and structured_output_handler._mapper.map_finish_reason(response.stop_reason) or nil)
+        local usage = type(response) == "table" and response.usage
+        if type(usage) == "table" then
+            for _, key in ipairs({ "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens" }) do
+                if usage[key] ~= nil and type(usage[key]) ~= "number" then usage = nil; break end
+            end
+        end
+        local tokens = type(usage) == "table" and structured_output_handler._mapper.map_tokens(usage) or nil
+        err:response(tokens, type(response) == "table" and type(response.stop_reason) == "string"
+            and structured_output_handler._mapper.map_finish_reason(response.stop_reason) or nil)
         if not response or not response.content then
             return nil, err
                 :kind(output.ERROR_TYPE.SERVER_ERROR)
@@ -307,8 +314,15 @@ function structured_output_handler.handler(contract_args)
     if request_err then
         return nil, err:from(request_err):build()
     end
-    err:response(response and structured_output_handler._mapper.map_tokens(response.usage) or nil,
-        response and structured_output_handler._mapper.map_finish_reason(response.stop_reason) or nil)
+    local usage = type(response) == "table" and response.usage
+    if type(usage) == "table" then
+        for _, key in ipairs({ "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens" }) do
+            if usage[key] ~= nil and type(usage[key]) ~= "number" then usage = nil; break end
+        end
+    end
+    local tokens = type(usage) == "table" and structured_output_handler._mapper.map_tokens(usage) or nil
+    err:response(tokens, type(response) == "table" and type(response.stop_reason) == "string"
+        and structured_output_handler._mapper.map_finish_reason(response.stop_reason) or nil)
 
     if not response or not response.content then
         return nil, err

@@ -152,16 +152,36 @@ function structured_output_handler.handler(contract_args)
         return nil, err:from(req_err):build()
     end
 
-    local has_tool_calls = false
-    for _, item in ipairs(response and response.output or {}) do
-        if item.type == "function_call" then has_tool_calls = true; break end
+    local usage = type(response) == "table" and response.usage
+    if type(usage) == "table" then
+        for _, key in ipairs({ "input_tokens", "output_tokens", "total_tokens" }) do
+            if usage[key] ~= nil and type(usage[key]) ~= "number" then usage = nil; break end
+        end
     end
-    local tokens = response and structured_output_handler._mapper.map_tokens(response.usage) or nil
-    local finish_reason = response and structured_output_handler._mapper.map_finish_reason(
-        response.status,
-        has_tool_calls,
-        response.incomplete_details and response.incomplete_details.reason or nil
-    ) or nil
+    if type(usage) == "table" then
+        for _, key in ipairs({ "input_tokens_details", "output_tokens_details" }) do
+            local detail = usage[key]
+            if detail ~= nil and type(detail) ~= "table" then usage = nil; break end
+            if type(detail) == "table" then
+                for _, field in ipairs({ "cached_tokens", "reasoning_tokens" }) do
+                    if detail[field] ~= nil and type(detail[field]) ~= "number" then usage = nil; break end
+                end
+                if not usage then break end
+            end
+        end
+    end
+    local tokens = type(usage) == "table" and structured_output_handler._mapper.map_tokens(usage) or nil
+    local has_tool_calls = false
+    if type(response) == "table" and type(response.output) == "table" then
+        for _, item in ipairs(response.output) do
+            if type(item) == "table" and item.type == "function_call" then has_tool_calls = true; break end
+        end
+    end
+    local incomplete = type(response) == "table" and response.incomplete_details or nil
+    local finish_reason = type(response) == "table" and type(response.status) == "string"
+        and (incomplete == nil or type(incomplete) == "table")
+        and (incomplete == nil or incomplete.reason == nil or type(incomplete.reason) == "string")
+        and structured_output_handler._mapper.map_finish_reason(response.status, has_tool_calls, incomplete and incomplete.reason) or nil
     err:response(tokens, finish_reason)
 
     if not response or not response.output then
@@ -211,6 +231,11 @@ function structured_output_handler.handler(contract_args)
             :build()
     end
 
+    has_tool_calls = false
+    for _, item in ipairs(response.output) do
+        if item.type == "function_call" then has_tool_calls = true; break end
+    end
+
     local meta = response.metadata or {}
     if response.id then meta.response_id = response.id end
 
@@ -219,8 +244,9 @@ function structured_output_handler.handler(contract_args)
         result = {
             data = parsed_content
         },
-        tokens = tokens,
-        finish_reason = finish_reason,
+        tokens = structured_output_handler._mapper.map_tokens(response.usage),
+        finish_reason = structured_output_handler._mapper.map_finish_reason(
+            response.status, has_tool_calls, response.incomplete_details and response.incomplete_details.reason or nil),
         metadata = meta
     }
 end

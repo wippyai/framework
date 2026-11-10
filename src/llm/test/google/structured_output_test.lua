@@ -1984,21 +1984,18 @@ local function define_tests()
                     map_finish_reason = google_mapper.map_finish_reason,
                     map_messages = function() return { { role = "user", parts = {{ text = "Generate data" }} } }, {} end,
                     map_options = function() return {} end,
-                    map_success_response = function()
-                        return {
-                            success = true,
-                            result = { content = content },
-                            tokens = { prompt_tokens = 120, completion_tokens = 64, total_tokens = 184 },
-                            finish_reason = finish_reason,
-                            metadata = {}
-                        }
-                    end,
+                    map_success_response = google_mapper.map_success_response,
                     classify_error = function(http_err)
                         return "server_error", http_err and http_err.message or "Error", {}
                     end
                 }
                 structured_output._ctx = { all = function() return {} end, get = function() return "test-client-id" end }
-                local client = { request = function() return { status_code = 200 } end }
+                local client = { request = function()
+                    return { status_code = 200,
+                        candidates = { { content = { parts = { { text = content } } },
+                            finishReason = finish_reason == "length" and "MAX_TOKENS" or "STOP" } },
+                        usageMetadata = { promptTokenCount = 120, candidatesTokenCount = 64, totalTokenCount = 184 } }
+                end }
                 structured_output._contract = {
                     get = function()
                         return { with_context = function(self) return self end, open = function() return client, nil end }, nil

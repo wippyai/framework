@@ -135,12 +135,21 @@ function structured_output.handler(contract_args)
         return nil, err:from(response):build()
     end
 
-    local candidate = response.candidates and response.candidates[1]
-    err:response(structured_output._mapper.map_tokens(response.usageMetadata),
-        candidate and structured_output._mapper.map_finish_reason(candidate.finishReason or "UNKNOWN") or nil)
-
     local success, mapped_response = pcall(function()
-        return structured_output._mapper.map_success_response(response)
+        local usage = type(response) == "table" and response.usageMetadata
+        if type(usage) == "table" then
+            for _, key in ipairs({ "promptTokenCount", "candidatesTokenCount", "totalTokenCount", "thoughtsTokenCount", "cachedContentTokenCount" }) do
+                if usage[key] ~= nil and type(usage[key]) ~= "number" then usage = nil; break end
+            end
+        end
+        local tokens = type(usage) == "table" and structured_output._mapper.map_tokens(usage) or nil
+        local candidate = type(response.candidates) == "table" and response.candidates[1] or nil
+        local finish_reason = type(candidate) == "table" and type(candidate.finishReason) == "string"
+            and structured_output._mapper.map_finish_reason(candidate.finishReason) or nil
+        err:response(tokens, finish_reason)
+        local mapped = structured_output._mapper.map_success_response(response)
+        err:response(tokens, finish_reason and mapped.finish_reason or nil)
+        return mapped
     end)
 
     if not success then
@@ -148,8 +157,6 @@ function structured_output.handler(contract_args)
             :from({ message = mapped_response or "Failed to process Google response", status_code = 500 })
             :build()
     end
-
-    err:response(mapped_response.tokens, mapped_response.finish_reason)
 
     local result_table = mapped_response.result or {}
     local structured_data, decode_err = json.decode(tostring(result_table.content or ""))
