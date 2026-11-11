@@ -190,7 +190,6 @@ entries:
       openai_client: wippy.llm.openai_compat:client
       openai_mapper: wippy.llm.openai_compat:mapper
       output: wippy.llm:output
-      prompt: wippy.llm:prompt
       wire_request: wippy.llm.util:wire_request
     method: handler
     pool:
