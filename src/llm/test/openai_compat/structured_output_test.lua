@@ -998,6 +998,87 @@ local function define_tests()
             end)
         end)
 
+        describe("Message mapping", function()
+            it("sends image parts as image_url content parts", function()
+                local sent: any = nil
+                structured_output_handler._client._ctx = { all = function() return { api_key = "test-api-key" } end }
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function(_, options)
+                        sent = json.decode(tostring(options.body))
+                        return {
+                            status_code = 200,
+                            body = json.encode({
+                                choices = {{ message = { content = '{"color":"white"}' }, finish_reason = "stop" }},
+                                usage = { prompt_tokens = 10, completion_tokens = 3, total_tokens = 13 }
+                            }),
+                            headers = {}
+                        }
+                    end
+                }
+
+                local response = structured_output_handler.handler({
+                    model = "gemma-4-26b",
+                    messages = {
+                        { role = "user", content = {
+                            { type = "text", text = "[Page 1]" },
+                            { type = "image", source = { type = "base64", mime_type = "image/png", data = "iVBORw0KGgo=" } },
+                            { type = "image", source = { type = "url", url = "https://example.com/page-2.png" } }
+                        } }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { color = { type = "string" } },
+                        required = { "color" },
+                        additionalProperties = false
+                    }
+                })
+
+                test.is_true(response.success)
+                local parts = sent.messages[1].content
+                test.eq(#parts, 3)
+                test.eq(parts[1].type, "text")
+                test.eq(parts[2].type, "image_url")
+                test.eq(parts[2].image_url.url, "data:image/png;base64,iVBORw0KGgo=")
+                test.is_nil(parts[2].source)
+                test.eq(parts[3].type, "image_url")
+                test.eq(parts[3].image_url.url, "https://example.com/page-2.png")
+            end)
+
+            it("sends developer messages as system messages", function()
+                local sent: any = nil
+                structured_output_handler._client._ctx = { all = function() return { api_key = "test-api-key" } end }
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function(_, options)
+                        sent = json.decode(tostring(options.body))
+                        return {
+                            status_code = 200,
+                            body = json.encode({ choices = {{ message = { content = '{"value":"x"}' }, finish_reason = "stop" }} }),
+                            headers = {}
+                        }
+                    end
+                }
+
+                structured_output_handler.handler({
+                    model = "gpt-4o",
+                    messages = {
+                        { role = "developer", content = {{ type = "text", text = "Answer briefly" }} },
+                        { role = "user", content = {{ type = "text", text = "Generate data" }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { value = { type = "string" } },
+                        required = { "value" },
+                        additionalProperties = false
+                    }
+                })
+
+                test.eq(sent.messages[1].role, "system")
+                test.eq(sent.messages[1].content[1].text, "Answer briefly")
+            end)
+        end)
+
         describe("Response-level failures", function()
             local schema = {
                 type = "object",
