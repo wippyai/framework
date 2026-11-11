@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.19](https://github.com/wippyai/framework/compare/llm-v0.5.18...llm-v0.5.19) (2026-11-11)
+
+
+### Bug Fixes
+
+* **llm:** map openai_compat structured output messages like generate ([#258](https://github.com/wippyai/framework/issues/258)) ([f238308](https://github.com/wippyai/framework/commit/f2383082ea76fdcd36339f459c4c04ddc6601eca))
+
 ## [0.5.18](https://github.com/wippyai/framework/compare/llm-v0.5.17...llm-v0.5.18) (2026-11-10)
 
 
