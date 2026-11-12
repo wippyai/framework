@@ -746,6 +746,121 @@ local function define_tests()
             end)
         end)
 
+        describe("Wire Schema", function()
+            local function capture_wire_schema(schema)
+                local sent = nil
+                structured_output_handler._client._ctx = {
+                    all = function() return { api_key = "test-api-key" } end
+                }
+                structured_output_handler._client._env = {
+                    get = function(key) return nil end
+                }
+                structured_output_handler._client._http_client = {
+                    post = function(url, options)
+                        sent = json.decode(tostring(options.body)).text.format.schema
+                        return {
+                            status_code = 200,
+                            body = json.encode({
+                                id = "resp_wire",
+                                status = "completed",
+                                output = {
+                                    {
+                                        type = "message",
+                                        role = "assistant",
+                                        content = { { type = "output_text", text = '{"title":"t"}' } }
+                                    }
+                                },
+                                usage = { input_tokens = 10, output_tokens = 5, total_tokens = 15 }
+                            }),
+                            headers = {}
+                        }
+                    end
+                }
+
+                local response, err = structured_output_handler.handler({
+                    model = "gpt-4o",
+                    messages = {
+                        { role = "user", content = {{ type = "text", text = "Generate data" }} }
+                    },
+                    schema = schema
+                })
+                test.is_nil(err)
+                test.is_true(response.success)
+                return sent
+            end
+
+            local function bounded_schema()
+                return {
+                    type = "object",
+                    properties = {
+                        title = { type = "string", minLength = 1, maxLength = 80, pattern = "^[A-Z]" },
+                        note = { type = { "string", "null" }, maxLength = 200 },
+                        maxLength = { type = "integer", minimum = 0, maximum = 10 },
+                        tags = {
+                            type = "array",
+                            minItems = 1,
+                            maxItems = 5,
+                            items = { type = "string", maxLength = 16, format = "email" }
+                        },
+                        choice = {
+                            anyOf = {
+                                { type = "string", maxLength = 8 },
+                                { ["$ref"] = "#/$defs/entry" }
+                            }
+                        }
+                    },
+                    required = { "title", "note", "maxLength", "tags", "choice" },
+                    additionalProperties = false,
+                    ["$defs"] = {
+                        entry = {
+                            type = "object",
+                            properties = { label = { type = "string", minLength = 2 } },
+                            required = { "label" },
+                            additionalProperties = false
+                        }
+                    }
+                }
+            end
+
+            it("sends only string keywords inside the strict-mode subset", function()
+                local sent = capture_wire_schema(bounded_schema())
+
+                local title = sent.properties.title
+                test.is_nil(title.minLength)
+                test.is_nil(title.maxLength)
+                test.eq(title.pattern, "^[A-Z]")
+                test.is_nil(sent.properties.note.maxLength)
+                test.is_nil(sent.properties.tags.items.maxLength)
+                test.eq(sent.properties.tags.items.format, "email")
+                test.is_nil(sent.properties.choice.anyOf[1].maxLength)
+                test.is_nil(sent["$defs"].entry.properties.label.minLength)
+            end)
+
+            it("keeps supported keywords and property names", function()
+                local sent = capture_wire_schema(bounded_schema())
+
+                local counter = sent.properties.maxLength
+                test.not_nil(counter)
+                test.eq(counter.type, "integer")
+                test.eq(counter.minimum, 0)
+                test.eq(counter.maximum, 10)
+                test.eq(sent.properties.tags.minItems, 1)
+                test.eq(sent.properties.tags.maxItems, 5)
+                test.eq(sent.properties.choice.anyOf[2]["$ref"], "#/$defs/entry")
+                test.eq(#sent.required, 5)
+            end)
+
+            it("leaves the caller schema unchanged", function()
+                local schema = bounded_schema()
+                capture_wire_schema(schema)
+
+                test.eq(schema.properties.title.maxLength, 80)
+                test.eq(schema.properties.title.minLength, 1)
+                test.eq(schema.properties.note.maxLength, 200)
+                test.eq(schema["$defs"].entry.properties.label.minLength, 2)
+            end)
+        end)
+
         describe("Error Handling", function()
             it("should handle refusal responses", function()
                 structured_output_handler._client._ctx = {

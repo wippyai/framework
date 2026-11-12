@@ -21,6 +21,46 @@ local function _generate_schema_name(schema)
     return "schema_" .. digest:sub(1, 16), nil
 end
 
+-- Strict structured outputs accept `pattern` and `format` as the only string
+-- constraints; `minLength` and `maxLength` lie outside the supported subset
+-- (https://developers.openai.com/api/docs/guides/structured-outputs#supported-properties).
+local UNSUPPORTED_KEYWORDS = { minLength = true, maxLength = true }
+
+-- Subschema positions: keywords holding one schema, a list of schemas, or a map of named schemas.
+local SCHEMA_KEYWORDS = { items = true, additionalProperties = true, ["not"] = true }
+local SCHEMA_LIST_KEYWORDS = { anyOf = true, oneOf = true, allOf = true, prefixItems = true }
+local SCHEMA_MAP_KEYWORDS = { properties = true, ["$defs"] = true, definitions = true }
+
+-- A copy of a JSON schema limited to the keywords strict mode supports. Only
+-- schema positions are rewritten, so property names and literal values such as
+-- enum, const and default are copied as given.
+local function _wire_schema(node)
+    if type(node) ~= "table" then
+        return node
+    end
+    local copy = {}
+    for key, value in pairs(node) do
+        if SCHEMA_KEYWORDS[key] then
+            copy[key] = _wire_schema(value)
+        elseif SCHEMA_LIST_KEYWORDS[key] and type(value) == "table" then
+            local list = {}
+            for i, member in ipairs(value) do
+                list[i] = _wire_schema(member)
+            end
+            copy[key] = list
+        elseif SCHEMA_MAP_KEYWORDS[key] and type(value) == "table" then
+            local map = {}
+            for name, member in pairs(value) do
+                map[name] = _wire_schema(member)
+            end
+            copy[key] = map
+        elseif not UNSUPPORTED_KEYWORDS[key] then
+            copy[key] = value
+        end
+    end
+    return copy
+end
+
 local function _validate_schema(schema)
     local errs = {}
 
@@ -118,7 +158,7 @@ function structured_output_handler.handler(contract_args)
             format = {
                 type = "json_schema",
                 name = schema_name,
-                schema = contract_args.schema,
+                schema = _wire_schema(contract_args.schema),
                 strict = true
             }
         }
