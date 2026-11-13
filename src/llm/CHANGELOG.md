@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.20](https://github.com/wippyai/framework/compare/llm-v0.5.19...llm-v0.5.20) (2026-11-13)
+
+
+### Features
+
+* **llm:** prepare generation requests for each model candidate ([#264](https://github.com/wippyai/framework/issues/264)) ([16551d8](https://github.com/wippyai/framework/commit/16551d8461215641b7f474cd3b3314a29d4e9179))
+
 ## [0.5.19](https://github.com/wippyai/framework/compare/llm-v0.5.18...llm-v0.5.19) (2026-11-11)
 
 
