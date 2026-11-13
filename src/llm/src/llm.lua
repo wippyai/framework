@@ -130,6 +130,7 @@ type ModelCard = {
     max_tokens: number,
     output_tokens: number,
     pricing: table,
+    metadata: table,
     providers: {ProviderRef},
     dimensions: number?,
     fallback: {string}?,

@@ -26,6 +26,10 @@ local function define_tests()
                         input = 2.5,
                         output = 10
                     },
+                    metadata = {
+                        example = "value",
+                        tags = { "general" }
+                    },
                     providers = {
                         {
                             id = "wippy.llm.openai:provider",
@@ -257,6 +261,44 @@ local function define_tests()
                 test.eq(claude_model.pricing.input, 3)
                 test.eq(claude_model.pricing.output, 15)
                 test.eq(#claude_model.providers, 1)
+            end)
+        end)
+
+        describe("card metadata", function()
+            it("should carry the entry metadata on cards from get_by_name", function()
+                local model, err = models.get_by_name("gpt-4o")
+
+                test.is_nil(err)
+                assert(model)
+                test.eq(model.metadata.example, "value")
+                test.eq(#model.metadata.tags, 1)
+                test.eq(model.metadata.tags[1], "general")
+            end)
+
+            it("should carry the entry metadata on cards from get_all and get_by_class", function()
+                local all_models = assert(models.get_all())
+                local from_all
+                for _, model in ipairs(all_models) do
+                    if model.name == "gpt-4o" then
+                        from_all = model
+                    end
+                end
+                assert(from_all)
+                test.eq(from_all.metadata.example, "value")
+
+                local frontier = assert(models.get_by_class("frontier"))
+                local from_class = assert(frontier[1])
+                test.eq(from_class.name, "gpt-4o")
+                test.eq(from_class.metadata.example, "value")
+            end)
+
+            it("should give an empty metadata table when the entry declares none", function()
+                local model, err = models.get_by_name("claude-4-sonnet")
+
+                test.is_nil(err)
+                assert(model)
+                test.not_nil(model.metadata)
+                test.eq(next(model.metadata), nil)
             end)
         end)
 
