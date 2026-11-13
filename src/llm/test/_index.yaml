@@ -1604,3 +1604,12 @@ entries:
       fallback: wippy.llm.util:fallback
       test: wippy.test:test
     method: run_tests
+
+  - name: request_preparation_test
+    kind: function.lua
+    meta: {type: test, suite: request_preparation}
+    source: file://request_preparation_test.lua
+    method: run
+    imports:
+      test: wippy.test:test
+      llm: wippy.llm:llm

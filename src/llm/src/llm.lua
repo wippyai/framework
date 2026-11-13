@@ -157,7 +157,8 @@ type GenerateOptions = {
     fallback: any?,
     route: table?,
     deadline_ms: number?,
-    cache_ttl: string?
+    cache_ttl: string?,
+    prepare_request: ((table) -> (table?, error?))?
 }
 
 type EmbedOptions = {
@@ -203,7 +204,7 @@ local llm = {}
 -- Contract constants
 local USAGE_TRACKER_CONTRACT = "wippy.llm:usage_tracker"
 local MODEL_RESOLVER_CONTRACT = "wippy.llm:model_resolver"
-local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms", "checkpoint" })
+local CALL_OPTIONS = fallback.set_of({ "fallback", "route", "deadline_ms", "checkpoint", "prepare_request" })
 
 -- Dependency injection fields
 llm._models = nil
@@ -1362,6 +1363,9 @@ local function call(spec, options)
 end
 
 function llm.generate(prompt_input, options)
+    if options and options.prepare_request ~= nil and type(options.prepare_request) ~= "function" then
+        return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "prepare_request must be a function" })
+    end
     if not options or type(options.model) ~= "string" or options.model == "" then
         return nil, errors.new({ kind = errors.INVALID, retryable = false, message = "Model is required in options" })
     end
@@ -1393,6 +1397,27 @@ function llm.generate(prompt_input, options)
             return { messages = request.messages, model = wire_model, options = {} }
         end,
         prepare = function(contract_args, provider_info, call_options, providers_module, card)
+            if call_options.prepare_request then
+                local prepared, err = call_options.prepare_request({
+                    model = card, provider_id = provider_info.id, provider_model = contract_args.model,
+                })
+                if err then return nil, native_error(err, errors.INVALID, false) end
+                if type(prepared) ~= "table" then
+                    return nil, errors.new({ kind = errors.INVALID, retryable = false,
+                        message = "prepare_request must return a request object" })
+                end
+                local messages, message_err = prepare_messages(prepared.messages)
+                if not messages then return nil, message_err end
+                contract_args.messages = messages
+                if prepared.max_tokens ~= nil then
+                    if type(prepared.max_tokens) ~= "number" or prepared.max_tokens < 1
+                        or prepared.max_tokens == math.huge or prepared.max_tokens ~= math.floor(prepared.max_tokens) then
+                        return nil, errors.new({ kind = errors.INVALID, retryable = false,
+                            message = "prepare_request max_tokens must be a positive integer" })
+                    end
+                    contract_args.options.max_tokens = prepared.max_tokens
+                end
+            end
             local adjusted, route_err = prepare_route(contract_args, provider_info, call_options, providers_module, card)
             if not adjusted then
                 return nil, route_err

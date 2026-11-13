@@ -874,6 +874,16 @@ Embeddings move only between the routes of the resolved card, because vectors of
 
 Per-call options, never sent to the driver:
 
+`generate` accepts `prepare_request(context)` to shape a fresh request for each
+attempted model or route. The context contains `model` (the resolved card, or
+`nil` for a direct provider call), `provider_id`, and `provider_model`. Return
+`{ messages = prompt_input, max_tokens = optional_limit }`, or `nil, err`.
+Messages use the same input formats as `generate`; build fresh messages and do
+not mutate the supplied model card. Preparation runs before output limits and
+context admission, so each candidate's limits still apply. Errors use the
+existing preflight failure behavior. Without this callback, request construction
+is unchanged. The callback runs locally and is never sent to a driver.
+
 ```lua
 llm.generate(builder, {
     model = "claude",
