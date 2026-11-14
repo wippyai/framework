@@ -307,13 +307,12 @@ local function define_tests()
                 test.eq(from_class.metadata.example, "value")
             end)
 
-            it("should give an empty metadata table when the entry declares a non-table value", function()
+            it("should carry a non-table metadata value unchanged", function()
                 local model, err = models.get_by_name("scalar-metadata")
 
                 test.is_nil(err)
                 assert(model)
-                test.eq(type(model.metadata), "table")
-                test.is_nil(next(model.metadata))
+                test.eq(model.metadata, 42)
             end)
 
             it("should give an empty metadata table when the entry declares none", function()
