@@ -26,6 +26,10 @@ local function define_tests()
                         input = 2.5,
                         output = 10
                     },
+                    metadata = {
+                        example = "value",
+                        tags = { "general" }
+                    },
                     providers = {
                         {
                             id = "wippy.llm.openai:provider",
@@ -94,6 +98,21 @@ local function define_tests()
                             }
                         }
                     }
+                }
+            },
+            {
+                id = "app.models:scalar-metadata",
+                kind = "registry.entry",
+                name = "scalar-metadata",
+                meta = {
+                    type = "llm.model",
+                    name = "scalar-metadata",
+                    capabilities = { "generate" },
+                    class = { "scalar_metadata_case" },
+                },
+                data = {
+                    metadata = 42,
+                    providers = { { id = "wippy.llm.openai:provider", context = { model = "scalar" } } }
                 }
             }
         }
@@ -260,6 +279,52 @@ local function define_tests()
             end)
         end)
 
+        describe("card metadata", function()
+            it("should carry the entry metadata on cards from get_by_name", function()
+                local model, err = models.get_by_name("gpt-4o")
+
+                test.is_nil(err)
+                assert(model)
+                test.eq(model.metadata.example, "value")
+                test.eq(#model.metadata.tags, 1)
+                test.eq(model.metadata.tags[1], "general")
+            end)
+
+            it("should carry the entry metadata on cards from get_all and get_by_class", function()
+                local all_models = assert(models.get_all())
+                local from_all
+                for _, model in ipairs(all_models) do
+                    if model.name == "gpt-4o" then
+                        from_all = model
+                    end
+                end
+                assert(from_all)
+                test.eq(from_all.metadata.example, "value")
+
+                local frontier = assert(models.get_by_class("frontier"))
+                local from_class = assert(frontier[1])
+                test.eq(from_class.name, "gpt-4o")
+                test.eq(from_class.metadata.example, "value")
+            end)
+
+            it("should carry a non-table metadata value unchanged", function()
+                local model, err = models.get_by_name("scalar-metadata")
+
+                test.is_nil(err)
+                assert(model)
+                test.eq(model.metadata, 42)
+            end)
+
+            it("should give an empty metadata table when the entry declares none", function()
+                local model, err = models.get_by_name("claude-4-sonnet")
+
+                test.is_nil(err)
+                assert(model)
+                test.not_nil(model.metadata)
+                test.eq(next(model.metadata), nil)
+            end)
+        end)
+
         describe("get_by_class", function()
             it("should get models by class sorted by priority", function()
                 local chat_models, err = models.get_by_class("chat")
@@ -327,7 +392,7 @@ local function define_tests()
 
                 test.is_nil(err)
                 assert(all_models)
-                test.eq(#all_models, 3)
+                test.eq(#all_models, 4)
 
                 -- Check if models are sorted by name
                 local m1 = assert(all_models[1])
