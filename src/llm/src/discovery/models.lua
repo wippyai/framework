@@ -191,7 +191,7 @@ function models._build_model_card(entry)
         max_tokens = entry.data and entry.data.max_tokens or 0,
         output_tokens = entry.data and entry.data.output_tokens or 0,
         pricing = entry.data and entry.data.pricing or {},
-        metadata = entry.data and entry.data.metadata or {},
+        metadata = entry.data and type(entry.data.metadata) == "table" and entry.data.metadata or {},
         providers = entry.data and entry.data.providers or {},
         dimensions = dimensions,
         fallback = fallback_models,

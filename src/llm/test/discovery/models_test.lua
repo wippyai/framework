@@ -99,6 +99,21 @@ local function define_tests()
                         }
                     }
                 }
+            },
+            {
+                id = "app.models:scalar-metadata",
+                kind = "registry.entry",
+                name = "scalar-metadata",
+                meta = {
+                    type = "llm.model",
+                    name = "scalar-metadata",
+                    capabilities = { "generate" },
+                    class = { "scalar_metadata_case" },
+                },
+                data = {
+                    metadata = 42,
+                    providers = { { id = "wippy.llm.openai:provider", context = { model = "scalar" } } }
+                }
             }
         }
 
@@ -292,6 +307,15 @@ local function define_tests()
                 test.eq(from_class.metadata.example, "value")
             end)
 
+            it("should give an empty metadata table when the entry declares a non-table value", function()
+                local model, err = models.get_by_name("scalar-metadata")
+
+                test.is_nil(err)
+                assert(model)
+                test.eq(type(model.metadata), "table")
+                test.is_nil(next(model.metadata))
+            end)
+
             it("should give an empty metadata table when the entry declares none", function()
                 local model, err = models.get_by_name("claude-4-sonnet")
 
@@ -369,7 +393,7 @@ local function define_tests()
 
                 test.is_nil(err)
                 assert(all_models)
-                test.eq(#all_models, 3)
+                test.eq(#all_models, 4)
 
                 -- Check if models are sorted by name
                 local m1 = assert(all_models[1])
