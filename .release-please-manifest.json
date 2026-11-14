@@ -4,7 +4,7 @@
   "src/bootloader": "0.3.18",
   "src/docs": "0.3.12",
   "src/embeddings": "0.3.17",
-  "src/facade": "0.6.51",
+  "src/facade": "0.6.53",
   "src/llm": "0.5.19",
   "src/migration": "0.3.26",
   "src/relay": "0.3.20",
