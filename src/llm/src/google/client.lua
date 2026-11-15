@@ -29,6 +29,31 @@ local client = {
     _http_client = http_client
 }
 
+-- functionCall args are JSON the model wrote, so a null member in them is an
+-- argument the model set. The response decode drops null members; args are
+-- taken from a decode of the same body that keeps them as json.null.
+local function keep_function_call_nulls(parsed: table, body: string): string?
+    if type(parsed.candidates) ~= "table" then return nil end
+    local with_nulls: any = nil
+    for c, candidate in ipairs(parsed.candidates) do
+        local parts = type(candidate) == "table" and type(candidate.content) == "table"
+            and candidate.content.parts or nil
+        if type(parts) == "table" then
+            for p, part in ipairs(parts) do
+                if type(part) == "table" and type(part.functionCall) == "table" then
+                    if not with_nulls then
+                        local decoded, decode_err = json.decode_with_nulls(body)
+                        if decode_err then return tostring(decode_err) end
+                        with_nulls = decoded
+                    end
+                    part.functionCall.args = with_nulls.candidates[c].content.parts[p].functionCall.args
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local function extract_response_metadata(response_body: any)
     if not response_body then
         return {}
@@ -102,6 +127,10 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
         local parsed, parse_err = json.decode(data_line)
         if parse_err or type(parsed) ~= "table" then
             return "Invalid Google stream event: " .. tostring(parse_err or "expected object")
+        end
+        local args_err = keep_function_call_nulls(parsed, data_line)
+        if args_err then
+            return "Invalid Google stream event: " .. args_err
         end
 
         if parsed.error then
@@ -330,6 +359,15 @@ function client.request(method, url, http_options, retry: transport.Retry?, dead
             metadata = {}
         }
         return nil, parse_error
+    end
+
+    local args_err = keep_function_call_nulls(parsed, response.body or "")
+    if args_err then
+        return nil, {
+            status_code = response.status_code,
+            message = "Failed to parse Google response: " .. args_err,
+            metadata = {}
+        }
     end
 
     parsed.metadata = extract_response_metadata(parsed)

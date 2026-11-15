@@ -459,7 +459,7 @@ function openai_mapper.map_tool_calls(function_call_items)
         local arguments = {}
         local raw_arguments, arguments_error
         if item.arguments then
-            local parsed_args, parse_err = json.decode(tostring(item.arguments))
+            local parsed_args, parse_err = json.decode_with_nulls(tostring(item.arguments))
             if parse_err then
                 raw_arguments = tostring(item.arguments)
                 arguments = raw_arguments

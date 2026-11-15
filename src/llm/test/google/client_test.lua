@@ -810,6 +810,48 @@ local function define_tests()
                 tests.is_nil(err.stream_started)
             end)
         end)
+
+        describe("Tool JSON fidelity", function()
+            local function fake_stream(chunks)
+                local index = 0
+                return { read = function()
+                    index = index + 1
+                    return chunks[index]
+                end }
+            end
+
+            it("keeps null members of streamed functionCall args as json.null", function()
+                local data = 'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"q":null,"r":1}}}]},"finishReason":"STOP"}]}\n\n'
+                local calls = {}
+                local _, err, result = client.process_stream({ stream = fake_stream({ data }) }, {
+                    on_tool_call = function(part: any): nil calls[#calls + 1] = part; return nil end,
+                })
+                tests.is_nil(err)
+                tests.eq(#calls, 1)
+                tests.eq(calls[1].functionCall.args.q, json.null)
+                tests.eq(calls[1].functionCall.args.r, 1)
+                tests.eq(result.tool_calls[1].functionCall.args.q, json.null)
+            end)
+
+            it("keeps null members of functionCall args as json.null", function()
+                client._http_client = {
+                    post = function()
+                        return {
+                            status_code = 200,
+                            body = '{"candidates":[{"content":{"parts":[{"text":"Calling"},'
+                                .. '{"functionCall":{"name":"lookup","args":{"q":null,"r":1}}}]},"finishReason":"STOP"}]}'
+                        }
+                    end
+                }
+
+                local response, err = client.request("POST", "https://test.googleapis.com/v1/test", { headers = {}, body = "{}" })
+
+                tests.is_nil(err)
+                local args = response.candidates[1].content.parts[2].functionCall.args
+                tests.eq(args.q, json.null)
+                tests.eq(args.r, 1)
+            end)
+        end)
     end)
 end
 

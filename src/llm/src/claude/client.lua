@@ -25,6 +25,25 @@ type ResponseMetadata = {
 
 local claude_client = {}
 
+-- A tool_use input is JSON the model wrote, so a null member in it is an
+-- argument the model set. The response decode drops null members; tool inputs
+-- are taken from a decode of the same body that keeps them as json.null.
+local function keep_tool_input_nulls(parsed: table, body: string): string?
+    if type(parsed.content) ~= "table" then return nil end
+    local with_nulls: any = nil
+    for i, block in ipairs(parsed.content) do
+        if type(block) == "table" and block.type == "tool_use" then
+            if not with_nulls then
+                local decoded, decode_err = json.decode_with_nulls(body)
+                if decode_err then return tostring(decode_err) end
+                with_nulls = decoded
+            end
+            block.input = with_nulls.content[i].input
+        end
+    end
+    return nil
+end
+
 claude_client._http_client = http_client
 claude_client._env = env
 claude_client._ctx = ctx
@@ -228,6 +247,15 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
         }
     end
 
+    local inputs_err = keep_tool_input_nulls(parsed, response.body or "")
+    if inputs_err then
+        return nil, {
+            status_code = response.status_code,
+            message = "Failed to parse Claude response: " .. inputs_err,
+            metadata = extract_response_metadata(response)
+        }
+    end
+
     parsed.metadata = extract_response_metadata(response)
     parsed.metadata.input_transformations = parsed.input_transformations
     return parsed
@@ -389,7 +417,7 @@ function claude_client.process_stream(stream_response, callbacks)
 
                     local arguments = {}
                     if json_str ~= "" then
-                        local parsed_args, parse_err = json.decode(json_str)
+                        local parsed_args, parse_err = json.decode_with_nulls(json_str)
                         if not parse_err then
                             arguments = parsed_args or {}
                         end

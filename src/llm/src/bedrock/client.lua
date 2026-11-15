@@ -10,6 +10,26 @@ local credentials = require("bedrock_credentials")
 
 local bedrock_client = {}
 
+-- A toolUse input is JSON the model wrote, so a null member in it is an
+-- argument the model set. The response decode drops null members; tool inputs
+-- are taken from a decode of the same body that keeps them as json.null.
+local function keep_tool_input_nulls(parsed: table, body: string): string?
+    local message = type(parsed.output) == "table" and parsed.output.message or nil
+    if type(message) ~= "table" or type(message.content) ~= "table" then return nil end
+    local with_nulls: any = nil
+    for i, block in ipairs(message.content) do
+        if type(block) == "table" and type(block.toolUse) == "table" then
+            if not with_nulls then
+                local decoded, decode_err = json.decode_with_nulls(body)
+                if decode_err then return tostring(decode_err) end
+                with_nulls = decoded
+            end
+            block.toolUse.input = with_nulls.output.message.content[i].toolUse.input
+        end
+    end
+    return nil
+end
+
 bedrock_client._http_client = http_client
 bedrock_client._env = env
 bedrock_client._ctx = ctx
@@ -198,6 +218,15 @@ local function signed_request(path, payload, options)
         return nil, {
             status_code = response.status_code,
             message = "Failed to parse Bedrock response: " .. parse_err,
+            metadata = extract_response_metadata(response)
+        }
+    end
+
+    local inputs_err = keep_tool_input_nulls(parsed, tostring(response.body))
+    if inputs_err then
+        return nil, {
+            status_code = response.status_code,
+            message = "Failed to parse Bedrock response: " .. inputs_err,
             metadata = extract_response_metadata(response)
         }
     end
@@ -505,7 +534,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                 local json_str = tostring(tool_calls[index].partial_json)
                 local arguments = {}
                 if json_str ~= "" then
-                    local parsed_args, parse_err = json.decode(json_str)
+                    local parsed_args, parse_err = json.decode_with_nulls(json_str)
                     if not parse_err then
                         arguments = parsed_args or {}
                     end
