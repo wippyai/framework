@@ -666,6 +666,18 @@ local function define_tests()
                 test.eq(tools[1].strict, true)
             end)
 
+            it("should send a tool declared without a description", function()
+                local tools, tool_map = openai_mapper.map_tools({
+                    { name = "ping", schema = { type = "object", properties = {} } }
+                })
+
+                test.eq(#tools, 1)
+                test.eq(tools[1].name, "ping")
+                test.is_nil(tools[1].description)
+                test.eq(tools[1].parameters.type, "object")
+                test.not_nil(tool_map["ping"])
+            end)
+
             it("should handle empty tools array", function()
                 local tools, tool_map = openai_mapper.map_tools({})
 

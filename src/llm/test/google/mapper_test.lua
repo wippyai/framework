@@ -706,6 +706,17 @@ local function define_tests()
                 tests.is_nil(google_tools)
             end)
 
+            it("should send a tool declared without a description", function()
+                local google_tools = mapper.map_tools({
+                    { name = "ping", schema = { type = "object", properties = {} } }
+                }) :: any
+
+                tests.eq(#google_tools, 1)
+                tests.eq(google_tools[1].name, "ping")
+                tests.is_nil(google_tools[1].description)
+                tests.eq(google_tools[1].parameters.type, "object")
+            end)
+
             it("should skip tools with missing required fields", function()
                 local contract_tools = {
                     {

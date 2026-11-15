@@ -287,7 +287,7 @@ function openai_mapper.map_tools(contract_tools, opts)
     local tool_name_map = {}
 
     for _, tool in ipairs(contract_tools) do
-        if tool.name and tool.description and tool.schema then
+        if tool.name and tool.schema then
             table.insert(tools, {
                 type = "function",
                 name = tool.name,
