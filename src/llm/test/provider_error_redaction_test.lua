@@ -1,6 +1,7 @@
 local test = require("test")
 local json = require("json")
 local output = require("output")
+local transport = require("transport")
 
 local providers = {
     { name = "openai", client = require("openai_client"), mapper = require("openai_mapper") },
@@ -11,9 +12,11 @@ local providers = {
     { name = "google", client = require("google_client"), mapper = require("google_mapper") },
 }
 
-local key = "echo-key.%+[_]fixture"
+local key = 'echo-timeout-key."\\ /+fixture'
 local header_secret = "echo-header-%value"
 local bearer = "echo-bearer-fixture"
+local encoded_key = json.encode(key):sub(2, -2)
+local url_key = key:gsub("([^%w%-._~])", function(char) return string.format("%%%02X", string.byte(char)) end)
 local diagnostic = "Denied " .. key .. " / " .. header_secret .. " / Bearer " .. bearer
 local sanitized = "Denied [REDACTED] / [REDACTED] / [REDACTED]"
 
@@ -23,9 +26,16 @@ local function assert_clean(value)
         assert_clean(value:details() or {})
         return
     end
-    local encoded = type(value) == "string" and value or json.encode(value)
-    for _, secret in ipairs({ key, header_secret, bearer }) do
-        test.is_nil(encoded:find(secret, 1, true), "credential remains in diagnostic")
+    if type(value) == "table" then
+        for name, nested in pairs(value) do
+            assert_clean(name)
+            assert_clean(nested)
+        end
+        return
+    end
+    if type(value) ~= "string" then return end
+    for _, secret in ipairs({ key, encoded_key, url_key, url_key:lower(), header_secret, bearer }) do
+        test.is_nil(value:find(secret, 1, true), "credential remains in diagnostic")
     end
 end
 
@@ -34,7 +44,7 @@ local function upstream_error()
         message = diagnostic,
         type = "authentication_error",
         code = "invalid_api_key",
-        param = { nested = { message = diagnostic, [key] = header_secret }, retained = 7 },
+        param = { nested = { message = diagnostic, [key] = header_secret }, retained = 7, encoded = encoded_key .. " / " .. url_key },
         metadata = { raw = json.encode({ message = diagnostic }), provider_name = header_secret },
     }
 end
@@ -64,7 +74,15 @@ return test.run_cases(function()
             local client: any = provider.client
             local saved = {}
             local context
+            local collect_secrets
+            local secret_collections
             before_each(function()
+                secret_collections = 0
+                collect_secrets = transport.request_secrets
+                transport.request_secrets = function(...)
+                    secret_collections = secret_collections + 1
+                    return collect_secrets(...)
+                end
                 for _, name in ipairs({ "_ctx", "_env", "_http_client", "_credentials", "_sigv4" }) do
                     saved[name] = client[name]
                 end
@@ -86,6 +104,7 @@ return test.run_cases(function()
                 end
             end)
             after_each(function()
+                transport.request_secrets = collect_secrets
                 for _, name in ipairs({ "_ctx", "_env", "_http_client", "_credentials", "_sigv4" }) do
                     client[name] = saved[name]
                 end
@@ -128,6 +147,7 @@ return test.run_cases(function()
                     test.eq(err.status_code, 401)
                     test.eq(err.message, sanitized)
                     assert_clean(err)
+                    test.ok(secret_collections > 0)
                     local built = build_error(err)
                     assert_clean(built:message())
                     assert_clean(built:details())
@@ -143,7 +163,29 @@ return test.run_cases(function()
                 local response, err = request(false)
                 test.is_nil(err)
                 test.eq(response.message, diagnostic)
+                test.eq(secret_collections, 0)
             end)
+
+            if provider.name ~= "typesafe" then
+                it("keeps successful streams free of secret collection and public credential state", function()
+                    mock("process.send", function() return true end)
+                    client._http_client = { post = function()
+                        return { status_code = 200, headers = {}, stream = stream_once(nil) }
+                    end }
+                    local response, err = request(true)
+                    test.is_nil(err)
+                    test.eq(secret_collections, 0)
+                    if provider.name ~= "google" then
+                        for name in pairs(response) do
+                            test.ok(name == "stream" or name == "status_code" or name == "headers" or name == "metadata")
+                        end
+                        local process_stream = provider.name == "bedrock" and client.process_converse_stream or client.process_stream
+                        assert(process_stream)
+                        process_stream(response, {})
+                        test.eq(secret_collections, 0)
+                    end
+                end)
+            end
 
             it("redacts connection errors without changing their shape", function()
                 client._http_client = { post = function() return nil, diagnostic end }
@@ -192,6 +234,8 @@ return test.run_cases(function()
                         local response, err = request(true)
                         if provider.name ~= "google" then
                             test.is_nil(err)
+                            test.is_nil(response._request_secrets)
+                            test.eq(secret_collections, 0)
                             -- Stream diagnostics belong to the dispatched request even if configuration changes.
                             context = { api_key = "next-request-key", headers = {} }
                             local streamer = output.streamer("fixture-pid", "fixture-errors")

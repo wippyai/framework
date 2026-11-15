@@ -49,6 +49,17 @@ local function define_tests()
                 test.eq(original.nested[secret][1], secret)
             end)
 
+            it("redacts serialized JSON and URL credential forms", function()
+                local secret = 'quote"slash\\ /+value'
+                local encoded = 'quote\\"slash\\\\ /+value'
+                local url_encoded = "quote%22slash%5C%20%2F%2Bvalue"
+                local form_encoded = "quote%22slash%5C+%2F%2Bvalue"
+                local diagnostic = secret .. " | " .. encoded .. " | " .. url_encoded
+                    .. " | " .. form_encoded .. " | " .. url_encoded:gsub("%%(%x%x)", string.lower)
+                test.eq(transport.redact_error(diagnostic, { secret }),
+                    "[REDACTED] | [REDACTED] | [REDACTED] | [REDACTED] | [REDACTED]")
+            end)
+
             it("snapshots sent header values and excludes generated protocol headers", function()
                 local configured = { ["X-Secret"] = "omitted", authorization = "omitted" }
                 local headers = { ["X-Secret"] = "sent", Authorization = "Bearer token",

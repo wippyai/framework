@@ -4,10 +4,21 @@ local output = require("output")
 local transport = require("transport")
 local mapper = require("google_mapper")
 
+local stream_redactors = setmetatable({}, { __mode = "k" })
+
+local function redact_request_error(value, http_options, method)
+    local configured_headers = {}
+    for name in pairs(http_options.headers) do
+        if name ~= "Accept" and (name ~= "Content-Type" or method == "GET") then
+            configured_headers[name] = true
+        end
+    end
+    return transport.redact_error(value, transport.request_secrets(http_options.headers, configured_headers))
+end
+
 type StreamInput = {
     stream: any,
     metadata: table?,
-    _request_secrets: {string}?,
 }
 
 type StreamResult = {
@@ -72,6 +83,7 @@ local function parse_error_response(http_response: transport.HttpResponse): tran
 end
 
 function client.process_stream(stream_response: StreamInput, callbacks: StreamCallbacks?): (string?, string?, StreamResult?)
+    local redact_error = stream_redactors[stream_response]
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -102,7 +114,8 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
         if data_line == "[DONE]" then done = true; return nil end
         local parsed, parse_err = json.decode(data_line)
         if parse_err or type(parsed) ~= "table" then
-            return transport.redact_error("Invalid Google stream event: " .. tostring(parse_err or "expected object"), stream_response._request_secrets)
+            local message = "Invalid Google stream event: " .. tostring(parse_err or "expected object")
+            return redact_error and redact_error(message) or message
         end
 
         if parsed.error then
@@ -111,7 +124,7 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
                 code = parsed.error.code,
                 status = parsed.error.status
             }
-            stream_error_info = transport.redact_error(stream_error_info, stream_response._request_secrets)
+            if redact_error then stream_error_info = redact_error(stream_error_info) end
             return tostring(stream_error_info.message)
         end
 
@@ -161,7 +174,7 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
     while not done do
         local chunk, err = stream_response.stream:read()
         if err then
-            err = transport.redact_error(err, stream_response._request_secrets)
+            if redact_error then err = redact_error(err) end
             on_error({ message = err }); return nil, err
         end
         if not chunk then
@@ -206,7 +219,7 @@ end
 
 --- Process a streaming response and send chunks via output.streamer.
 --- Returns an aggregated Google-like response compatible with map_success_response().
-local function handle_stream_response(response, http_options, secrets)
+local function handle_stream_response(response, http_options, method)
     local reply_to = http_options.stream_reply_to :: string?
     local topic = http_options.stream_topic :: string?
     local streamer = output.streamer(reply_to, topic, http_options.stream_buffer_size or 10)
@@ -257,10 +270,11 @@ local function handle_stream_response(response, http_options, secrets)
         end,
     }
 
-    local _, stream_err = client.process_stream(
-        { stream = response.stream, metadata = {}, _request_secrets = secrets },
-        callbacks :: StreamCallbacks
-    )
+    local stream_response = { stream = response.stream, metadata = {} }
+    stream_redactors[stream_response] = function(value)
+        return redact_request_error(value, http_options, method)
+    end
+    local _, stream_err = client.process_stream(stream_response, callbacks :: StreamCallbacks)
 
     if stream_err then
         return nil, {
@@ -297,7 +311,6 @@ local function handle_stream_response(response, http_options, secrets)
 end
 
 function client.request(method, url, http_options, retry: transport.Retry?, deadline_at: number?)
-    local secrets = transport.request_secrets(http_options.headers, http_options.headers)
     http_options.headers["Accept"] = "application/json"
 
     if http_options.stream then
@@ -320,12 +333,12 @@ function client.request(method, url, http_options, retry: transport.Retry?, dead
             local failure: any = request_error
             failure.stream_started = false
         end
-        return nil, transport.redact_error(request_error, secrets)
+        return nil, redact_request_error(request_error, http_options, method)
     end
 
     -- Streaming: process stream, send chunks via streamer, return aggregated response
     if http_options.stream and response.stream then
-        return handle_stream_response(response, http_options, secrets)
+        return handle_stream_response(response, http_options, method)
     end
 
     local parsed, parse_err = json.decode(response.body or "")
@@ -335,7 +348,7 @@ function client.request(method, url, http_options, retry: transport.Retry?, dead
             message = "Failed to parse Google response: " .. parse_err,
             metadata = {}
         }
-        return nil, transport.redact_error(parse_error, secrets)
+        return nil, redact_request_error(parse_error, http_options, method)
     end
 
     parsed.metadata = extract_response_metadata(parsed)

@@ -11,6 +11,7 @@ entries:
     imports:
       test: wippy.test:test
       output: wippy.llm:output
+      transport: wippy.llm.util:transport
       openai_client: wippy.llm.openai:client
       openai_mapper: wippy.llm.openai:mapper
       openai_compat_client: wippy.llm.openai_compat:client

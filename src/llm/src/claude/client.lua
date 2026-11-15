@@ -5,6 +5,8 @@ local ctx = require("ctx")
 local transport = require("transport")
 local thinking = require("thinking")
 
+local stream_redactors = setmetatable({}, { __mode = "k" })
+
 type ClaudeConfig = {
     api_key: string?,
     base_url: string,
@@ -157,7 +159,6 @@ local function prepare_headers(api_key, api_version, beta_features, method, addi
     return headers
 end
 
-
 function claude_client.request(endpoint_path, payload, options): (any, transport.RequestError?)
     options = options or {}
     local method = options.method or "POST"
@@ -180,8 +181,6 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     local configured_headers, header_betas = split_beta_header(config.headers)
     local beta_features = transport.merge_unique({ config.beta_features or {}, header_betas, options.beta_features or {} })
     local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, beta_features, method, configured_headers)
-
-    local secrets = transport.request_secrets(headers, config.headers)
 
     local http_options: {[string]: any} = {
         headers = headers,
@@ -209,17 +208,20 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, transport.redact_error(request_error, secrets)
+        return nil, transport.redact_error(request_error, transport.request_secrets(headers, config.headers))
     end
 
     if options.stream and response.stream then
-        return {
+        local stream_response = {
             stream = response.stream,
-            _request_secrets = secrets,
             status_code = response.status_code,
             headers = response.headers,
             metadata = extract_response_metadata(response)
         }
+        stream_redactors[stream_response] = function(value)
+            return transport.redact_error(value, transport.request_secrets(headers, config.headers))
+        end
+        return stream_response
     end
 
     local parsed, parse_err = json.decode(response.body or "")
@@ -228,7 +230,7 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
             status_code = response.status_code,
             message = "Failed to parse Claude response: " .. parse_err,
             metadata = extract_response_metadata(response)
-        }, secrets)
+        }, transport.request_secrets(headers, config.headers))
     end
 
     parsed.metadata = extract_response_metadata(response)
@@ -256,6 +258,7 @@ local function stream_result(full_content, tool_calls, thinking_blocks, layout, 
 end
 
 function claude_client.process_stream(stream_response, callbacks)
+    local redact_error = stream_redactors[stream_response]
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -281,7 +284,7 @@ function claude_client.process_stream(stream_response, callbacks)
         local chunk, err = stream_response.stream:read()
 
         if err then
-            err = transport.redact_error(err, stream_response._request_secrets)
+            if redact_error then err = redact_error(err) end
             on_error({ message = err })
             return nil, err
         end
@@ -423,7 +426,7 @@ function claude_client.process_stream(stream_response, callbacks)
                 return full_content, nil, result
             elseif event_type == "error" then
                 if data and data.error then
-                    data.error = transport.redact_error(data.error, stream_response._request_secrets)
+                    if redact_error then data.error = redact_error(data.error) end
                     on_error(data.error)
                     return nil, data.error.message
                 end

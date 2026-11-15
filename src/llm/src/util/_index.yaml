@@ -34,6 +34,7 @@ entries:
     source: file://transport.lua
     modules:
       - time
+      - json
 
   - name: route
     kind: library.lua

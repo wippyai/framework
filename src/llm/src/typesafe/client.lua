@@ -179,8 +179,6 @@ function typesafe_client.request(endpoint_path, payload, options)
     local full_url = config.base_url .. endpoint_path
     local headers: {[string]: string} = prepare_headers(config.api_key, method, config.headers)
 
-    local secrets = transport.request_secrets(headers, config.headers)
-
     local http_options: {[string]: any} = {
         headers = headers,
         timeout = timeout
@@ -201,7 +199,7 @@ function typesafe_client.request(endpoint_path, payload, options)
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, transport.redact_error(request_error, secrets)
+        return nil, transport.redact_error(request_error, transport.request_secrets(headers, config.headers))
     end
 
     local parsed, parse_err = json.decode(response.body or "")
@@ -210,7 +208,7 @@ function typesafe_client.request(endpoint_path, payload, options)
             status_code = response.status_code,
             message = "Failed to parse TypeSafe response: " .. tostring(parse_err or "expected a JSON object"),
             metadata = extract_response_metadata(response)
-        }, secrets)
+        }, transport.request_secrets(headers, config.headers))
     end
 
     parsed.metadata = extract_response_metadata(response)

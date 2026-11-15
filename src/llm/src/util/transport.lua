@@ -1,4 +1,5 @@
 local time = require("time")
+local json = require("json")
 
 type Retry = {
     attempts: number,
@@ -70,24 +71,46 @@ function transport.request_secrets(headers: {[string]: string}, configured_heade
             end
         end
     end
-    table.sort(secrets, function(a: string, b: string): boolean
-        if #a == #b then return a < b end
-        return #a > #b
-    end)
     return secrets
 end
 
--- Replace literal credential substrings once, including table keys and nested
--- diagnostics, without interpreting pattern/replacement characters in secrets.
+-- Replace credential substrings and their serialized forms, including table keys
+-- and nested diagnostics, without interpreting patterns in secrets.
 function transport.redact_error(value: any, secrets: {string}?): any
     if not secrets or #secrets == 0 then return value end
+    local variants: {string} = {}
+    local seen: {[string]: boolean} = {}
+    local function add(value: string)
+        if not seen[value] then
+            seen[value] = true
+            variants[#variants + 1] = value
+        end
+    end
+    for _, secret in ipairs(secrets) do
+        if secret ~= "" then
+            add(secret)
+            add(json.encode(secret):sub(2, -2))
+            local encoded = secret:gsub("([^%w%-._~])", function(char: string): string
+                return string.format("%%%02X", string.byte(char))
+            end)
+            add(encoded)
+            add(encoded:gsub("%%(%x%x)", string.lower))
+            local form = encoded:gsub("%%20", "+")
+            add(form)
+            add(form:gsub("%%(%x%x)", string.lower))
+        end
+    end
+    table.sort(variants, function(a: string, b: string): boolean
+        if #a == #b then return a < b end
+        return #a > #b
+    end)
     local function redact_string(message: string): string
         local parts: {string} = {}
         local position = 1
         while position <= #message do
             local first: integer? = nil
             local last: integer = 0
-            for _, secret in ipairs(secrets) do
+            for _, secret in ipairs(variants) do
                 local start_at, end_at = message:find(secret, position, true)
                 if start_at and end_at and (not first or start_at < first) then
                     first, last = start_at, end_at
