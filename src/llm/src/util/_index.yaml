@@ -59,6 +59,15 @@ entries:
     modules:
       - hash
 
+  - name: tool_arguments
+    kind: library.lua
+    meta:
+      type: library
+      comment: Decodes provider tool call argument text, keeping malformed text and its decoder error
+    source: file://tool_arguments.lua
+    modules:
+      - json
+
   - name: thinking
     kind: library.lua
     source: file://thinking.lua

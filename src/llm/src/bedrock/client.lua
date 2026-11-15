@@ -5,6 +5,7 @@ local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
 local thinking = require("thinking")
+local tool_arguments = require("tool_arguments")
 local sigv4 = require("sigv4")
 local credentials = require("bedrock_credentials")
 
@@ -503,18 +504,18 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
 
             if tool_calls[index] and tool_calls[index].partial_json then
                 local json_str = tostring(tool_calls[index].partial_json)
-                local arguments = {}
+                -- A toolUse block without input deltas carries an empty input object.
+                local arguments, raw_arguments, arguments_error = {}, nil, nil
                 if json_str ~= "" then
-                    local parsed_args, parse_err = json.decode(json_str)
-                    if not parse_err then
-                        arguments = parsed_args or {}
-                    end
+                    arguments, raw_arguments, arguments_error = tool_arguments.decode(json_str)
                 end
 
                 tool_calls[index] = {
                     id = tool_calls[index].id,
                     name = tool_calls[index].name,
-                    arguments = arguments
+                    arguments = arguments,
+                    raw_arguments = raw_arguments,
+                    arguments_error = arguments_error
                 }
                 on_tool_call(tool_calls[index])
             end

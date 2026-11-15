@@ -1353,6 +1353,31 @@ local function define_tests()
             end)
         end)
 
+        describe("Malformed tool arguments", function()
+            it("carries raw arguments and the decoder error onto the contract tool call", function()
+                local client_result = {
+                    content = "",
+                    tool_calls = {
+                        {
+                            id = "call_1",
+                            name = "test_tool",
+                            arguments = '{"a":',
+                            raw_arguments = '{"a":',
+                            arguments_error = "unexpected end of JSON input"
+                        }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, { test_tool = "app:test_tool" }, nil, "tool_use", {})
+                local call = result.result.tool_calls[1]
+                test.eq(call.arguments, '{"a":')
+                test.eq(call.raw_arguments, '{"a":')
+                test.eq(call.arguments_error, "unexpected end of JSON input")
+                test.eq(call.registry_id, "app:test_tool")
+            end)
+        end)
+
         describe("Streaming Finish Reason Preservation", function()
             it("should preserve LENGTH finish_reason when streaming response has tool_calls", function()
                 local client_result = {

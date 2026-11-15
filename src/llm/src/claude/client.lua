@@ -4,6 +4,7 @@ local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
 local thinking = require("thinking")
+local tool_arguments = require("tool_arguments")
 
 type ClaudeConfig = {
     api_key: string?,
@@ -387,18 +388,18 @@ function claude_client.process_stream(stream_response, callbacks)
                         json_str = tool_calls[index].partial_json
                     end
 
-                    local arguments = {}
+                    -- A tool_use block without input deltas carries an empty input object.
+                    local arguments, raw_arguments, arguments_error = {}, nil, nil
                     if json_str ~= "" then
-                        local parsed_args, parse_err = json.decode(json_str)
-                        if not parse_err then
-                            arguments = parsed_args or {}
-                        end
+                        arguments, raw_arguments, arguments_error = tool_arguments.decode(json_str)
                     end
 
                     local tool_call = {
                         id = content_blocks[index].id or "",
                         name = content_blocks[index].name or "",
-                        arguments = arguments
+                        arguments = arguments,
+                        raw_arguments = raw_arguments,
+                        arguments_error = arguments_error
                     }
 
                     tool_calls[index] = tool_call
