@@ -108,7 +108,7 @@ local function parse_error_response(http_response: transport.HttpResponse): tran
 end
 
 -- Make a signed POST request to a bedrock-runtime path
-local function signed_request(path, payload, options)
+local function signed_request(path, payload, options): (any, transport.RequestError?)
     options = options or {}
     local config = resolve_config()
     local timeout, timeout_err = transport.resolve_timeout(options.timeout, "options.timeout", config.timeout, config.timeout_error)
@@ -169,6 +169,7 @@ local function signed_request(path, payload, options)
         body = body
     }
     request_opts.headers = signed_headers
+    local secrets = transport.request_secrets(signed_headers, config.headers)
 
     if options.stream then
         request_opts.stream = true
@@ -181,12 +182,13 @@ local function signed_request(path, payload, options)
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, request_error
+        return nil, transport.redact_error(request_error, secrets)
     end
 
     if options.stream and response.stream then
         return {
             stream = response.stream,
+            _request_secrets = secrets,
             status_code = response.status_code,
             headers = response.headers,
             metadata = extract_response_metadata(response)
@@ -195,11 +197,11 @@ local function signed_request(path, payload, options)
 
     local parsed, parse_err = json.decode(tostring(response.body))
     if parse_err then
-        return nil, {
+        return nil, transport.redact_error({
             status_code = response.status_code,
             message = "Failed to parse Bedrock response: " .. parse_err,
             metadata = extract_response_metadata(response)
-        }
+        }, secrets)
     end
 
     parsed.metadata = extract_response_metadata(response)
@@ -430,7 +432,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
     local function handle_event(event): string?
         -- Converse stream events use top-level keys instead of a "type" field
         if event._exception then
-            local exc = event._exception
+            local exc = transport.redact_error(event._exception, stream_response._request_secrets)
             error_reported = true
             on_error({ message = exc.message, type = exc.type })
             return tostring(exc.message)
@@ -534,6 +536,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
 
     local stream_err = read_eventstream(stream_response.stream, handle_event)
     if stream_err then
+        stream_err = transport.redact_error(stream_err, stream_response._request_secrets)
         if not error_reported then
             on_error({ message = stream_err })
         end

@@ -151,6 +151,8 @@ function openai_client.request(endpoint_path, payload, options)
     local full_url = config.base_url .. endpoint_path
     local headers: {[string]: string} = prepare_headers(config.api_key, config.organization, method, config.headers)
 
+    local secrets = transport.request_secrets(headers, config.headers)
+
     local http_options: {[string]: any} = {
         headers = headers,
         timeout = timeout,
@@ -172,12 +174,13 @@ function openai_client.request(endpoint_path, payload, options)
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, request_error
+        return nil, transport.redact_error(request_error, secrets)
     end
 
     if options.stream and response.stream then
         return {
             stream = response.stream,
+            _request_secrets = secrets,
             status_code = response.status_code,
             headers = response.headers,
             metadata = extract_response_metadata(response)
@@ -186,19 +189,19 @@ function openai_client.request(endpoint_path, payload, options)
 
     local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
-        return nil, {
+        return nil, transport.redact_error({
             status_code = response.status_code,
             message = "Failed to parse OpenAI response: " .. parse_err,
             metadata = extract_response_metadata(response)
-        }
+        }, secrets)
     end
 
     if type(parsed) ~= "table" then
-        return nil, {
+        return nil, transport.redact_error({
             status_code = response.status_code,
             message = "Invalid OpenAI response: expected a JSON object",
             metadata = extract_response_metadata(response)
-        }
+        }, secrets)
     end
 
     parsed.metadata = extract_response_metadata(response)
@@ -314,6 +317,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
         local chunk, err = stream_response.stream:read()
 
         if err then
+            err = transport.redact_error(err, stream_response._request_secrets)
             on_error(err)
             return nil, err
         end
@@ -465,6 +469,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
                     type = err_payload and err_payload.type,
                     param = err_payload and err_payload.param
                 }
+                error_info = transport.redact_error(error_info, stream_response._request_secrets)
                 on_error(error_info)
                 close_stream()
                 return nil, error_info.message, { error = error_info }

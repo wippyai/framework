@@ -181,6 +181,8 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     local beta_features = transport.merge_unique({ config.beta_features or {}, header_betas, options.beta_features or {} })
     local headers: {[string]: string} = prepare_headers(config.api_key, config.api_version, beta_features, method, configured_headers)
 
+    local secrets = transport.request_secrets(headers, config.headers)
+
     local http_options: {[string]: any} = {
         headers = headers,
         timeout = timeout,
@@ -207,12 +209,13 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, request_error
+        return nil, transport.redact_error(request_error, secrets)
     end
 
     if options.stream and response.stream then
         return {
             stream = response.stream,
+            _request_secrets = secrets,
             status_code = response.status_code,
             headers = response.headers,
             metadata = extract_response_metadata(response)
@@ -221,11 +224,11 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
 
     local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
-        return nil, {
+        return nil, transport.redact_error({
             status_code = response.status_code,
             message = "Failed to parse Claude response: " .. parse_err,
             metadata = extract_response_metadata(response)
-        }
+        }, secrets)
     end
 
     parsed.metadata = extract_response_metadata(response)
@@ -278,6 +281,7 @@ function claude_client.process_stream(stream_response, callbacks)
         local chunk, err = stream_response.stream:read()
 
         if err then
+            err = transport.redact_error(err, stream_response._request_secrets)
             on_error({ message = err })
             return nil, err
         end
@@ -419,6 +423,7 @@ function claude_client.process_stream(stream_response, callbacks)
                 return full_content, nil, result
             elseif event_type == "error" then
                 if data and data.error then
+                    data.error = transport.redact_error(data.error, stream_response._request_secrets)
                     on_error(data.error)
                     return nil, data.error.message
                 end
