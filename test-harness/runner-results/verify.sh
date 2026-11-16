@@ -5,7 +5,7 @@ wippy_bin="${WIPPY_BIN:-wippy}"
 
 while IFS='|' read -r scenario expected; do
   set +e
-  output=$("$wippy_bin" test --config .wippy.yaml test -- "app:$scenario" 2>&1)
+  output=$("$wippy_bin" test --config .wippy.yaml -- "app:$scenario" 2>&1)
   status=$?
   set -e
   if [ "$status" -ne 1 ] || ! grep -Fq 'FAILED' <<< "$output" ||
@@ -28,7 +28,7 @@ failing_case|expected case failure
 SCENARIOS
 
 for scenario in returns_true returns_nil skipped_case burst_completion; do
-  if ! output=$("$wippy_bin" test --config .wippy.yaml test -- "app:$scenario" 2>&1) ||
+  if ! output=$("$wippy_bin" test --config .wippy.yaml -- "app:$scenario" 2>&1) ||
      ! grep -Fq 'PASSED' <<< "$output"; then
     printf 'runner rejected valid %s:\n%s\n' "$scenario" "$output"
     exit 1
@@ -38,7 +38,7 @@ printf 'runner result and protocol regressions passed\n'
 
 for scenario in empty_plan skipped_case returns_nil no-such-entry; do
   set +e
-  output=$(WIPPY_TEST_REQUIRE_CASES=1 "$wippy_bin" test --config .wippy.yaml test -- "app:$scenario" 2>&1)
+  output=$(WIPPY_TEST_REQUIRE_CASES=1 "$wippy_bin" test --config .wippy.yaml -- "app:$scenario" 2>&1)
   status=$?
   set -e
   if [ "$status" -ne 1 ]; then
@@ -46,7 +46,7 @@ for scenario in empty_plan skipped_case returns_nil no-such-entry; do
     exit 1
   fi
 done
-if ! output=$("$wippy_bin" test --config .wippy.yaml test -- app:empty_plan 2>&1) ||
+if ! output=$("$wippy_bin" test --config .wippy.yaml -- app:empty_plan 2>&1) ||
    ! grep -Fq 'PASSED' <<< "$output"; then
   printf 'runner rejected a generic empty plan:\n%s\n' "$output"
   exit 1

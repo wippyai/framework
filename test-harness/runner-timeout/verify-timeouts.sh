@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 wippy_bin="${WIPPY_BIN:-wippy}"
 for scenario in timeout_late timeout_silent; do
   set +e
-  output=$("$wippy_bin" test --config .wippy.yaml test -- "$scenario" 2>&1)
+  output=$("$wippy_bin" test --config .wippy.yaml -- "$scenario" 2>&1)
   status=$?
   set -e
   if [ "$status" -ne 1 ] || ! grep -q 'FAILED' <<< "$output" || ! grep -q 'test timed out' <<< "$output" ||

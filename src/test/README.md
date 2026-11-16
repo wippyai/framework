@@ -86,8 +86,12 @@ Mocks are automatically restored after each test.
 
 ```
 wippy test
-wippy test test -- <filter>
+wippy test -- <filter>
 ```
+
+The filter form needs Wippy runtime v0.3.63a or later. That release passes every
+argument after the optional source to the test entrypoint, and the runner reads
+each argument as a filter. Earlier runtimes need `wippy test test -- <filter>`.
 
 Discovers tests via `meta.type = "test"` in the registry, groups by `meta.suite`, sorts by `meta.order`.
 
