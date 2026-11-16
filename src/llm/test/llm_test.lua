@@ -491,13 +491,18 @@ local function define_tests()
                 test.eq(result.metadata.route.model, "large")
             end)
 
-            it("keeps an unspecified output budget distinct from the card output ceiling", function()
-                card.output_tokens = 180
+            it("sends and reserves the card output ceiling for an unspecified output budget", function()
                 local result, err = llm.generate(string.rep("x", 150), { model = "small" })
                 test.is_nil(err)
                 test.not_nil(result)
                 test.eq(#calls, 1)
-                test.is_nil(calls[1].options.max_tokens)
+                test.eq(calls[1].options.max_tokens, 40)
+
+                card.output_tokens = 180
+                result, err = llm.generate(string.rep("x", 150), { model = "small" })
+                test.is_nil(result)
+                test.contains(tostring(err), "context window")
+                test.eq(#calls, 1)
             end)
 
             it("does not charge internal message metadata against the context window", function()

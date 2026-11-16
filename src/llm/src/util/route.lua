@@ -118,13 +118,16 @@ end
 -- The output a request sends, computed once per route before the card limit and
 -- admission: `mode` is the effective thinking mode, `default_max_tokens` what the
 -- driver sends for an unset max_tokens and `limit` the card's output limit.
+-- An unset max_tokens asks for the card limit; the driver default applies only
+-- when the card declares no limit.
 -- budget is nil when the request has no budget thinking; dropped_thinking says the
 -- limit leaves no room for the smallest budget.
 function route.plan_output(max_tokens: number?, effort: number?, mode: string?, default_max_tokens: number?, limit: number?): table
     local thinks = mode == "budget" and effort ~= nil and effort > 0
     local wanted_budget = thinks and route.thinking_budget(effort :: number) or nil
-    local output = max_tokens or default_max_tokens
-    if wanted_budget and (not max_tokens or max_tokens <= wanted_budget) then
+    local requested = max_tokens or limit
+    local output = requested or default_max_tokens
+    if wanted_budget and (not requested or requested <= wanted_budget) then
         output = wanted_budget + ANSWER_ROOM
     end
     local capped = false
@@ -136,7 +139,7 @@ function route.plan_output(max_tokens: number?, effort: number?, mode: string?, 
         return { max_tokens = output }
     end
     if output <= MIN_THINKING_BUDGET then
-        return { max_tokens = math.min(max_tokens or default_max_tokens or output, output), dropped_thinking = true }
+        return { max_tokens = math.min(requested or default_max_tokens or output, output), dropped_thinking = true }
     end
     local budget = wanted_budget
     if capped then

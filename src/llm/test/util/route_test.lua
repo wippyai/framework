@@ -113,6 +113,30 @@ local function define_tests()
     end)
 
     describe("Route output planning", function()
+        it("sends the card limit for a request without an output limit", function()
+            equal(route.plan_output(nil, nil, nil, nil, 65536), { max_tokens = 65536 })
+            equal(route.plan_output(nil, nil, "budget", 2000, 64000), { max_tokens = 64000 })
+            equal(route.plan_output(nil, 100, "budget", 2000, 64000),
+                { max_tokens = 64000, budget = 24000, wanted_budget = 24000 })
+        end)
+
+        it("keeps a requested output under the card limit", function()
+            equal(route.plan_output(4096, nil, nil, nil, 65536), { max_tokens = 4096 })
+            equal(route.plan_output(4096, nil, "budget", 2000, 64000), { max_tokens = 4096 })
+        end)
+
+        it("lowers a requested output above the card limit to the limit", function()
+            equal(route.plan_output(100000, nil, nil, nil, 65536), { max_tokens = 65536 })
+            equal(route.plan_output(100000, nil, "budget", 2000, 64000), { max_tokens = 64000 })
+        end)
+
+        it("leaves the driver default for a request and card without an output limit", function()
+            equal(route.plan_output(nil, nil, nil, nil, nil), { max_tokens = nil })
+            equal(route.plan_output(nil, nil, "budget", 2000, nil), { max_tokens = 2000 })
+            equal(route.plan_output(nil, 100, "budget", 2000, nil),
+                { max_tokens = 25024, budget = 24000, wanted_budget = 24000 })
+        end)
+
         it("reserves answer room when a cap falls just above the thinking budget", function()
             for _, case in ipairs({
                 { limit = 8192, output = 8192, budget = 7168 },
