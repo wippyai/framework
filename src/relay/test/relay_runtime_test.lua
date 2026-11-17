@@ -192,7 +192,11 @@ local function define_tests()
                 control("shutdown", 2)
                 test.eq(join().client_count, 1)
                 control("resume")
-                receive(response) -- resume is echoed by the fixture
+                -- The fixture also answers each shutdown. A shutdown answer that reaches the
+                -- hub after the JOIN above is forwarded to this client, so skip it.
+                local resumed = receive(response)
+                while resumed.topic == "shutdown" do resumed = receive(response) end
+                test.eq(resumed.topic, "resume") -- resume is echoed by the fixture
                 send({type = "session_release"})
                 test.eq(receive(response).plugin_pid, plugin.pid)
                 send({type = "session_echo", data = "after reconnect"})
