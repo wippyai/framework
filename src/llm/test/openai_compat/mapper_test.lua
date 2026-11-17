@@ -1249,6 +1249,26 @@ local function define_tests()
                 test.eq(err:retryable(), true)
             end)
         end)
+
+        describe("Tool JSON fidelity", function()
+            it("keeps null tool call arguments as json.null", function()
+                local calls = openai_mapper.map_tool_calls({
+                    { id = "c1", type = "function", ["function"] = { name = "lookup", arguments = '{"q":null,"r":1}' } }
+                })
+                local args = calls[1].arguments
+                test.eq(args.q, json.null)
+                test.eq(args.r, 1)
+                test.eq(json.encode(args), '{"q":null,"r":1}')
+            end)
+
+            it("sends a json.raw tool schema with its property order", function()
+                local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
+                local schema, raw_err = json.raw(text)
+                test.is_nil(raw_err)
+                local tools = openai_mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } })
+                test.is_true(json.encode(tools):find('"parameters":' .. text, 1, true) ~= nil)
+            end)
+        end)
     end)
 end
 

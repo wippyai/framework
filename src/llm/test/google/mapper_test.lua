@@ -1,4 +1,5 @@
 local mapper = require("google_mapper")
+local json = require("json")
 local output = require("output")
 local tests = require("test")
 
@@ -2596,6 +2597,29 @@ local function define_tests()
                 tests.not_nil(err)
                 tests.eq(err:kind(), "Unavailable")
                 tests.eq(err:retryable(), true)
+            end)
+        end)
+
+        describe("Tool JSON fidelity", function()
+            it("resends null tool call arguments as null", function()
+                local contents = mapper.map_messages({
+                    { role = "user", content = { { type = "text", text = "Look it up" } } },
+                    { role = "function_call", content = {},
+                        function_call = { id = "call_1", name = "lookup", arguments = '{"q":null,"r":1}' } },
+                    { role = "function_result", name = "lookup", function_call_id = "call_1",
+                        content = { { type = "text", text = "found" } } },
+                }, { model = "gemini-2.5-pro" })
+                tests.is_true(json.encode(contents):find('"args":{"q":null,"r":1}', 1, true) ~= nil)
+            end)
+
+            it("sends a json.raw tool schema as parametersJsonSchema with its property order", function()
+                local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
+                local schema, raw_err = json.raw(text)
+                tests.is_nil(raw_err)
+                local tools = mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } }) :: any
+                tests.eq(#tools, 1)
+                tests.is_nil(tools[1].parameters)
+                tests.eq(json.encode(tools[1].parametersJsonSchema), text)
             end)
         end)
     end)

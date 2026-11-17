@@ -224,7 +224,7 @@ function mapper.map_messages(contract_messages, options)
             i = i + 1
         elseif msg.role == "function_call" then
             local arguments = (type(msg.function_call.arguments) == "string")
-                and json.decode(msg.function_call.arguments)
+                and json.decode_with_nulls(msg.function_call.arguments)
                 or msg.function_call.arguments
 
             local part = {
@@ -260,13 +260,18 @@ function mapper.map_tools(contract_tools)
 
     local tools = {}
 
+    -- A table schema is reduced to the OpenAPI subset `parameters` accepts. A
+    -- json.raw schema is JSON Schema text sent as written, member order
+    -- included, through `parametersJsonSchema`, which takes JSON Schema as is.
     for _, tool in ipairs(contract_tools) do
         if tool.name and tool.description and tool.schema then
-            table.insert(tools, {
-                name = tool.name,
-                description = tool.description,
-                parameters = filter_tool_schema(tool.schema)
-            })
+            local declaration: table = { name = tool.name, description = tool.description }
+            if type(tool.schema) == "table" then
+                declaration.parameters = filter_tool_schema(tool.schema)
+            else
+                declaration.parametersJsonSchema = tool.schema
+            end
+            table.insert(tools, declaration)
         end
     end
 

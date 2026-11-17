@@ -1110,6 +1110,27 @@ local function define_tests()
                 test.eq(response.finish_reason, "stop")
             end)
         end)
+
+        describe("Tool JSON fidelity", function()
+            it("resends null tool call arguments as null", function()
+                local messages = mapper.map_messages({
+                    { role = "user", content = { { type = "text", text = "Look it up" } } },
+                    { role = "function_call", content = {},
+                        function_call = { id = "call_1", name = "lookup", arguments = '{"q":null,"r":1}' } },
+                    { role = "function_result", name = "lookup", function_call_id = "call_1",
+                        content = { { type = "text", text = "found" } } },
+                })
+                test.is_true(json.encode(messages):find('"input":{"q":null,"r":1}', 1, true) ~= nil)
+            end)
+
+            it("sends a json.raw tool schema with its property order", function()
+                local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
+                local schema, raw_err = json.raw(text)
+                test.is_nil(raw_err)
+                local tools = mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } })
+                test.is_true(json.encode(tools):find('"inputSchema":{"json":' .. text .. '}', 1, true) ~= nil)
+            end)
+        end)
     end)
 end
 

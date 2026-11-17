@@ -1819,6 +1819,61 @@ local function define_tests()
                 test.eq(http.calls, 2)
             end)
         end)
+
+        describe("Tool JSON fidelity", function()
+            local function chunk_stream(chunks)
+                local index = 0
+                return { read = function()
+                    index = index + 1
+                    return chunks[index]
+                end }
+            end
+
+            it("keeps null members of a streamed tool input as json.null", function()
+                local chunks = {
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"lookup"}}\n\n',
+                    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"q\\":null,"}}\n\n',
+                    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\\"r\\":1}"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+                }
+                local tool_calls = {}
+                local _, err = claude_client.process_stream({ stream = chunk_stream(chunks), metadata = {} }, {
+                    on_tool_call = function(tool_call) table.insert(tool_calls, tool_call) end
+                })
+                test.is_nil(err)
+                test.eq(#tool_calls, 1)
+                local tc = assert(tool_calls[1])
+                test.eq(tc.arguments.q, json.null)
+                test.eq(tc.arguments.r, 1)
+            end)
+
+            it("keeps null members of a tool input as json.null and leaves envelope nulls absent", function()
+                claude_client._ctx = { all = function() return { api_key = "test-key" } end }
+                claude_client._env = { get = function() return nil end }
+                claude_client._http_client = {
+                    post = function()
+                        return {
+                            status_code = 200,
+                            headers = {},
+                            body = '{"content":[{"type":"text","text":"Calling","citations":null},'
+                                .. '{"type":"tool_use","id":"call_1","name":"lookup","input":{"q":null,"r":1,"n":{"x":null}}}],'
+                                .. '"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":4}}'
+                        }
+                    end
+                }
+
+                local response, err = claude_client.request("/v1/messages", {})
+
+                test.is_nil(err)
+                local input = response.content[2].input
+                test.eq(input.q, json.null)
+                test.eq(input.r, 1)
+                test.eq(input.n.x, json.null)
+                test.is_nil(response.stop_sequence)
+                test.is_nil(response.content[1].citations)
+            end)
+        end)
     end)
 end
 

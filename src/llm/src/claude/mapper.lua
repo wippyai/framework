@@ -327,7 +327,7 @@ local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
 
     if type(arguments) == "string" then
-        local parsed, parse_err = json.decode(arguments)
+        local parsed, parse_err = json.decode_with_nulls(arguments)
         if not parse_err and type(parsed) == "table" then
             arguments = parsed
         else
