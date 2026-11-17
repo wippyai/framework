@@ -380,6 +380,9 @@ if result.tool_calls and #result.tool_calls > 0 then
 end
 ```
 
+A tool needs a `name` and a `schema`; `description` is optional, and every driver sends a
+tool without one with the description field omitted.
+
 Tool calls with malformed JSON arguments retain the original string in `arguments` and
 `raw_arguments`, with the decoder diagnostic in `arguments_error`. These optional fields
 are absent on valid calls. Hosts must reject calls with `arguments_error` through their

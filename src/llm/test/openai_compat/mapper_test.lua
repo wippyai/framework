@@ -716,6 +716,18 @@ local function define_tests()
                 test.is_nil(next(tool_map))
             end)
 
+            it("should send a tool declared without a description", function()
+                local openai_tools, tool_map = openai_mapper.map_tools({
+                    { name = "ping", schema = { type = "object", properties = {} } }
+                })
+
+                test.eq(#openai_tools, 1)
+                test.eq(openai_tools[1]["function"].name, "ping")
+                test.is_nil(openai_tools[1]["function"].description)
+                test.eq(openai_tools[1]["function"].parameters.type, "object")
+                test.not_nil(tool_map["ping"])
+            end)
+
             it("should skip tools with missing required fields", function()
                 local contract_tools = {
                     {
