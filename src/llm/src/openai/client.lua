@@ -5,6 +5,8 @@ local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
 
+local stream_redactors = setmetatable({}, { __mode = "k" })
+
 type OpenAIConfig = {
     api_key: string?,
     base_url: string,
@@ -172,33 +174,37 @@ function openai_client.request(endpoint_path, payload, options)
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, request_error
+        return nil, transport.redact_error(request_error, transport.request_secrets(headers, config.headers))
     end
 
     if options.stream and response.stream then
-        return {
+        local stream_response = {
             stream = response.stream,
             status_code = response.status_code,
             headers = response.headers,
             metadata = extract_response_metadata(response)
         }
+        stream_redactors[stream_response] = function(value)
+            return transport.redact_error(value, transport.request_secrets(headers, config.headers))
+        end
+        return stream_response
     end
 
     local parsed, parse_err = json.decode(response.body or "")
     if parse_err then
-        return nil, {
+        return nil, transport.redact_error({
             status_code = response.status_code,
             message = "Failed to parse OpenAI response: " .. parse_err,
             metadata = extract_response_metadata(response)
-        }
+        }, transport.request_secrets(headers, config.headers))
     end
 
     if type(parsed) ~= "table" then
-        return nil, {
+        return nil, transport.redact_error({
             status_code = response.status_code,
             message = "Invalid OpenAI response: expected a JSON object",
             metadata = extract_response_metadata(response)
-        }
+        }, transport.request_secrets(headers, config.headers))
     end
 
     parsed.metadata = extract_response_metadata(response)
@@ -210,6 +216,7 @@ end
 -- names the event (e.g. response.output_text.delta). Multiple events are
 -- separated by a blank line (\n\n).
 function openai_client.process_stream(stream_response, callbacks): (string?, any, any)
+    local redact_error = stream_redactors[stream_response]
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -314,6 +321,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
         local chunk, err = stream_response.stream:read()
 
         if err then
+            if redact_error then err = redact_error(err) end
             on_error(err)
             return nil, err
         end
@@ -465,6 +473,7 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
                     type = err_payload and err_payload.type,
                     param = err_payload and err_payload.param
                 }
+                if redact_error then error_info = redact_error(error_info) end
                 on_error(error_info)
                 close_stream()
                 return nil, error_info.message, { error = error_info }
