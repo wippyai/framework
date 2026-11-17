@@ -809,6 +809,8 @@ function mapper.map_tool_calls(claude_tool_calls, name_to_id_map)
             id = tool_call.id,
             name = tool_call.name,
             arguments = tool_call.arguments,
+            raw_arguments = tool_call.raw_arguments,
+            arguments_error = tool_call.arguments_error,
             registry_id = name_to_id_map[tool_call.name]
         })
     end

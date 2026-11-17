@@ -3,6 +3,7 @@ local tool_ids = require("tool_id")
 local output = require("output")
 local route = require("route")
 local prompt = require("prompt")
+local tool_arguments = require("tool_arguments")
 
 local openai_mapper = {}
 
@@ -456,17 +457,9 @@ function openai_mapper.map_tool_calls(function_call_items)
 
     local result = {}
     for i, item in ipairs(function_call_items) do
-        local arguments = {}
-        local raw_arguments, arguments_error
+        local arguments, raw_arguments, arguments_error = {}, nil, nil
         if item.arguments then
-            local parsed_args, parse_err = json.decode(tostring(item.arguments))
-            if parse_err then
-                raw_arguments = tostring(item.arguments)
-                arguments = raw_arguments
-                arguments_error = tostring(parse_err)
-            elseif parsed_args then
-                arguments = parsed_args
-            end
+            arguments, raw_arguments, arguments_error = tool_arguments.decode(tostring(item.arguments))
         end
 
         result[i] = {

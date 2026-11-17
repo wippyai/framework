@@ -291,6 +291,48 @@ local function define_tests()
                 test.eq(result.tool_calls[2].id, "call_b")
             end)
 
+            it("keeps malformed streamed tool input with the decoder error", function()
+                local raw = '{"query": "wippy"'
+                local _, expected_error = json.decode(raw)
+                local _, err, result = run({
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockStart", {
+                        contentBlockIndex = 0,
+                        start = { toolUse = { toolUseId = "call_bad", name = "search" } }
+                    }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = raw } } }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    event("messageStop", { stopReason = "tool_use" }),
+                })
+
+                test.is_nil(err)
+                test.eq(#result.tool_calls, 1)
+                local call = result.tool_calls[1]
+                test.eq(call.arguments, raw)
+                test.eq(call.raw_arguments, raw)
+                test.eq(call.arguments_error, tostring(expected_error))
+            end)
+
+            it("decodes valid streamed tool input without diagnostics", function()
+                local _, err, result = run({
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockStart", {
+                        contentBlockIndex = 0,
+                        start = { toolUse = { toolUseId = "call_ok", name = "search" } }
+                    }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = '{"query":' } } }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = '"wippy"}' } } }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    event("messageStop", { stopReason = "tool_use" }),
+                })
+
+                test.is_nil(err)
+                local call = result.tool_calls[1]
+                test.eq(call.arguments.query, "wippy")
+                test.is_nil(call.raw_arguments)
+                test.is_nil(call.arguments_error)
+            end)
+
             it("joins redactedContent deltas by their bytes into one base64 value", function()
                 local first = base64.encode("ab")
                 local second = base64.encode("cde")
