@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.53](https://github.com/wippyai/framework/compare/facade-v0.6.51...facade-v0.6.53) (2026-11-17)
+
+
+### Miscellaneous Chores
+
+* **facade:** target Web Host 1.0.69 ([#260](https://github.com/wippyai/framework/issues/260)) ([17ca470](https://github.com/wippyai/framework/commit/17ca470ad888ceeec1ecdeb8f0f904d07f4cac75))
+* **facade:** target Web Host 1.0.70 ([#277](https://github.com/wippyai/framework/issues/277)) ([6f31338](https://github.com/wippyai/framework/commit/6f3133894b73ac933649d6572abfba9eb2d9830d))
+
 ## [0.6.52](https://github.com/wippyai/framework/compare/facade-v0.6.51...facade-v0.6.52) (2026-11-12)
 
 - Target Web Host 1.0.69. The vendored `loading.js`, `import-map-bootstrap.js` and their source maps are unchanged from Web Host 1.0.68.
