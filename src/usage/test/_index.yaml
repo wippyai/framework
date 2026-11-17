@@ -85,3 +85,28 @@ entries:
       test: wippy.test:test
       usage_tracker: wippy.usage:usage_tracker
     method: run_tests
+
+  # app:token_usage_retention_test
+  - name: token_usage_retention_test
+    kind: function.lua
+    meta:
+      name: Token Usage Retention Test
+      type: test
+      comment: Tests for the token usage retention policy, bounded prune and retention owner
+      group: LLM / Usage Tests
+      tags:
+        - usage
+        - retention
+        - tests
+    source: file://token_usage_retention_test.lua
+    modules:
+      - sql
+      - time
+      - funcs
+      - security
+      - registry
+    imports:
+      test: wippy.test:test
+      token_usage_repo: wippy.usage:token_usage_repo
+      retention_policy: wippy.usage:retention_policy
+    method: run_tests
