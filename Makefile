@@ -17,15 +17,15 @@ help:
 	@echo "  make test-runtime   Test real process and control delivery"
 
 test-runtime:
-	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/actor/test test test -- actor_runtime_test
-	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/actor/test test test -- actor_runtime_resident_test
+	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/actor/test test -- actor_runtime_test
+	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/actor/test test -- actor_runtime_resident_test
 	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/agent/test test \
 		-o wippy.llm:process_host:default=wippy.terminal:host \
-		-o wippy.llm:env_storage:default=app:env_storage test -- tools_controls_runtime_test
+		-o wippy.llm:env_storage:default=app:env_storage -- tools_controls_runtime_test
 	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) src/relay/test test \
 		-o wippy.relay:application_host:default=app:processes \
-		-o wippy.relay:user_security_scope:default=app:user test -- relay_runtime_test
-	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) test-harness/runner test test -- aggregate_checks_test
+		-o wippy.relay:user_security_scope:default=app:user -- relay_runtime_test
+	WIPPY_TEST_REQUIRE_CASES=1 $(RUN_WIPPY) test-harness/runner test -- aggregate_checks_test
 
 check-manifests:
 	@python3 scripts/check_module_manifests.py
