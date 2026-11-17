@@ -743,7 +743,10 @@ entries:
     max_tokens: 1000000
     output_tokens: 128000
     pricing: { input: 2, output: 10 }
+    metadata: { tier: standard }
 ```
+
+`metadata` is an open table for catalog annotations. Discovery copies it onto the model card unchanged as `card.metadata`, an empty table when the entry declares none; `llm` itself does not read it.
 
 Additional model entries can use these routes with the same top-level structure. Limits and pricing should reflect your provider's current offering.
 
