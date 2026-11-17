@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.21](https://github.com/wippyai/framework/compare/llm-v0.5.20...llm-v0.5.21) (2026-11-17)
+
+
+### Bug Fixes
+
+* **llm:** carry registry model card metadata ([#265](https://github.com/wippyai/framework/issues/265)) ([a8a4527](https://github.com/wippyai/framework/commit/a8a45276347ffeec4ae071b19463ed77545c9264))
+* **llm:** keep malformed streamed tool arguments from Claude and Bedrock ([#269](https://github.com/wippyai/framework/issues/269)) ([9853ecc](https://github.com/wippyai/framework/commit/9853ecc1311fb8a736bd81df26829f907d7a986e))
+* **llm:** redact request credentials from provider diagnostics ([#271](https://github.com/wippyai/framework/issues/271)) ([5066213](https://github.com/wippyai/framework/commit/506621327999b56a8736daa72fd2d84e8fe53141))
+* **llm:** send tools declared without a description ([#270](https://github.com/wippyai/framework/issues/270)) ([1073dca](https://github.com/wippyai/framework/commit/1073dca3aa4ddf0cae222cb05e32c20b7d2105b7))
+
 ## [0.5.20](https://github.com/wippyai/framework/compare/llm-v0.5.19...llm-v0.5.20) (2026-11-14)
 
 
