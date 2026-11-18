@@ -29,6 +29,13 @@ local function define_tests()
                     .. '"x":{"type":"string","enum":["a","b"]}}}'),
                 '{"properties":{"x":{"enum":["a","b"],"type":"string"},"y":{"minimum":1,"type":"integer"}},'
                     .. '"required":["x","y"],"type":"object"}' },
+            { "decoded empty object", json.decode("{}"), "{}" },
+            { "decoded empty array", json.decode("[]"), "[]" },
+            { "decoded empty object in an object", json.decode('{"b":{},"a":[]}'), '{"a":[],"b":{}}' },
+            { "decoded empty object in an array", json.decode("[{},[],{}]"), "[{},[],{}]" },
+            { "decoded tool schema without properties", json.decode(
+                '{"type":"object","properties":{},"additionalProperties":false}'),
+                '{"additionalProperties":false,"properties":{},"type":"object"}' },
         }
 
         it("keeps the exact text of every value it already encoded correctly", function()
@@ -95,16 +102,50 @@ local function define_tests()
             end
         end)
 
-        it("refuses a sparse table whose largest index is far above its item count", function()
-            test.eq(#canonical.encode({ [1025] = 1 }), 1 + 1024 * 5 + 2)
-            for _, value in ipairs({ { [1026] = 1 }, { [1e9] = 1 }, { 1, 2, [2051] = 3 } }) do
+        it("keeps a decoded array with many leading nulls", function()
+            local text = "[" .. string.rep("null,", 1025) .. "1]"
+            test.eq(canonical.encode(json.decode(text)), text)
+            local nested = '{"args":[' .. string.rep("null,", 5000) .. '"x"]}'
+            test.eq(canonical.encode(json.decode(nested)), nested)
+        end)
+
+        it("refuses a mostly empty array whose largest index is above the cap", function()
+            test.eq(canonical.MAX_INDEX, 1000000)
+            test.eq(#canonical.encode({ [canonical.MAX_INDEX] = 1 }), 1 + (canonical.MAX_INDEX - 1) * 5 + 2)
+            for _, value in ipairs({ { [canonical.MAX_INDEX + 1] = 1 }, { [1e9] = 1 }, { 1, 2, [1e9] = 3 } }) do
                 local ok = pcall(canonical.encode, value)
                 test.ok(not ok)
                 local text, err = canonical.try_encode(value)
                 test.is_nil(text)
-                test.contains(tostring(err), "holes")
+                test.contains(tostring(err), "only")
             end
-            test.eq(#canonical.encode({ 1, 2, [1026] = 3 }), #"[1,2," + 1023 * 5 + #"3]")
+        end)
+
+        it("encodes the deepest JSON the runtime decoder accepts", function()
+            -- The runtime decoder accepts 128 containers around a value, or 129 when
+            -- the innermost one is empty, and refuses one more level with
+            -- "maximum nesting depth exceeded".
+            local arrays = string.rep("[", 128) .. "1" .. string.rep("]", 128)
+            local empty = string.rep("[", 129) .. string.rep("]", 129)
+            local objects = string.rep('{"a":', 128) .. "1" .. string.rep("}", 128)
+            test.is_nil(json.decode(string.rep("[", 129) .. "1" .. string.rep("]", 129)))
+            test.is_nil(json.decode(string.rep("[", 130) .. string.rep("]", 130)))
+            test.is_nil(json.decode(string.rep('{"a":', 129) .. "1" .. string.rep("}", 129)))
+            for _, text in ipairs({ arrays, empty, objects }) do
+                local value = json.decode(text)
+                test.not_nil(value)
+                test.eq(canonical.encode(value), text)
+                local encoded, err = canonical.try_encode(value)
+                test.is_nil(err)
+                test.eq(encoded, text)
+            end
+        end)
+
+        it("encodes Lua tables nested far deeper than the call stack", function()
+            local value = {}
+            for _ = 1, 10000 do value = { value } end
+            -- 10000 wrappers around the innermost empty table.
+            test.eq(canonical.encode(value), string.rep("[", 10001) .. string.rep("]", 10001))
         end)
 
         it("refuses a table that contains itself", function()

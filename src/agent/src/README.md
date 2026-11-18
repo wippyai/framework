@@ -910,12 +910,16 @@ Agent resolution contract. Applications provide a binding to handle custom agent
 equal values give equal text and different values never do. The prefix fingerprint
 and the Attention read deduplication keys use it. An array is written up to its
 largest index, and a missing item (the JSON decoder leaves one for `null`) is
-written as `null`. The encoder refuses a value instead of changing it: functions,
-userdata other than `json.null`, NaN and infinities, tables that mix string and
-number keys, keys that are not strings or whole positive numbers, tables that
-contain themselves, and arrays with more missing items than items when that is
-also more than 1024. `encode(value)` returns the text and raises an error for a
-refused value. `try_encode(value)` returns the text, or `nil` and the reason.
+written as `null`. An empty table is written as the runtime JSON encoder writes
+it: `{}` for an object the decoder made, `[]` otherwise. The encoder uses its own
+stack, so any nesting the runtime decoder accepts encodes. It refuses a value
+instead of changing it: functions, userdata other than `json.null`, NaN and
+infinities, tables that mix string and number keys, keys that are not strings or
+whole positive numbers, tables that contain themselves, and arrays whose largest
+index is above 1,000,000 when more than half of the indexes are missing. Every
+value decoded from JSON encodes. `encode(value)` returns the text and raises an
+error for a refused value. `try_encode(value)` returns the text, or `nil` and the
+reason.
 Strings are written by the runtime JSON encoder, which replaces invalid UTF-8
 bytes with U+FFFD. The JSON decoder drops object members whose value is `null`
 and trailing `null` array items, so those decoded values encode like the values
