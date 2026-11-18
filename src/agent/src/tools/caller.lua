@@ -904,17 +904,95 @@ local function execute_parallel(self: any, run: BatchRun, context: table?, valid
     collect_pending(run, pending, cancel, cancelled)
 end
 
+type ExecuteOptions = {
+    precomputed_results: {[any]: table}?,
+}
+
+-- Returns the precomputed results to record, or nil when the option is absent
+-- or empty. Every ID must name a validated call and every value must be a table.
+local function read_precomputed(options: any?, validated_tools: any): ({[any]: table}?, string?)
+    if options == nil then return nil, nil end
+    if type(options) ~= "table" then return nil, "Execute options must be a table" end
+    local precomputed = (options :: ExecuteOptions).precomputed_results
+    if precomputed == nil then return nil, nil end
+    if type(precomputed) ~= "table" then
+        return nil, "Execute option precomputed_results must be a table"
+    end
+    if next(precomputed) == nil then return nil, nil end
+    for call_id, entry in pairs(precomputed) do
+        if validated_tools[call_id] == nil then
+            return nil, "Precomputed result for unknown tool call ID: " .. tostring(call_id)
+        end
+        if type(entry) ~= "table" then
+            return nil, "Precomputed result for tool call ID " .. tostring(call_id) .. " must be a table"
+        end
+    end
+    return precomputed, nil
+end
+
+-- Records precomputed results in model order, then any other IDs sorted by ID.
+-- Each entry is a copy, so the caller's tables are not changed.
+local function record_precomputed(self: any, run: BatchRun, validated_tools: any, precomputed: {[any]: table})
+    local order = {}
+    local queued = {}
+    for _, tool_call in ipairs(self.last_tool_calls or {}) do
+        local call_id = type(tool_call) == "table" and tool_call.id or nil
+        if call_id ~= nil and precomputed[call_id] ~= nil and not queued[call_id] then
+            order[#order + 1] = call_id
+            queued[call_id] = true
+        end
+    end
+    local rest = {}
+    for call_id in pairs(precomputed) do
+        if not queued[call_id] then rest[#rest + 1] = call_id end
+    end
+    table.sort(rest, function(a, b) return tostring(a) < tostring(b) end)
+    for _, call_id in ipairs(rest) do order[#order + 1] = call_id end
+
+    for _, call_id in ipairs(order) do
+        local entry = {}
+        for k, v in pairs(precomputed[call_id]) do entry[k] = v end
+        if entry.tool_call == nil then entry.tool_call = validated_tools[call_id] end
+        record_result(run, call_id, entry)
+        if run.error then return end
+    end
+end
+
+-- Returns a new table with the validated calls that still have to run.
+local function without_precomputed(validated_tools: any, precomputed: {[any]: table}): any
+    local launch = {}
+    for call_id, tool_call in pairs(validated_tools) do
+        if precomputed[call_id] == nil then launch[call_id] = tool_call end
+    end
+    return launch
+end
+
 -- `cancel`, when given, is a channel whose closing cancels the in-flight calls;
--- each cancelled call reports `cancelled = true`. Returns the results keyed by
--- call ID, or nil and an error when the result listener fails.
-function tool_caller:execute(context: any, validated_tools: any, cancel: any?): (any, string?)
+-- each cancelled call reports `cancelled = true`. `options.precomputed_results`
+-- maps call IDs to results for calls that must not run; they are recorded
+-- before any launch. Returns the results keyed by call ID, or nil and an error
+-- when the options are invalid or the result listener fails.
+function tool_caller:execute(context: any, validated_tools: any, cancel: any?, options: ExecuteOptions?): (any, string?)
+    local precomputed, options_err = read_precomputed(options, validated_tools or {})
+    if options_err then
+        return nil, options_err
+    end
     self.wrapper_controls = {}
     local run: BatchRun = { results = {}, listener = self.result_listener, error = nil }
 
+    local launch_tools = validated_tools or {}
+    if precomputed then
+        record_precomputed(self :: any, run, launch_tools, precomputed)
+        if run.error then
+            return nil, run.error
+        end
+        launch_tools = without_precomputed(launch_tools, precomputed)
+    end
+
     if self.strategy == STRATEGY.PARALLEL then
-        execute_parallel(self :: any, run, context as table?, validated_tools or {}, cancel)
+        execute_parallel(self :: any, run, context as table?, launch_tools, cancel)
     else
-        execute_sequential(self :: any, run, context as table?, validated_tools or {}, cancel)
+        execute_sequential(self :: any, run, context as table?, launch_tools, cancel)
     end
     if run.error then
         return nil, run.error
@@ -942,5 +1020,7 @@ tool_caller.PHASE = PHASE
 tool_caller.OUTCOME_STATE = OUTCOME_STATE
 tool_caller.OUTCOME_REASON = OUTCOME_REASON
 tool_caller.RUNTIME_CONTEXT_TOOL_IDS = RUNTIME_CONTEXT_TOOL_IDS
+-- Optional execute features, so callers can detect support before using them.
+tool_caller.FEATURES = { precomputed_results = 1 }
 
 return tool_caller
