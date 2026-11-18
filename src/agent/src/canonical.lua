@@ -1,8 +1,11 @@
 local json = require("json")
 
 -- Serializes a JSON-shaped value with object keys in byte order, so equal values
--- always produce equal text and different values never do. Scalars are written
--- by the runtime JSON encoder, so the text matches what the wire encoder sends.
+-- always produce equal text. Different values never produce equal text, except
+-- values the runtime JSON decoder or encoder already make equal: the decoder
+-- drops null object members and trailing null array items, and the encoder
+-- replaces invalid UTF-8 bytes with U+FFFD. Scalars are written by the runtime
+-- JSON encoder, so the text matches what the wire encoder sends.
 --
 -- Accepted values:
 --   - strings, booleans, finite numbers, json.null and nil (written as null);
@@ -10,21 +13,21 @@ local json = require("json")
 --   - tables whose keys are all whole positive numbers (arrays). An array is
 --     written up to its largest index, and a missing item (the JSON decoder
 --     leaves one for null) is written as null;
---   - empty tables, written as the runtime encoder writes them: {} for an
---     object the JSON decoder made, [] otherwise.
+--   - empty tables, which keep the runtime JSON encoder's choice of {} or [].
 -- Everything else is refused instead of being replaced: functions, other
 -- userdata, NaN and infinities, tables that mix string and number keys, keys
 -- that are not strings or whole positive numbers, tables that contain
--- themselves, and arrays that are mostly holes with an index above MAX_INDEX.
+-- themselves, and arrays whose largest index is above MAX_INDEX when more than
+-- half of the indexes from 1 to that index are missing.
 --
 -- The encoder walks the value with its own stack instead of recursion, so the
 -- deepest JSON the runtime decoder accepts never reaches the Lua call limit.
 local canonical = {}
 
--- An array whose largest index is above this and more than half holes is
--- refused, so a Lua table such as {[1e9] = 1} cannot expand to a billion nulls.
--- Decoded JSON needs five bytes of text ("null,") for each hole, so it would
--- take more than 5 MB of nulls in one array to reach this.
+-- An array is refused when its largest index is above this and more than half
+-- of the indexes from 1 to that index are missing, so a Lua table such as
+-- {[1e9] = 1} cannot expand to a billion nulls. For decoded JSON this needs one
+-- array of more than MAX_INDEX items with more than half of them null.
 canonical.MAX_INDEX = 1000000
 
 local function refuse(message: string)
@@ -68,7 +71,7 @@ local function open(value: table, out: {string}, active: {[any]: boolean}): tabl
     end
     if string_keys > 0 and count > 0 then refuse("a table mixes string and number keys") end
     if string_keys == 0 and count == 0 then
-        -- Only the runtime encoder knows whether an empty table is a decoded object.
+        -- Only the runtime encoder knows whether an empty table is an object.
         local encoded = json.encode(value)
         if encoded ~= "{}" and encoded ~= "[]" then refuse("the JSON encoder refused an empty table") end
         out[#out + 1] = encoded
@@ -138,8 +141,8 @@ function canonical.try_encode(value: any): (string?, string?)
 end
 
 -- Returns the canonical text and raises an error for a value that is not
--- JSON-shaped. A value decoded from JSON is refused only when one array holds
--- more than MAX_INDEX items that are mostly null (over 5 MB of JSON text).
+-- JSON-shaped. A value decoded from JSON is refused only when one array has
+-- more than MAX_INDEX items and more than half of them are null.
 function canonical.encode(value: any): string
     local text, err = canonical.try_encode(value)
     if not text then error("canonical JSON: " .. tostring(err), 2) end

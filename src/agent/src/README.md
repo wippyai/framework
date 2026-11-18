@@ -907,18 +907,20 @@ Agent resolution contract. Applications provide a binding to handle custom agent
 | `wippy.agent` | `canonical` | Order-independent JSON for hashes and deduplication keys |
 
 `wippy.agent:canonical` writes a value as JSON with object keys in byte order, so
-equal values give equal text and different values never do. The prefix fingerprint
-and the Attention read deduplication keys use it. An array is written up to its
-largest index, and a missing item (the JSON decoder leaves one for `null`) is
-written as `null`. An empty table is written as the runtime JSON encoder writes
-it: `{}` for an object the decoder made, `[]` otherwise. The encoder uses its own
+equal values give equal text. Different values never give equal text, except
+values the runtime JSON decoder or encoder already make equal (see the end of
+this section). The prefix fingerprint and the Attention read deduplication keys
+use it. An array is written up to its largest index, and a missing item (the JSON
+decoder leaves one for `null`) is written as `null`. An empty table keeps the
+runtime JSON encoder's choice of `{}` or `[]`. The encoder uses its own
 stack, so any nesting the runtime decoder accepts encodes. It refuses a value
 instead of changing it: functions, userdata other than `json.null`, NaN and
 infinities, tables that mix string and number keys, keys that are not strings or
 whole positive numbers, tables that contain themselves, and arrays whose largest
-index is above 1,000,000 when more than half of the indexes are missing. A value
-decoded from JSON is refused only in that last case, which takes more than 5 MB
-of `null` items in one array. `encode(value)` returns the text and raises an
+index is above 1,000,000 when more than half of the indexes from 1 to that index
+are missing. A value decoded from JSON is refused only in that last case, which
+needs one array of more than 1,000,000 items with more than half of them `null`.
+`encode(value)` returns the text and raises an
 error for a refused value. `try_encode(value)` returns the text, or `nil` and the
 reason.
 Strings are written by the runtime JSON encoder, which replaces invalid UTF-8

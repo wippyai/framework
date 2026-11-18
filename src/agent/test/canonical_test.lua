@@ -36,7 +36,15 @@ local function define_tests()
             { "decoded tool schema without properties", json.decode(
                 '{"type":"object","properties":{},"additionalProperties":false}'),
                 '{"additionalProperties":false,"properties":{},"type":"object"}' },
+            { "whole float", 2.0, "2" },
+            { "whole floats in a table", { n = 2.0, list = { 1.0, 3.0 } }, '{"list":[1,3],"n":2}' },
         }
+        -- One table reached through two keys is written in full at both places.
+        local shared = { x = 1, list = { 2 } }
+        cases[#cases + 1] = { "shared subtable in an object", { a = shared, b = shared },
+            '{"a":{"list":[2],"x":1},"b":{"list":[2],"x":1}}' }
+        cases[#cases + 1] = { "shared subtable in an array", { shared, { inner = shared } },
+            '[{"list":[2],"x":1},{"inner":{"list":[2],"x":1}}]' }
 
         it("keeps the exact text of every value it already encoded correctly", function()
             for _, case in ipairs(cases) do
@@ -119,6 +127,33 @@ local function define_tests()
                 test.is_nil(text)
                 test.contains(tostring(err), "only")
             end
+        end)
+
+        -- Above MAX_INDEX an array may have as many missing indexes as items, not one more.
+        local function half_filled(max_index)
+            local value = {}
+            for index = 2, max_index, 2 do value[index] = 0 end
+            return value
+        end
+
+        it("encodes an array above the cap with exactly half of its indexes missing", function()
+            local max_index = canonical.MAX_INDEX + 2
+            local value = half_filled(max_index)
+            local expected = string.rep("null,0,", max_index / 2)
+            expected = "[" .. expected:sub(1, #expected - 1) .. "]"
+            test.eq(canonical.encode(value), expected)
+            local text, err = canonical.try_encode(value)
+            test.is_nil(err)
+            test.eq(text, expected)
+        end)
+
+        it("refuses an array above the cap with one index more missing than half", function()
+            local value = half_filled(canonical.MAX_INDEX + 2)
+            value[2] = nil
+            test.ok(not pcall(canonical.encode, value))
+            local text, err = canonical.try_encode(value)
+            test.is_nil(text)
+            test.contains(tostring(err), "only 500000 items")
         end)
 
         it("encodes the deepest JSON the runtime decoder accepts", function()
