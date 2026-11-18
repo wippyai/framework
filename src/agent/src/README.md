@@ -916,8 +916,9 @@ stack, so any nesting the runtime decoder accepts encodes. It refuses a value
 instead of changing it: functions, userdata other than `json.null`, NaN and
 infinities, tables that mix string and number keys, keys that are not strings or
 whole positive numbers, tables that contain themselves, and arrays whose largest
-index is above 1,000,000 when more than half of the indexes are missing. Every
-value decoded from JSON encodes. `encode(value)` returns the text and raises an
+index is above 1,000,000 when more than half of the indexes are missing. A value
+decoded from JSON is refused only in that last case, which takes more than 5 MB
+of `null` items in one array. `encode(value)` returns the text and raises an
 error for a refused value. `try_encode(value)` returns the text, or `nil` and the
 reason.
 Strings are written by the runtime JSON encoder, which replaces invalid UTF-8

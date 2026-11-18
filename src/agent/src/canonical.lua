@@ -138,7 +138,8 @@ function canonical.try_encode(value: any): (string?, string?)
 end
 
 -- Returns the canonical text and raises an error for a value that is not
--- JSON-shaped. Values decoded from JSON always encode.
+-- JSON-shaped. A value decoded from JSON is refused only when one array holds
+-- more than MAX_INDEX items that are mostly null (over 5 MB of JSON text).
 function canonical.encode(value: any): string
     local text, err = canonical.try_encode(value)
     if not text then error("canonical JSON: " .. tostring(err), 2) end
