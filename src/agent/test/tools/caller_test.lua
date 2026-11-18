@@ -1592,8 +1592,15 @@ local function define_tests()
                     table.insert(batch.events, "notify:" .. tostring(call_id))
                     batch.results[call_id] = result
                     batch.counts[call_id] = (batch.counts[call_id] or 0) + 1
+                    if batch.on_notify then batch.on_notify(call_id, result) end
                 end)
                 return batch
+            end
+
+            local function wrapper_ids(payload)
+                local ids = {}
+                for _, tool_call in ipairs(payload.tool_calls or {}) do ids[#ids + 1] = tool_call.id end
+                return table.concat(ids, ",")
             end
 
             -- Model order: denied, real, stopped. Only "real" may run.
@@ -1641,7 +1648,8 @@ local function define_tests()
                 test.eq(tool_caller.FEATURES.precomputed_results, 1)
             end)
 
-            it("keeps results, listener calls and wrapper payloads unchanged without the option", function()
+            -- The existing caller tests are the main proof that the no-option path is unchanged.
+            it("treats an absent, nil or empty option the same", function()
                 local variants = {
                     function(caller, validated, cancel) return caller:execute({}, validated, cancel) end,
                     function(caller, validated, cancel) return caller:execute({}, validated, cancel, nil) end,
@@ -1658,7 +1666,37 @@ local function define_tests()
                             local validated = validate_batch(batch)
                             local results, err = variant(batch.caller, validated, with_cancel and channel.new() or nil)
                             local summary = summarize(batch, results, err)
-                            test.eq(#batch.runs, 3, strategy .. " variant " .. index)
+                            local label = strategy .. " variant " .. index
+                            test.eq(#batch.runs, 3, label)
+                            -- Expected values of the base behavior: every call runs once and succeeds.
+                            test.is_nil(err, label)
+                            test.eq(table.concat(sorted_keys(results), ","), "denied,real,stopped", label)
+                            test.eq(results.denied.result, 42, label)
+                            test.eq(results.real.result, "Sunny", label)
+                            test.eq(results.stopped.result, 42, label)
+                            for id, entry in pairs(results) do
+                                test.is_nil(entry.error, label .. " " .. id)
+                                test.is_nil(entry.cancelled, label .. " " .. id)
+                                test.is_true(rawequal(entry.tool_call, validated[id]), label .. " " .. id)
+                                test.eq(batch.counts[id], 1, label .. " " .. id)
+                                test.is_true(rawequal(batch.results[id], entry), label .. " " .. id)
+                            end
+                            -- Base order: pairs() order, so only the count is fixed; sequential
+                            -- delivers each result right after its own run.
+                            test.eq(#batch.order, 3, label)
+                            if strategy == "sequential" then
+                                test.eq(#batch.events, 6, label)
+                                for i = 1, 6, 2 do
+                                    test.eq("notify:" .. string.sub(batch.events[i], 5), batch.events[i + 1], label)
+                                end
+                            end
+                            test.eq(#wrapper_calls, 1, label)
+                            local payload = wrapper_calls[1].payload
+                            test.eq(payload.phase, tool_caller.PHASE.AFTER_EXECUTE, label)
+                            test.eq(wrapper_ids(payload), "denied,real,stopped", label)
+                            test.is_true(rawequal(payload.tool_results, results), label)
+                            test.eq(payload.outcome.state, tool_caller.OUTCOME_STATE.CONTINUES, label)
+                            test.eq(payload.outcome.reason, tool_caller.OUTCOME_REASON.TOOL_RESULTS_RECORDED, label)
                             if baseline == nil then
                                 baseline = summary
                             else
@@ -1730,8 +1768,9 @@ local function define_tests()
 
             it("rejects malformed option values before any launch, listener call or wrapper", function()
                 local cases = {
-                    { options = { precomputed_results = { denied = "denied" } },
-                        message = "Precomputed result for tool call ID denied must be a table" },
+                    -- A valid entry sits beside the bad one, so a late check would deliver it first.
+                    { options = { precomputed_results = { denied = { error = "Tool call was denied" }, stopped = "stopped" } },
+                        message = "Precomputed result for tool call ID stopped must be a table" },
                     { options = { precomputed_results = "denied" },
                         message = "precomputed_results must be a table" },
                     { options = "denied", message = "options must be a table" },
@@ -1753,13 +1792,39 @@ local function define_tests()
             it("delivers precomputed results in model order before any launch", function()
                 for _, strategy in ipairs(STRATEGIES) do
                     local batch = new_batch(strategy)
+                    -- Model order is not alphabetical, so sorting by ID would give alpha first.
+                    local validated, err = batch.caller:validate({
+                        { id = "zeta", name = "calculator", registry_id = "test:calculator", arguments = {} },
+                        { id = "real", name = "get_weather", registry_id = "test:weather", arguments = {} },
+                        { id = "alpha", name = "calculator", registry_id = "test:calculator", arguments = {} },
+                    })
+                    test.is_nil(err, strategy)
+                    batch.caller:execute({}, validated, nil, { precomputed_results = {
+                        zeta = { error = "Tool call was denied" },
+                        alpha = { error = "Tool call was cancelled", cancelled = true },
+                    } })
+                    test.eq(table.concat(batch.events, " "), "notify:zeta notify:alpha run:real notify:real", strategy)
+                end
+            end)
+
+            it("delivers model-order precomputed IDs before IDs outside the model order", function()
+                for _, strategy in ipairs(STRATEGIES) do
+                    local batch = new_batch(strategy)
                     local validated = validate_batch(batch)
-                    batch.caller:execute({}, validated, nil, { precomputed_results = settled() })
-                    test.eq(#batch.events, 4, strategy)
-                    test.eq(batch.events[1], "notify:denied", strategy)
-                    test.eq(batch.events[2], "notify:stopped", strategy)
-                    test.eq(batch.events[3], "run:real", strategy)
-                    test.eq(batch.events[4], "notify:real", strategy)
+                    local launch = {}
+                    for id, entry in pairs(validated) do launch[id] = entry end
+                    -- "aaa" sorts before "stopped" but is not in the model order.
+                    launch.aaa = tool("aaa", "test:calculator")
+                    batch.caller:execute({}, launch, nil, { precomputed_results = {
+                        stopped = { error = "Tool call was cancelled", cancelled = true },
+                        aaa = { error = "Tool call was denied" },
+                    } })
+                    test.eq(#batch.events, 6, strategy)
+                    test.eq(batch.events[1], "notify:stopped", strategy)
+                    test.eq(batch.events[2], "notify:aaa", strategy)
+                    test.eq(table.concat(sorted_keys(batch.counts), ","), "aaa,denied,real,stopped", strategy)
+                    test.eq(table.concat(batch.runs, ","):find("aaa"), nil, strategy)
+                    test.eq(table.concat(batch.runs, ","):find("stopped"), nil, strategy)
                 end
             end)
 
@@ -1836,25 +1901,138 @@ local function define_tests()
                 end
             end)
 
+            it("cancels the real calls when the listener closes the channel on a precomputed result", function()
+                for _, strategy in ipairs(STRATEGIES) do
+                    local batch = new_batch(strategy)
+                    local validated = validate_batch(batch)
+                    local cancel = channel.new()
+                    batch.on_notify = function()
+                        if #batch.order == 1 then cancel:close() end
+                    end
+                    local results, err = batch.caller:execute({}, validated, cancel, { precomputed_results = settled() })
+                    test.is_nil(err, strategy)
+                    test.eq(#batch.runs, 0, strategy .. ": no real call launches")
+                    test.eq(table.concat(batch.order, ","), "denied,stopped,real", strategy)
+                    test.eq(results.denied.error, "Tool call was denied", strategy)
+                    test.is_nil(results.denied.cancelled, strategy)
+                    test.eq(results.stopped.error, "Tool call was cancelled", strategy)
+                    test.is_true(results.real.cancelled, strategy)
+                    for id, entry in pairs(results) do
+                        test.eq(batch.counts[id], 1, strategy .. " " .. id)
+                        test.is_true(rawequal(batch.results[id], entry), strategy .. " " .. id)
+                    end
+                    test.eq(#wrapper_calls, 1, strategy)
+                    test.eq(table.concat(sorted_keys(wrapper_calls[1].payload.tool_results), ","),
+                        "denied,real,stopped", strategy)
+                end
+            end)
+
+            it("keeps finished real results and cancels a held call when cancel closes during launch", function()
+                for _, strategy in ipairs(STRATEGIES) do
+                    local batch = new_batch(strategy)
+                    cancelled_commands = {}
+                    local cancel = channel.new()
+                    -- The held call closes the cancel channel when it starts and never responds.
+                    tool_results["test:held"] = { response = channel.new(), execute = function(_, ctx)
+                        table.insert(batch.runs, ctx.call_id)
+                        cancel:close()
+                        return "never"
+                    end }
+                    -- Array keys fix the launch order: fast, then held. ID 3 is precomputed.
+                    local results, err = batch.caller:execute({}, {
+                        tool("fast", "test:calculator"),
+                        tool("held", "test:held"),
+                        tool("denied", "test:calculator"),
+                    }, cancel, { precomputed_results = { [3] = { error = "Tool call was denied" } } })
+                    test.is_nil(err, strategy)
+                    test.eq(table.concat(batch.runs, ","), "1,2", strategy .. ": the precomputed call never launches")
+                    test.eq(results[1].result, 42, strategy .. ": the finished call keeps its result")
+                    test.is_nil(results[1].cancelled, strategy)
+                    test.is_true(results[2].cancelled, strategy .. ": the held call is cancelled")
+                    test.is_nil(results[2].result, strategy)
+                    test.eq(cancelled_commands[1], "test:held", strategy)
+                    test.eq(#cancelled_commands, 1, strategy)
+                    test.eq(results[3].error, "Tool call was denied", strategy)
+                    test.is_nil(results[3].cancelled, strategy)
+                    test.eq(batch.order[1], 3, strategy)
+                    test.eq(#batch.order, 3, strategy)
+                    for id, entry in pairs(results) do
+                        test.eq(batch.counts[id], 1, strategy .. " " .. tostring(id))
+                        test.is_true(rawequal(batch.results[id], entry), strategy .. " " .. tostring(id))
+                    end
+                    test.eq(#wrapper_calls, 1, strategy)
+                    test.eq(table.concat(sorted_keys(wrapper_calls[1].payload.tool_results), ","), "1,2,3", strategy)
+                end
+            end)
+
+            it("records an entirely precomputed batch without any launch", function()
+                for _, strategy in ipairs(STRATEGIES) do
+                    local batch = new_batch(strategy)
+                    local validated = validate_batch(batch)
+                    local precomputed = settled()
+                    precomputed.real = { result = "cached" }
+                    local results, err = batch.caller:execute({}, validated, channel.new(), { precomputed_results = precomputed })
+                    test.is_nil(err, strategy)
+                    test.eq(#batch.runs, 0, strategy .. ": nothing launched")
+                    test.eq(table.concat(batch.order, ","), "denied,real,stopped", strategy)
+                    test.eq(table.concat(sorted_keys(results), ","), "denied,real,stopped", strategy)
+                    test.eq(results.real.result, "cached", strategy)
+                    test.eq(#wrapper_calls, 1, strategy)
+                    local payload = wrapper_calls[1].payload
+                    test.eq(wrapper_ids(payload), "denied,real,stopped", strategy)
+                    test.eq(table.concat(sorted_keys(payload.tool_results), ","), "denied,real,stopped", strategy)
+                    for id, entry in pairs(results) do
+                        test.eq(batch.counts[id], 1, strategy .. " " .. id)
+                        test.is_true(rawequal(payload.tool_results[id], entry), strategy .. " " .. id)
+                    end
+                end
+            end)
+
             it("leaves the caller's validated tools and precomputed entries unchanged", function()
                 for _, strategy in ipairs(STRATEGIES) do
                     local batch = new_batch(strategy)
                     local validated = validate_batch(batch)
                     local entries, fields = {}, {}
-                    for id, entry in pairs(validated) do
-                        entries[id] = entry
-                        fields[id] = table.concat(sorted_keys(entry), ",")
+                    local function values(entry)
+                        return table.concat({ tostring(entry.valid), tostring(entry.registry_id), tostring(entry.name),
+                            table.concat(sorted_keys(entry.args), ",") }, "|")
                     end
-                    local precomputed = settled()
-                    local denied = precomputed.denied
-                    batch.caller:execute({}, validated, nil, { precomputed_results = precomputed })
+                    for id, entry in pairs(validated) do
+                        entries[id] = { entry = entry, args = entry.args, keys = table.concat(sorted_keys(entry), ","),
+                            values = values(entry) }
+                    end
+                    -- "denied" needs normalization: its error comes from the payload.
+                    local payload = { success = false, error = "x" }
+                    local precomputed = {
+                        denied = { result = payload },
+                        stopped = { error = "Tool call was cancelled", cancelled = true },
+                    }
+                    local denied, stopped = precomputed.denied, precomputed.stopped
+                    local results = batch.caller:execute({}, validated, nil, { precomputed_results = precomputed })
                     test.eq(table.concat(sorted_keys(validated), ","), "denied,real,stopped", strategy)
                     for id, entry in pairs(validated) do
-                        test.is_true(rawequal(entries[id], entry), strategy .. " " .. id)
-                        test.eq(table.concat(sorted_keys(entry), ","), fields[id], strategy .. " " .. id)
+                        local before = entries[id]
+                        test.is_true(rawequal(before.entry, entry), strategy .. " " .. id)
+                        test.is_true(rawequal(before.args, entry.args), strategy .. " " .. id)
+                        test.eq(table.concat(sorted_keys(entry), ","), before.keys, strategy .. " " .. id)
+                        test.eq(values(entry), before.values, strategy .. " " .. id)
                     end
                     test.is_true(rawequal(precomputed.denied, denied), strategy)
-                    test.eq(table.concat(sorted_keys(denied), ","), "error", strategy)
+                    test.is_true(rawequal(precomputed.stopped, stopped), strategy)
+                    test.eq(table.concat(sorted_keys(denied), ","), "result", strategy)
+                    test.is_nil(denied.error, strategy .. ": the original entry gains no error")
+                    test.is_nil(denied.tool_call, strategy .. ": the original entry gains no tool_call")
+                    test.is_true(rawequal(denied.result, payload), strategy)
+                    test.eq(table.concat(sorted_keys(payload), ","), "error,success", strategy)
+                    test.eq(payload.success, false, strategy)
+                    test.eq(payload.error, "x", strategy)
+                    test.eq(table.concat(sorted_keys(stopped), ","), "cancelled,error", strategy)
+                    test.eq(stopped.error, "Tool call was cancelled", strategy)
+                    test.is_true(stopped.cancelled, strategy)
+                    test.is_false(rawequal(results.denied, denied), strategy .. ": the returned entry is a copy")
+                    test.is_false(rawequal(results.stopped, stopped), strategy)
+                    test.eq(results.denied.error, "x", strategy)
+                    test.is_true(rawequal(results.denied.tool_call, validated.denied), strategy)
                 end
             end)
         end)

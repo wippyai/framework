@@ -560,8 +560,10 @@ end
   by ID. If the listener fails on one of them, no call starts, `after_execute`
   wrappers do not run, and `execute` returns `nil` and the error.
 - The other calls run as usual, with the same strategy and cancellation checks.
-  A cancelled batch reports them as cancelled, and the precomputed results stay
-  as given.
+  Cancellation marks unstarted and unfinished real calls as cancelled. Real
+  calls that already finished keep their results, invalid calls keep their
+  validation errors, and precomputed results are never replaced or marked as
+  cancelled.
 - Results for precomputed IDs reach the listener and `after_execute` wrappers
   like real results. Each call ID is delivered exactly once, wrappers get
   `tool_calls` unchanged and the complete `tool_results`, and the return value
