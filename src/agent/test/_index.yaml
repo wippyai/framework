@@ -419,6 +419,24 @@ entries:
       turn_context: wippy.agent:turn_context
     method: run_tests
 
+  - name: canonical_test
+    kind: function.lua
+    meta:
+      name: Canonical JSON Test
+      type: test
+      comment: Tests the order-independent JSON used for hashes and deduplication keys
+      group: Agent Framework
+      tags:
+        - json
+        - tests
+    source: file://canonical_test.lua
+    modules:
+      - json
+    imports:
+      test: wippy.test:test
+      canonical: wippy.agent:canonical
+    method: run_tests
+
   # app:delay_tool
   - name: delay_tool
     kind: function.lua

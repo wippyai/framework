@@ -904,6 +904,22 @@ Agent resolution contract. Applications provide a binding to handle custom agent
 | `wippy.agent.discovery` | `selector` | LLM-powered agent selector |
 | `wippy.agent.tools` | `caller` | Tool execution (sequential/parallel) |
 | `wippy.agent.traits` | `time_aware` | Built-in time-aware trait |
+| `wippy.agent` | `canonical` | Order-independent JSON for hashes and deduplication keys |
+
+`wippy.agent:canonical` writes a value as JSON with object keys in byte order, so
+equal values give equal text and different values never do. The prefix fingerprint
+and the Attention read deduplication keys use it. An array is written up to its
+largest index, and a missing item (the JSON decoder leaves one for `null`) is
+written as `null`. The encoder refuses a value instead of changing it: functions,
+userdata other than `json.null`, NaN and infinities, tables that mix string and
+number keys, keys that are not strings or whole positive numbers, tables that
+contain themselves, and arrays with more missing items than items when that is
+also more than 1024. `encode(value)` returns the text and raises an error for a
+refused value. `try_encode(value)` returns the text, or `nil` and the reason.
+Strings are written by the runtime JSON encoder, which replaces invalid UTF-8
+bytes with U+FFFD. The JSON decoder drops object members whose value is `null`
+and trailing `null` array items, so those decoded values encode like the values
+without them.
 
 ## Live tool execution authority
 

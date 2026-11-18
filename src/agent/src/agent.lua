@@ -677,7 +677,12 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     local function fingerprint_of(messages: {any}): (string?, any)
         local projected = { system_message }
         for _, message in ipairs(messages) do table.insert(projected, message) end
-        local digest, digest_err = hash.sha256(canonical.encode(prefix_projection(projected, options.tools)))
+        local text, encode_err = canonical.try_encode(prefix_projection(projected, options.tools))
+        if not text then
+            return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+                :message("Prefix fingerprint failed: " .. tostring(encode_err)):build()
+        end
+        local digest, digest_err = hash.sha256(text)
         if digest_err then
             return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
                 :message("Prefix fingerprint failed: " .. tostring(digest_err)):build()
