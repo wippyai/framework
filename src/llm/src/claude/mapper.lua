@@ -396,16 +396,9 @@ local function without_blank_turns(messages)
     return kept
 end
 
-local function is_custom_tool(tool): boolean
+local function native_tool_type(tool)
     local claude_meta = (tool :: any).meta and (tool :: any).meta.claude or nil
-    local native_type = (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
-    return not native_type and tool.schema ~= nil
-end
-
-local function is_sent_tool(tool): boolean
-    local claude_meta = (tool :: any).meta and (tool :: any).meta.claude or nil
-    local native_type = (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
-    return native_type ~= nil or tool.schema ~= nil
+    return (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
 end
 
 function mapper.plan_deferred_tools(contract_messages, contract_tools)
@@ -414,11 +407,14 @@ function mapper.plan_deferred_tools(contract_messages, contract_tools)
     end
 
     local custom = {}
+    local native = {}
     for _, tool in ipairs(contract_tools) do
         if tool.name == mapper.RESERVED_DEFERRED_TOOL.name then
             return nil
         end
-        if is_custom_tool(tool) then
+        if native_tool_type(tool) then
+            native[tool.name] = true
+        elseif tool.schema ~= nil then
             custom[tool.name] = true
         end
     end
@@ -440,7 +436,7 @@ function mapper.plan_deferred_tools(contract_messages, contract_tools)
 
     local offered = 0
     for _, tool in ipairs(contract_tools) do
-        if is_sent_tool(tool) and not is_late[tool.name] then
+        if native[tool.name] or (custom[tool.name] and not is_late[tool.name]) then
             offered = offered + 1
         end
     end
@@ -448,7 +444,7 @@ function mapper.plan_deferred_tools(contract_messages, contract_tools)
         return nil
     end
 
-    return { late = late, is_late = is_late }
+    return { late = late, is_late = is_late, eager_additions = native }
 end
 
 local function announced_references(msg, deferred)
@@ -482,7 +478,7 @@ function mapper.map_messages(contract_messages, options)
     local tool_id = tool_ids.mapper(contract_messages, { pattern = tool_ids.NATIVE_PATTERN })
     local order = thinking.new_turn_order()
     local stale_thinking = {}
-    local outdated = deferred and {} or thinking.before_tool_additions(contract_messages)
+    local outdated = thinking.before_tool_additions(contract_messages, deferred and deferred.eager_additions)
 
     local function add_thinking_blocks(content_blocks, msg)
         if not (msg.metadata and msg.metadata.thinking_blocks) then
@@ -507,25 +503,7 @@ function mapper.map_messages(contract_messages, options)
     local in_system_phase = true
     local moved_texts = {}
 
-    local function place_moved_texts()
-        if #moved_texts == 0 then
-            return
-        end
-        local last_msg = claude_messages[#claude_messages]
-        if not last_msg or last_msg.role ~= "user" then
-            last_msg = { role = "user", content = {} }
-            table.insert(claude_messages, last_msg)
-        end
-        for index = 1, #moved_texts do
-            table.insert(last_msg.content, moved_texts[index])
-            moved_texts[index] = nil
-        end
-    end
-
     for i, msg in ipairs(contract_messages) do
-        if msg.role ~= prompt.ROLE.FUNCTION_RESULT then
-            place_moved_texts()
-        end
         if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL
             and not prompt.transparent_to_assistant_turn(msg) then
             order.leave_turn()
@@ -604,6 +582,22 @@ function mapper.map_messages(contract_messages, options)
                     }
                 }
             })
+
+            -- A cache marker or a hoisted system message can sit between sibling
+            -- results. Keep ordinary text behind every result in the round.
+            if #moved_texts > 0 then
+                local following = i + 1
+                while contract_messages[following] and prompt.transparent_to_assistant_turn(contract_messages[following]) do
+                    following = following + 1
+                end
+                if not contract_messages[following] or contract_messages[following].role ~= prompt.ROLE.FUNCTION_RESULT then
+                    local result_blocks = claude_messages[#claude_messages].content
+                    for _, block in ipairs(moved_texts) do
+                        table.insert(result_blocks, block)
+                    end
+                    moved_texts = {}
+                end
+            end
         elseif msg.role == prompt.ROLE.FUNCTION_CALL then
             in_system_phase = false
             local arguments = normalize_tool_arguments(msg.function_call.arguments)
@@ -684,7 +678,6 @@ function mapper.map_messages(contract_messages, options)
             })
         end
     end
-    place_moved_texts()
 
     -- Collapse cache positions if needed
     local final_system_positions, final_message_positions = collapse_cache_positions(
@@ -737,7 +730,7 @@ function mapper.map_tools(contract_tools, deferred)
 
     for _, tool in ipairs(contract_tools) do
         local claude_meta = (tool :: any).meta and (tool :: any).meta.claude or nil
-        local native_type = (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
+        local native_type = native_tool_type(tool)
 
         if native_type then
             -- Native Claude tool (computer_use, etc.)

@@ -303,7 +303,7 @@ builder:add_function_result("load", "loaded", "call_1", { metadata = { tool_addi
 local result = llm.generate(builder, { model = "claude", tools = tools, expect_tool_additions = true })
 ```
 
-A route that declares `deferred_tools: true` uses this to keep the request prefix, and with it the prompt cache and earlier thinking blocks, unchanged when a tool appears. Claude sends the announced tools with `defer_loading` after the tools offered from the start and one reserved deferred tool, renders the announcing result as `tool_reference` blocks, and moves its text into a `<name> result: <text>` block after the tool results of that round. Without the route fact or without the option the request is built as before. Drivers that cannot honor `deferred_tools: true` reject it; they ignore `tool_additions` and send the full tool list.
+A route that declares `deferred_tools: true` uses this to keep the request prefix, and with it the prompt cache and earlier thinking blocks, unchanged when a custom tool appears. Claude sends the announced custom tools with `defer_loading` after the tools offered from the start and one reserved deferred tool, renders the announcing result as `tool_reference` blocks, and moves its text into a `<name> result: <text>` block after the tool results of that round. Native Claude tools are sent eagerly. Announcing a native tool changes the cached prefix and marks earlier thinking blocks stale. Without the route fact or without the option the request is built as before. Drivers that cannot honor `deferred_tools: true` reject it; they ignore `tool_additions` and send the full tool list.
 
 ### Tool Call IDs
 

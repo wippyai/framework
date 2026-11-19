@@ -42,15 +42,28 @@ function thinking.remove_blocks(messages: {any}?, stale: {[any]: boolean}?)
     end
 end
 
-function thinking.before_tool_additions(messages: {any}?): {[any]: boolean}
+-- With a deferred plan, only the first announcement of an eagerly sent tool
+-- changes the prefix. Unknown names and deferred definitions leave it intact.
+function thinking.before_tool_additions(messages: {any}?, eager_additions: {[string]: boolean}?): {[any]: boolean}
     local earlier: {[any]: boolean} = {}
+    if eager_additions and next(eager_additions) == nil then return earlier end
     local list = messages or {}
+    local announced = {}
     local last = 0
     for index, message in ipairs(list) do
         local additions = message.role == prompt.ROLE.FUNCTION_RESULT and type(message.metadata) == "table"
             and message.metadata.tool_additions or nil
-        if type(additions) == "table" and #additions > 0 then
-            last = index
+        if type(additions) == "table" then
+            if not eager_additions and #additions > 0 then
+                last = index
+            elseif eager_additions then
+                for _, name in ipairs(additions) do
+                    if eager_additions[name] and not announced[name] then
+                        announced[name] = true
+                        last = index
+                    end
+                end
+            end
         end
     end
     for index = 1, last - 1 do

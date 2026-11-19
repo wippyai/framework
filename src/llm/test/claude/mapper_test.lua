@@ -1012,6 +1012,59 @@ local function define_tests()
                 test.is_nil(mapper.map_messages(messages).stale_thinking)
             end)
 
+            it("keeps cache markers between parallel results on the preceding result", function()
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                    call("call_2", "alpha"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                    { role = "cache_marker", marker_id = "at_result_1" },
+                    result("call_2", "alpha", "ok"),
+                    { role = "cache_marker", marker_id = "round_tail" },
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local flat = {}
+                for index = 3, #mapped.messages do
+                    for _, block in ipairs(mapped.messages[index].content) do
+                        table.insert(flat, block.type)
+                    end
+                end
+                test.eq(table.concat(flat, ","), "tool_result,tool_result,text")
+                test.not_nil(mapped.messages[3].content[1].cache_control)
+                test.is_nil(mapped.messages[4].content[1].cache_control)
+                test.not_nil(mapped.messages[4].content[2].cache_control)
+            end)
+
+            it("drops only thinking that predates a newly announced native tool", function()
+                local tools = { custom("load"), custom("pack_one"), { name = "computer", type = "computer_20241022", id = "native" } }
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    { role = "assistant", content = text("Loading"), metadata = {
+                        thinking_blocks = { { type = "thinking", thinking = "Reasoning", signature = "sig" } }
+                    } },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "computer", "pack_one" }),
+                    { role = "assistant", content = text("Checking"), metadata = {
+                        thinking_blocks = { { type = "thinking", thinking = "After loading", signature = "later" } }
+                    } },
+                    call("call_2", "load"),
+                    result("call_2", "load", "already loaded", { "computer" }),
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local prefix = mapper.map_tools({ custom("load") }, assert(mapper.plan_deferred_tools({}, { custom("load") })))
+                local expanded = mapper.map_tools(tools, plan)
+                test.eq(prefix[2].name, "reserved_deferred_slot")
+                test.eq(expanded[2].name, "computer")
+                test.is_nil(expanded[2].defer_loading)
+                local payload = { messages = mapped.messages }
+                mapper.bind_thinking(payload, mapped.stale_thinking)
+                test.eq(payload.messages[2].content[1].type, "text")
+                test.eq(payload.messages[3].content[1].content[1].tool_name, "pack_one")
+                test.eq(payload.messages[4].content[1].signature, "later")
+            end)
+
             it("plans late tools in order of first announcement", function()
                 local plan = assert(mapper.plan_deferred_tools({
                     { role = "user", content = text("Go") },
