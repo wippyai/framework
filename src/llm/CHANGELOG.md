@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.22](https://github.com/wippyai/framework/compare/llm-v0.5.21...llm-v0.5.22) (2026-11-19)
+
+
+### Features
+
+* **llm:** keep the prompt cache when tools are added mid-conversation ([#283](https://github.com/wippyai/framework/issues/283)) ([a9708ca](https://github.com/wippyai/framework/commit/a9708ca789a5a7458a4c08a2e7d7af7767b49e89))
+
+
+### Bug Fixes
+
+* **llm:** preserve large Responses SSE terminal events ([#282](https://github.com/wippyai/framework/issues/282)) ([f4be4a9](https://github.com/wippyai/framework/commit/f4be4a9d74a85af79d4b70872b95057ec39b4487))
+
 ## [0.5.21](https://github.com/wippyai/framework/compare/llm-v0.5.20...llm-v0.5.21) (2026-11-17)
 
 
