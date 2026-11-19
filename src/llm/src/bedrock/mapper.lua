@@ -18,7 +18,8 @@ mapper.CAPABILITY = {
     },
     supported = {
         thinking = { adaptive = true, budget = true, none = true, always = true },
-        structured_output = { tool = true }
+        structured_output = { tool = true },
+        deferred_tools = { [false] = true }
     }
 }
 
@@ -296,6 +297,7 @@ function mapper.map_messages(contract_messages)
         return translate_id(id)
     end
     local stale_thinking = {}
+    local outdated = thinking.before_tool_additions(contract_messages)
 
     local function add_reasoning_blocks(content_blocks, msg)
         if not (msg.metadata and msg.metadata.thinking_blocks) then
@@ -305,7 +307,7 @@ function mapper.map_messages(contract_messages)
             local reasoning = order.keeps_thinking(thinking_block) and reasoning_content(thinking_block)
             if reasoning then
                 order.place_thinking(reasoning, thinking_block)
-                if msg.metadata.stale_thinking then
+                if msg.metadata.stale_thinking or outdated[msg] then
                     stale_thinking[reasoning] = true
                 end
                 table.insert(content_blocks, reasoning)

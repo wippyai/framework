@@ -28,7 +28,7 @@ local function text(value)
     return { { type = "text", text = value } }
 end
 
-local function conversation(with_developer)
+local function conversation(with_developer, announced)
     local messages = {
         { role = "system", content = text("You are concise.") },
         { role = "cache_marker", marker_id = "agent" },
@@ -45,7 +45,8 @@ local function conversation(with_developer)
         function_call = { id = "call_1", name = "lookup", arguments = '{"q":"x"}' },
         metadata = { thinking_blocks = thinking("lookup") },
     })
-    table.insert(messages, { role = "function_result", name = "lookup", function_call_id = "call_1", content = text("found") })
+    table.insert(messages, { role = "function_result", name = "lookup", function_call_id = "call_1", content = text("found"),
+        metadata = announced and { tool_additions = { "lookup_more" }, loaded_traits = { agent = "app:agent", keys = { "app:pack" } } } or nil })
     table.insert(messages, { role = "cache_marker", marker_id = "conversation_tail" })
     table.insert(messages, { role = "system", content = text("Mode: review") })
     if with_developer then
@@ -54,18 +55,22 @@ local function conversation(with_developer)
     return messages
 end
 
-local function bodies()
-    local google_contents, google_system = google_mapper.map_messages(conversation(true), { model = "gemini-2.5-pro" })
+local function sections(mapped)
+    return { messages = mapped.messages, system = mapped.system }
+end
+
+local function bodies(announced)
+    local google_contents, google_system = google_mapper.map_messages(conversation(true, announced), { model = "gemini-2.5-pro" })
     return {
-        claude = codec.canonical_json(claude_mapper.map_messages(conversation(true))),
-        bedrock = codec.canonical_json(bedrock_mapper.map_messages(conversation(false))),
-        bedrock_developer = codec.canonical_json(bedrock_mapper.map_messages(conversation(true))),
+        claude = codec.canonical_json(sections(claude_mapper.map_messages(conversation(true, announced)))),
+        bedrock = codec.canonical_json(sections(bedrock_mapper.map_messages(conversation(false, announced)))),
+        bedrock_developer = codec.canonical_json(sections(bedrock_mapper.map_messages(conversation(true, announced)))),
         google = codec.canonical_json({ contents = google_contents, systemInstruction = google_system }),
         openai = codec.canonical_json({
-            instructions = openai_mapper.extract_instructions(conversation(true)),
-            input = openai_mapper.map_messages(conversation(true), { model = "gpt-5" }),
+            instructions = openai_mapper.extract_instructions(conversation(true, announced)),
+            input = openai_mapper.map_messages(conversation(true, announced), { model = "gpt-5" }),
         }),
-        openai_compat = codec.canonical_json(compat_mapper.map_messages(conversation(true), { model = "gpt-5" })),
+        openai_compat = codec.canonical_json(compat_mapper.map_messages(conversation(true, announced), { model = "gpt-5" })),
     }
 end
 
@@ -76,6 +81,9 @@ local function define_tests()
                 local body = bodies()[driver]
                 test.not_nil(body)
                 test.eq(body, GOLDEN[driver])
+            end)
+            it("keeps the " .. driver .. " body byte-identical when a tool result announces tools", function()
+                test.eq(bodies(true)[driver], GOLDEN[driver])
             end)
         end
     end)

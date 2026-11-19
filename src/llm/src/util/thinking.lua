@@ -42,6 +42,23 @@ function thinking.remove_blocks(messages: {any}?, stale: {[any]: boolean}?)
     end
 end
 
+function thinking.before_tool_additions(messages: {any}?): {[any]: boolean}
+    local earlier: {[any]: boolean} = {}
+    local list = messages or {}
+    local last = 0
+    for index, message in ipairs(list) do
+        local additions = message.role == prompt.ROLE.FUNCTION_RESULT and type(message.metadata) == "table"
+            and message.metadata.tool_additions or nil
+        if type(additions) == "table" and #additions > 0 then
+            last = index
+        end
+    end
+    for index = 1, last - 1 do
+        earlier[list[index]] = true
+    end
+    return earlier
+end
+
 -- Whether a thinking object carries block_binding, which the API admits only with BINDING_BETA.
 function thinking.is_bound(config: {[string]: any}?): boolean
     return type(config) == "table" and config.block_binding ~= nil

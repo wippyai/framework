@@ -398,6 +398,22 @@ local function define_tests()
                 test.eq(messages[2].content[1].text, '{"error":"application data"}')
             end
         end)
+
+        it("keeps a function result's metadata through build and clone", function()
+            local source = { loaded_traits = { agent = "app:agent", keys = { "app:pack" } } }
+            local builder = prompt.new()
+            builder:add_function_result("load", "loaded", "call_1", { metadata = source })
+            builder:add_function_result("lookup", "found", "call_2")
+            source.loaded_traits = nil
+            local cloned = builder:clone()
+            for _, messages in ipairs({ builder:get_messages(), cloned:get_messages() }) do
+                test.eq(messages[1].metadata.loaded_traits.agent, "app:agent")
+                test.eq(messages[1].metadata.loaded_traits.keys[1], "app:pack")
+                test.is_nil(messages[1].is_error)
+                test.is_nil(messages[2].metadata)
+            end
+        end)
+
         it("should create a basic prompt with system, user, and assistant messages", function()
             local builder = prompt.new()
 

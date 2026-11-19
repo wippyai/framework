@@ -115,6 +115,7 @@ type ProviderRef = {
     sampling: boolean?,
     forced_tool_choice: boolean?,
     structured_output: "native" | "tool" | nil,
+    deferred_tools: boolean?,
     options: table?,
     priority: number?
 }

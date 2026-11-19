@@ -11,7 +11,8 @@ openai_mapper.CAPABILITY = {
     defaults = { thinking = "none" },
     supported = {
         thinking = { adaptive = true, none = true },
-        structured_output = { native = true }
+        structured_output = { native = true },
+        deferred_tools = { [false] = true }
     }
 }
 

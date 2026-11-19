@@ -258,7 +258,8 @@ entries:
                       "thinking": {"type": "string", "enum": ["adaptive", "budget", "none", "always"], "description": "always: the model thinks on every request; the driver sends the adaptive thinking object at every effort, 0 leaves the effort at the model default"},
                       "sampling": {"type": "boolean"},
                       "forced_tool_choice": {"type": "boolean"},
-                      "structured_output": {"type": "string", "enum": ["native", "tool"]}
+                      "structured_output": {"type": "string", "enum": ["native", "tool"]},
+                      "deferred_tools": {"type": "boolean", "description": "true: the model accepts tools declared deferred and surfaced later by reference from a tool result"}
                     },
                     "additionalProperties": false
                   },
@@ -272,6 +273,7 @@ entries:
                       "thinking_budget_tokens": {"type": "integer", "minimum": 1024, "description": "Budget thinking tokens as planned by llm before the request; drivers called directly derive it from thinking_effort"},
                       "request": {"type": "object", "additionalProperties": true, "description": "Provider wire fields deep-merged into the request body after option mapping; request values win, maps merge, arrays replace. Keys the driver builds (messages, tools, ...) are rejected. Set on routes in the catalog; callers may set it only on direct provider_id calls"},
                       "tool_choice_fallback": {"type": "string", "enum": ["auto"], "description": "Permits sending a forced tool_choice as 'auto' to a model that cannot be forced; for callers that enforce tool use themselves. The response metadata.tool_choice reports the substitution"},
+                      "expect_tool_additions": {"type": "boolean", "description": "true: tools may be offered later in this conversation through metadata.tool_additions on function results; a route declaring deferred_tools prepares the request for them from the first call"},
                       "model_profile": {
                         "type": "object",
                         "deprecated": true,
@@ -551,7 +553,8 @@ entries:
                       "thinking": {"type": "string", "enum": ["adaptive", "budget", "none", "always"], "description": "always: the model thinks on every request; the driver sends the adaptive thinking object at every effort, 0 leaves the effort at the model default"},
                       "sampling": {"type": "boolean"},
                       "forced_tool_choice": {"type": "boolean"},
-                      "structured_output": {"type": "string", "enum": ["native", "tool"]}
+                      "structured_output": {"type": "string", "enum": ["native", "tool"]},
+                      "deferred_tools": {"type": "boolean", "description": "true: the model accepts tools declared deferred and surfaced later by reference from a tool result"}
                     },
                     "additionalProperties": false
                   },
@@ -823,6 +826,7 @@ entries:
                         "sampling": {"type": "boolean"},
                         "forced_tool_choice": {"type": "boolean"},
                         "structured_output": {"type": "string", "enum": ["native", "tool"]},
+                        "deferred_tools": {"type": "boolean", "description": "true: the model accepts tools declared deferred and surfaced later by reference from a tool result"},
                         "context": {"type": "object", "additionalProperties": true},
                         "options": {"type": "object", "additionalProperties": true},
                         "priority": {"type": "number", "description": "Routes are tried by descending priority; unset counts as 0 and ties keep list order"}
