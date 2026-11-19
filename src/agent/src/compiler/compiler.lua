@@ -2,6 +2,8 @@ local traits = require("traits")
 local tools = require("tools")
 local funcs = require("funcs")
 local json = require("json")
+local hash = require("hash")
+local canonical = require("canonical")
 
 type ToolDef = string | { id: string, alias: string?, context: table?, description: string?, schema: table? }
 type TraitConfig = string | { id: string, context: table?, options: table?, agent_options: table? }
@@ -39,9 +41,11 @@ type CompiledTool = {
     agent_id: string?,
     registry_id: string?,
     meta: table?,
+    traits: {string}?,
 }
 
-type PromptFunc = { trait_id: string, func_id: string, context: table }
+type PromptPart = { trait: string?, text: string }
+type PromptFunc = { trait_id: string, trait: string?, func_id: string, context: table }
 type StepFunc = { trait_id: string, func_id: string, context: table }
 type ToolWrapperSpec = {
     id: string?,
@@ -80,6 +84,8 @@ type CompiledAgentSpec = {
     temperature: number?,
     thinking_effort: string?,
     prompt: string,
+    prompt_parts: {PromptPart},
+    traits: {string},
     tools: {[string]: CompiledTool},
     memory: table,
     memory_contract: any?,
@@ -190,6 +196,71 @@ local function prompt_cache_error(agent_id: any, prompt_cache: any): string?
         return prefix .. ".ttl must be a non-empty string such as \"1h\", got " .. tostring(ttl)
     end
     return nil
+end
+
+local function trait_loading_error(agent_id: any, trait_loading: any): string?
+    if trait_loading == nil or trait_loading == "append" or trait_loading == "rebuild" then
+        return nil
+    end
+    return "agent " .. tostring(agent_id) .. ": agent_options.trait_loading must be \"append\" or \"rebuild\", got "
+        .. tostring(trait_loading)
+end
+
+local function find_trait(trait_id: string): (any, any)
+    local trait_def, err = get_traits().get_by_id(trait_id)
+    if not trait_def and not string.find(trait_id, ":") then
+        trait_def, err = get_traits().get_by_name(trait_id)
+    end
+    return trait_def, err
+end
+
+local function instance_key(trait_config: any, trait_id: string): string
+    local context = type(trait_config) == "table" and trait_config.context or nil
+    if type(context) ~= "table" or next(context) == nil then
+        return trait_id
+    end
+    local digest = hash.sha256(canonical.encode(context))
+    if type(digest) ~= "string" or digest == "" then
+        return trait_id
+    end
+    return trait_id .. "#" .. string.sub(digest, 1, 16)
+end
+
+function compiler.trait_key(trait_config: any): string?
+    local trait_id = type(trait_config) == "table" and trait_config.id or trait_config
+    if type(trait_id) ~= "string" or trait_id == "" then
+        return nil
+    end
+    local found, trait_def = pcall(find_trait, trait_id)
+    if found and type(trait_def) == "table" and type(trait_def.id) == "string" and trait_def.id ~= "" then
+        trait_id = trait_def.id
+    end
+    return instance_key(trait_config, trait_id)
+end
+
+local function record_source(sources: {[string]: any}, name: string, trait_key: string?)
+    local source = sources[name]
+    if not source then
+        source = { keys = {}, declared = false }
+        sources[name] = source
+    end
+    if trait_key then
+        source.keys[trait_key] = true
+    else
+        source.declared = true
+    end
+end
+
+local function source_traits(source: any): {string}?
+    if not source or source.declared then
+        return nil
+    end
+    local keys = {}
+    for key in pairs(source.keys) do
+        table.insert(keys, key)
+    end
+    table.sort(keys)
+    return keys
 end
 
 local function merge_agent_options(base_options: any, override_options: any): table
@@ -1061,10 +1132,18 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
     local bindings = {}
     local agent_options = {}
     local recall_defaults = {}
+    local prompt_parts = {}
+    local trait_keys = {}
+    local trait_order = {}
+    local delegate_traits = {}
 
     local function collected()
         return {
             prompts = additional_prompts,
+            prompt_parts = prompt_parts,
+            trait_keys = trait_keys,
+            trait_order = trait_order,
+            delegate_traits = delegate_traits,
             tools = additional_tools,
             contexts = trait_contexts,
             tool_schemas = trait_tool_schemas,
@@ -1091,12 +1170,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
             goto continue
         end
 
-        local trait_def, err = get_traits().get_by_id(trait_id)
-        if not trait_def then
-            if not string.find(trait_id, ":") then
-                trait_def, err = get_traits().get_by_name(trait_id)
-            end
-        end
+        local trait_def, err = find_trait(trait_id)
 
         if not trait_def then
             goto continue
@@ -1111,8 +1185,15 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
 
         additional_tools[trait_id] = {}
 
+        local trait_key = instance_key(trait_config,
+            type(trait_def.id) == "string" and trait_def.id ~= "" and trait_def.id or trait_id)
+        trait_keys[trait_id] = trait_keys[trait_id] or {}
+        table.insert(trait_keys[trait_id], trait_key)
+        table.insert(trait_order, trait_key)
+
         if trait_def.prompt and #trait_def.prompt > 0 then
             table.insert(additional_prompts, trait_def.prompt)
+            table.insert(prompt_parts, { trait = trait_key, text = trait_def.prompt })
         end
 
         for j, tool in ipairs(trait_def.tools or {}) do
@@ -1122,6 +1203,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
         if trait_def.prompt_func_id then
             table.insert(prompt_funcs, {
                 trait_id = trait_id,
+                trait = trait_key,
                 func_id = trait_def.prompt_func_id,
                 context = trait_contexts[trait_id]  -- Use the merged context
             })
@@ -1179,6 +1261,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
             if contribution then
                 if contribution.prompt then
                     table.insert(additional_prompts, contribution.prompt)
+                    table.insert(prompt_parts, { trait = trait_key, text = contribution.prompt })
                 end
 
                 if contribution.tools then
@@ -1195,6 +1278,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
                 if contribution.delegates then
                     for _, delegate in ipairs(contribution.delegates) do
                         table.insert(additional_delegates, delegate)
+                        delegate_traits[delegate] = trait_key
                     end
                 end
 
@@ -1238,7 +1322,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
     return collected(), nil
 end
 
-local function process_tools(raw_spec: any, additional_tools: any, trait_contexts: any, trait_tool_schemas: any, config: CompilerConfig): any
+local function process_tools(raw_spec: any, additional_tools: any, trait_contexts: any, trait_tool_schemas: any, config: CompilerConfig, trait_keys: any, sources: any): any
     local all_tools = {}
 
     for i, tool in ipairs(raw_spec.tools or {}) do
@@ -1299,6 +1383,14 @@ local function process_tools(raw_spec: any, additional_tools: any, trait_context
 
     for i, tool_info in ipairs(resolved_tools) do
         local canonical_name = get_canonical_tool_name(tool_info.id, tool_info)
+        local keys = tool_info.source_trait and trait_keys and trait_keys[tool_info.source_trait] or nil
+        if keys and #keys > 0 then
+            for _, key in ipairs(keys) do
+                record_source(sources, canonical_name, key)
+            end
+        else
+            record_source(sources, canonical_name, nil)
+        end
 
         local tool_trait_context = {}
         if tool_info.source_trait and trait_contexts[tool_info.source_trait] then
@@ -1357,7 +1449,7 @@ local function process_tools(raw_spec: any, additional_tools: any, trait_context
     return tools
 end
 
-local function process_delegates(raw_spec: any, additional_delegates: any, config: CompilerConfig): (any, any)
+local function process_delegates(raw_spec: any, additional_delegates: any, config: CompilerConfig, delegate_traits: any, sources: any): (any, any)
     local delegate_tools = {}
     local delegate_contexts = {}
 
@@ -1380,6 +1472,7 @@ local function process_delegates(raw_spec: any, additional_delegates: any, confi
             if not delegate.name then
                 goto continue
             end
+            record_source(sources, delegate.name, delegate_traits and delegate_traits[delegate] or nil)
 
             local description = "Forward the request to " .. (delegate.rule or "when appropriate")
             if config.delegates.description_suffix then
@@ -1474,12 +1567,24 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
         memory_contract = memory_contract,
     }, config)
 
-    local tools = process_tools(raw_spec, additional_tools, trait_contexts, trait_tool_schemas, config)
+    local tool_sources = {}
+    local tools = process_tools(raw_spec, additional_tools, trait_contexts, trait_tool_schemas, config,
+        traits.trait_keys, tool_sources)
 
-    local delegate_tools, delegate_contexts = process_delegates(raw_spec, additional_delegates, config)
+    local delegate_tools, delegate_contexts = process_delegates(raw_spec, additional_delegates, config,
+        traits.delegate_traits, tool_sources)
 
     for delegate_name, delegate_tool in pairs(delegate_tools) do
         tools[delegate_name] = delegate_tool
+    end
+
+    for name, tool_entry in pairs(tools) do
+        tool_entry.traits = source_traits(tool_sources[name])
+    end
+
+    local prompt_parts = { { text = raw_spec.prompt or "" } }
+    for _, part in ipairs(traits.prompt_parts) do
+        table.insert(prompt_parts, part)
     end
 
     local final_prompt = raw_spec.prompt or ""
@@ -1496,6 +1601,10 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
     if cache_err then
         return nil, cache_err
     end
+    local loading_err = trait_loading_error(raw_spec.id, agent_options.trait_loading)
+    if loading_err then
+        return nil, loading_err
+    end
 
     local compiled_spec = {
         id = raw_spec.id,
@@ -1507,6 +1616,8 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
         temperature = raw_spec.temperature,
         thinking_effort = raw_spec.thinking_effort,
         prompt = final_prompt,
+        prompt_parts = prompt_parts,
+        traits = traits.trait_order,
         tools = tools,
         memory = raw_spec.memory or {},
         memory_contract = memory_contract,

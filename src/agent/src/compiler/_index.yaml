@@ -13,7 +13,9 @@ entries:
       - registry
       - funcs
       - json
+      - hash
     imports:
       tools: wippy.agent.discovery:tools
       traits: wippy.agent.discovery:traits
+      canonical: wippy.agent:canonical
     

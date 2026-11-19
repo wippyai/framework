@@ -425,6 +425,32 @@ steps keeps its five-minute lifetime.
         ttl: 1h
 ```
 
+### Loaded traits
+
+A host can change the trait list during a conversation (`agent_context:set_active_traits`). By default the new traits join the system prompt and the tool list like any other trait. That changes the request prefix: the prompt cache restarts and earlier thinking blocks are dropped.
+
+`agent_options.trait_loading = "append"` renders a trait where it was loaded instead:
+
+- The system prompt holds the agent's prompt and the traits that were not loaded during the visible history. A loaded trait's prompt, with the output of its prompt function, is sent as a positional system note after the tool round that loaded it.
+- The function result that loaded the trait names the trait's tools in `metadata.tool_additions`, and every request carries `expect_tool_additions = true`. `options.tools` stays the full list. A model route that declares `deferred_tools` keeps the request prefix unchanged when the tools appear (see Tool Additions in the LLM module); other routes send the full list as before.
+- `prefix_fingerprint` covers the system prompt and the tools without the loaded traits, so loading a trait keeps earlier thinking blocks on a route that declares `deferred_tools`. On other routes the driver treats thinking that predates the loaded tools as stale.
+
+The runner learns what was loaded from the conversation. The host stores `loaded_traits = { agent = <agent id>, keys = { ... } }` in the metadata of the function result whose control added the traits, and passes it on when it rebuilds the prompt:
+
+```lua
+builder:add_function_result(name, content, call_id, {
+    metadata = { loaded_traits = { agent = runner.id, keys = added_keys } }
+})
+```
+
+`keys` are the trait keys that were not compiled before the change: `runner.trait_keys` lists the compiled keys, and `agent_context:trait_keys(list)` gives the keys of a trait list without compiling it. A key is the trait id, followed by a hash of the attachment context when the attachment has one.
+
+A trait counts as loaded only while the result that announced it is part of the history the host sends, and only when the announcement names this agent. Once a checkpoint drops that result, the trait returns to the system prompt and the ordinary tool list in the same request. When the same key is announced twice, the later result wins. Removing a loaded trait changes the message that announced it, so the prefix changes from that point on.
+
+A tool is named in `tool_additions` only when every trait that brings it was loaded. A tool the agent declares itself, or one that another trait also brings, stays in the ordinary tool list, so loading a trait never moves a tool the model already had. A tool that several loaded traits bring is named where the first of them was loaded. The compiled spec lists the traits behind each tool in `tools[name].traits`; the field is absent when the agent declares the tool itself.
+
+`trait_loading` accepts `"append"` and `"rebuild"` (the default); any other value fails compilation. A trait can set it for every agent that carries the trait.
+
 ### Turn context
 
 `agent_options.turn_context` declares per-turn context the host adds to each
