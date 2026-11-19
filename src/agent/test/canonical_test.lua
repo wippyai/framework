@@ -110,7 +110,8 @@ local function define_tests()
 
         local MAX_INDEX = 1000000
 
-        it("refuses a mostly empty array whose largest index is above the cap", function()
+        it("encodes a mostly empty array up to the cap and refuses one above it", function()
+            test.eq(#canonical.encode({ [MAX_INDEX] = 1 }), 1 + (MAX_INDEX - 1) * 5 + 2)
             for _, value in ipairs({ { [MAX_INDEX + 1] = 1 }, { [1e9] = 1 }, { 1, 2, [1e9] = 3 } }) do
                 local ok = pcall(canonical.encode, value)
                 test.ok(not ok)
