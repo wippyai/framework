@@ -106,8 +106,15 @@ function generate_handler.handler(contract_args)
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(cache_ttl_err):build()
     end
 
+    local deferred = nil
+    if route.fact(contract_args.accepts, "deferred_tools", mapper.CAPABILITY) == true
+        and (contract_args.options or {}).expect_tool_additions == true then
+        deferred = generate_handler._mapper.plan_deferred_tools(contract_args.messages, contract_args.tools)
+    end
+
     local mapped_messages = generate_handler._mapper.map_messages(contract_args.messages, {
-        cache_ttl = cache_ttl
+        cache_ttl = cache_ttl,
+        deferred = deferred
     })
     if #mapped_messages.messages == 0 then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
@@ -138,10 +145,11 @@ function generate_handler.handler(contract_args)
     end
 
     if contract_args.tools and #contract_args.tools > 0 then
-        local claude_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools)
+        local claude_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools, deferred)
         local tool_choice, tool_choice_error = generate_handler._mapper.map_tool_choice(
             contract_args.tool_choice,
-            claude_tools
+            claude_tools,
+            deferred and mapper.RESERVED_DEFERRED_TOOL.name or nil
         )
 
         if tool_choice_error then

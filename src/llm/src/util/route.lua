@@ -4,13 +4,15 @@ local VALUES = {
     thinking = { adaptive = true, budget = true, none = true, always = true },
     sampling = "boolean",
     forced_tool_choice = "boolean",
-    structured_output = { native = true, tool = true }
+    structured_output = { native = true, tool = true },
+    deferred_tools = "boolean"
 }
 local ALLOWED = {
     thinking = "adaptive, budget, none, always",
     sampling = "boolean (true, false)",
     forced_tool_choice = "boolean (true, false)",
-    structured_output = "native, tool"
+    structured_output = "native, tool",
+    deferred_tools = "boolean (true, false)"
 }
 
 local function profile_facts(facts, profile)
@@ -22,13 +24,13 @@ end
 
 local function canonical(facts: table, source: any, id: string, closed: boolean): string?
     if type(source) ~= "table" then
-        return "route " .. id .. " accepts must be a table of thinking, sampling, forced_tool_choice, structured_output"
+        return "route " .. id .. " accepts must be a table of thinking, sampling, forced_tool_choice, structured_output, deferred_tools"
     end
     if closed then
         for key in pairs(source) do
             if VALUES[key] == nil then
                 return "route " .. id .. " accepts." .. tostring(key)
-                    .. " is unknown; allowed keys: thinking, sampling, forced_tool_choice, structured_output"
+                    .. " is unknown; allowed keys: thinking, sampling, forced_tool_choice, structured_output, deferred_tools"
             end
         end
     end
@@ -177,7 +179,7 @@ function route.unsupported_fact_error(accepts: any, capability: table): string?
         local allowed = capability.supported and capability.supported[key]
         if allowed and not allowed[accepts[key]] then
             local names = {}
-            for name in pairs(allowed) do table.insert(names, name) end
+            for name in pairs(allowed) do table.insert(names, tostring(name)) end
             table.sort(names)
             return capability.name .. " does not support " .. key .. " = " .. tostring(accepts[key])
                 .. "; supported: " .. table.concat(names, ", ")

@@ -11,7 +11,8 @@ mapper.CAPABILITY = {
     defaults = { thinking = "none" },
     supported = {
         thinking = { none = true },
-        structured_output = { native = true }
+        structured_output = { native = true },
+        deferred_tools = { [false] = true }
     }
 }
 

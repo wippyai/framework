@@ -2124,6 +2124,122 @@ local function define_tests()
                 test.eq(err:message(), "PID is required for streamer")
             end)
         end)
+
+        describe("Deferred tools", function()
+            local RESERVED = "reserved_deferred_slot"
+
+            local function tool(name)
+                return {
+                    name = name,
+                    description = "Tool " .. name,
+                    schema = { type = "object", properties = { value = { type = "string" } } },
+                    registry_id = "app:" .. name
+                }
+            end
+
+            local function request(accepts, options)
+                return {
+                    model = "claude-sonnet-5-5",
+                    accepts = accepts,
+                    options = options,
+                    tools = { tool("alpha"), tool("load"), tool("pack_tool") },
+                    messages = {
+                        { role = "user", content = { { type = "text", text = "Go" } } },
+                        { role = "function_call", content = {}, function_call = { id = "call_1", name = "load", arguments = { load = "pack" } } },
+                        {
+                            role = "function_result", name = "load", function_call_id = "call_1",
+                            content = { { type = "text", text = "loaded" } },
+                            metadata = { tool_additions = { "pack_tool" } }
+                        },
+                    }
+                }
+            end
+
+            local function names_of(tools)
+                local names = {}
+                for index, entry in ipairs(tools) do names[index] = entry.name end
+                return table.concat(names, ",")
+            end
+
+            it("defers announced tools when the route accepts it and the caller expects additions", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+                local response, err = generate_handler.handler(request({ deferred_tools = true }, { expect_tool_additions = true }))
+                test.is_nil(err)
+                test.not_nil(response)
+                test.eq(names_of(captured.payload.tools), "alpha,load," .. RESERVED .. ",pack_tool")
+                test.is_true(captured.payload.tools[3].defer_loading)
+                test.is_true(captured.payload.tools[4].defer_loading)
+                local content = captured.payload.messages[3].content
+                test.eq(content[1].type, "tool_result")
+                test.eq(content[1].content[1].type, "tool_reference")
+                test.eq(content[1].content[1].tool_name, "pack_tool")
+                test.eq(content[2].text, "load result: loaded")
+                test.is_nil(captured.payload.expect_tool_additions)
+            end)
+
+            it("sends the tools as they are without the route fact or without the caller option", function()
+                local cases = {
+                    { accepts = { deferred_tools = true }, options = {} },
+                    { accepts = { deferred_tools = false }, options = { expect_tool_additions = true } },
+                    { accepts = {}, options = { expect_tool_additions = true } },
+                    { accepts = nil, options = nil },
+                }
+                for _, case in ipairs(cases) do
+                    local captured = {}
+                    generate_handler._client = capturing_client(captured)
+                    local response, err = generate_handler.handler(request(case.accepts, case.options))
+                    test.is_nil(err)
+                    test.not_nil(response)
+                    test.eq(names_of(captured.payload.tools), "alpha,load,pack_tool")
+                    for _, entry in ipairs(captured.payload.tools) do
+                        test.is_nil(entry.defer_loading)
+                    end
+                    test.eq(captured.payload.messages[3].content[1].content, "loaded")
+                    test.is_nil(captured.payload.expect_tool_additions)
+                end
+            end)
+
+            it("rejects a forced tool name that exists only as the cache placeholder", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+                local args = request({ deferred_tools = true }, { expect_tool_additions = true })
+                args.tool_choice = RESERVED
+                local response, err = generate_handler.handler(args)
+                test.is_nil(captured.payload)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "not found")
+            end)
+
+            it("allows a caller to force a real tool with the reserved name", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+                local args = request({ deferred_tools = true }, { expect_tool_additions = true })
+                table.insert(args.tools, tool(RESERVED))
+                args.tool_choice = RESERVED
+                local response, err = generate_handler.handler(args)
+                test.is_nil(err)
+                test.not_nil(response)
+                test.eq(captured.payload.tool_choice.type, "tool")
+                test.eq(captured.payload.tool_choice.name, RESERVED)
+                test.is_nil(captured.payload.tools[4].defer_loading)
+            end)
+
+            it("maps a call to a deferred tool back to its registry id", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured, {
+                    content = { { type = "tool_use", id = "toolu_1", name = "pack_tool", input = { value = "x" } } },
+                    stop_reason = "tool_use",
+                    usage = { input_tokens = 30, output_tokens = 3 },
+                    metadata = {}
+                })
+                local response = assert(generate_handler.handler(request({ deferred_tools = true }, { expect_tool_additions = true })))
+                test.eq(response.result.tool_calls[1].name, "pack_tool")
+                test.eq(response.result.tool_calls[1].registry_id, "app:pack_tool")
+            end)
+        end)
     end)
 end
 
