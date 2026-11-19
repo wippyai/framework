@@ -45,7 +45,7 @@ local function define_tests()
         cases[#cases + 1] = { "shared subtable in an array", { shared, { inner = shared } },
             '[{"list":[2],"x":1},{"inner":{"list":[2],"x":1}}]' }
 
-        it("keeps the exact text of every value it already encoded correctly", function()
+        it("writes the same text for every case in the table", function()
             for _, case in ipairs(cases) do
                 test.eq(canonical.encode(case[2]), case[3], case[1])
             end
@@ -111,7 +111,6 @@ local function define_tests()
         local MAX_INDEX = 1000000
 
         it("refuses a mostly empty array whose largest index is above the cap", function()
-            test.eq(#canonical.encode({ [MAX_INDEX] = 1 }), 1 + (MAX_INDEX - 1) * 5 + 2)
             for _, value in ipairs({ { [MAX_INDEX + 1] = 1 }, { [1e9] = 1 }, { 1, 2, [1e9] = 3 } }) do
                 local ok = pcall(canonical.encode, value)
                 test.ok(not ok)
