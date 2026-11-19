@@ -366,7 +366,22 @@ function openai_client.process_stream(stream_response, callbacks): (string?, any
             leftover = chunk:sub(last_boundary + 1)
         end
 
-        for data_line in complete:gmatch('data:%s*(.-)%s*\n') do
+        -- Use literal newline offsets so a large JSON event does not exhaust
+        -- the pattern matcher while looking for the end of a data line.
+        local cursor = 1
+        while cursor <= #complete do
+            local start = cursor
+            local newline = complete:find("\n", start, true) or (#complete + 1)
+            cursor = newline + 1
+            if complete:sub(start, start + 4) ~= "data:" then
+                goto continue_line
+            end
+
+            local data_start = start + 5
+            if complete:sub(data_start, data_start) == " " then
+                data_start = data_start + 1
+            end
+            local data_line = complete:sub(data_start, newline - 1)
             if data_line == "" or data_line == "[DONE]" then
                 goto continue_line
             end
