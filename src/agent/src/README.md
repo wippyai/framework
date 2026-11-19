@@ -431,9 +431,9 @@ A host can change the trait list during a conversation (`agent_context:set_activ
 
 `agent_options.trait_loading = "append"` renders a trait where it was loaded instead:
 
-- The system prompt holds the agent's prompt and the traits that were not loaded during the visible history. A loaded trait's prompt, with the output of its prompt function, is sent as a positional system note after the tool round that loaded it.
+- The system prompt holds the agent's prompt and the traits that were not loaded during the visible history. The compiled text of a loaded trait is sent as a positional note after all calls and results of the assistant turn that loaded it. Per-step prompt functions continue to render in the current system prompt so later context changes update its fingerprint and preserve the earlier note.
 - The function result that loaded the trait names the trait's tools in `metadata.tool_additions`, and every request carries `expect_tool_additions = true`. `options.tools` stays the full list. A model route that declares `deferred_tools` keeps the request prefix unchanged when the tools appear (see Tool Additions in the LLM module); other routes send the full list as before.
-- `prefix_fingerprint` covers the system prompt and the tools without the loaded traits, so loading a trait keeps earlier thinking blocks on a route that declares `deferred_tools`. On other routes the driver treats thinking that predates the loaded tools as stale.
+- `prefix_fingerprint` covers the system prompt and the tools without the loaded traits, so loading a trait with stable system text keeps earlier thinking blocks on a route that declares `deferred_tools`. On other routes the driver treats thinking that predates the loaded tools as stale.
 
 The runner learns what was loaded from the conversation. The host stores `loaded_traits = { agent = <agent id>, keys = { ... } }` in the metadata of the function result whose control added the traits, and passes it on when it rebuilds the prompt:
 

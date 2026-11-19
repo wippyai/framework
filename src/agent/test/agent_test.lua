@@ -2138,6 +2138,29 @@ local function define_tests()
                 test.eq(conversation[8].role, prompt.ROLE.USER)
             end)
 
+            it("keeps a parallel assistant turn intact when calls and results are interleaved", function()
+                local mapper = require("openai_compat_mapper")
+                local sent = run(spec(), {
+                    user("Go"),
+                    { role = prompt.ROLE.ASSISTANT, content = text("Working") },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack" }),
+                    { role = prompt.ROLE.CACHE_MARKER },
+                    call("call_2", "alpha"),
+                    result("call_2", "alpha", "done"),
+                    user("Next"),
+                })
+                local wire = mapper.map_messages(sent.messages, {})
+                test.eq(#wire, 7)
+                test.eq(wire[3].role, "assistant")
+                test.eq(#wire[3].tool_calls, 2)
+                test.eq(wire[4].tool_call_id, "call_1")
+                test.eq(wire[5].tool_call_id, "call_2")
+                test.eq(wire[6].role, "system")
+                test.eq(wire[6].content[1].text, "Pack prompt.")
+                test.eq(wire[7].role, "user")
+            end)
+
             it("renders a trait at its latest announcement", function()
                 local sent = run(spec(), {
                     user("Go"),
@@ -2245,25 +2268,31 @@ local function define_tests()
                 test.is_true(changed_base.response.prefix_fingerprint ~= before.response.prefix_fingerprint)
             end)
 
-            it("moves a late trait's prompt function output into its note", function()
+            it("keeps per-step trait prompt output in the fingerprinted system prompt", function()
                 agent._funcs = {
                     new = function()
-                        return {
-                            with_context = function(self) return self end,
-                            call = function(_, func_id)
-                                return func_id == "test:pack_state" and "Pack state." or "Core state."
-                            end
-                        }
+                        return { with_context = function(_, context)
+                            return { call = function(_, func_id)
+                                return func_id == "test:pack_state" and context.state or "Core state."
+                            end }
+                        end }
                     end
                 }
-                local sent = run(spec({
+                local compiled = spec({
                     prompt_funcs = {
                         { trait_id = "core", trait = "core", func_id = "test:core_state", context = {} },
                         { trait_id = "pack", trait = "pack", func_id = "test:pack_state", context = {} },
                     },
-                }), loaded_history())
-                test.eq(sent.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nCore state.")
-                test.eq(sent.conversation[5].content[1].text, "Pack prompt.\n\nPack state.")
+                })
+                local history = loaded_history()
+                local first = run(compiled, history, { context = { state = "First." } })
+                table.insert(history, user("Next"))
+                local second = run(compiled, history, { context = { state = "Second." } })
+                test.eq(first.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nCore state.\n\nFirst.")
+                test.eq(second.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nCore state.\n\nSecond.")
+                test.eq(first.conversation[5].content[1].text, "Pack prompt.")
+                test.eq(second.conversation[5].content[1].text, "Pack prompt.")
+                test.is_true(first.response.prefix_fingerprint ~= second.response.prefix_fingerprint)
             end)
 
             it("sends no note for a loaded trait that has no prompt", function()

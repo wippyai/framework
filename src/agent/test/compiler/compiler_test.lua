@@ -1315,6 +1315,28 @@ local function define_tests()
                 end
             end)
 
+            it("records only the attachment that built each context-specific tool", function()
+                local one = { id = "dynamic_trait", context = { source = "one" } }
+                local two = { id = "dynamic_trait", context = { source = "two" } }
+                compiler._funcs = { new = function()
+                    return { with_context = function(_, context)
+                        return { call = function()
+                            return { tools = { { id = "dynamic:" .. context.source } } }
+                        end }
+                    end }
+                end }
+                local compiled = assert(compiler.compile({
+                    id = "test:instance_tools", name = "Attachment tools", prompt = "Test", traits = { one, two },
+                }))
+                for _, attachment in ipairs({ one, two }) do
+                    local name = attachment.context.source
+                    local tool = compiled.tools[name]
+                    test.not_nil(tool)
+                    test.eq(tool.context.source, name)
+                    test.eq(table.concat(tool.traits, ","), compiler.trait_key(attachment))
+                end
+            end)
+
             it("keys a trait by its resolved id however the list spells it", function()
                 test.eq(compiler.trait_key("Static Trait"), "static_trait")
                 test.eq(compiler.trait_key("unknown_trait"), "unknown_trait")

@@ -1123,7 +1123,6 @@ end
 local function process_traits(raw_spec: any, config: CompilerConfig): (any, string?)
     local additional_prompts = {}
     local additional_tools = {}
-    local trait_contexts = {}
     local trait_tool_schemas = {}
     local additional_delegates = {}
     local prompt_funcs = {}
@@ -1133,7 +1132,6 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
     local agent_options = {}
     local recall_defaults = {}
     local prompt_parts = {}
-    local trait_keys = {}
     local trait_order = {}
     local delegate_traits = {}
 
@@ -1141,11 +1139,9 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
         return {
             prompts = additional_prompts,
             prompt_parts = prompt_parts,
-            trait_keys = trait_keys,
             trait_order = trait_order,
             delegate_traits = delegate_traits,
             tools = additional_tools,
-            contexts = trait_contexts,
             tool_schemas = trait_tool_schemas,
             delegates = additional_delegates,
             prompt_funcs = prompt_funcs,
@@ -1176,19 +1172,16 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
             goto continue
         end
 
-        -- FIX: Always merge trait_instance_context into trait_contexts
-        trait_contexts[trait_id] = config.context_merger(
+        local trait_context = config.context_merger(
             trait_def.context or {},
             {},  -- No agent context here since we're processing traits
             trait_instance_context
         )
 
-        additional_tools[trait_id] = {}
-
         local trait_key = instance_key(trait_config,
             type(trait_def.id) == "string" and trait_def.id ~= "" and trait_def.id or trait_id)
-        trait_keys[trait_id] = trait_keys[trait_id] or {}
-        table.insert(trait_keys[trait_id], trait_key)
+        local attachment = { key = trait_key, context = trait_context, tools = {} }
+        table.insert(additional_tools, attachment)
         table.insert(trait_order, trait_key)
 
         if trait_def.prompt and #trait_def.prompt > 0 then
@@ -1197,7 +1190,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
         end
 
         for j, tool in ipairs(trait_def.tools or {}) do
-            table.insert(additional_tools[trait_id], tool)
+            table.insert(attachment.tools, tool)
         end
 
         if trait_def.prompt_func_id then
@@ -1205,7 +1198,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
                 trait_id = trait_id,
                 trait = trait_key,
                 func_id = trait_def.prompt_func_id,
-                context = trait_contexts[trait_id]  -- Use the merged context
+                context = trait_context  -- Use the merged context
             })
         end
 
@@ -1213,7 +1206,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
             table.insert(step_funcs, {
                 trait_id = trait_id,
                 func_id = trait_def.step_func_id,
-                context = trait_contexts[trait_id]  -- Use the merged context
+                context = trait_context  -- Use the merged context
             })
         end
 
@@ -1223,15 +1216,15 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
             recall_defaults,
             trait_id,
             trait_def,
-            trait_contexts[trait_id],
+            trait_context,
             trait_instance_options,
             raw_spec,
             config
         )
         agent_options = merge_agent_options(agent_options, behavior_agent_options)
 
-        append_tool_wrappers(tool_wrappers, trait_id, trait_def, trait_contexts[trait_id], raw_spec, config)
-        append_bindings(bindings, trait_id, trait_def, trait_contexts[trait_id], trait_instance_options, raw_spec, config)
+        append_tool_wrappers(tool_wrappers, trait_id, trait_def, trait_context, raw_spec, config)
+        append_bindings(bindings, trait_id, trait_def, trait_context, trait_instance_options, raw_spec, config)
 
         agent_options = merge_agent_options(agent_options, trait_def.agent_options)
         if type(trait_config) == "table" then
@@ -1240,7 +1233,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
 
         if trait_def.build_func_id then
             local merged_context = config.context_merger(
-                trait_contexts[trait_id],  -- Use already merged trait context
+                trait_context,  -- Use already merged trait context
                 raw_spec.context or {},
                 {}  -- trait_instance_context already merged above
             )
@@ -1266,7 +1259,7 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
 
                 if contribution.tools then
                     for k, tool in ipairs(contribution.tools) do
-                        table.insert(additional_tools[trait_id], tool)
+                        table.insert(attachment.tools, tool)
 
                         if tool.schema then
                             local canonical_name = get_canonical_tool_name(tool.id, tool)
@@ -1283,8 +1276,8 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
                 end
 
                 if contribution.context then
-                    trait_contexts[trait_id] = config.context_merger(
-                        trait_contexts[trait_id],
+                    attachment.context = config.context_merger(
+                        trait_context,
                         contribution.context,
                         {}
                     )
@@ -1322,21 +1315,20 @@ local function process_traits(raw_spec: any, config: CompilerConfig): (any, stri
     return collected(), nil
 end
 
-local function process_tools(raw_spec: any, additional_tools: any, trait_contexts: any, trait_tool_schemas: any, config: CompilerConfig, trait_keys: any, sources: any): any
+local function process_tools(raw_spec: any, additional_tools: any, trait_tool_schemas: any, config: CompilerConfig, sources: any): any
     local all_tools = {}
 
     for i, tool in ipairs(raw_spec.tools or {}) do
         table.insert(all_tools, {
             tool_def = tool,
-            source_trait = nil
         })
     end
 
-    for trait_id, tool_list in pairs(additional_tools) do
-        for j, tool in ipairs(tool_list) do
+    for _, attachment in ipairs(additional_tools) do
+        for _, tool in ipairs(attachment.tools) do
             table.insert(all_tools, {
                 tool_def = tool,
-                source_trait = trait_id
+                attachment = attachment
             })
         end
     end
@@ -1358,7 +1350,7 @@ local function process_tools(raw_spec: any, additional_tools: any, trait_context
                     context = type(tool_def) == "table" and tool_def.context or nil,
                     description = type(tool_def) == "table" and tool_def.description or nil,
                     alias = type(tool_def) == "table" and tool_def.alias or nil,
-                    source_trait = tool_info.source_trait,
+                    attachment = tool_info.attachment,
                     inline_schema = nil
                 })
             end
@@ -1373,7 +1365,7 @@ local function process_tools(raw_spec: any, additional_tools: any, trait_context
                 context = type(tool_def) == "table" and tool_def.context or nil,
                 description = type(tool_def) == "table" and tool_def.description or nil,
                 alias = type(tool_def) == "table" and tool_def.alias or nil,
-                source_trait = tool_info.source_trait,
+                attachment = tool_info.attachment,
                 inline_schema = inline_schema
             })
         end
@@ -1383,22 +1375,11 @@ local function process_tools(raw_spec: any, additional_tools: any, trait_context
 
     for i, tool_info in ipairs(resolved_tools) do
         local canonical_name = get_canonical_tool_name(tool_info.id, tool_info)
-        local keys = tool_info.source_trait and trait_keys and trait_keys[tool_info.source_trait] or nil
-        if keys and #keys > 0 then
-            for _, key in ipairs(keys) do
-                record_source(sources, canonical_name, key)
-            end
-        else
-            record_source(sources, canonical_name, nil)
-        end
-
-        local tool_trait_context = {}
-        if tool_info.source_trait and trait_contexts[tool_info.source_trait] then
-            tool_trait_context = trait_contexts[tool_info.source_trait]
-        end
+        local attachment = tool_info.attachment
+        record_source(sources, canonical_name, attachment and attachment.key)
 
         local final_context = config.context_merger(
-            tool_trait_context,
+            attachment and attachment.context or {},
             raw_spec.context or {},
             tool_info.context or {}
         )
@@ -1548,8 +1529,8 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
     if not traits then
         return nil, traits_err
     end
-    local additional_prompts, additional_tools, trait_contexts, trait_tool_schemas, additional_delegates =
-        traits.prompts, traits.tools, traits.contexts, traits.tool_schemas, traits.delegates
+    local additional_prompts, additional_tools, trait_tool_schemas, additional_delegates =
+        traits.prompts, traits.tools, traits.tool_schemas, traits.delegates
     local prompt_funcs, step_funcs, tool_wrappers, bindings = traits.prompt_funcs, traits.step_funcs,
         traits.tool_wrappers, traits.bindings
     local trait_agent_options, recall_defaults = traits.agent_options, traits.recall_defaults
@@ -1568,8 +1549,7 @@ function compiler.compile(raw_spec: table?, user_config: table?): (any, string?)
     }, config)
 
     local tool_sources = {}
-    local tools = process_tools(raw_spec, additional_tools, trait_contexts, trait_tool_schemas, config,
-        traits.trait_keys, tool_sources)
+    local tools = process_tools(raw_spec, additional_tools, trait_tool_schemas, config, tool_sources)
 
     local delegate_tools, delegate_contexts = process_delegates(raw_spec, additional_delegates, config,
         traits.delegate_traits, tool_sources)

@@ -129,12 +129,12 @@ end
 
 -- A prompt function's text is part of the system prompt, so a failure fails
 -- the step: sending the prompt without it would change the prefix.
-local function execute_prompt_functions(self: any, runtime_context: any): ({any}?, any)
-    local prompt_parts = {}
+local function execute_prompt_functions(self: any, runtime_context: any): (string?, any)
     if not self.prompt_funcs or #self.prompt_funcs == 0 then
-        return prompt_parts, nil
+        return "", nil
     end
 
+    local prompt_parts = {}
     local funcs_module = get_funcs()
 
     for _, prompt_func in ipairs(self.prompt_funcs) do
@@ -159,11 +159,11 @@ local function execute_prompt_functions(self: any, runtime_context: any): ({any}
         end
 
         if prompt_text and prompt_text ~= "" then
-            table.insert(prompt_parts, { trait = prompt_func.trait, text = prompt_text })
+            table.insert(prompt_parts, prompt_text)
         end
     end
 
-    return prompt_parts, nil
+    return table.concat(prompt_parts, "\n\n"), nil
 end
 
 local function with_memory(text: string, memory: any): string
@@ -205,15 +205,15 @@ local function first_announcement(traits: any, announced_at: {[string]: number})
     return first
 end
 
-local function trait_view(self: any, messages: {any}, dynamic_parts: {any}): (string, {any}, {[string]: boolean}?)
+local function trait_view(self: any, messages: {any}, dynamic_prompt: string): (string, {any}, {[string]: boolean}?)
     local function system_text(late: {[string]: boolean}?): string
         local text = self.system_prompt
         if late then
             text = with_memory(joined_texts(self.prompt_parts, late, nil), self.memory)
         end
-        local dynamic = joined_texts(dynamic_parts, late, nil)
-        if dynamic ~= "" then
-            text = text .. "\n\n" .. dynamic
+        -- Per-step prompt functions belong to the current request and its prefix fingerprint.
+        if dynamic_prompt ~= "" then
+            text = text .. "\n\n" .. dynamic_prompt
         end
         return text
     end
@@ -281,10 +281,6 @@ local function trait_view(self: any, messages: {any}, dynamic_parts: {any}): (st
                 message = copy
             end
             local text = joined_texts(self.prompt_parts, nil, keys)
-            local dynamic = joined_texts(dynamic_parts, nil, keys)
-            if dynamic ~= "" then
-                text = text ~= "" and (text .. "\n\n" .. dynamic) or dynamic
-            end
             if not prompt.is_blank(text) then
                 table.insert(notes, {
                     role = prompt.ROLE.SYSTEM,
@@ -295,7 +291,11 @@ local function trait_view(self: any, messages: {any}, dynamic_parts: {any}): (st
         end
         table.insert(result, message)
         local next_message = messages[index + 1]
-        if #notes > 0 and (not next_message or next_message.role ~= prompt.ROLE.FUNCTION_RESULT) then
+        -- Calls and results from one assistant turn may be interleaved. A cache
+        -- marker within that sequence does not begin another turn.
+        local next_role = next_message and next_message.role
+        if #notes > 0 and next_role ~= prompt.ROLE.FUNCTION_CALL and next_role ~= prompt.ROLE.FUNCTION_RESULT
+                and next_role ~= prompt.ROLE.CACHE_MARKER then
             for position = 1, #notes do
                 table.insert(result, notes[position])
                 notes[position] = nil
@@ -710,7 +710,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     runtime_options = runtime_options or {}
     local llm_instance = get_llm()
 
-    local dynamic_parts, prompt_err = execute_prompt_functions(self, runtime_options.context)
+    local dynamic_prompt, prompt_err = execute_prompt_functions(self, runtime_options.context)
     if prompt_err then
         return nil, prompt_err
     end
@@ -772,7 +772,7 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
 
     local system_messages = {}
     local function view_of(conversation_messages: {any}): any
-        local system_text, messages, late_tools = trait_view(self, conversation_messages, dynamic_parts)
+        local system_text, messages, late_tools = trait_view(self, conversation_messages, dynamic_prompt or "")
         local system_message = system_messages[system_text]
         if not system_message then
             system_message = { role = prompt.ROLE.SYSTEM, content = { prompt.text(system_text) } }
