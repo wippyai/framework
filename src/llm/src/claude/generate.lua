@@ -148,7 +148,8 @@ function generate_handler.handler(contract_args)
         local claude_tools, name_to_id_map = generate_handler._mapper.map_tools(contract_args.tools, deferred)
         local tool_choice, tool_choice_error = generate_handler._mapper.map_tool_choice(
             contract_args.tool_choice,
-            claude_tools
+            claude_tools,
+            deferred and mapper.RESERVED_DEFERRED_TOOL.name or nil
         )
 
         if tool_choice_error then

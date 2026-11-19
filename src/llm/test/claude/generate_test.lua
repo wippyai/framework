@@ -2200,6 +2200,33 @@ local function define_tests()
                 end
             end)
 
+            it("rejects a forced tool name that exists only as the cache placeholder", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+                local args = request({ deferred_tools = true }, { expect_tool_additions = true })
+                args.tool_choice = RESERVED
+                local response, err = generate_handler.handler(args)
+                test.is_nil(captured.payload)
+                test.is_nil(response)
+                test.not_nil(err)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "not found")
+            end)
+
+            it("allows a caller to force a real tool with the reserved name", function()
+                local captured = {}
+                generate_handler._client = capturing_client(captured)
+                local args = request({ deferred_tools = true }, { expect_tool_additions = true })
+                table.insert(args.tools, tool(RESERVED))
+                args.tool_choice = RESERVED
+                local response, err = generate_handler.handler(args)
+                test.is_nil(err)
+                test.not_nil(response)
+                test.eq(captured.payload.tool_choice.type, "tool")
+                test.eq(captured.payload.tool_choice.name, RESERVED)
+                test.is_nil(captured.payload.tools[4].defer_loading)
+            end)
+
             it("maps a call to a deferred tool back to its registry id", function()
                 local captured = {}
                 generate_handler._client = capturing_client(captured, {

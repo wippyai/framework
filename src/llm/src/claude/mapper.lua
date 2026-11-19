@@ -784,7 +784,7 @@ function mapper.map_tools(contract_tools, deferred)
     return claude_tools, name_to_id_map
 end
 
-function mapper.map_tool_choice(contract_choice, available_tools)
+function mapper.map_tool_choice(contract_choice, available_tools, reserved_name: string?)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -797,7 +797,7 @@ function mapper.map_tool_choice(contract_choice, available_tools)
         return { type = "any" }
     elseif type(contract_choice) == "string" then
         for _, tool in ipairs(available_tools) do
-            if tool.name == contract_choice then
+            if tool.name == contract_choice and tool.name ~= reserved_name then
                 return { type = "tool", name = contract_choice }
             end
         end
