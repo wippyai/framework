@@ -574,6 +574,24 @@ local function define_tests()
             test.eq(body.wippy.metaError:find("fixtures", 1, true), nil)
         end)
 
+        test.it("serves page metadata and preserves static routes and page access", function()
+            local prefix = GATEWAY .. "/api/public/pages/"
+            local response, err = http_client.get(prefix .. "app:test_bad_meta_page")
+            test.eq(err, nil)
+            test.eq(response.status_code, 200)
+            local body = json.decode(response.body or "")
+            test.eq(body.id, "app:test_bad_meta_page")
+            test.eq(body.title, "Bad meta fixture")
+            test.eq(body.content_type, "text/html")
+
+            for path, status in pairs({ list = 200, routes = 200, ["app:test_tmpl_settings"] = 401,
+                                       ["app:unknown"] = 404 }) do
+                local result, request_err = http_client.get(prefix .. path)
+                test.eq(request_err, nil)
+                test.eq(result.status_code, status)
+            end
+        end)
+
         test.it("under the handler policies the read goes through the reader function", function()
             local result = load_as(HANDLER_POLICIES, "/static-fixture/meta-page/", "http://unused.invalid/")
             test.eq(result.err, nil)
