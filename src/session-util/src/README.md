@@ -37,10 +37,15 @@ The `title` falls back to `name` when the title is empty, and `start_prompts` ho
 items of the agent's list. When the agent is unknown or hidden, the answer is still `200`, with
 `{"success":true,"agent":null}`, so the caller can't tell whether a hidden agent exists.
 
+Session access runs first. When `session_id` names a session that the caller can read, and that
+session runs the requested agent, the module answers from the registry. The agents match by registry
+id, whether the request uses the id or the name. The module answers even when the agent is private,
+and even when a bound catalog would hide it. This covers registry agents only. An agent that only a
+catalog knows always comes from the catalog. In every other case the module ignores `session_id` and
+uses the normal lookup.
+
 Without a binding, the module looks the agent up by registry id first and by `meta.name` second, and
-it hides agents with `meta.private: true`. When `session_id` names a session that the caller can
-read and that session runs the requested agent, the module answers with that agent even when it is
-private. Otherwise the module ignores `session_id` and uses the normal lookup.
+it hides agents with `meta.private: true`.
 
 ## GET /tools/by-name
 
@@ -62,7 +67,8 @@ but both registry ids still match. A registry failure gives `500` with
 
 An app whose agents or tools are not plain registry entries, or that hides them by its own rules,
 binds the `wippy.session_util:catalog` contract. When a binding exists, both routes ask it instead
-of using the built-in rules. The binding runs as the caller.
+of using the built-in rules. The one exception is session access in `GET /agents/details`: it runs
+before the catalog and can answer without it. The binding runs as the caller.
 
 ```yaml
 - name: session_catalog

@@ -15,14 +15,16 @@ local api = {
     _tools = tools,
 }
 
--- Built-in rule. A tool call carries the name the model used: meta.llm_alias,
--- or the sanitized id name when there is no alias. The registry id also
--- matches. A name that two tools share is left out, because the call cannot
--- say which tool ran; both registry ids still match. Private tools are left
--- out: Session does not show their calls.
+-- Built-in rule. Tools are function entries of any kind (function.lua,
+-- function.wasm and so on) with meta.type tool, the same filter that
+-- wippy.agent.discovery:tools uses. A tool call carries the name the model
+-- used: meta.llm_alias, or the sanitized id name when there is no alias. The
+-- registry id also matches. A name that two tools share is left out, because
+-- the call cannot say which tool ran; both registry ids still match. Private
+-- tools are left out: Session does not show their calls.
 local function registry_tools(): ({[string]: any}?, string?)
     local entries, err = api._registry.find({
-        [".kind"] = "function.lua",
+        [".kind"] = "function.*",
         ["meta.type"] = "tool"
     })
     if err then

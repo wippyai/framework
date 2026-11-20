@@ -94,6 +94,29 @@ local function fake_reader(sessions: {[string]: string}): (any, any)
     return reader, calls
 end
 
+-- A fake registry for the tool lookup. find keeps the entries whose kind
+-- matches the query's .kind, where a trailing ".*" matches any suffix, and
+-- whose meta.type equals the query's meta.type.
+local function fake_registry(entries: {any}): any
+    return {
+        find = function(query)
+            local kind = tostring(query[".kind"])
+            local found = {}
+            for _, entry in ipairs(entries) do
+                local kind_matches = entry.kind == kind
+                if kind:sub(-2) == ".*" then
+                    local prefix = kind:sub(1, -2)
+                    kind_matches = entry.kind:sub(1, #prefix) == prefix
+                end
+                if kind_matches and entry.meta.type == query["meta.type"] then
+                    found[#found + 1] = entry
+                end
+            end
+            return found
+        end,
+    }
+end
+
 local function count_keys(map: any): number
     local count = 0
     for _ in pairs(map) do count = count + 1 end
@@ -128,6 +151,20 @@ local function define_tests()
                 local entry, err = registry.get(id)
                 test.is_nil(err)
                 test.eq(entry.meta.router, TEST_ROUTER)
+            end
+        end)
+
+        it("gives neither handler a security block, so both run as the caller", function()
+            -- A function entry keeps its security block in entry.data.security.
+            for _, id in ipairs({
+                "wippy.session_util.api:agent_details",
+                "wippy.session_util.api:tools_by_name",
+            }) do
+                local entry, err = registry.get(id)
+                test.is_nil(err)
+                test.eq(entry.kind, "function.lua")
+                test.not_nil(entry.data)
+                test.is_nil(entry.data.security)
             end
         end)
     end)
@@ -374,6 +411,38 @@ local function define_tests()
             test.eq(found["app.api:host_routes_shared_two_tool"].name, "host_routes_shared")
             test.eq(found["app.api:host_routes_shared_two_tool"].title, "Shared Two")
         end)
+
+        it("finds a function.wasm tool by its LLM name and by its registry id", function()
+            tools_by_name._registry = fake_registry({
+                { id = "app.api:wasm_search_tool", kind = "function.wasm", meta = { type = "tool", title = "Wasm Search" } },
+            })
+            local result = install(tools_by_name, { tools = "wasm_search_tool,app.api:wasm_search_tool" })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            local found = result.body.tools
+            test.eq(count_keys(found), 2)
+            test.eq(found["wasm_search_tool"].name, "wasm_search_tool")
+            test.eq(found["wasm_search_tool"].title, "Wasm Search")
+            test.eq(found["app.api:wasm_search_tool"].name, "wasm_search_tool")
+            test.eq(found["app.api:wasm_search_tool"].title, "Wasm Search")
+        end)
+
+        it("leaves out an LLM name that a function.wasm tool shares with a function.lua tool", function()
+            tools_by_name._registry = fake_registry({
+                { id = "app.api:lua_lookup_tool", kind = "function.lua", meta = { type = "tool", title = "Lua Lookup", llm_alias = "shared_lookup" } },
+                { id = "app.api:wasm_lookup_tool", kind = "function.wasm", meta = { type = "tool", title = "Wasm Lookup", llm_alias = "shared_lookup" } },
+            })
+            local result = install(tools_by_name, {
+                tools = "shared_lookup,app.api:lua_lookup_tool,app.api:wasm_lookup_tool",
+            })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            local found = result.body.tools
+            test.eq(count_keys(found), 2)
+            test.is_nil(found["shared_lookup"])
+            test.eq(found["app.api:lua_lookup_tool"].title, "Lua Lookup")
+            test.eq(found["app.api:wasm_lookup_tool"].title, "Wasm Lookup")
+        end)
     end)
 
     describe("Bound catalog contract", function()
@@ -595,6 +664,60 @@ local function define_tests()
             local public = install(agent_details, { agent = "host-routes-untitled", session_id = "session-2" })
             agent_details.handler()
             test.eq(public.body.agent.id, "app.api:host_routes_untitled_agent")
+        end)
+
+        it("answers a request by name for a session stored by registry id", function()
+            agent_details._session_reader = fake_reader({ ["session-4"] = "app.api:host_routes_private_agent" })
+            local result = install(agent_details, { agent = "host-routes-private", session_id = "session-4" })
+            agent_details.handler()
+            test.eq(result.status, 200)
+            test.eq(result.body.agent.id, "app.api:host_routes_private_agent")
+            test.eq(result.body.agent.title, "Hidden Helper")
+        end)
+
+        it("answers a request by registry id for a session stored by name", function()
+            agent_details._session_reader = fake_reader({ ["session-5"] = "host-routes-private" })
+            local result = install(agent_details, { agent = "app.api:host_routes_private_agent", session_id = "session-5" })
+            agent_details.handler()
+            test.eq(result.status, 200)
+            test.eq(result.body.agent.id, "app.api:host_routes_private_agent")
+            test.eq(result.body.agent.title, "Hidden Helper")
+        end)
+
+        it("falls back to the catalog when a session stored by id or by name runs a different agent", function()
+            agent_details._session_reader = fake_reader({
+                ["session-6"] = "app.api:host_routes_public_agent",
+                ["session-7"] = "host-routes-public",
+            })
+            local by_name = install(agent_details, { agent = "host-routes-private", session_id = "session-6" })
+            agent_details.handler()
+            test.eq(by_name.raw, '{"success":true,"agent":null}')
+
+            local by_id = install(agent_details, { agent = "app.api:host_routes_private_agent", session_id = "session-7" })
+            agent_details.handler()
+            test.eq(by_id.raw, '{"success":true,"agent":null}')
+        end)
+
+        it("answers from the session before a bound catalog that hides the agent, and never opens the catalog", function()
+            local catalog_asked = false
+            local contract_module, contract_calls = fake_contract({
+                agent_details = function()
+                    catalog_asked = true
+                    return nil
+                end,
+            })
+            catalog_client._contract = contract_module
+            local reader, reader_calls = fake_reader({ ["session-8"] = "host-routes-private" })
+            agent_details._session_reader = reader
+            local result = install(agent_details, { agent = "host-routes-private", session_id = "session-8" })
+            agent_details.handler()
+            test.eq(reader_calls.open[1], "session-8")
+            test.eq(result.status, 200)
+            test.eq(result.body.agent.id, "app.api:host_routes_private_agent")
+            test.eq(result.body.agent.title, "Hidden Helper")
+            test.eq(#contract_calls.get, 0)
+            test.eq(contract_calls.open, 0)
+            test.is_false(catalog_asked)
         end)
 
         it("falls back to the catalog when the session's agent is not in the registry", function()

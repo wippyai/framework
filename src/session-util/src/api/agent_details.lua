@@ -30,8 +30,10 @@ end
 
 -- The agent of a session the caller can read, when it is the requested one.
 -- reader.open checks the actor and the session:<id> read permission and loads
--- the session for that user. Any failure gives nil, so the answer never shows
--- why.
+-- the session for that user. The session's agent and the requested one match
+-- by registry id, so a request by name finds a session stored by id and the
+-- reverse. An agent_id that is not a registry agent never matches. Any failure
+-- gives nil, so the answer never shows why.
 local function session_agent(session_id: string?, identifier: string)
     if not session_id or session_id == "" then
         return nil
@@ -40,10 +42,19 @@ local function session_agent(session_id: string?, identifier: string)
     if not session then
         return nil
     end
-    if session:state().config.agent_id ~= identifier then
+    local session_agent_id = session:state().config.agent_id
+    if type(session_agent_id) ~= "string" or session_agent_id == "" then
         return nil
     end
-    return find_agent(identifier)
+    local requested = find_agent(identifier)
+    if not requested then
+        return nil
+    end
+    local running = find_agent(session_agent_id)
+    if not running or running.id ~= requested.id then
+        return nil
+    end
+    return requested
 end
 
 -- Catalog first; the built-in rule hides meta.private agents. A failing
