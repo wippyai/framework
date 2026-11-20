@@ -60,6 +60,7 @@ Each provider route declares what the model accepts on the wire. These optional 
 | `sampling` | `true`, `false` | Whether temperature, top_p and top_k are accepted |
 | `forced_tool_choice` | `true`, `false` | Whether `tool_choice = "any"` or a named tool is accepted |
 | `structured_output` | `native`, `tool` | Native JSON schema output or a structured-output tool |
+| `deferred_tools` | `true`, `false` | Whether tools can be declared deferred and offered later by reference from a tool result |
 
 Missing facts preserve each driver's defaults. Claude and Bedrock default to budget thinking, sampling and forced tool choice enabled, and tool-based structured output. OpenAI, OpenAI-compatible and Google default to no thinking. Invalid fact values (outside the fixed vocabulary above) produce an `invalid_request` error naming the route, key and allowed values. A value inside that vocabulary but outside what a specific driver can honor is also `invalid_request`, naming the fact, the value and that driver's supported values: Bedrock only supports tool-based structured output, OpenAI and OpenAI-compatible only support `adaptive` or `none` thinking, and Google only supports `none` thinking.
 
@@ -292,6 +293,17 @@ builder:add_system("The current date and time is Tuesday, November 3, 2026 at 09
 Developer messages, positional or not, render the same way on Claude and Bedrock: each text part becomes its own text block, `<developer-instruction>` + text + `</developer-instruction>`, after the content of the user turn it follows, or a new user turn at the start or after an assistant turn. The wrapper tells the model host guidance apart from the user's prose. Positional system notes render as plain text. Existing blocks are never edited, so the rendering does not depend on where cache markers sit.
 
 Claude developer messages render as separate wrapped user text blocks, and Bedrock sends them as user text instead of `system` blocks. A Claude or Bedrock conversation with developer messages stored before this change therefore renders a different prefix once after upgrading: its cache restarts and thinking blocks bound to the old prefix no longer match. The provider rejects such blocks unless the request lets it drop them; hosts that keep thinking blocks across the upgrade strip them with `drop_stale_thinking`.
+
+### Tool Additions
+
+A conversation can offer tools that were not available at its start. `options.tools` always carries the full current list. The function result that made tools available names them in `metadata.tool_additions`, and the caller passes `expect_tool_additions = true` on every request of such a conversation, from the first one:
+
+```lua
+builder:add_function_result("load", "loaded", "call_1", { metadata = { tool_additions = { "pack_tool" } } })
+local result = llm.generate(builder, { model = "claude", tools = tools, expect_tool_additions = true })
+```
+
+A route that declares `deferred_tools: true` uses this to keep the request prefix, and with it the prompt cache and earlier thinking blocks, unchanged when a custom tool appears. Claude sends the announced custom tools with `defer_loading` after the tools offered from the start and one reserved deferred tool, renders the announcing result as `tool_reference` blocks, and moves its text into a `<name> result: <text>` block after the tool results of that round. Native Claude tools are sent eagerly. Announcing a native tool changes the cached prefix and marks earlier thinking blocks stale. Without the route fact or without the option the request is built as before. Drivers that cannot honor `deferred_tools: true` reject it; they ignore `tool_additions` and send the full tool list.
 
 ### Tool Call IDs
 

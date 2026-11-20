@@ -358,6 +358,14 @@ local function define_tests()
                 test.contains(err, "native")
                 test.contains(err, "tool")
             end)
+
+            it("rejects a declared deferred_tools = true, which Bedrock cannot honor", function()
+                local _, _, _, err = mapper.map_options({}, { deferred_tools = true })
+                test.contains(err, "Bedrock")
+                test.contains(err, "deferred_tools = true")
+                local _, _, _, accepted = mapper.map_options({}, { deferred_tools = false })
+                test.is_nil(accepted)
+            end)
         end)
 
         describe("map_messages", function()
@@ -495,6 +503,22 @@ local function define_tests()
                 end
                 test.eq(count, 4)
                 test.not_nil(((result.messages[1].content :: any)[2] :: any).cachePoint)
+            end)
+
+            it("marks thinking that predates announced tools as stale", function()
+                local function mapped(additions)
+                    return mapper.map_messages({
+                        { role = "user", content = "Question" },
+                        { role = "assistant", content = "Loading", metadata = {
+                            thinking_blocks = {{ type = "thinking", thinking = "Reasoning", signature = "sig" }}
+                        } },
+                        { role = "function_call", content = {}, function_call = { id = "call-1", name = "load", arguments = "{}" } },
+                        { role = "function_result", name = "load", function_call_id = "call-1", content = "loaded",
+                            metadata = additions and { tool_additions = additions } or nil },
+                    })
+                end
+                test.not_nil(mapped({ "pack_tool" }).stale_thinking)
+                test.is_nil(mapped(nil).stale_thinking)
             end)
 
             it("should place a thinking-only tail checkpoint before reasoning content", function()

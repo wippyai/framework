@@ -1987,6 +1987,375 @@ local function define_tests()
             end)
         end)
 
+        describe("Late traits", function()
+            local function text(value)
+                return { prompt.text(value) }
+            end
+
+            local function tool(name, ...)
+                return {
+                    name = name,
+                    description = "Tool " .. name,
+                    schema = { type = "object", properties = { value = { type = "string" } } },
+                    registry_id = "app:" .. name,
+                    context = {},
+                    traits = select("#", ...) > 0 and { ... } or nil
+                }
+            end
+
+            local function spec(overrides)
+                local result = {
+                    id = "late-agent",
+                    name = "Late Agent",
+                    description = "Agent that loads traits during a conversation",
+                    model = "gpt-4o-mini",
+                    prompt = "Base prompt.\n\nCore prompt.\n\nPack prompt.",
+                    prompt_parts = {
+                        { text = "Base prompt." },
+                        { trait = "core", text = "Core prompt." },
+                        { trait = "pack", text = "Pack prompt." },
+                    },
+                    traits = { "core", "pack" },
+                    tools = {
+                        alpha = tool("alpha"),
+                        load = tool("load", "core"),
+                        pack_b = tool("pack_b", "pack"),
+                        pack_a = tool("pack_a", "pack"),
+                    },
+                    memory = {},
+                    prompt_funcs = {},
+                    step_funcs = {},
+                    tool_wrappers = {},
+                    agent_options = { trait_loading = "append" },
+                }
+                for key, value in pairs(overrides or {}) do result[key] = value end
+                return result
+            end
+
+            local function spec_before_load()
+                return spec({
+                    prompt = "Base prompt.\n\nCore prompt.",
+                    prompt_parts = { { text = "Base prompt." }, { trait = "core", text = "Core prompt." } },
+                    traits = { "core" },
+                    tools = { alpha = tool("alpha"), load = tool("load", "core") },
+                })
+            end
+
+            local function call(id, name)
+                return { role = prompt.ROLE.FUNCTION_CALL, content = {}, function_call = { id = id, name = name, arguments = "{}" } }
+            end
+
+            local function result(id, name, value, keys, agent_id)
+                return {
+                    role = prompt.ROLE.FUNCTION_RESULT, name = name, function_call_id = id, content = text(value),
+                    metadata = keys and { loaded_traits = { agent = agent_id or "late-agent", keys = keys } } or nil
+                }
+            end
+
+            local function user(value)
+                return { role = prompt.ROLE.USER, content = text(value) }
+            end
+
+            local function loaded_history()
+                return { user("Go"), call("call_1", "load"), result("call_1", "load", "loaded", { "pack" }) }
+            end
+
+            local function run(compiled, messages, runtime_options): any
+                local sent: any = {}
+                agent._llm = {
+                    generate = function(request, options)
+                        sent.messages = request
+                        sent.options = options
+                        return { result = "ok", finish_reason = "stop" }
+                    end
+                }
+                local response, err = agent.new(compiled):step(prompt.new(messages), runtime_options)
+                test.is_nil(err)
+                sent.response = response
+                sent.conversation = {}
+                for _, message in ipairs(sent.messages) do
+                    if message.role ~= prompt.ROLE.CACHE_MARKER then
+                        table.insert(sent.conversation, message)
+                    end
+                end
+                return sent
+            end
+
+            it("exposes the keys of the compiled traits", function()
+                local runner = agent.new(spec())
+                test.eq(table.concat(runner.trait_keys, ","), "core,pack")
+                test.eq(#agent.new(basic_compiled_spec).trait_keys, 0)
+            end)
+
+            it("renders a loaded trait where it was loaded and keeps it out of the system prompt", function()
+                local sent = run(spec(), loaded_history())
+                local conversation = sent.conversation
+                test.eq(#conversation, 5)
+                test.eq(conversation[1].role, prompt.ROLE.SYSTEM)
+                test.eq(conversation[1].content[1].text, "Base prompt.\n\nCore prompt.")
+                test.eq(conversation[4].role, prompt.ROLE.FUNCTION_RESULT)
+                test.eq(table.concat(conversation[4].metadata.tool_additions, ","), "pack_a,pack_b")
+                test.eq(conversation[4].metadata.loaded_traits.keys[1], "pack")
+                test.eq(conversation[5].role, prompt.ROLE.SYSTEM)
+                test.is_true(conversation[5].metadata.preserve_position)
+                test.eq(conversation[5].content[1].text, "Pack prompt.")
+                test.is_true(sent.options.expect_tool_additions)
+                test.eq(#sent.options.tools, 4)
+            end)
+
+            it("sends the same request as rebuild mode while nothing is loaded", function()
+                local history = { user("Go") }
+                local appended = run(spec(), history)
+                local rebuilt = run(spec({ agent_options = { trait_loading = "rebuild" } }), history)
+                test.is_true(appended.options.expect_tool_additions)
+                test.is_nil(rebuilt.options.expect_tool_additions)
+                test.eq(#appended.messages, #rebuilt.messages)
+                for index, message in ipairs(rebuilt.messages) do
+                    test.eq(appended.messages[index].role, message.role)
+                    if message.content and message.content[1] then
+                        test.eq(appended.messages[index].content[1].text, message.content[1].text)
+                    end
+                end
+                test.eq(appended.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nPack prompt.")
+                test.eq(appended.response.prefix_fingerprint, rebuilt.response.prefix_fingerprint)
+            end)
+
+            it("ignores load announcements unless the agent appends loaded traits", function()
+                for _, agent_options in ipairs({ {}, { trait_loading = "rebuild" } }) do
+                    local sent = run(spec({ agent_options = agent_options }), loaded_history())
+                    test.eq(#sent.conversation, 4)
+                    test.eq(sent.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nPack prompt.")
+                    test.is_nil(sent.conversation[4].metadata.tool_additions)
+                    test.is_nil(sent.options.expect_tool_additions)
+                end
+            end)
+
+            it("places the note after every result of the tool round", function()
+                local sent = run(spec(), {
+                    user("Go"),
+                    call("call_1", "load"),
+                    call("call_2", "alpha"),
+                    result("call_1", "load", "loaded", { "pack" }),
+                    result("call_2", "alpha", "ok"),
+                    user("Next"),
+                })
+                local conversation = sent.conversation
+                test.eq(#conversation, 8)
+                test.eq(table.concat(conversation[5].metadata.tool_additions, ","), "pack_a,pack_b")
+                test.eq(conversation[6].role, prompt.ROLE.FUNCTION_RESULT)
+                test.is_nil(conversation[6].metadata)
+                test.eq(conversation[7].role, prompt.ROLE.SYSTEM)
+                test.eq(conversation[7].content[1].text, "Pack prompt.")
+                test.eq(conversation[8].role, prompt.ROLE.USER)
+            end)
+
+            it("keeps a parallel assistant turn intact when calls and results are interleaved", function()
+                local mapper = require("openai_compat_mapper")
+                local sent = run(spec(), {
+                    user("Go"),
+                    { role = prompt.ROLE.ASSISTANT, content = text("Working") },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack" }),
+                    { role = prompt.ROLE.CACHE_MARKER },
+                    call("call_2", "alpha"),
+                    result("call_2", "alpha", "done"),
+                    user("Next"),
+                })
+                local wire = mapper.map_messages(sent.messages, {})
+                test.eq(#wire, 7)
+                test.eq(wire[3].role, "assistant")
+                test.eq(#wire[3].tool_calls, 2)
+                test.eq(wire[4].tool_call_id, "call_1")
+                test.eq(wire[5].tool_call_id, "call_2")
+                test.eq(wire[6].role, "system")
+                test.eq(wire[6].content[1].text, "Pack prompt.")
+                test.eq(wire[7].role, "user")
+            end)
+
+            it("renders a trait at its latest announcement", function()
+                local sent = run(spec(), {
+                    user("Go"),
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack" }),
+                    user("Again"),
+                    call("call_2", "load"),
+                    result("call_2", "load", "loaded again", { "pack" }),
+                })
+                local conversation = sent.conversation
+                test.eq(#conversation, 8)
+                test.is_nil(conversation[4].metadata.tool_additions)
+                test.eq(conversation[5].role, prompt.ROLE.USER)
+                test.eq(table.concat(conversation[7].metadata.tool_additions, ","), "pack_a,pack_b")
+                test.eq(conversation[8].content[1].text, "Pack prompt.")
+            end)
+
+            it("keeps a tool that an earlier trait also brings among the tools offered from the start", function()
+                local before = run(spec({
+                    prompt = "Base prompt.\n\nCore prompt.",
+                    prompt_parts = { { text = "Base prompt." }, { trait = "core", text = "Core prompt." } },
+                    traits = { "core" },
+                    tools = { alpha = tool("alpha"), load = tool("load", "core"), shared = tool("shared", "core") },
+                }), { user("Go") })
+                local after = run(spec({
+                    tools = {
+                        alpha = tool("alpha"),
+                        load = tool("load", "core"),
+                        shared = tool("shared", "core", "pack"),
+                        pack_a = tool("pack_a", "pack"),
+                    },
+                }), loaded_history())
+                test.eq(table.concat(after.conversation[4].metadata.tool_additions, ","), "pack_a")
+                test.eq(after.response.prefix_fingerprint, before.response.prefix_fingerprint)
+            end)
+
+            it("announces a tool two loaded traits bring where the first of them was loaded", function()
+                local compiled = spec({
+                    prompt = "Base prompt.\n\nCore prompt.\n\nPack prompt.\n\nExtra prompt.",
+                    prompt_parts = {
+                        { text = "Base prompt." },
+                        { trait = "core", text = "Core prompt." },
+                        { trait = "pack", text = "Pack prompt." },
+                        { trait = "extra", text = "Extra prompt." },
+                    },
+                    traits = { "core", "pack", "extra" },
+                    tools = {
+                        alpha = tool("alpha"),
+                        load = tool("load", "core"),
+                        pack_a = tool("pack_a", "pack"),
+                        extra_a = tool("extra_a", "extra"),
+                        shared = tool("shared", "extra", "pack"),
+                    },
+                })
+                local both = run(compiled, {
+                    user("Go"),
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack" }),
+                    user("More"),
+                    call("call_2", "load"),
+                    result("call_2", "load", "loaded more", { "extra" }),
+                })
+                test.eq(table.concat(both.conversation[4].metadata.tool_additions, ","), "pack_a,shared")
+                test.eq(both.conversation[5].content[1].text, "Pack prompt.")
+                test.eq(table.concat(both.conversation[8].metadata.tool_additions, ","), "extra_a")
+                test.eq(both.conversation[9].content[1].text, "Extra prompt.")
+
+                local later_only = run(compiled, {
+                    user("More"),
+                    call("call_2", "load"),
+                    result("call_2", "load", "loaded more", { "extra" }),
+                })
+                test.eq(later_only.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nPack prompt.")
+                test.eq(table.concat(later_only.conversation[4].metadata.tool_additions, ","), "extra_a")
+            end)
+
+            it("ignores announcements of traits that are not compiled or belong to another agent", function()
+                local cases = {
+                    { user("Go"), call("call_1", "load"), result("call_1", "load", "loaded", { "gone" }) },
+                    { user("Go"), call("call_1", "load"), result("call_1", "load", "loaded", { "pack" }, "other-agent") },
+                }
+                for _, history in ipairs(cases) do
+                    local sent = run(spec(), history)
+                    test.eq(#sent.conversation, 4)
+                    test.eq(sent.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nPack prompt.")
+                    test.is_nil(sent.conversation[4].metadata.tool_additions)
+                end
+            end)
+
+            it("keeps the prefix fingerprint when a trait is loaded", function()
+                local before = run(spec_before_load(), { user("Go") })
+                local after = run(spec(), loaded_history())
+                test.eq(after.response.prefix_fingerprint, before.response.prefix_fingerprint)
+
+                local rebuilt = run(spec({ agent_options = {} }), loaded_history())
+                test.is_true(rebuilt.response.prefix_fingerprint ~= before.response.prefix_fingerprint)
+
+                local changed_base = run(spec({
+                    prompt_parts = {
+                        { text = "Base prompt." },
+                        { trait = "core", text = "Core prompt, revised." },
+                        { trait = "pack", text = "Pack prompt." },
+                    },
+                }), loaded_history())
+                test.is_true(changed_base.response.prefix_fingerprint ~= before.response.prefix_fingerprint)
+            end)
+
+            it("keeps per-step trait prompt output in the fingerprinted system prompt", function()
+                agent._funcs = {
+                    new = function()
+                        return { with_context = function(_, context)
+                            return { call = function(_, func_id)
+                                return func_id == "test:pack_state" and context.state or "Core state."
+                            end }
+                        end }
+                    end
+                }
+                local compiled = spec({
+                    prompt_funcs = {
+                        { trait_id = "core", trait = "core", func_id = "test:core_state", context = {} },
+                        { trait_id = "pack", trait = "pack", func_id = "test:pack_state", context = {} },
+                    },
+                })
+                local history = loaded_history()
+                local first = run(compiled, history, { context = { state = "First." } })
+                table.insert(history, user("Next"))
+                local second = run(compiled, history, { context = { state = "Second." } })
+                test.eq(first.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nCore state.\n\nFirst.")
+                test.eq(second.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nCore state.\n\nSecond.")
+                test.eq(first.conversation[5].content[1].text, "Pack prompt.")
+                test.eq(second.conversation[5].content[1].text, "Pack prompt.")
+                test.is_true(first.response.prefix_fingerprint ~= second.response.prefix_fingerprint)
+            end)
+
+            it("sends no note for a loaded trait that has no prompt", function()
+                local sent = run(spec({
+                    prompt = "Base prompt.\n\nCore prompt.",
+                    prompt_parts = { { text = "Base prompt." }, { trait = "core", text = "Core prompt." } },
+                }), loaded_history())
+                test.eq(#sent.conversation, 4)
+                test.eq(sent.conversation[1].content[1].text, "Base prompt.\n\nCore prompt.")
+                test.eq(table.concat(sent.conversation[4].metadata.tool_additions, ","), "pack_a,pack_b")
+            end)
+
+            it("keeps the agent memory in the system prompt of an agent with a loaded trait", function()
+                local sent = run(spec({ memory = { "Remember the deadline" } }), loaded_history())
+                test.eq(sent.conversation[1].content[1].text,
+                    "Base prompt.\n\nCore prompt.\n\n## Your memory contains:\n- Remember the deadline")
+            end)
+
+            it("returns the trait to the system prompt when a compaction drops its load", function()
+                local seen = {}
+                agent._llm = {
+                    ERROR_TYPE = { CONTEXT_WINDOW = "context_window" },
+                    generate = function(request, options)
+                        seen.first = request
+                        seen.replacement = assert(options.checkpoint.compact({ estimated_prompt_tokens = 100 }))
+                        return { result = "done", metadata = {} }
+                    end
+                }
+                local response, err = agent.new(spec()):step(prompt.new(loaded_history()), {
+                    checkpoint = {
+                        token_threshold = 50,
+                        compact = function()
+                            local replacement = prompt.new()
+                            replacement:add_user("retained task")
+                            return replacement
+                        end
+                    }
+                })
+                test.is_nil(err)
+                test.eq(response.result, "done")
+                test.eq(seen.first[1].content[1].text, "Base prompt.\n\nCore prompt.")
+                test.eq(seen.replacement[1].content[1].text, "Base prompt.\n\nCore prompt.\n\nPack prompt.")
+            end)
+
+            it("leaves the host's messages untouched", function()
+                local history = loaded_history()
+                run(spec(), history)
+                test.eq(#history, 3)
+                test.is_nil(history[3].metadata.tool_additions)
+            end)
+        end)
+
         describe("Tool Schema Usage", function()
             it("should always use tools array for LLM", function()
                 -- Mock LLM that captures the options passed to it

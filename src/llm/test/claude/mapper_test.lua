@@ -948,6 +948,328 @@ local function define_tests()
             end)
         end)
 
+        describe("Deferred tools", function()
+            local function text(value)
+                return { { type = "text", text = value } }
+            end
+
+            local function custom(name)
+                return {
+                    name = name,
+                    description = "Tool " .. name,
+                    schema = { type = "object", properties = { value = { type = "string" } } },
+                    id = "app:" .. name
+                }
+            end
+
+            local function result(call_id, name, value, additions)
+                return {
+                    role = "function_result", name = name, function_call_id = call_id, content = text(value),
+                    metadata = additions and { tool_additions = additions } or nil
+                }
+            end
+
+            local function call(call_id, name)
+                return { role = "function_call", content = {}, function_call = { id = call_id, name = name, arguments = "{}" } }
+            end
+
+            local function note(value)
+                return { role = "system", content = text(value), metadata = { preserve_position = true } }
+            end
+
+            local base_tools = { custom("alpha"), custom("load"), custom("pack_one"), custom("pack_two") }
+
+            local function names_of(tools)
+                local names = {}
+                for index, tool in ipairs(tools) do names[index] = tool.name end
+                return table.concat(names, ",")
+            end
+
+            it("marks thinking that predates announced tools as stale unless the tools are deferred", function()
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    { role = "assistant", content = text("Loading"), metadata = {
+                        thinking_blocks = { { type = "thinking", thinking = "Reasoning", signature = "sig" } }
+                    } },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                    { role = "assistant", content = text("Done"), metadata = {
+                        thinking_blocks = { { type = "thinking", thinking = "Later", signature = "sig2" } }
+                    } },
+                }
+                local plain = mapper.map_messages(messages)
+                local count = 0
+                for block in pairs(plain.stale_thinking or {}) do
+                    count = count + 1
+                    test.eq(block.thinking, "Reasoning")
+                end
+                test.eq(count, 1)
+
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                test.is_nil(mapper.map_messages(messages, { deferred = plan }).stale_thinking)
+
+                messages[4] = result("call_1", "load", "loaded")
+                test.is_nil(mapper.map_messages(messages).stale_thinking)
+            end)
+
+            it("keeps cache markers between parallel results on the preceding result", function()
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                    call("call_2", "alpha"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                    { role = "cache_marker", marker_id = "at_result_1" },
+                    result("call_2", "alpha", "ok"),
+                    { role = "cache_marker", marker_id = "round_tail" },
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local flat = {}
+                for index = 3, #mapped.messages do
+                    for _, block in ipairs(mapped.messages[index].content) do
+                        table.insert(flat, block.type)
+                    end
+                end
+                test.eq(table.concat(flat, ","), "tool_result,tool_result,text")
+                test.not_nil(mapped.messages[3].content[1].cache_control)
+                test.is_nil(mapped.messages[4].content[1].cache_control)
+                test.not_nil(mapped.messages[4].content[2].cache_control)
+            end)
+
+            it("drops only thinking that predates a newly announced native tool", function()
+                local tools = { custom("load"), custom("pack_one"), { name = "computer", type = "computer_20241022", id = "native" } }
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    { role = "assistant", content = text("Loading"), metadata = {
+                        thinking_blocks = { { type = "thinking", thinking = "Reasoning", signature = "sig" } }
+                    } },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "computer", "pack_one" }),
+                    { role = "assistant", content = text("Checking"), metadata = {
+                        thinking_blocks = { { type = "thinking", thinking = "After loading", signature = "later" } }
+                    } },
+                    call("call_2", "load"),
+                    result("call_2", "load", "already loaded", { "computer" }),
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local prefix = mapper.map_tools({ custom("load") }, assert(mapper.plan_deferred_tools({}, { custom("load") })))
+                local expanded = mapper.map_tools(tools, plan)
+                test.eq(prefix[2].name, "reserved_deferred_slot")
+                test.eq(expanded[2].name, "computer")
+                test.is_nil(expanded[2].defer_loading)
+                local payload = { messages = mapped.messages }
+                mapper.bind_thinking(payload, mapped.stale_thinking)
+                test.eq(payload.messages[2].content[1].type, "text")
+                test.eq(payload.messages[3].content[1].content[1].tool_name, "pack_one")
+                test.eq(payload.messages[4].content[1].signature, "later")
+            end)
+
+            it("plans late tools in order of first announcement", function()
+                local plan = assert(mapper.plan_deferred_tools({
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_two", "missing", "pack_one" }),
+                    call("call_2", "load"),
+                    result("call_2", "load", "loaded again", { "pack_one" }),
+                }, base_tools))
+                test.eq(table.concat(plan.late, ","), "pack_two,pack_one")
+                test.is_true(plan.is_late.pack_one)
+                test.is_true(plan.is_late.pack_two)
+                test.is_nil(plan.is_late.missing)
+                test.is_nil(plan.is_late.alpha)
+            end)
+
+            it("plans an empty late list when nothing was announced", function()
+                local plan = assert(mapper.plan_deferred_tools({ { role = "user", content = text("Go") } }, base_tools))
+                test.eq(#plan.late, 0)
+            end)
+
+            it("does not plan without tools, without a tool left to offer, or with the reserved name taken", function()
+                test.is_nil(mapper.plan_deferred_tools({ { role = "user", content = text("Go") } }, nil))
+                test.is_nil(mapper.plan_deferred_tools({ { role = "user", content = text("Go") } }, {}))
+                test.is_nil(mapper.plan_deferred_tools({
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "load", "pack_one" }),
+                }, { custom("load"), custom("pack_one") }))
+                test.is_nil(mapper.plan_deferred_tools({ { role = "user", content = text("Go") } },
+                    { custom("alpha"), custom(mapper.RESERVED_DEFERRED_TOOL.name) }))
+            end)
+
+            it("never defers a native tool", function()
+                local plan = assert(mapper.plan_deferred_tools({
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "computer" }),
+                }, { custom("load"), { name = "computer", type = "computer_20241022", id = "native" } }))
+                test.eq(#plan.late, 0)
+            end)
+
+            it("sends late tools deferred after the offered tools and the reserved tool", function()
+                local plan = assert(mapper.plan_deferred_tools({
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_two", "pack_one" }),
+                }, base_tools))
+                local claude_tools, name_map = mapper.map_tools(base_tools, plan)
+                test.eq(names_of(claude_tools), "alpha,load," .. mapper.RESERVED_DEFERRED_TOOL.name .. ",pack_two,pack_one")
+                test.is_nil((claude_tools[1] :: any).defer_loading)
+                test.is_nil((claude_tools[2] :: any).defer_loading)
+                test.is_true((claude_tools[3] :: any).defer_loading)
+                test.is_true((claude_tools[4] :: any).defer_loading)
+                test.is_true((claude_tools[5] :: any).defer_loading)
+                test.eq(name_map.pack_one, "app:pack_one")
+                test.eq(name_map.alpha, "app:alpha")
+                test.is_nil(name_map[mapper.RESERVED_DEFERRED_TOOL.name])
+            end)
+
+            it("sends the reserved tool from the first request", function()
+                local plan = assert(mapper.plan_deferred_tools({ { role = "user", content = text("Go") } }, base_tools))
+                local claude_tools = mapper.map_tools(base_tools, plan)
+                test.eq(names_of(claude_tools), "alpha,load,pack_one,pack_two," .. mapper.RESERVED_DEFERRED_TOOL.name)
+                local reserved = claude_tools[5] :: any
+                test.is_true(reserved.defer_loading)
+                test.eq(reserved.input_schema.type, "object")
+            end)
+
+            it("keeps the offered tools and the reserved tool byte-identical when a tool is announced", function()
+                local before_plan = assert(mapper.plan_deferred_tools({ { role = "user", content = text("Go") } },
+                    { custom("alpha"), custom("load") }))
+                local after_plan = assert(mapper.plan_deferred_tools({
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                }, { custom("alpha"), custom("load"), custom("pack_one") }))
+                local before = mapper.map_tools({ custom("alpha"), custom("load") }, before_plan)
+                local after = mapper.map_tools({ custom("alpha"), custom("load"), custom("pack_one") }, after_plan)
+                test.eq(#after, #before + 1)
+                for index, tool in ipairs(before) do
+                    test.is_true(same(tool, after[index]))
+                end
+            end)
+
+            it("leaves tools unchanged without a plan", function()
+                local claude_tools = mapper.map_tools(base_tools)
+                test.eq(names_of(claude_tools), "alpha,load,pack_one,pack_two")
+                for _, tool in ipairs(claude_tools) do
+                    test.is_nil((tool :: any).defer_loading)
+                end
+            end)
+
+            it("renders an announcing result as references and moves its text after the tool results", function()
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_one", "missing" }),
+                    note("Pack guidance"),
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                test.eq(#mapped.messages, 3)
+                local content = mapped.messages[3].content
+                test.eq(#content, 3)
+                test.eq(content[1].type, "tool_result")
+                test.eq(#content[1].content, 1)
+                test.eq(content[1].content[1].type, "tool_reference")
+                test.eq(content[1].content[1].tool_name, "pack_one")
+                test.eq(content[2].type, "text")
+                test.eq(content[2].text, "load result: loaded")
+                test.eq(content[3].text, "Pack guidance")
+            end)
+
+            it("keeps every tool result of a round ahead of the moved text", function()
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                    call("call_2", "alpha"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                    result("call_2", "alpha", "ok"),
+                    note("Pack guidance"),
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local flat = {}
+                for index = 3, #mapped.messages do
+                    test.eq(mapped.messages[index].role, "user")
+                    for _, block in ipairs(mapped.messages[index].content) do
+                        table.insert(flat, block)
+                    end
+                end
+                test.eq(#flat, 4)
+                test.eq(flat[1].type, "tool_result")
+                test.eq(flat[1].content[1].tool_name, "pack_one")
+                test.eq(flat[2].type, "tool_result")
+                test.eq(flat[2].content, "ok")
+                test.eq(flat[3].text, "load result: loaded")
+                test.eq(flat[4].text, "Pack guidance")
+            end)
+
+            it("places a cache marker after the round on the moved text", function()
+                local messages = {
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                    { role = "cache_marker", marker_id = "conversation_tail" },
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local content = mapped.messages[3].content
+                test.eq(#content, 2)
+                test.is_nil(content[1].cache_control)
+                test.not_nil(content[2].cache_control)
+            end)
+
+            it("sends no text block for an announcing result without text", function()
+                local messages = {
+                    call("call_1", "load"),
+                    result("call_1", "load", "  ", { "pack_one" }),
+                }
+                local plan = assert(mapper.plan_deferred_tools(messages, base_tools))
+                local mapped = assert(mapper.map_messages(messages, { deferred = plan }))
+                local content = mapped.messages[2].content
+                test.eq(#content, 1)
+                test.eq(content[1].content[1].tool_name, "pack_one")
+            end)
+
+            it("renders the result as text without a plan or without a planned name", function()
+                local messages = {
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "pack_one" }),
+                }
+                local unplanned = assert(mapper.map_messages(messages))
+                test.eq(unplanned.messages[2].content[1].content, "loaded")
+
+                local other = {
+                    call("call_1", "load"),
+                    result("call_1", "load", "loaded", { "missing" }),
+                }
+                local plan = assert(mapper.plan_deferred_tools(other, base_tools))
+                local mapped = assert(mapper.map_messages(other, { deferred = plan }))
+                test.eq(#mapped.messages[2].content, 1)
+                test.eq(mapped.messages[2].content[1].content, "loaded")
+            end)
+
+            it("keeps the earlier messages byte-identical when a tool is announced", function()
+                local history = {
+                    { role = "system", content = text("Base") },
+                    { role = "cache_marker", marker_id = "agent" },
+                    { role = "user", content = text("Go") },
+                    call("call_1", "load"),
+                }
+                local before = assert(mapper.map_messages(history, {
+                    deferred = assert(mapper.plan_deferred_tools(history, { custom("alpha"), custom("load") }))
+                }))
+                local extended = {}
+                for _, message in ipairs(history) do table.insert(extended, message) end
+                table.insert(extended, result("call_1", "load", "loaded", { "pack_one" }))
+                table.insert(extended, note("Pack guidance"))
+                local after = assert(mapper.map_messages(extended, {
+                    deferred = assert(mapper.plan_deferred_tools(extended, { custom("alpha"), custom("load"), custom("pack_one") }))
+                }))
+                test.is_true(same(before.system, after.system))
+                for index, message in ipairs(before.messages) do
+                    test.is_true(same(message, after.messages[index]))
+                end
+            end)
+        end)
+
         describe("Tool Choice Mapping", function()
             it("should map tool choice values correctly", function()
                 local tools = { { name = "tool1" }, { name = "tool2" } }
