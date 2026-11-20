@@ -1,0 +1,118 @@
+version: "1.0"
+namespace: wippy.session_util
+
+entries:
+  - name: definition
+    kind: ns.definition
+    meta:
+      title: Session Util
+      description: Agent details and tool names for the Wippy Web Host chat
+
+  # wippy.session_util:api_router
+  - name: api_router
+    kind: ns.requirement
+    meta:
+      value_kind: http.router
+      description: Router that serves GET /agents/details and GET /tools/by-name
+    targets:
+      - entry: wippy.session_util.api:agent_details
+        path: .meta.router
+      - entry: wippy.session_util.api:agent_details.endpoint
+        path: .meta.router
+      - entry: wippy.session_util.api:tools_by_name
+        path: .meta.router
+      - entry: wippy.session_util.api:tools_by_name.endpoint
+        path: .meta.router
+
+  # Dependencies
+  - name: dep.wippy.agent
+    kind: "ns.dependency"
+    meta:
+      description: "Agent component: the agent registry and the tool name resolver"
+    component: "wippy/agent"
+    version: ">=v0.5.1"
+
+  - name: dep.wippy.session
+    kind: "ns.dependency"
+    meta:
+      description: "Session component: the session reader"
+    component: "wippy/session"
+    version: ">=v0.2.0"
+
+  # wippy.session_util:catalog
+  - name: catalog
+    kind: contract.definition
+    meta:
+      comment: Optional agent and tool lookup for the Web Host routes (bound by the application, if at all)
+      description: |
+        Optional contract that replaces the built-in agent and tool lookup of
+        GET /agents/details and GET /tools/by-name. An application binds an
+        implementation when its agents or tools are not plain registry entries,
+        or when it hides them by its own rules. When no binding exists, the
+        handlers use the built-in registry rules, detected structurally via
+        :implementations() (an empty list). Runs under the request's actor.
+    methods:
+      - name: agent_details
+        description: |
+          Return the agent that the Web Host composer shows, or null when the
+          caller must not see it or it does not exist.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "type": "string",
+                    "description": "Agent registry id or name, as the Web Host sends it."
+                  }
+                },
+                "required": ["agent"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": ["object", "null"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "title": { "type": "string" },
+                  "start_prompts": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            format: application/schema+json
+      - name: tool_titles
+        description: |
+          Return the tools the caller may see, keyed by the requested name.
+          Leave out names that match no tool.
+        input_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "properties": {
+                  "names": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Tool names from tool calls (LLM names or registry ids)."
+                  }
+                },
+                "required": ["names"]
+              }
+            format: application/schema+json
+        output_schemas:
+          - definition: |
+              {
+                "type": "object",
+                "description": "Map of requested name to the tool's name and title.",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "title": { "type": "string" }
+                  }
+                }
+              }
+            format: application/schema+json

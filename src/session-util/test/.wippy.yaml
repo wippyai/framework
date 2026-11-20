@@ -1,0 +1,11 @@
+version: "1.0"
+workspace:
+  replacements:
+    wippy/agent: ../../agent/src
+    wippy/bootloader: ../../bootloader/src
+    wippy/llm: ../../llm/src
+    wippy/migration: ../../migration
+    wippy/security: ../../security
+    wippy/test: ../../test
+    wippy/terminal: ../../terminal
+    wippy/views: ../../views

@@ -1,0 +1,17 @@
+organization: wippy
+module: session-util
+type: library
+description: Agent details and tool names for the Wippy Web Host chat
+license: MPL-2.0
+repository: https://github.com/wippyai/framework
+homepage: https://wippy.ai
+keywords:
+  - session
+  - agent
+  - tools
+  - web-host
+exclude_meta:
+  type:
+    - test
+  scope:
+    - dev

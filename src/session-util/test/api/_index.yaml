@@ -1,0 +1,198 @@
+version: "1.0"
+namespace: app.api
+
+entries:
+  # Web Host routes: GET /agents/details and GET /tools/by-name
+  - name: host_routes_test
+    kind: function.lua
+    meta:
+      name: Web Host agent details and tool names
+      type: test
+      suite: session_util
+      comment: GET /agents/details and GET /tools/by-name against the registry fixtures below, a fake catalog contract, a fake session reader and a real contract binding run as a test actor
+    source: file://host_routes_test.lua
+    modules:
+      - http
+      - json
+      - registry
+      - security
+      - funcs
+      - contract
+    imports:
+      test: wippy.test:test
+      agent_details: wippy.session_util.api:agent_details
+      tools_by_name: wippy.session_util.api:tools_by_name
+    method: run
+
+  - name: host_routes_public_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: host-routes-public
+      title: Host Routes Helper
+    model: gpt-4o
+    prompt: Test only.
+    start_prompts:
+      - Summarize this page
+      - text: not a string prompt
+      - Draft a reply
+
+  - name: host_routes_untitled_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: host-routes-untitled
+    model: gpt-4o
+    prompt: Test only.
+
+  - name: host_routes_private_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: host-routes-private
+      title: Hidden Helper
+      private: true
+    model: gpt-4o
+    prompt: Test only.
+    start_prompts:
+      - Hidden prompt
+
+  # Its name is another agent's registry id: an id lookup must still win.
+  - name: host_routes_shadow_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: app.api:host_routes_untitled_agent
+      title: Shadow Helper
+    model: gpt-4o
+    prompt: Test only.
+
+  - name: host_routes_colon_name_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: host-routes:colon
+      title: Colon Name Helper
+    model: gpt-4o
+    prompt: Test only.
+
+  - name: host_routes_scalar_prompts_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: host-routes-scalar-prompts
+      title: Scalar Prompts Helper
+    model: gpt-4o
+    prompt: Test only.
+    start_prompts: true
+
+  - name: host_routes_private_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: Private Fixture Tool
+      llm_alias: host_routes_private_alias
+      private: true
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  - name: host_routes_empty_title_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: ""
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  - name: host_routes_titled_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: Titled Fixture Tool
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  - name: host_routes_plain_tool
+    kind: function.lua
+    meta:
+      type: tool
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  - name: host_routes_aliased_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: Aliased Fixture Tool
+      llm_alias: host_routes_alias
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  # Two tools that share one LLM name: the name is ambiguous, both ids are not.
+  - name: host_routes_shared_one_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: Shared One
+      llm_alias: host_routes_shared
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  - name: host_routes_shared_two_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: Shared Two
+      llm_alias: host_routes_shared
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  # A real contract binding, opened the way the handlers open the catalog, to
+  # show that a binding function runs under the caller's actor.
+  - name: actor_probe
+    kind: contract.definition
+    meta:
+      comment: Test-only contract that reports the actor its binding runs as
+    methods:
+      - name: whoami
+        description: Return the id of the actor the binding function runs as.
+
+  - name: actor_probe_whoami
+    kind: function.lua
+    source: file://actor_probe.lua
+    modules:
+      - security
+      - contract
+    method: whoami
+
+  - name: actor_probe_binding
+    kind: contract.binding
+    contracts:
+      - contract: app.api:actor_probe
+        default: true
+        methods:
+          whoami: app.api:actor_probe_whoami
+
+  - name: actor_probe_caller
+    kind: function.lua
+    source: file://actor_probe.lua
+    modules:
+      - security
+      - contract
+    method: caller
+
+  - name: actor_probe_policy
+    kind: security.policy
+    meta:
+      comment: Scope for the actor probe call
+    policy:
+      actions: "*"
+      resources: "*"
+      effect: allow

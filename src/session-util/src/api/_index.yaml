@@ -1,0 +1,61 @@
+version: "1.0"
+namespace: wippy.session_util.api
+
+# No security block: both handlers run as the signed-in caller, so the session
+# reader and a bound catalog see the caller's actor.
+entries:
+  # wippy.session_util.api:agent_details
+  - name: agent_details
+    kind: function.lua
+    meta:
+      comment: Returns one agent's title and start prompts for the Web Host composer
+      router: api_router
+    source: file://agent_details.lua
+    modules:
+      - http
+      - security
+      - contract
+    imports:
+      agent_registry: wippy.agent.discovery:registry
+      reader: wippy.session.persist:reader
+    method: handler
+    pool:
+      size: 2
+
+  # wippy.session_util.api:agent_details.endpoint
+  - name: agent_details.endpoint
+    kind: http.endpoint
+    meta:
+      comment: GET /agents/details?agent=<registry id or name>[&session_id=<id>]
+      router: api_router
+    method: GET
+    func: agent_details
+    path: /agents/details
+
+  # wippy.session_util.api:tools_by_name
+  - name: tools_by_name
+    kind: function.lua
+    meta:
+      comment: Returns tool titles by the names that tool calls carry, for the Web Host tool-call rows
+      router: api_router
+    source: file://tools_by_name.lua
+    modules:
+      - http
+      - security
+      - contract
+      - registry
+    imports:
+      tools: wippy.agent.discovery:tools
+    method: handler
+    pool:
+      size: 2
+
+  # wippy.session_util.api:tools_by_name.endpoint
+  - name: tools_by_name.endpoint
+    kind: http.endpoint
+    meta:
+      comment: GET /tools/by-name?tools=<comma-separated tool names>
+      router: api_router
+    method: GET
+    func: tools_by_name
+    path: /tools/by-name

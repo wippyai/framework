@@ -1,0 +1,116 @@
+version: "1.0"
+namespace: app
+
+# Harness for the wippy/session-util module. The module source loads from ..
+# (wippy.lock directories.src). It imports the Session reader, so the Session
+# module loads too, and these entries give it the resources it requires.
+entries:
+  - name: dep.wippy.test
+    kind: ns.dependency
+    meta:
+      description: Test framework
+    component: wippy/test
+    version: ">=v0.4.0"
+
+  # The bootloader runs at boot and writes the encryption key, so the storage
+  # must be writable.
+  - name: env_storage
+    kind: env.storage.file
+    meta:
+      type: envstorage
+    file_path: ./.wippy/test.env
+    auto_create: true
+
+  - name: encryption_key
+    kind: env.variable
+    meta:
+      comment: Fixed test key, so the encryption bootloader has nothing to generate
+    readonly: false
+    storage: app:env_storage
+    default: "046e5a0594bb339ef5ddcd8c3a9b9b828ed066d53ee99138ec6da8795e38b55d"
+    variable: ENCRYPTION_KEY
+
+  - name: processes
+    kind: process.host
+    meta:
+      comment: Process host for the Session and bootloader services
+    host:
+      workers: 2
+      max_processes: 10
+    lifecycle:
+      auto_start: true
+
+  - name: db
+    kind: db.sql.sqlite
+    meta:
+      comment: Session storage. The migration bootloader creates the Session tables at boot; no suite reads them.
+    file: ./.wippy/test.db
+
+  # The module's endpoints need a router (and its server) to resolve. Nothing
+  # in the suites calls over HTTP, so the server never starts.
+  - name: gateway
+    kind: http.service
+    meta:
+      comment: Test HTTP server
+    addr: :19088
+    lifecycle:
+      auto_start: false
+
+  - name: api
+    kind: http.router
+    meta:
+      comment: Test API router, bound to wippy.session_util:api_router by the Makefile
+      server: gateway
+    prefix: /api
+
+  - name: dep.wippy.session
+    kind: ns.dependency
+    meta:
+      description: Session module, the source of the session reader
+    component: wippy/session
+    version: ">=v0.2.0"
+    parameters:
+      - name: database_resource
+        value: app:db
+      - name: api_router
+        value: app:api
+      - name: env_storage
+        value: app:env_storage
+      - name: default_host
+        value: app:processes
+
+  - name: dep.wippy.views
+    kind: ns.dependency
+    meta:
+      description: Views module, a Session dependency
+    component: wippy/views
+    version: ">=v0.4.0"
+    parameters:
+      - name: api_router
+        value: app:api
+      - name: env_storage
+        value: app:env_storage
+      - name: server
+        value: app:gateway
+
+  - name: dep.wippy.bootloader
+    kind: ns.dependency
+    meta:
+      description: Bootloader, a migration dependency
+    component: wippy/bootloader
+    version: ">=v0.3.0"
+    parameters:
+      - name: application_host
+        value: app:processes
+      - name: env_storage
+        value: app:env_storage
+
+  - name: dep.wippy.migration
+    kind: ns.dependency
+    meta:
+      description: Migration runner, a Session dependency
+    component: wippy/migration
+    version: ">=v0.3.0"
+    parameters:
+      - name: app_db
+        value: app:db
