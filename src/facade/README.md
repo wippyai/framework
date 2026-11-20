@@ -127,6 +127,7 @@ These accept JSON strings for complex configuration:
 |---|---|---|---|
 | `api_routes` | `{}` | `apiRoutes` | API route overrides — top-level, not under hostConfig (e.g. `{"agents":{"list":"/custom/agents"}}`) |
 | `additional_nav_items` | `[]` | `hostConfig.additionalNavItems` | Extra sidebar nav items as JSON array |
+| `tool_approval` | `{}` | `toolApproval` | Tool approval options passed to the Web Host unchanged, for example `{"display":"compact","isolateAgentContent":"all"}`. Empty or invalid JSON keeps the Host defaults. The Host validates the values. |
 | `state_cache` | `{}` | `hostConfig.stateCache` | Child state LRU config (e.g. `{"maxPages":50,"maxSizePerPage":1048576}`) |
 | `allow_additional_tags` | `{}` | `allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |

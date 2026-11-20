@@ -15,7 +15,7 @@ local REQ_NAMES: {string} = {
     "content_fs",
     "app_title", "app_icon", "app_name", "login_path",
     "login_redirect_param",
-    "api_routes", "additional_nav_items", "state_cache", "attention",
+    "api_routes", "additional_nav_items", "state_cache", "attention", "tool_approval",
     "allow_additional_tags", "chat", "axios_defaults",
     "extra_scripts", "host_config_layout", "theme_mode",
     "theme_persist", "theme_storage_key",
@@ -55,6 +55,7 @@ local function setup_registry(overrides: {[string]: string}?)
         additional_nav_items = "[]",
         state_cache = "{}",
         attention = "{}",
+        tool_approval = "{}",
         allow_additional_tags = "{}",
         chat = "{}",
         axios_defaults = "{}",
@@ -437,6 +438,75 @@ local function define_tests()
 
                 local entry = registry.get(NS .. "login_redirect_param")
                 test.eq(entry.data.default, "redirect_to")
+            end)
+        end)
+
+        test.describe("tool approval passthrough", function()
+            -- Mirrors config_handler.lua: get_req_json_any + non_empty_map_or_nil.
+            -- The source checks below pin the handler to the same pipeline.
+            local function tool_approval_from(raw: string): any
+                if raw == "" then
+                    return nil
+                end
+                local val, err = json.decode(raw)
+                if err or type(val) ~= "table" or next(val) == nil then
+                    return nil
+                end
+                return val
+            end
+
+            local function read_source(path: string): string
+                local source_fs, fs_err = fs.get('app.facade_test:source')
+                test.is_nil(fs_err)
+                test.not_nil(source_fs)
+                local body, read_err = source_fs:readfile(path)
+                test.is_nil(read_err)
+                test.not_nil(body)
+                return body :: string
+            end
+
+            test.it("declares a tool_approval requirement defaulting to empty JSON", function()
+                local index = read_source('/_index.yaml')
+                local at = string.find(index, "  - name: tool_approval", 1, true)
+                test.not_nil(at)
+                local attention_at = string.find(index, "  - name: attention", 1, true)
+                test.not_nil(attention_at)
+                test.is_true(attention_at < at)
+                local block = string.sub(index, at, at + 600)
+                test.not_nil((string.find(block, "wippy.facade:tool_approval", 1, true)))
+                test.not_nil((string.find(block, 'default: "{}"', 1, true)))
+            end)
+
+            test.it("omits toolApproval when the requirement is absent or empty", function()
+                test.is_nil(tool_approval_from(""))
+                test.is_nil(tool_approval_from("{}"))
+            end)
+
+            test.it("passes a configured toolApproval through unchanged", function()
+                local raw = '{"display":"compact","isolateAgentContent":"all"}'
+                local config = { toolApproval = tool_approval_from(raw) }
+                local body, err = json.encode(config)
+                test.is_nil(err)
+                local decoded, derr = json.decode(body)
+                test.is_nil(derr)
+                test.eq(decoded.toolApproval.display, "compact")
+                test.eq(decoded.toolApproval.isolateAgentContent, "all")
+                test.is_nil(decoded.hostConfig)
+            end)
+
+            test.it("omits toolApproval when the JSON is invalid", function()
+                test.is_nil(tool_approval_from("{not json"))
+            end)
+
+            test.it("handler reads the requirement and sets the root toolApproval key", function()
+                local handler = read_source('/config_handler.lua')
+                test.not_nil((string.find(handler, 'local tool_approval = non_empty_map_or_nil(get_req_json_any("tool_approval"))', 1, true)))
+                test.not_nil((string.find(handler, "toolApproval = tool_approval,", 1, true)))
+            end)
+
+            test.it("forwards toolApproval through both facade shells", function()
+                test.not_nil((string.find(read_source('/index.jet'), "toolApproval: cfg.toolApproval", 1, true)))
+                test.not_nil((string.find(read_source('/public/index.html'), "toolApproval: cfg.toolApproval", 1, true)))
             end)
         end)
 
