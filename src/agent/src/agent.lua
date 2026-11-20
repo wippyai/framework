@@ -15,6 +15,7 @@ type UnifiedTool = {
     context: table,
     agent_id: string?,
     meta: table?,
+    traits: {string}?,
 }
 
 type CompiledAgentSpec = {
@@ -26,6 +27,8 @@ type CompiledAgentSpec = {
     temperature: number?,
     thinking_effort: number?,
     prompt: string,
+    prompt_parts: {table}?,
+    traits: {string}?,
     tools: {[string]: UnifiedTool},
     memory: {string},
     memory_contract: table?,
@@ -57,6 +60,9 @@ type AgentRunner = {
     agent_options: table,
     system_prompt: string,
     system_message: table,
+    prompt_parts: {table}?,
+    trait_keys: {string},
+    trait_loading: string?,
     prompt_funcs: {table},
     step_funcs: {table},
     tool_wrappers: {table},
@@ -158,6 +164,146 @@ local function execute_prompt_functions(self: any, runtime_context: any): (strin
     end
 
     return table.concat(prompt_parts, "\n\n"), nil
+end
+
+local function with_memory(text: string, memory: any): string
+    if memory and #memory > 0 then
+        text = text .. "\n\n## Your memory contains:"
+        for _, memory_item in ipairs(memory) do
+            text = text .. "\n- " .. memory_item
+        end
+    end
+    return text
+end
+
+local function joined_texts(parts: {any}, skipped: {[string]: boolean}?, selected: {[string]: boolean}?): string
+    local texts = {}
+    for _, part in ipairs(parts) do
+        local skip = part.trait ~= nil and skipped ~= nil and skipped[part.trait] == true
+        local take = selected == nil or (part.trait ~= nil and selected[part.trait] == true)
+        if take and not skip then
+            table.insert(texts, part.text)
+        end
+    end
+    return table.concat(texts, "\n\n")
+end
+
+local function first_announcement(traits: any, announced_at: {[string]: number}): number?
+    if type(traits) ~= "table" or #traits == 0 then
+        return nil
+    end
+    local first: number? = nil
+    for _, key in ipairs(traits) do
+        local index = announced_at[key]
+        if not index then
+            return nil
+        end
+        if not first or index < first then
+            first = index
+        end
+    end
+    return first
+end
+
+local function trait_view(self: any, messages: {any}, dynamic_prompt: string): (string, {any}, {[string]: boolean}?)
+    local function system_text(late: {[string]: boolean}?): string
+        local text = self.system_prompt
+        if late then
+            text = with_memory(joined_texts(self.prompt_parts, late, nil), self.memory)
+        end
+        -- Per-step prompt functions belong to the current request and its prefix fingerprint.
+        if dynamic_prompt ~= "" then
+            text = text .. "\n\n" .. dynamic_prompt
+        end
+        return text
+    end
+
+    if self.trait_loading ~= "append" or type(self.prompt_parts) ~= "table" then
+        return system_text(nil), messages, nil
+    end
+
+    local compiled = {}
+    for _, key in ipairs(self.trait_keys) do
+        compiled[key] = true
+    end
+
+    local announced_at: {[string]: number} = {}
+    for index, message in ipairs(messages) do
+        local loaded = message.role == prompt.ROLE.FUNCTION_RESULT and type(message.metadata) == "table"
+            and message.metadata.loaded_traits or nil
+        if type(loaded) == "table" and loaded.agent == self.id and type(loaded.keys) == "table" then
+            for _, key in ipairs(loaded.keys) do
+                if compiled[key] then
+                    announced_at[key] = index
+                end
+            end
+        end
+    end
+    if next(announced_at) == nil then
+        return system_text(nil), messages, nil
+    end
+
+    local late: {[string]: boolean} = {}
+    local keys_at: {[number]: {[string]: boolean}} = {}
+    for _, key in ipairs(self.trait_keys) do
+        local index = announced_at[key]
+        if index then
+            late[key] = true
+            keys_at[index] = keys_at[index] or {}
+            keys_at[index][key] = true
+        end
+    end
+
+    local late_tools: {[string]: boolean} = {}
+    local names_at: {[number]: {string}} = {}
+    for name, tool in pairs(self.tools) do
+        local index = first_announcement(tool.traits, announced_at)
+        if index then
+            late_tools[name] = true
+            names_at[index] = names_at[index] or {}
+            table.insert(names_at[index], name)
+        end
+    end
+
+    local result = {}
+    local notes = {}
+    for index, message in ipairs(messages) do
+        local keys = keys_at[index]
+        if keys then
+            local names = names_at[index]
+            if names then
+                table.sort(names)
+                local copy, metadata = {}, {}
+                for key, value in pairs(message) do copy[key] = value end
+                for key, value in pairs(message.metadata) do metadata[key] = value end
+                metadata.tool_additions = names
+                copy.metadata = metadata
+                message = copy
+            end
+            local text = joined_texts(self.prompt_parts, nil, keys)
+            if not prompt.is_blank(text) then
+                table.insert(notes, {
+                    role = prompt.ROLE.SYSTEM,
+                    content = { prompt.text(text) },
+                    metadata = { preserve_position = true }
+                })
+            end
+        end
+        table.insert(result, message)
+        local next_message = messages[index + 1]
+        -- Calls and results from one assistant turn may be interleaved. A cache
+        -- marker within that sequence does not begin another turn.
+        local next_role = next_message and next_message.role
+        if #notes > 0 and next_role ~= prompt.ROLE.FUNCTION_CALL and next_role ~= prompt.ROLE.FUNCTION_RESULT
+                and next_role ~= prompt.ROLE.CACHE_MARKER then
+            for position = 1, #notes do
+                table.insert(result, notes[position])
+                notes[position] = nil
+            end
+        end
+    end
+
+    return system_text(late), result, late_tools
 end
 
 local function extract_memory_ids_from_messages(messages: any, scan_limit: any): any
@@ -534,6 +680,9 @@ function agent.new(compiled_spec: any): (any, string?)
         memory_contract = compiled_spec.memory_contract,
         agent_options = compiled_spec.agent_options or {},
         system_prompt = compiled_spec.prompt or "",
+        prompt_parts = compiled_spec.prompt_parts,
+        trait_keys = compiled_spec.traits or {},
+        trait_loading = (compiled_spec.agent_options or {}).trait_loading,
         prompt_funcs = compiled_spec.prompt_funcs or {},
         step_funcs = compiled_spec.step_funcs or {},
         tool_wrappers = compiled_spec.tool_wrappers or {},
@@ -546,12 +695,7 @@ function agent.new(compiled_spec: any): (any, string?)
         }
     }
 
-    if runner.memory and #runner.memory > 0 then
-        runner.system_prompt = runner.system_prompt .. "\n\n## Your memory contains:"
-        for _, memory_item in ipairs(runner.memory) do
-            runner.system_prompt = runner.system_prompt .. "\n- " .. memory_item
-        end
-    end
+    runner.system_prompt = with_memory(runner.system_prompt, runner.memory)
 
     runner.system_message = {
         role = prompt.ROLE.SYSTEM,
@@ -569,10 +713,6 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     local dynamic_prompt, prompt_err = execute_prompt_functions(self, runtime_options.context)
     if prompt_err then
         return nil, prompt_err
-    end
-    local complete_system_prompt = self.system_prompt
-    if dynamic_prompt and dynamic_prompt ~= "" then
-        complete_system_prompt = complete_system_prompt .. "\n\n" .. dynamic_prompt
     end
 
     local recall, memory_recall_error = perform_memory_recall(self, prompt_builder, runtime_options)
@@ -626,11 +766,22 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.cache_ttl = cache_ttl
     end
 
-    local system_message = {
-        role = prompt.ROLE.SYSTEM,
-        content = { prompt.text(complete_system_prompt) }
-    }
-    local function build_messages(conversation_messages)
+    if self.trait_loading == "append" then
+        options.expect_tool_additions = true
+    end
+
+    local system_messages = {}
+    local function view_of(conversation_messages: {any}): any
+        local system_text, messages, late_tools = trait_view(self, conversation_messages, dynamic_prompt or "")
+        local system_message = system_messages[system_text]
+        if not system_message then
+            system_message = { role = prompt.ROLE.SYSTEM, content = { prompt.text(system_text) } }
+            system_messages[system_text] = system_message
+        end
+        return { system_message = system_message, messages = messages, late_tools = late_tools }
+    end
+
+    local function build_messages(system_message, conversation_messages)
         -- Get ongoing conversation messages (no clone needed)
         local final_message_count = 2 + #conversation_messages + (memory_prompt and 1 or 0)
         local final_messages = table.create(final_message_count, 0)
@@ -674,10 +825,19 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     end
     -- The fingerprint describes the request actually sent, so a checkpoint
     -- replacement history recomputes it before its blocks are judged.
-    local function fingerprint_of(messages: {any}): (string?, any)
-        local projected = { system_message }
-        for _, message in ipairs(messages) do table.insert(projected, message) end
-        local digest, digest_err = hash.sha256(canonical.encode(prefix_projection(projected, options.tools)))
+    local function fingerprint_of(view: any): (string?, any)
+        local projected = { view.system_message }
+        for _, message in ipairs(view.messages) do table.insert(projected, message) end
+        local tools = options.tools
+        if view.late_tools and tools then
+            tools = {}
+            for _, tool in ipairs(options.tools) do
+                if not view.late_tools[tool.name] then
+                    table.insert(tools, tool)
+                end
+            end
+        end
+        local digest, digest_err = hash.sha256(canonical.encode(prefix_projection(projected, tools)))
         if digest_err then
             return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
                 :message("Prefix fingerprint failed: " .. tostring(digest_err)):build()
@@ -685,8 +845,8 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         return digest, nil
     end
 
-    local conversation = prompt_builder:get_messages()
-    local fingerprint, fingerprint_err = fingerprint_of(conversation)
+    local view = view_of(prompt_builder:get_messages())
+    local fingerprint, fingerprint_err = fingerprint_of(view)
     if not fingerprint then
         return nil, fingerprint_err
     end
@@ -723,24 +883,24 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         return working:get_messages(), nil
     end
 
-    local current, thinking_err = current_thinking(conversation)
+    local current, thinking_err = current_thinking(view.messages)
     if not current then
         return nil, thinking_err
     end
-    local final_messages = build_messages(current)
+    local final_messages = build_messages(view.system_message, current)
     if runtime_options.checkpoint then
         options.checkpoint = {
             token_threshold = runtime_options.checkpoint.token_threshold,
             compact = function(info)
                 local replacement, compact_err = runtime_options.checkpoint.compact(info)
                 if not replacement then return nil, compact_err end
-                local replacement_messages = replacement:get_messages()
-                local replacement_fingerprint, replacement_err = fingerprint_of(replacement_messages)
+                local replacement_view = view_of(replacement:get_messages())
+                local replacement_fingerprint, replacement_err = fingerprint_of(replacement_view)
                 if not replacement_fingerprint then return nil, replacement_err end
                 fingerprint = replacement_fingerprint
-                local retained, retained_err = current_thinking(replacement_messages)
+                local retained, retained_err = current_thinking(replacement_view.messages)
                 if not retained then return nil, retained_err end
-                return build_messages(retained)
+                return build_messages(replacement_view.system_message, retained)
             end,
         }
     end

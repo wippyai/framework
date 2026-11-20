@@ -95,6 +95,7 @@ entries:
       llm: wippy.llm:llm
       output: wippy.llm:output
       claude_mapper: wippy.llm.claude:mapper
+      openai_compat_mapper: wippy.llm.openai_compat:mapper
       test: wippy.test:test
       tool_caller: wippy.agent.tools:caller
     method: run_tests

@@ -291,6 +291,24 @@ function agent_context:set_active_traits(traits: {any}?): any
     return self
 end
 
+function agent_context:trait_keys(traits: any): {string}
+    local keys = {}
+    local compiler_instance = get_compiler()
+    if type(compiler_instance.trait_key) ~= "function" then
+        return keys
+    end
+    if type(traits) == "string" or (type(traits) == "table" and traits.id) then
+        traits = { traits }
+    end
+    for _, trait in ipairs(type(traits) == "table" and traits or {}) do
+        local key = compiler_instance.trait_key(trait)
+        if key then
+            table.insert(keys, key)
+        end
+    end
+    return keys
+end
+
 -- Declares the full desired explicit tool set for the current agent (replace, not
 -- append). Arena/runtime add_tools still layer on top, and trait-contributed tools
 -- are resolved independently by the compiler. Pass nil to fall back to the agent's
