@@ -552,6 +552,49 @@ end
 - The listener must not mutate the result; it is the table the batch returns.
 - `set_result_listener(nil)` removes the listener.
 
+### Precomputed Results
+
+A host can settle some calls of a batch itself, for example when a person
+denies a tool call or stops the batch before it runs. It passes those results
+to `execute`, and those calls do not run:
+
+```lua
+if tool_caller.FEATURES and tool_caller.FEATURES.precomputed_results then
+    results, err = caller:execute(context, validated, cancel, {
+        precomputed_results = {
+            [denied_call_id] = { error = "Tool call was denied" },
+        },
+    })
+end
+```
+
+- `tool_caller.FEATURES.precomputed_results` is `1` when the caller supports
+  the option. Check it before passing the option.
+- Without the option, or with an empty `precomputed_results` table, `execute`
+  works exactly as before.
+- `execute` checks the option before it does anything else. Every key must be a
+  call ID in `validated`, and every value must be a table. Otherwise `execute`
+  returns `nil` and an error such as
+  `Precomputed result for unknown tool call ID: <id>`. No call starts, the
+  listener is not called, and no wrapper runs.
+- Each precomputed result is copied. The copy gets `tool_call = validated[id]`
+  when the result has no `tool_call`, and it is normalized like a real result,
+  so an explicit failure payload sets `error`. The caller's tables, including
+  `validated`, are not changed.
+- Precomputed results reach the result listener before any call starts, in
+  model order (the order of `get_last_tool_calls()`), then any other IDs sorted
+  by ID. If the listener fails on one of them, no call starts, `after_execute`
+  wrappers do not run, and `execute` returns `nil` and the error.
+- The other calls run as usual, with the same strategy and cancellation checks.
+  Cancellation marks unstarted and unfinished real calls as cancelled. Real
+  calls that already finished keep their results, invalid calls keep their
+  validation errors, and precomputed results are never replaced or marked as
+  cancelled.
+- Results for precomputed IDs reach the listener and `after_execute` wrappers
+  like real results. Each call ID is delivered exactly once, wrappers get
+  `tool_calls` unchanged and the complete `tool_results`, and the return value
+  holds both real and precomputed results.
+
 ### Exclusive Tools
 
 Tools with `meta.exclusive = true` in their registry entry cancel all other concurrent tool calls in the same batch. Only one exclusive tool is allowed per batch.
