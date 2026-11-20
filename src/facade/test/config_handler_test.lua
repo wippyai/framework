@@ -439,6 +439,11 @@ local function define_tests()
                 test.not_nil((string.find(read_source('/index.jet'), "toolApproval: cfg.toolApproval", 1, true)))
                 test.not_nil((string.find(read_source('/public/index.html'), "toolApproval: cfg.toolApproval", 1, true)))
             end)
+
+            test.it("forwards tanstack through both facade shells", function()
+                test.not_nil((string.find(read_source('/index.jet'), "tanstack: cfg.tanstack", 1, true)))
+                test.not_nil((string.find(read_source('/public/index.html'), "tanstack: cfg.tanstack", 1, true)))
+            end)
         end)
 
         test.describe("config JSON structure (wippy-context-2.1)", function()

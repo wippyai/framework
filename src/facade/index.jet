@@ -205,6 +205,7 @@
             // applies the same mode the early-apply script already painted.
             themeMode: (window.wippyThemePersist && window.wippyThemePersist.read()) || cfg.themeMode,
             apiRoutes: cfg.apiRoutes,
+            tanstack: cfg.tanstack,
             attention: cfg.attention,
             toolApproval: cfg.toolApproval,
             allowSelectModel: cfg.allowSelectModel,
