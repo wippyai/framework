@@ -1973,6 +1973,17 @@ local function define_tests()
                     test.eq(fingerprint_of(commented), base)
                     test.eq(fingerprint_of(copy_spec({ model = "gpt-4o" })), base)
                 end)
+
+                it("refuses to fingerprint a tool schema that JSON cannot represent", function()
+                    local broken = copy_spec()
+                    broken.tools.calculator.schema.maximum = 0 / 0
+                    agent._llm = recording_llm({})
+                    local builder = prompt.new()
+                    builder:add_user("Hello")
+                    local result, err = agent.new(broken):step(builder)
+                    test.is_nil(result)
+                    test.contains(err and err:message() or "", "Prefix fingerprint failed")
+                end)
             end)
         end)
 

@@ -837,10 +837,14 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
                 end
             end
         end
-        local digest, digest_err = hash.sha256(canonical.encode(prefix_projection(projected, tools)))
-        if digest_err then
+        local text, failure = canonical.try_encode(prefix_projection(projected, tools))
+        local digest = nil
+        if text then
+            digest, failure = hash.sha256(text)
+        end
+        if not digest then
             return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
-                :message("Prefix fingerprint failed: " .. tostring(digest_err)):build()
+                :message("Prefix fingerprint failed: " .. tostring(failure)):build()
         end
         return digest, nil
     end
