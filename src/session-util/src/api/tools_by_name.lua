@@ -1,6 +1,6 @@
 local http = require("http")
 local security = require("security")
-local contract = require("contract")
+local catalog_client = require("catalog_client")
 local registry = require("registry")
 local tools = require("tools")
 
@@ -10,34 +10,10 @@ local tools = require("tools")
 local api = {
     _http = http,
     _security = security,
-    _contract = contract,
+    _catalog_client = catalog_client,
     _registry = registry,
     _tools = tools,
 }
-
-api.CATALOG_CONTRACT = "wippy.session_util:catalog"
-
--- The bound catalog, or nil when no application binds one. A bound catalog
--- that cannot be opened returns an error: falling back to the built-in rule
--- then could show a tool that the application hides.
-local function open_catalog()
-    local catalog, err = api._contract.get(api.CATALOG_CONTRACT)
-    if err then
-        return nil, err
-    end
-    local implementations, implementations_err = catalog:implementations()
-    if implementations_err then
-        return nil, implementations_err
-    end
-    if not implementations or #implementations == 0 then
-        return nil
-    end
-    local instance, open_err = catalog:open()
-    if open_err then
-        return nil, open_err
-    end
-    return instance
-end
 
 -- Built-in rule. A tool call carries the name the model used: meta.llm_alias,
 -- or the sanitized id name when there is no alias. The registry id also
@@ -124,7 +100,7 @@ local function handler()
 
     -- A failing catalog gives no tools rather than the built-in answer.
     local by_name = nil
-    local catalog, catalog_err = open_catalog()
+    local catalog, catalog_err = api._catalog_client.open()
     if catalog then
         by_name = catalog:tool_titles({ names = names })
     elseif not catalog_err then

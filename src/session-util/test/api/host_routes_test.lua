@@ -7,6 +7,7 @@ local funcs = require("funcs")
 local contract = require("contract")
 local agent_details = require("agent_details")
 local tools_by_name = require("tools_by_name")
+local catalog_client = require("catalog_client")
 
 -- GET /agents/details and GET /tools/by-name against the registry fixtures in
 -- test/api/_index.yaml. The HTTP context and the actor are faked everywhere.
@@ -135,14 +136,14 @@ local function define_tests()
         local original = {
             http = agent_details._http,
             security = agent_details._security,
-            contract = agent_details._contract,
+            contract = catalog_client._contract,
             reader = agent_details._session_reader,
         }
 
         after_each(function()
             agent_details._http = original.http
             agent_details._security = original.security
-            agent_details._contract = original.contract
+            catalog_client._contract = original.contract
             agent_details._session_reader = original.reader
         end)
 
@@ -248,14 +249,14 @@ local function define_tests()
         local original = {
             http = tools_by_name._http,
             security = tools_by_name._security,
-            contract = tools_by_name._contract,
+            contract = catalog_client._contract,
             registry = tools_by_name._registry,
         }
 
         after_each(function()
             tools_by_name._http = original.http
             tools_by_name._security = original.security
-            tools_by_name._contract = original.contract
+            catalog_client._contract = original.contract
             tools_by_name._registry = original.registry
         end)
 
@@ -379,20 +380,20 @@ local function define_tests()
         local original = {
             agent_http = agent_details._http,
             agent_security = agent_details._security,
-            agent_contract = agent_details._contract,
+            agent_contract = catalog_client._contract,
             tools_http = tools_by_name._http,
             tools_security = tools_by_name._security,
-            tools_contract = tools_by_name._contract,
+            tools_contract = catalog_client._contract,
             tools_registry = tools_by_name._registry,
         }
 
         after_each(function()
             agent_details._http = original.agent_http
             agent_details._security = original.agent_security
-            agent_details._contract = original.agent_contract
+            catalog_client._contract = original.agent_contract
             tools_by_name._http = original.tools_http
             tools_by_name._security = original.tools_security
-            tools_by_name._contract = original.tools_contract
+            catalog_client._contract = original.tools_contract
             tools_by_name._registry = original.tools_registry
         end)
 
@@ -409,7 +410,7 @@ local function define_tests()
                     }
                 end,
             })
-            agent_details._contract = contract_module
+            catalog_client._contract = contract_module
             local result = install(agent_details, { agent = "agent-7" })
             agent_details.handler()
             test.eq(calls.get[1], "wippy.session_util:catalog")
@@ -426,7 +427,7 @@ local function define_tests()
             local contract_module = fake_contract({
                 agent_details = function() return nil end,
             })
-            agent_details._contract = contract_module
+            catalog_client._contract = contract_module
             local result = install(agent_details, { agent = "host-routes-public" })
             agent_details.handler()
             test.eq(result.status, 200)
@@ -439,7 +440,7 @@ local function define_tests()
                     return { id = "app.api:host_routes_private_agent", name = "host-routes-private", title = "Hidden Helper" }
                 end,
             })
-            agent_details._contract = contract_module
+            catalog_client._contract = contract_module
             local result = install(agent_details, { agent = "host-routes-private" })
             agent_details.handler()
             test.eq(result.status, 200)
@@ -448,7 +449,7 @@ local function define_tests()
         end)
 
         it("answers a catalog that fails to open with a null agent, not the built-in answer", function()
-            agent_details._contract = fake_contract({}, "binding failed")
+            catalog_client._contract = fake_contract({}, "binding failed")
             local result = install(agent_details, { agent = "host-routes-public" })
             agent_details.handler()
             test.eq(result.status, 200)
@@ -460,7 +461,7 @@ local function define_tests()
             tools_by_name._registry = {
                 find = function() error("the registry must not be read when a catalog is bound") end,
             }
-            tools_by_name._contract = fake_contract({
+            catalog_client._contract = fake_contract({
                 tool_titles = function(_, input)
                     asked = input.names
                     return {
@@ -480,7 +481,7 @@ local function define_tests()
         end)
 
         it("answers a non-table catalog result or a failing catalog with an empty object", function()
-            tools_by_name._contract = fake_contract({
+            catalog_client._contract = fake_contract({
                 tool_titles = function() return "not a map" end,
             })
             local non_table = install(tools_by_name, { tools = "host_routes_titled_tool" })
@@ -488,7 +489,7 @@ local function define_tests()
             test.eq(non_table.status, 200)
             test.not_nil((string.find(non_table.raw, '"tools":{}', 1, true)))
 
-            tools_by_name._contract = fake_contract({}, "binding failed")
+            catalog_client._contract = fake_contract({}, "binding failed")
             local failed = install(tools_by_name, { tools = "host_routes_titled_tool" })
             tools_by_name.handler()
             test.eq(failed.status, 200)
@@ -500,24 +501,24 @@ local function define_tests()
         local original = {
             agent_http = agent_details._http,
             agent_security = agent_details._security,
-            agent_contract = agent_details._contract,
+            agent_contract = catalog_client._contract,
             tools_http = tools_by_name._http,
             tools_security = tools_by_name._security,
-            tools_contract = tools_by_name._contract,
+            tools_contract = catalog_client._contract,
         }
 
         after_each(function()
             agent_details._http = original.agent_http
             agent_details._security = original.agent_security
-            agent_details._contract = original.agent_contract
+            catalog_client._contract = original.agent_contract
             tools_by_name._http = original.tools_http
             tools_by_name._security = original.tools_security
-            tools_by_name._contract = original.tools_contract
+            catalog_client._contract = original.tools_contract
         end)
 
         it("uses the built-in agent rule and never opens the catalog", function()
             local contract_module, calls = fake_contract(nil)
-            agent_details._contract = contract_module
+            catalog_client._contract = contract_module
             local public = install(agent_details, { agent = "host-routes-public" })
             agent_details.handler()
             test.eq(public.body.agent.id, "app.api:host_routes_public_agent")
@@ -531,7 +532,7 @@ local function define_tests()
 
         it("uses the built-in tool rule and never opens the catalog", function()
             local contract_module, calls = fake_contract(nil)
-            tools_by_name._contract = contract_module
+            catalog_client._contract = contract_module
             local result = install(tools_by_name, { tools = "host_routes_titled_tool,host_routes_private_alias" })
             tools_by_name.handler()
             test.eq(count_keys(result.body.tools), 1)
@@ -552,14 +553,14 @@ local function define_tests()
         local original = {
             http = agent_details._http,
             security = agent_details._security,
-            contract = agent_details._contract,
+            contract = catalog_client._contract,
             reader = agent_details._session_reader,
         }
 
         after_each(function()
             agent_details._http = original.http
             agent_details._security = original.security
-            agent_details._contract = original.contract
+            catalog_client._contract = original.contract
             agent_details._session_reader = original.reader
         end)
 
@@ -598,7 +599,7 @@ local function define_tests()
 
         it("falls back to the catalog when the session's agent is not in the registry", function()
             agent_details._session_reader = fake_reader({ ["session-3"] = "app-specific:agent-9" })
-            agent_details._contract = fake_contract({
+            catalog_client._contract = fake_contract({
                 agent_details = function(_, input)
                     return { id = input.agent, name = "agent-9", title = "Catalog Agent" }
                 end,

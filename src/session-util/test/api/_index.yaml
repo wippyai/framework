@@ -22,6 +22,7 @@ entries:
       test: wippy.test:test
       agent_details: wippy.session_util.api:agent_details
       tools_by_name: wippy.session_util.api:tools_by_name
+      catalog_client: wippy.session_util:catalog_client
     method: run
 
   - name: host_routes_public_agent

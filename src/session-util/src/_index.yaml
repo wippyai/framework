@@ -39,6 +39,15 @@ entries:
     component: "wippy/session"
     version: ">=v0.2.0"
 
+  # wippy.session_util:catalog_client
+  - name: catalog_client
+    kind: library.lua
+    meta:
+      comment: Opens the bound catalog for both Web Host routes, or reports that none is bound
+    source: file://catalog_client.lua
+    modules:
+      - contract
+
   # wippy.session_util:catalog
   - name: catalog
     kind: contract.definition

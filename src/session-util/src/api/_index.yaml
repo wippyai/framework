@@ -14,8 +14,8 @@ entries:
     modules:
       - http
       - security
-      - contract
     imports:
+      catalog_client: wippy.session_util:catalog_client
       agent_registry: wippy.agent.discovery:registry
       reader: wippy.session.persist:reader
     method: handler
@@ -42,9 +42,9 @@ entries:
     modules:
       - http
       - security
-      - contract
       - registry
     imports:
+      catalog_client: wippy.session_util:catalog_client
       tools: wippy.agent.discovery:tools
     method: handler
     pool:

@@ -1,6 +1,6 @@
 local http = require("http")
 local security = require("security")
-local contract = require("contract")
+local catalog_client = require("catalog_client")
 local agent_registry = require("agent_registry")
 local reader = require("reader")
 
@@ -8,12 +8,10 @@ local reader = require("reader")
 local api = {
     _http = http,
     _security = security,
-    _contract = contract,
+    _catalog_client = catalog_client,
     _agent_registry = agent_registry,
     _session_reader = reader,
 }
-
-api.CATALOG_CONTRACT = "wippy.session_util:catalog"
 
 -- An unknown, hidden or non-agent reference gets the same answer, so the
 -- response does not show whether a hidden agent exists. The json module has
@@ -48,32 +46,10 @@ local function session_agent(session_id: string?, identifier: string)
     return find_agent(identifier)
 end
 
--- The bound catalog, or nil when no application binds one. A bound catalog
--- that cannot be opened returns an error: falling back to the built-in rule
--- then could show an agent that the application hides.
-local function open_catalog()
-    local catalog, err = api._contract.get(api.CATALOG_CONTRACT)
-    if err then
-        return nil, err
-    end
-    local implementations, implementations_err = catalog:implementations()
-    if implementations_err then
-        return nil, implementations_err
-    end
-    if not implementations or #implementations == 0 then
-        return nil
-    end
-    local instance, open_err = catalog:open()
-    if open_err then
-        return nil, open_err
-    end
-    return instance
-end
-
 -- Catalog first; the built-in rule hides meta.private agents. A failing
 -- catalog gives no agent.
 local function lookup_agent(identifier: string)
-    local catalog, catalog_err = open_catalog()
+    local catalog, catalog_err = api._catalog_client.open()
     if catalog_err then
         return nil
     end
