@@ -241,6 +241,14 @@ function openai_client.request(endpoint_path, payload, options)
         return nil, transport.redact_error(parse_error, transport.request_secrets(headers, config.headers))
     end
 
+    if type(parsed) ~= "table" then
+        return nil, transport.redact_error({
+            status_code = response.status_code,
+            message = "Invalid OpenAI response: expected a JSON object",
+            metadata = extract_response_metadata(response)
+        }, transport.request_secrets(headers, config.headers))
+    end
+
     -- Add metadata to the response
     parsed.metadata = extract_response_metadata(response)
 

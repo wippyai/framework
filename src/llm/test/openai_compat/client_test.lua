@@ -339,6 +339,22 @@ local function define_tests()
                 test.contains(err.message, "API key is required")
             end)
 
+            it("returns a provider error for a successful response containing a JSON scalar", function()
+                openai_client._ctx = { all = function() return { api_key = "test-key" } end }
+                openai_client._env = { get = function() return nil end }
+                for _, body in ipairs({ '"string"', 'true', '42', 'null' }) do
+                    openai_client._http_client = {
+                        post = function()
+                            return { status_code = 200, body = body, headers = {} }
+                        end
+                    }
+                    local response, err = openai_client.request("/chat/completions", {})
+                    test.is_nil(response)
+                    test.eq(err.status_code, 200)
+                    test.contains(err.message, "expected a JSON object")
+                end
+            end)
+
             it("should parse HTTP error responses", function()
                 openai_client._ctx = {
                     all = function()
