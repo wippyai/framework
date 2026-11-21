@@ -658,4 +658,109 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
     return results
 end
 
+local MAX_PRUNE_BATCH = 500
+
+local function placeholders(count)
+    local list = {}
+    for i = 1, count do
+        list[i] = "$" .. i
+    end
+    return table.concat(list, ", ")
+end
+
+local function delete_batch(tx, cutoff, limit)
+    local rows, err = tx:query(
+        "SELECT usage_id FROM token_usage WHERE timestamp <= $1 ORDER BY timestamp, usage_id LIMIT $2",
+        { cutoff, limit + 1 })
+    if err then
+        return nil, nil, err
+    end
+    local ids = {}
+    for i = 1, math.min(#rows, limit) do
+        ids[i] = rows[i].usage_id
+    end
+    if #ids == 0 then
+        return 0, false
+    end
+    local in_list = placeholders(#ids)
+    -- SQLite enforces the ON DELETE CASCADE only on connections with foreign keys enabled.
+    local _, child_err = tx:execute("DELETE FROM token_usage_cache_writes WHERE usage_id IN (" .. in_list .. ")", ids)
+    if child_err then
+        return nil, nil, child_err
+    end
+    local result, parent_err = tx:execute("DELETE FROM token_usage WHERE usage_id IN (" .. in_list .. ")", ids)
+    if parent_err then
+        return nil, nil, parent_err
+    end
+    local deleted = result and tonumber(result.rows_affected)
+    if not deleted then
+        return nil, nil, "delete returned no affected row count"
+    end
+    return deleted, #rows > limit
+end
+
+local function oldest_timestamp(db)
+    local query
+    if tostring(db:type()) == "postgres" then
+        query = "SELECT EXTRACT(EPOCH FROM timestamp)::bigint AS stamp FROM token_usage ORDER BY timestamp LIMIT 1"
+    else
+        query = "SELECT CAST(strftime('%s', timestamp) AS INTEGER) AS stamp FROM token_usage ORDER BY timestamp LIMIT 1"
+    end
+    local rows, err = db:query(query)
+    if err then
+        return nil, err
+    end
+    if not rows[1] then
+        return nil
+    end
+    local stamp = tonumber(rows[1].stamp)
+    if not stamp then
+        return nil, "oldest record has no readable timestamp"
+    end
+    return stamp
+end
+
+-- Delete at most limit records stamped at or before cutoff (Unix seconds), oldest
+-- first, together with their cache write rows in one transaction. Returns
+-- { deleted, needs_continue, oldest }, where oldest is the Unix timestamp of the
+-- oldest remaining record.
+function token_usage_repo.prune(cutoff, limit)
+    if type(cutoff) ~= "number" or cutoff ~= math.floor(cutoff) then
+        return nil, "Cutoff must be an integer Unix timestamp"
+    end
+    if type(limit) ~= "number" or limit ~= math.floor(limit) or limit < 1 or limit > MAX_PRUNE_BATCH then
+        return nil, "Limit must be an integer in [1," .. MAX_PRUNE_BATCH .. "]"
+    end
+
+    local db, err = get_db()
+    if err then
+        return nil, err
+    end
+
+    local tx, begin_err = db:begin()
+    if begin_err then
+        db:release()
+        return nil, "Failed to prune token usage: " .. tostring(begin_err)
+    end
+    local deleted, needs_continue, delete_err = delete_batch(tx, time.unix(cutoff, 0):utc():format(time.RFC3339), limit)
+    if delete_err then
+        tx:rollback()
+        db:release()
+        return nil, "Failed to prune token usage: " .. tostring(delete_err)
+    end
+    local _, commit_err = tx:commit()
+    if commit_err then
+        db:release()
+        return nil, "Failed to prune token usage: " .. tostring(commit_err)
+    end
+
+    local oldest, oldest_err = oldest_timestamp(db)
+    db:release()
+    if oldest_err then
+        return nil, "Failed to read the oldest token usage record: " .. tostring(oldest_err)
+    end
+
+    return { deleted = deleted, needs_continue = needs_continue, oldest = oldest }
+end
+
 return token_usage_repo
