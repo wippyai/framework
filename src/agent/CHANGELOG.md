@@ -6,6 +6,18 @@
 
 * Label per-step recalled memory as background rather than a user message or new request. It supports the current user task without replacing it. After installing the release containing this fix, users can remove their local memory-label override; the companion Session fix preserves the task across mid-turn checkpoints. This change is not included in Agent 0.5.4.
 
+## [0.5.15](https://github.com/wippyai/framework/compare/agent-v0.5.14...agent-v0.5.15) (2026-11-21)
+
+
+### Features
+
+* **agent:** let the tool caller take precomputed results ([#279](https://github.com/wippyai/framework/issues/279)) ([86f13d5](https://github.com/wippyai/framework/commit/86f13d579da814f5b59bb1ab5c3079605ce662b3))
+
+
+### Bug Fixes
+
+* **agent:** keep every array item and key in canonical JSON ([#280](https://github.com/wippyai/framework/issues/280)) ([acfb0d1](https://github.com/wippyai/framework/commit/acfb0d1d2db8359cec3225a0e0ab11118ace1b01))
+
 ## [0.5.14](https://github.com/wippyai/framework/compare/agent-v0.5.13...agent-v0.5.14) (2026-11-20)
 
 
