@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.23](https://github.com/wippyai/framework/compare/llm-v0.5.22...llm-v0.5.23) (2026-11-21)
+
+
+### Bug Fixes
+
+* **llm:** handle scalar OpenAI-compatible responses before decoding metadata ([#290](https://github.com/wippyai/framework/issues/290)) ([b953d08](https://github.com/wippyai/framework/commit/b953d08168e434b67950164293d837f8842465df))
+
 ## [0.5.22](https://github.com/wippyai/framework/compare/llm-v0.5.21...llm-v0.5.22) (2026-11-19)
 
 
