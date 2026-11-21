@@ -399,6 +399,19 @@ entries:
         path: .default
     default: "{}"
 
+  - name: tool_approval
+    kind: ns.requirement
+    meta:
+      description: >-
+        Tool approval options for the Web Host as JSON, for example
+        {"display":"compact","isolateAgentContent":"all"}.
+        Empty keeps the Host defaults. Requires a Web Host with AppConfig
+        schema wippy-context-2.3 (after 1.0.70); older Hosts ignore it.
+    targets:
+      - entry: wippy.facade:tool_approval
+        path: .default
+    default: "{}"
+
   - name: allow_additional_tags
     kind: ns.requirement
     meta:
