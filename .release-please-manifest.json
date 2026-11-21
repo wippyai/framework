@@ -1,6 +1,6 @@
 {
   "src/actor": "0.4.5",
-  "src/agent": "0.5.14",
+  "src/agent": "0.5.15",
   "src/bootloader": "0.3.18",
   "src/docs": "0.3.12",
   "src/embeddings": "0.3.17",
