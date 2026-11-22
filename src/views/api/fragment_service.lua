@@ -246,9 +246,11 @@ local function safe_subpath(subpath)
 end
 
 -- Host CSS <link>s the child app inherits (theme-config tokens and fonts,
--- iframe base, Tailwind utilities with PrimeVue, markdown), inserted at the
+-- iframe base, PrimeVue component styles, markdown), inserted at the
 -- start of the page <head> so the streamed document already carries them. The
--- asset names are the Web Host build's stable, unhashed outputs.
+-- asset names are the Web Host build's stable, unhashed outputs. tailwind.css
+-- holds only the PrimeVue component styles (.p-* classes). It has no Tailwind
+-- utilities: each module compiles its own.
 local function host_css_links(fbase)
     local base = fragment_bootstrap.attr_url(fbase .. "/@wippy-fe/assets/")
     return '<link rel="stylesheet" data-role="wippy-host-styles-theme-config" href="' .. base .. 'theme-config.css">'

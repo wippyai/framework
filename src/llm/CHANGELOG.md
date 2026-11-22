@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.5.23](https://github.com/wippyai/framework/compare/llm-v0.5.22...llm-v0.5.23) (2026-11-21)
+
+
+### Bug Fixes
+
+* **llm:** handle scalar OpenAI-compatible responses before decoding metadata ([#290](https://github.com/wippyai/framework/issues/290)) ([b953d08](https://github.com/wippyai/framework/commit/b953d08168e434b67950164293d837f8842465df))
+
+## [0.5.22](https://github.com/wippyai/framework/compare/llm-v0.5.21...llm-v0.5.22) (2026-11-19)
+
+
+### Features
+
+* **llm:** keep the prompt cache when tools are added mid-conversation ([#283](https://github.com/wippyai/framework/issues/283)) ([a9708ca](https://github.com/wippyai/framework/commit/a9708ca789a5a7458a4c08a2e7d7af7767b49e89))
+
+
+### Bug Fixes
+
+* **llm:** preserve large Responses SSE terminal events ([#282](https://github.com/wippyai/framework/issues/282)) ([f4be4a9](https://github.com/wippyai/framework/commit/f4be4a9d74a85af79d4b70872b95057ec39b4487))
+
+## [0.5.21](https://github.com/wippyai/framework/compare/llm-v0.5.20...llm-v0.5.21) (2026-11-17)
+
+
+### Bug Fixes
+
+* **llm:** carry registry model card metadata ([#265](https://github.com/wippyai/framework/issues/265)) ([a8a4527](https://github.com/wippyai/framework/commit/a8a45276347ffeec4ae071b19463ed77545c9264))
+* **llm:** keep malformed streamed tool arguments from Claude and Bedrock ([#269](https://github.com/wippyai/framework/issues/269)) ([9853ecc](https://github.com/wippyai/framework/commit/9853ecc1311fb8a736bd81df26829f907d7a986e))
+* **llm:** redact request credentials from provider diagnostics ([#271](https://github.com/wippyai/framework/issues/271)) ([5066213](https://github.com/wippyai/framework/commit/506621327999b56a8736daa72fd2d84e8fe53141))
+* **llm:** send tools declared without a description ([#270](https://github.com/wippyai/framework/issues/270)) ([1073dca](https://github.com/wippyai/framework/commit/1073dca3aa4ddf0cae222cb05e32c20b7d2105b7))
+
 ## [0.5.20](https://github.com/wippyai/framework/compare/llm-v0.5.19...llm-v0.5.20) (2026-11-14)
 
 

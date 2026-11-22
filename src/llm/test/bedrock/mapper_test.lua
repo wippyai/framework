@@ -358,6 +358,14 @@ local function define_tests()
                 test.contains(err, "native")
                 test.contains(err, "tool")
             end)
+
+            it("rejects a declared deferred_tools = true, which Bedrock cannot honor", function()
+                local _, _, _, err = mapper.map_options({}, { deferred_tools = true })
+                test.contains(err, "Bedrock")
+                test.contains(err, "deferred_tools = true")
+                local _, _, _, accepted = mapper.map_options({}, { deferred_tools = false })
+                test.is_nil(accepted)
+            end)
         end)
 
         describe("map_messages", function()
@@ -495,6 +503,22 @@ local function define_tests()
                 end
                 test.eq(count, 4)
                 test.not_nil(((result.messages[1].content :: any)[2] :: any).cachePoint)
+            end)
+
+            it("marks thinking that predates announced tools as stale", function()
+                local function mapped(additions)
+                    return mapper.map_messages({
+                        { role = "user", content = "Question" },
+                        { role = "assistant", content = "Loading", metadata = {
+                            thinking_blocks = {{ type = "thinking", thinking = "Reasoning", signature = "sig" }}
+                        } },
+                        { role = "function_call", content = {}, function_call = { id = "call-1", name = "load", arguments = "{}" } },
+                        { role = "function_result", name = "load", function_call_id = "call-1", content = "loaded",
+                            metadata = additions and { tool_additions = additions } or nil },
+                    })
+                end
+                test.not_nil(mapped({ "pack_tool" }).stale_thinking)
+                test.is_nil(mapped(nil).stale_thinking)
             end)
 
             it("should place a thinking-only tail checkpoint before reasoning content", function()
@@ -1088,6 +1112,31 @@ local function define_tests()
             end)
         end)
 
+        describe("Malformed tool arguments", function()
+            it("carries raw arguments and the decoder error onto the contract tool call", function()
+                local client_result = {
+                    content = "",
+                    tool_calls = {
+                        {
+                            id = "call_1",
+                            name = "test_tool",
+                            arguments = '{"a":',
+                            raw_arguments = '{"a":',
+                            arguments_error = "unexpected end of JSON input"
+                        }
+                    },
+                    thinking = {}
+                }
+
+                local result = mapper.format_streaming_response(client_result, { test_tool = "app:test_tool" }, nil, "tool_use", {})
+                local call = result.result.tool_calls[1]
+                test.eq(call.arguments, '{"a":')
+                test.eq(call.raw_arguments, '{"a":')
+                test.eq(call.arguments_error, "unexpected end of JSON input")
+                test.eq(call.registry_id, "app:test_tool")
+            end)
+        end)
+
         describe("format_success_response", function()
             it("should format a full Converse response", function()
                 local response = mapper.format_success_response({
@@ -1112,7 +1161,11 @@ local function define_tests()
         end)
 
         describe("Tool JSON fidelity", function()
-            it("resends null tool call arguments as null", function()
+            local json_extensions = json :: any
+            local raw = json_extensions.raw
+            local it_with_raw = raw and it or it_skip
+
+            it("resends tool call arguments with the runtime null behavior", function()
                 local messages = mapper.map_messages({
                     { role = "user", content = { { type = "text", text = "Look it up" } } },
                     { role = "function_call", content = {},
@@ -1120,12 +1173,13 @@ local function define_tests()
                     { role = "function_result", name = "lookup", function_call_id = "call_1",
                         content = { { type = "text", text = "found" } } },
                 })
-                test.is_true(json.encode(messages):find('"input":{"q":null,"r":1}', 1, true) ~= nil)
+                local expected = json_extensions.null and '{"q":null,"r":1}' or '{"r":1}'
+                test.is_true(json.encode(messages):find('"input":' .. expected, 1, true) ~= nil)
             end)
 
-            it("sends a json.raw tool schema with its property order", function()
+            it_with_raw("sends a json.raw tool schema with its property order", function()
                 local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
-                local schema, raw_err = json.raw(text)
+                local schema, raw_err = raw(text)
                 test.is_nil(raw_err)
                 local tools = mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } })
                 test.is_true(json.encode(tools):find('"inputSchema":{"json":' .. text .. '}', 1, true) ~= nil)

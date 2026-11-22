@@ -17,6 +17,10 @@ entries:
           path: .meta.router
         - entry: wippy.views.api:list_pages.endpoint
           path: .meta.router
+        - entry: wippy.views.api:get_page
+          path: .meta.router
+        - entry: wippy.views.api:get_page.endpoint
+          path: .meta.router
         - entry: wippy.views.api:list_components
           path: .meta.router
         - entry: wippy.views.api:list_components.endpoint

@@ -2,6 +2,7 @@ local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local tool_arguments = require("tool_arguments")
 local tool_ids = require("tool_id")
 local route = require("route")
 
@@ -13,12 +14,22 @@ mapper.CAPABILITY = {
         thinking = "budget",
         sampling = true,
         forced_tool_choice = true,
-        structured_output = "tool"
+        structured_output = "tool",
+        deferred_tools = false
     },
     supported = {
         thinking = { adaptive = true, budget = true, none = true, always = true },
-        structured_output = { native = true, tool = true }
+        structured_output = { native = true, tool = true },
+        deferred_tools = { [true] = true, [false] = true }
     }
+}
+
+-- Keeps the cached tool section unchanged when deferred tools are added later.
+mapper.RESERVED_DEFERRED_TOOL = {
+    name = "reserved_deferred_slot",
+    description = "Reserved.",
+    input_schema = { type = "object" },
+    defer_loading = true
 }
 
 -- Wire body keys the driver builds structurally; options.request cannot set them.
@@ -327,7 +338,7 @@ local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
 
     if type(arguments) == "string" then
-        local parsed, parse_err = json.decode_with_nulls(arguments)
+        local parsed, parse_err = tool_arguments.decode_json(arguments)
         if not parse_err and type(parsed) == "table" then
             arguments = parsed
         else
@@ -386,6 +397,73 @@ local function without_blank_turns(messages)
     return kept
 end
 
+local function native_tool_type(tool)
+    local claude_meta = (tool :: any).meta and (tool :: any).meta.claude or nil
+    return (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
+end
+
+function mapper.plan_deferred_tools(contract_messages, contract_tools)
+    if type(contract_tools) ~= "table" or #contract_tools == 0 then
+        return nil
+    end
+
+    local custom = {}
+    local native = {}
+    for _, tool in ipairs(contract_tools) do
+        if tool.name == mapper.RESERVED_DEFERRED_TOOL.name then
+            return nil
+        end
+        if native_tool_type(tool) then
+            native[tool.name] = true
+        elseif tool.schema ~= nil then
+            custom[tool.name] = true
+        end
+    end
+
+    local late = {}
+    local is_late = {}
+    for _, msg in ipairs(contract_messages or {}) do
+        local additions = msg.role == prompt.ROLE.FUNCTION_RESULT and type(msg.metadata) == "table"
+            and msg.metadata.tool_additions or nil
+        if type(additions) == "table" then
+            for _, name in ipairs(additions) do
+                if type(name) == "string" and custom[name] and not is_late[name] then
+                    is_late[name] = true
+                    table.insert(late, name)
+                end
+            end
+        end
+    end
+
+    local offered = 0
+    for _, tool in ipairs(contract_tools) do
+        if native[tool.name] or (custom[tool.name] and not is_late[tool.name]) then
+            offered = offered + 1
+        end
+    end
+    if offered == 0 then
+        return nil
+    end
+
+    return { late = late, is_late = is_late, eager_additions = native }
+end
+
+local function announced_references(msg, deferred)
+    if not deferred or type(msg.metadata) ~= "table" or type(msg.metadata.tool_additions) ~= "table" then
+        return nil
+    end
+    local references = {}
+    for _, name in ipairs(msg.metadata.tool_additions) do
+        if deferred.is_late[name] then
+            table.insert(references, { type = "tool_reference", tool_name = name })
+        end
+    end
+    if #references == 0 then
+        return nil
+    end
+    return references
+end
+
 function mapper.map_messages(contract_messages, options)
     if not contract_messages or #contract_messages == 0 then
         return {
@@ -395,11 +473,13 @@ function mapper.map_messages(contract_messages, options)
     end
 
     local cache_ttl = options and options.cache_ttl
+    local deferred = options and options.deferred
 
     contract_messages = prompt.without_blank_text(contract_messages)
     local tool_id = tool_ids.mapper(contract_messages, { pattern = tool_ids.NATIVE_PATTERN })
     local order = thinking.new_turn_order()
     local stale_thinking = {}
+    local outdated = thinking.before_tool_additions(contract_messages, deferred and deferred.eager_additions)
 
     local function add_thinking_blocks(content_blocks, msg)
         if not (msg.metadata and msg.metadata.thinking_blocks) then
@@ -409,7 +489,7 @@ function mapper.map_messages(contract_messages, options)
             if order.keeps_thinking(thinking_block) then
                 local wire_block = thinking_block_shape(thinking_block) or thinking_block
                 order.place_thinking(wire_block, thinking_block)
-                if msg.metadata.stale_thinking then
+                if msg.metadata.stale_thinking or outdated[msg] then
                     stale_thinking[wire_block] = true
                 end
                 table.insert(content_blocks, wire_block)
@@ -422,6 +502,7 @@ function mapper.map_messages(contract_messages, options)
     local system_cache_positions = {}
     local message_cache_positions = {}
     local in_system_phase = true
+    local moved_texts = {}
 
     for i, msg in ipairs(contract_messages) do
         if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL
@@ -479,6 +560,18 @@ function mapper.map_messages(contract_messages, options)
             local result_text = type(msg.content) == "string" and msg.content or
                 (type(msg.content) == "table" and msg.content[1] and msg.content[1].text) or ""
 
+            local result_content = result_text
+            local references = announced_references(msg, deferred)
+            if references then
+                result_content = references
+                if not prompt.is_blank(result_text) then
+                    table.insert(moved_texts, {
+                        type = "text",
+                        text = tostring(msg.name or "tool") .. " result: " .. result_text
+                    })
+                end
+            end
+
             table.insert(claude_messages, {
                 role = "user",
                 content = {
@@ -486,10 +579,26 @@ function mapper.map_messages(contract_messages, options)
                         type = "tool_result",
                         tool_use_id = tool_id(msg.function_call_id),
                         is_error = msg.is_error == true and true or nil,
-                        content = result_text
+                        content = result_content
                     }
                 }
             })
+
+            -- A cache marker or a hoisted system message can sit between sibling
+            -- results. Keep ordinary text behind every result in the round.
+            if #moved_texts > 0 then
+                local following = i + 1
+                while contract_messages[following] and prompt.transparent_to_assistant_turn(contract_messages[following]) do
+                    following = following + 1
+                end
+                if not contract_messages[following] or contract_messages[following].role ~= prompt.ROLE.FUNCTION_RESULT then
+                    local result_blocks = claude_messages[#claude_messages].content
+                    for _, block in ipairs(moved_texts) do
+                        table.insert(result_blocks, block)
+                    end
+                    moved_texts = {}
+                end
+            end
         elseif msg.role == prompt.ROLE.FUNCTION_CALL then
             in_system_phase = false
             local arguments = normalize_tool_arguments(msg.function_call.arguments)
@@ -610,7 +719,7 @@ function mapper.map_messages(contract_messages, options)
     }
 end
 
-function mapper.map_tools(contract_tools)
+function mapper.map_tools(contract_tools, deferred)
     local claude_tools = {}
     local name_to_id_map = {}
 
@@ -618,9 +727,11 @@ function mapper.map_tools(contract_tools)
         return claude_tools, name_to_id_map
     end
 
+    local late_tools = {}
+
     for _, tool in ipairs(contract_tools) do
         local claude_meta = (tool :: any).meta and (tool :: any).meta.claude or nil
-        local native_type = (type(claude_meta) == "table" and claude_meta.type) or (tool :: any).type
+        local native_type = native_tool_type(tool)
 
         if native_type then
             -- Native Claude tool (computer_use, etc.)
@@ -648,15 +759,33 @@ function mapper.map_tools(contract_tools)
                 description = tool.description,
                 input_schema = tool.schema
             }
-            table.insert(claude_tools, claude_tool)
+            if deferred and deferred.is_late[tool.name] then
+                claude_tool.defer_loading = true
+                late_tools[tool.name] = claude_tool
+            else
+                table.insert(claude_tools, claude_tool)
+            end
             name_to_id_map[tool.name] = tool.id or tool.registry_id
+        end
+    end
+
+    if deferred then
+        local reserved = {}
+        for key, value in pairs(mapper.RESERVED_DEFERRED_TOOL) do
+            reserved[key] = value
+        end
+        table.insert(claude_tools, reserved)
+        for _, name in ipairs(deferred.late) do
+            if late_tools[name] then
+                table.insert(claude_tools, late_tools[name])
+            end
         end
     end
 
     return claude_tools, name_to_id_map
 end
 
-function mapper.map_tool_choice(contract_choice, available_tools)
+function mapper.map_tool_choice(contract_choice, available_tools, reserved_name: string?)
     if not available_tools or #available_tools == 0 then
         return nil
     end
@@ -669,7 +798,7 @@ function mapper.map_tool_choice(contract_choice, available_tools)
         return { type = "any" }
     elseif type(contract_choice) == "string" then
         for _, tool in ipairs(available_tools) do
-            if tool.name == contract_choice then
+            if tool.name == contract_choice and tool.name ~= reserved_name then
                 return { type = "tool", name = contract_choice }
             end
         end
@@ -809,6 +938,8 @@ function mapper.map_tool_calls(claude_tool_calls, name_to_id_map)
             id = tool_call.id,
             name = tool_call.name,
             arguments = tool_call.arguments,
+            raw_arguments = tool_call.raw_arguments,
+            arguments_error = tool_call.arguments_error,
             registry_id = name_to_id_map[tool_call.name]
         })
     end

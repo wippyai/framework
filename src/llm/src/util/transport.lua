@@ -1,4 +1,5 @@
 local time = require("time")
+local json = require("json")
 
 type Retry = {
     attempts: number,
@@ -44,6 +45,103 @@ local MAX_BACKOFF_MS = 60000
 local transport = {}
 
 transport._time = time
+
+-- Snapshot only values sent on this request; configured headers may carry
+-- credentials under arbitrary names. Generated protocol headers are not secrets.
+function transport.request_secrets(headers: {[string]: string}, configured_headers: {[string]: any}?): {string}
+    local secrets: {string} = {}
+    local seen: {[string]: boolean} = {}
+    local configured: {[string]: boolean} = {}
+    for name in pairs(configured_headers or {}) do configured[tostring(name):lower()] = true end
+    local function add(value: string?)
+        if value and value ~= "" and not seen[value] then
+            seen[value] = true
+            secrets[#secrets + 1] = value
+        end
+    end
+    for name, value in pairs(headers) do
+        local lower = name:lower()
+        if configured[lower] or lower == "authorization" or lower == "x-api-key"
+            or lower == "x-goog-api-key" or lower == "x-amz-security-token" then
+            add(value)
+            add(value:match("^[Bb][Ee][Aa][Rr][Ee][Rr]%s+(.+)$"))
+            if lower == "authorization" then
+                add(value:match("Credential=([^/ ,]+)"))
+                add(value:match("Signature=([^ ,]+)"))
+            end
+        end
+    end
+    return secrets
+end
+
+-- Replace credential substrings and their serialized forms, including table keys
+-- and nested diagnostics, without interpreting patterns in secrets.
+function transport.redact_error(value: any, secrets: {string}?): any
+    if not secrets or #secrets == 0 then return value end
+    local variants: {string} = {}
+    local seen: {[string]: boolean} = {}
+    local function add(value: string)
+        if not seen[value] then
+            seen[value] = true
+            variants[#variants + 1] = value
+        end
+    end
+    for _, secret in ipairs(secrets) do
+        if secret ~= "" then
+            add(secret)
+            add(json.encode(secret):sub(2, -2))
+            local encoded = secret:gsub("([^%w%-._~])", function(char: string): string
+                return string.format("%%%02X", string.byte(char))
+            end)
+            add(encoded)
+            add(encoded:gsub("%%(%x%x)", string.lower))
+            local form = encoded:gsub("%%20", "+")
+            add(form)
+            add(form:gsub("%%(%x%x)", string.lower))
+        end
+    end
+    table.sort(variants, function(a: string, b: string): boolean
+        if #a == #b then return a < b end
+        return #a > #b
+    end)
+    local function redact_string(message: string): string
+        local parts: {string} = {}
+        local position = 1
+        while position <= #message do
+            local first: integer? = nil
+            local last: integer = 0
+            for _, secret in ipairs(variants) do
+                local start_at, end_at = message:find(secret, position, true)
+                if start_at and end_at and (not first or start_at < first) then
+                    first, last = start_at, end_at
+                end
+            end
+            if not first then
+                parts[#parts + 1] = message:sub(position)
+                break
+            end
+            parts[#parts + 1] = message:sub(position, first - 1)
+            parts[#parts + 1] = "[REDACTED]"
+            position = last + 1
+        end
+        return table.concat(parts)
+    end
+    local copies: {[any]: any} = {}
+    local function redact(item: any): any
+        if type(item) == "string" then return redact_string(item) end
+        if type(item) == "userdata" then
+            return errors.new({ message = redact_string(item:message()), kind = item:kind(),
+                retryable = item:retryable(), details = redact(item:details()) })
+        end
+        if type(item) ~= "table" then return item end
+        if copies[item] then return copies[item] end
+        local result = {}
+        copies[item] = result
+        for key, nested in pairs(item) do result[redact(key)] = redact(nested) end
+        return result
+    end
+    return redact(value)
+end
 
 function transport.now_ms(): number
     return math.floor(transport._time.now():unix_nano() / 1000000)

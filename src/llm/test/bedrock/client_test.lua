@@ -1,5 +1,6 @@
 local bedrock_client = require("bedrock_client")
 local json = require("json")
+local json_null = (json :: any).null
 local base64 = require("base64")
 
 local function define_tests()
@@ -246,7 +247,7 @@ local function define_tests()
                 return content, err, result, seen, source
             end
 
-            it("keeps null members of a streamed toolUse input as json.null", function()
+            it("keeps null members of a streamed toolUse input when supported by the runtime", function()
                 local events = {
                     event("messageStart", { role = "assistant" }),
                     event("contentBlockStart", {
@@ -263,7 +264,7 @@ local function define_tests()
 
                 test.is_nil(err)
                 test.eq(#result.tool_calls, 1)
-                test.eq(result.tool_calls[1].arguments.q, json.null)
+                test.eq(result.tool_calls[1].arguments.q, json_null)
                 test.eq(result.tool_calls[1].arguments.r, 1)
             end)
 
@@ -310,6 +311,48 @@ local function define_tests()
                 test.eq(#result.tool_calls, 2)
                 test.eq(result.tool_calls[1].id, "call_a")
                 test.eq(result.tool_calls[2].id, "call_b")
+            end)
+
+            it("keeps malformed streamed tool input with the decoder error", function()
+                local raw = '{"query": "wippy"'
+                local _, expected_error = json.decode(raw)
+                local _, err, result = run({
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockStart", {
+                        contentBlockIndex = 0,
+                        start = { toolUse = { toolUseId = "call_bad", name = "search" } }
+                    }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = raw } } }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    event("messageStop", { stopReason = "tool_use" }),
+                })
+
+                test.is_nil(err)
+                test.eq(#result.tool_calls, 1)
+                local call = result.tool_calls[1]
+                test.eq(call.arguments, raw)
+                test.eq(call.raw_arguments, raw)
+                test.eq(call.arguments_error, tostring(expected_error))
+            end)
+
+            it("decodes valid streamed tool input without diagnostics", function()
+                local _, err, result = run({
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockStart", {
+                        contentBlockIndex = 0,
+                        start = { toolUse = { toolUseId = "call_ok", name = "search" } }
+                    }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = '{"query":' } } }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = '"wippy"}' } } }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    event("messageStop", { stopReason = "tool_use" }),
+                })
+
+                test.is_nil(err)
+                local call = result.tool_calls[1]
+                test.eq(call.arguments.query, "wippy")
+                test.is_nil(call.raw_arguments)
+                test.is_nil(call.arguments_error)
             end)
 
             it("joins redactedContent deltas by their bytes into one base64 value", function()
@@ -469,7 +512,7 @@ local function define_tests()
         end)
 
         describe("Tool JSON fidelity", function()
-            it("keeps null members of a toolUse input as json.null", function()
+            it("keeps null members of a toolUse input when supported by the runtime", function()
                 use_context({})
                 bedrock_client._http_client = {
                     post = function()
@@ -487,7 +530,7 @@ local function define_tests()
 
                 test.is_nil(err)
                 local input = response.output.message.content[2].toolUse.input
-                test.eq(input.q, json.null)
+                test.eq(input.q, json_null)
                 test.eq(input.r, 1)
             end)
         end)

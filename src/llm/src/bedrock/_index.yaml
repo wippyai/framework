@@ -122,6 +122,7 @@ entries:
       sigv4: wippy.llm.bedrock:sigv4
       bedrock_credentials: wippy.llm.bedrock:credentials
       thinking: wippy.llm.util:thinking
+      tool_arguments: wippy.llm.util:tool_arguments
       transport: wippy.llm.util:transport
 
   - name: mapper
@@ -137,6 +138,7 @@ entries:
       output: wippy.llm:output
       route: wippy.llm.util:route
       tool_id: wippy.llm.util:tool_id
+      tool_arguments: wippy.llm.util:tool_arguments
       transport: wippy.llm.util:transport
 
   - name: embed_titan

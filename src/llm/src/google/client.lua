@@ -1,8 +1,21 @@
 local json = require("json")
+local tool_arguments = require("tool_arguments")
 local http_client = require("http_client")
 local output = require("output")
 local transport = require("transport")
 local mapper = require("google_mapper")
+
+local stream_redactors = setmetatable({}, { __mode = "k" })
+
+local function redact_request_error(value, http_options, method)
+    local configured_headers = {}
+    for name in pairs(http_options.headers) do
+        if name ~= "Accept" and (name ~= "Content-Type" or method == "GET") then
+            configured_headers[name] = true
+        end
+    end
+    return transport.redact_error(value, transport.request_secrets(http_options.headers, configured_headers))
+end
 
 type StreamInput = {
     stream: any,
@@ -33,7 +46,7 @@ local client = {
 -- argument the model set. The response decode drops null members; args are
 -- taken from a decode of the same body that keeps them as json.null.
 local function keep_function_call_nulls(parsed: table, body: string): string?
-    if type(parsed.candidates) ~= "table" then return nil end
+    if not tool_arguments.preserves_nulls or type(parsed.candidates) ~= "table" then return nil end
     local with_nulls: any = nil
     for c, candidate in ipairs(parsed.candidates) do
         local parts = type(candidate) == "table" and type(candidate.content) == "table"
@@ -42,7 +55,7 @@ local function keep_function_call_nulls(parsed: table, body: string): string?
             for p, part in ipairs(parts) do
                 if type(part) == "table" and type(part.functionCall) == "table" then
                     if not with_nulls then
-                        local decoded, decode_err = json.decode_with_nulls(body)
+                        local decoded, decode_err = tool_arguments.decode_json(body)
                         if decode_err then return tostring(decode_err) end
                         with_nulls = decoded
                     end
@@ -96,6 +109,7 @@ local function parse_error_response(http_response: transport.HttpResponse): tran
 end
 
 function client.process_stream(stream_response: StreamInput, callbacks: StreamCallbacks?): (string?, string?, StreamResult?)
+    local redact_error = stream_redactors[stream_response]
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -125,12 +139,10 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
         data_lines = {}
         if data_line == "[DONE]" then done = true; return nil end
         local parsed, parse_err = json.decode(data_line)
-        if parse_err or type(parsed) ~= "table" then
-            return "Invalid Google stream event: " .. tostring(parse_err or "expected object")
-        end
-        local args_err = keep_function_call_nulls(parsed, data_line)
-        if args_err then
-            return "Invalid Google stream event: " .. args_err
+        local args_err = not parse_err and type(parsed) == "table" and keep_function_call_nulls(parsed, data_line)
+        if parse_err or type(parsed) ~= "table" or args_err then
+            local message = "Invalid Google stream event: " .. tostring(parse_err or args_err or "expected object")
+            return redact_error and redact_error(message) or message
         end
 
         if parsed.error then
@@ -139,6 +151,7 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
                 code = parsed.error.code,
                 status = parsed.error.status
             }
+            if redact_error then stream_error_info = redact_error(stream_error_info) end
             return tostring(stream_error_info.message)
         end
 
@@ -187,7 +200,10 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
 
     while not done do
         local chunk, err = stream_response.stream:read()
-        if err then on_error({ message = err }); return nil, err end
+        if err then
+            if redact_error then err = redact_error(err) end
+            on_error({ message = err }); return nil, err
+        end
         if not chunk then
             -- Some gateways omit the final blank line. Do not discard a final event,
             -- but reject a torn/malformed JSON payload rather than silently losing it.
@@ -230,7 +246,7 @@ end
 
 --- Process a streaming response and send chunks via output.streamer.
 --- Returns an aggregated Google-like response compatible with map_success_response().
-local function handle_stream_response(response, http_options)
+local function handle_stream_response(response, http_options, method)
     local reply_to = http_options.stream_reply_to :: string?
     local topic = http_options.stream_topic :: string?
     local streamer = output.streamer(reply_to, topic, http_options.stream_buffer_size or 10)
@@ -281,10 +297,11 @@ local function handle_stream_response(response, http_options)
         end,
     }
 
-    local _, stream_err = client.process_stream(
-        { stream = response.stream, metadata = {} },
-        callbacks :: StreamCallbacks
-    )
+    local stream_response = { stream = response.stream, metadata = {} }
+    stream_redactors[stream_response] = function(value)
+        return redact_request_error(value, http_options, method)
+    end
+    local _, stream_err = client.process_stream(stream_response, callbacks :: StreamCallbacks)
 
     if stream_err then
         return nil, {
@@ -343,31 +360,24 @@ function client.request(method, url, http_options, retry: transport.Retry?, dead
             local failure: any = request_error
             failure.stream_started = false
         end
-        return nil, request_error
+        return nil, redact_request_error(request_error, http_options, method)
     end
 
     -- Streaming: process stream, send chunks via streamer, return aggregated response
     if http_options.stream and response.stream then
-        return handle_stream_response(response, http_options)
+        return handle_stream_response(response, http_options, method)
     end
 
-    local parsed, parse_err = json.decode(response.body or "")
-    if parse_err then
+    local body = response.body or ""
+    local parsed, parse_err = json.decode(body)
+    local args_err = not parse_err and type(parsed) == "table" and keep_function_call_nulls(parsed, body)
+    if parse_err or args_err then
         local parse_error = {
             status_code = response.status_code,
-            message = "Failed to parse Google response: " .. parse_err,
+            message = "Failed to parse Google response: " .. tostring(parse_err or args_err),
             metadata = {}
         }
-        return nil, parse_error
-    end
-
-    local args_err = keep_function_call_nulls(parsed, response.body or "")
-    if args_err then
-        return nil, {
-            status_code = response.status_code,
-            message = "Failed to parse Google response: " .. args_err,
-            metadata = {}
-        }
+        return nil, redact_request_error(parse_error, http_options, method)
     end
 
     parsed.metadata = extract_response_metadata(parsed)

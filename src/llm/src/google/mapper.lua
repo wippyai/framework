@@ -1,4 +1,5 @@
 local json = require("json")
+local tool_arguments = require("tool_arguments")
 local output = require("output")
 local uuid = require("uuid")
 local route = require("route")
@@ -11,7 +12,8 @@ mapper.CAPABILITY = {
     defaults = { thinking = "none" },
     supported = {
         thinking = { none = true },
-        structured_output = { native = true }
+        structured_output = { native = true },
+        deferred_tools = { [false] = true }
     }
 }
 
@@ -224,7 +226,7 @@ function mapper.map_messages(contract_messages, options)
             i = i + 1
         elseif msg.role == "function_call" then
             local arguments = (type(msg.function_call.arguments) == "string")
-                and json.decode_with_nulls(msg.function_call.arguments)
+                and tool_arguments.decode_json(msg.function_call.arguments)
                 or msg.function_call.arguments
 
             local part = {
@@ -264,12 +266,12 @@ function mapper.map_tools(contract_tools)
     -- json.raw schema is JSON Schema text sent as written, member order
     -- included, through `parametersJsonSchema`, which takes JSON Schema as is.
     for _, tool in ipairs(contract_tools) do
-        if tool.name and tool.description and tool.schema then
+        if tool.name and tool.schema then
             local declaration: table = { name = tool.name, description = tool.description }
-            if type(tool.schema) == "table" then
-                declaration.parameters = filter_tool_schema(tool.schema)
-            else
+            if type(tool.schema) == "userdata" then
                 declaration.parametersJsonSchema = tool.schema
+            else
+                declaration.parameters = filter_tool_schema(tool.schema)
             end
             table.insert(tools, declaration)
         end

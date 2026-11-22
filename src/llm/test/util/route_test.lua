@@ -71,7 +71,7 @@ local function define_tests()
         end)
         it("validates each canonical fact in both modes", function()
             for key, allowed in pairs({ thinking = "adaptive", sampling = "boolean",
-                forced_tool_choice = "boolean", structured_output = "native" }) do
+                forced_tool_choice = "boolean", structured_output = "native", deferred_tools = "boolean" }) do
                 for _, value in ipairs({ "unknown", 12, {} }) do
                     for _, mode in ipairs({ "direct", "resolved" }) do
                         local ref = { id = "bad-route" }
@@ -92,6 +92,11 @@ local function define_tests()
             equal(route.accepts({ id = "route", thinking = "always" }, {}, "resolved"), { thinking = "always" })
             equal(route.accepts({ options = { model_profile = { thinking_mode = "adaptive_only" } } }, {}, "resolved"),
                 { thinking = "adaptive" })
+        end)
+        it("accepts deferred_tools in direct and resolved modes", function()
+            equal(route.accepts({ id = "direct" }, { accepts = { deferred_tools = true } }, "direct"), { deferred_tools = true })
+            equal(route.accepts({ id = "route", deferred_tools = true }, {}, "resolved"), { deferred_tools = true })
+            equal(route.accepts({ id = "route", deferred_tools = false }, {}, "resolved"), { deferred_tools = false })
         end)
         it("lists always among the thinking values a rejection names", function()
             local facts, err = route.accepts({ id = "bad-route", thinking = "sometimes" }, {}, "resolved")
@@ -174,6 +179,15 @@ local function define_tests()
 
         it("does not restrict a fact the capability leaves unsupported-listed", function()
             test.is_nil(route.unsupported_fact_error({ sampling = false }, capability))
+        end)
+
+        it("rejects a boolean fact value outside the driver's supported set", function()
+            local restricted = { name = "Test", defaults = {}, supported = { deferred_tools = { [false] = true } } }
+            local err = route.unsupported_fact_error({ deferred_tools = true }, restricted)
+            test.contains(err, "Test")
+            test.contains(err, "deferred_tools = true")
+            test.contains(err, "supported: false")
+            test.is_nil(route.unsupported_fact_error({ deferred_tools = false }, restricted))
         end)
 
         it("builds a strict error naming every adjusted parameter, sorted", function()

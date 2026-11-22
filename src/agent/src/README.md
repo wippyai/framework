@@ -15,7 +15,7 @@ the conversation and its tool results remain in their original order.
   version: ">=v0.4.0"
 ```
 
-Requires `wippy/llm >= 0.4.0`.
+Requires `wippy/llm >= 0.5.22`.
 
 Tool execution preserves canonical executor errors. A normal result of
 `{ success = false, error = "non-empty error text" }` also sets the existing
@@ -425,6 +425,32 @@ steps keeps its five-minute lifetime.
         ttl: 1h
 ```
 
+### Loaded traits
+
+A host can change the trait list during a conversation (`agent_context:set_active_traits`). By default the new traits join the system prompt and the tool list like any other trait. That changes the request prefix: the prompt cache restarts and earlier thinking blocks are dropped.
+
+`agent_options.trait_loading = "append"` renders a trait where it was loaded instead:
+
+- The system prompt holds the agent's prompt and the traits that were not loaded during the visible history. The compiled text of a loaded trait is sent as a positional note after all calls and results of the assistant turn that loaded it. Per-step prompt functions continue to render in the current system prompt so later context changes update its fingerprint and preserve the earlier note.
+- The function result that loaded the trait names the trait's tools in `metadata.tool_additions`, and every request carries `expect_tool_additions = true`. `options.tools` stays the full list. A model route that declares `deferred_tools` keeps the request prefix unchanged when the tools appear (see Tool Additions in the LLM module); other routes send the full list as before.
+- `prefix_fingerprint` covers the system prompt and the tools without the loaded traits, so loading a trait with stable system text keeps earlier thinking blocks on a route that declares `deferred_tools`. On other routes the driver treats thinking that predates the loaded tools as stale.
+
+The runner learns what was loaded from the conversation. The host stores `loaded_traits = { agent = <agent id>, keys = { ... } }` in the metadata of the function result whose control added the traits, and passes it on when it rebuilds the prompt:
+
+```lua
+builder:add_function_result(name, content, call_id, {
+    metadata = { loaded_traits = { agent = runner.id, keys = added_keys } }
+})
+```
+
+`keys` are the trait keys that were not compiled before the change: `runner.trait_keys` lists the compiled keys, and `agent_context:trait_keys(list)` gives the keys of a trait list without compiling it. A key is the trait id, followed by a hash of the attachment context when the attachment has one.
+
+A trait counts as loaded only while the result that announced it is part of the history the host sends, and only when the announcement names this agent. Once a checkpoint drops that result, the trait returns to the system prompt and the ordinary tool list in the same request. When the same key is announced twice, the later result wins. Removing a loaded trait changes the message that announced it, so the prefix changes from that point on.
+
+A tool is named in `tool_additions` only when every trait that brings it was loaded. A tool the agent declares itself, or one that another trait also brings, stays in the ordinary tool list, so loading a trait never moves a tool the model already had. A tool that several loaded traits bring is named where the first of them was loaded. The compiled spec lists the traits behind each tool in `tools[name].traits`; the field is absent when the agent declares the tool itself.
+
+`trait_loading` accepts `"append"` and `"rebuild"` (the default); any other value fails compilation. A trait can set it for every agent that carries the trait.
+
 ### Turn context
 
 `agent_options.turn_context` declares per-turn context the host adds to each
@@ -525,6 +551,49 @@ end
   delivered before that call was accepted by the listener.
 - The listener must not mutate the result; it is the table the batch returns.
 - `set_result_listener(nil)` removes the listener.
+
+### Precomputed Results
+
+A host can settle some calls of a batch itself, for example when a person
+denies a tool call or stops the batch before it runs. It passes those results
+to `execute`, and those calls do not run:
+
+```lua
+if tool_caller.FEATURES and tool_caller.FEATURES.precomputed_results then
+    results, err = caller:execute(context, validated, cancel, {
+        precomputed_results = {
+            [denied_call_id] = { error = "Tool call was denied" },
+        },
+    })
+end
+```
+
+- `tool_caller.FEATURES.precomputed_results` is `1` when the caller supports
+  the option. Check it before passing the option.
+- Without the option, or with an empty `precomputed_results` table, `execute`
+  works exactly as before.
+- `execute` checks the option before it does anything else. Every key must be a
+  call ID in `validated`, and every value must be a table. Otherwise `execute`
+  returns `nil` and an error such as
+  `Precomputed result for unknown tool call ID: <id>`. No call starts, the
+  listener is not called, and no wrapper runs.
+- Each precomputed result is copied. The copy gets `tool_call = validated[id]`
+  when the result has no `tool_call`, and it is normalized like a real result,
+  so an explicit failure payload sets `error`. The caller's tables, including
+  `validated`, are not changed.
+- Precomputed results reach the result listener before any call starts, in
+  model order (the order of `get_last_tool_calls()`), then any other IDs sorted
+  by ID. If the listener fails on one of them, no call starts, `after_execute`
+  wrappers do not run, and `execute` returns `nil` and the error.
+- The other calls run as usual, with the same strategy and cancellation checks.
+  Cancellation marks unstarted and unfinished real calls as cancelled. Real
+  calls that already finished keep their results, invalid calls keep their
+  validation errors, and precomputed results are never replaced or marked as
+  cancelled.
+- Results for precomputed IDs reach the listener and `after_execute` wrappers
+  like real results. Each call ID is delivered exactly once, wrappers get
+  `tool_calls` unchanged and the complete `tool_results`, and the return value
+  holds both real and precomputed results.
 
 ### Exclusive Tools
 
@@ -904,6 +973,29 @@ Agent resolution contract. Applications provide a binding to handle custom agent
 | `wippy.agent.discovery` | `selector` | LLM-powered agent selector |
 | `wippy.agent.tools` | `caller` | Tool execution (sequential/parallel) |
 | `wippy.agent.traits` | `time_aware` | Built-in time-aware trait |
+| `wippy.agent` | `canonical` | Order-independent JSON for hashes and deduplication keys |
+
+`wippy.agent:canonical` writes a value as JSON with object keys in byte order, so
+equal values give equal text. Different values never give equal text, except
+values the runtime JSON decoder or encoder already make equal (see the end of
+this section). The prefix fingerprint and the Attention read deduplication keys
+use it. An array is written up to its largest index, and a missing item (the JSON
+decoder leaves one for `null`) is written as `null`. An empty table keeps the
+runtime JSON encoder's choice of `{}` or `[]`. The encoder uses its own
+stack, so any nesting the runtime decoder accepts encodes. It refuses a value
+instead of changing it: functions, userdata other than `json.null`, NaN and
+infinities, tables that mix string and number keys, keys that are not strings or
+whole positive numbers, tables that contain themselves, and arrays whose largest
+index is above 1,000,000 when more than half of the indexes from 1 to that index
+are missing. A value decoded from JSON is refused only in that last case, which
+needs one array of more than 1,000,000 items with more than half of them `null`.
+`encode(value)` returns the text and raises an
+error for a refused value. `try_encode(value)` returns the text, or `nil` and the
+reason.
+Strings are written by the runtime JSON encoder, which replaces invalid UTF-8
+bytes with U+FFFD. The JSON decoder drops object members whose value is `null`
+and trailing `null` array items, so those decoded values encode like the values
+without them.
 
 ## Live tool execution authority
 

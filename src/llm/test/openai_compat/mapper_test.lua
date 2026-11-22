@@ -96,6 +96,14 @@ local function define_tests()
                 test.contains(err, "budget")
             end)
 
+            it("rejects a declared deferred_tools = true, which OpenAI-compatible cannot honor", function()
+                local _, err = openai_mapper.map_options({}, { deferred_tools = true })
+                test.contains(err, "OpenAI-compatible")
+                test.contains(err, "deferred_tools = true")
+                local _, accepted = openai_mapper.map_options({}, { deferred_tools = false })
+                test.is_nil(accepted)
+            end)
+
             it("rejects a declared thinking = always, naming the supported values", function()
                 local _, err = openai_mapper.map_options({}, { thinking = "always" })
                 test.contains(err, "OpenAI-compatible does not support thinking = always")
@@ -716,6 +724,18 @@ local function define_tests()
                 test.is_nil(next(tool_map))
             end)
 
+            it("should send a tool declared without a description", function()
+                local openai_tools, tool_map = openai_mapper.map_tools({
+                    { name = "ping", schema = { type = "object", properties = {} } }
+                })
+
+                test.eq(#openai_tools, 1)
+                test.eq(openai_tools[1]["function"].name, "ping")
+                test.is_nil(openai_tools[1]["function"].description)
+                test.eq(openai_tools[1]["function"].parameters.type, "object")
+                test.not_nil(tool_map["ping"])
+            end)
+
             it("should skip tools with missing required fields", function()
                 local contract_tools = {
                     {
@@ -1251,19 +1271,27 @@ local function define_tests()
         end)
 
         describe("Tool JSON fidelity", function()
-            it("keeps null tool call arguments as json.null", function()
+            local json_extensions = json :: any
+            local raw = json_extensions.raw
+            local it_with_raw = raw and it or it_skip
+
+            it("keeps null tool call arguments when supported by the runtime", function()
                 local calls = openai_mapper.map_tool_calls({
-                    { id = "c1", type = "function", ["function"] = { name = "lookup", arguments = '{"q":null,"r":1}' } }
+                    { id = "c1", type = "function", ["function"] = { name = "lookup", arguments = '{"items":[1,null],"q":null,"r":1}' } }
                 })
                 local args = calls[1].arguments
-                test.eq(args.q, json.null)
+                test.eq(args.q, json_extensions.null)
+                test.eq(args.items[2], json_extensions.null)
+                test.is_nil(calls[1].raw_arguments)
+                test.is_nil(calls[1].arguments_error)
                 test.eq(args.r, 1)
-                test.eq(json.encode(args), '{"q":null,"r":1}')
+                local expected = json_extensions.null and '{"items":[1,null],"q":null,"r":1}' or '{"items":[1],"r":1}'
+                test.eq(json.encode(args), expected)
             end)
 
-            it("sends a json.raw tool schema with its property order", function()
+            it_with_raw("sends a json.raw tool schema with its property order", function()
                 local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
-                local schema, raw_err = json.raw(text)
+                local schema, raw_err = raw(text)
                 test.is_nil(raw_err)
                 local tools = openai_mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } })
                 test.is_true(json.encode(tools):find('"parameters":' .. text, 1, true) ~= nil)

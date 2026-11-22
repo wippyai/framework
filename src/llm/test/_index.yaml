@@ -2,6 +2,29 @@ version: "1.0"
 namespace: app
 
 entries:
+  - name: provider_error_redaction_test
+    kind: function.lua
+    meta: {type: test, group: LLM / Drivers}
+    source: file://provider_error_redaction_test.lua
+    method: run
+    modules: [json, process]
+    imports:
+      test: wippy.test:test
+      output: wippy.llm:output
+      transport: wippy.llm.util:transport
+      openai_client: wippy.llm.openai:client
+      openai_mapper: wippy.llm.openai:mapper
+      openai_compat_client: wippy.llm.openai_compat:client
+      openai_compat_mapper: wippy.llm.openai_compat:mapper
+      claude_client: wippy.llm.claude:client
+      claude_mapper: wippy.llm.claude:mapper
+      typesafe_client: wippy.llm.typesafe:client
+      typesafe_mapper: wippy.llm.typesafe:mapper
+      bedrock_client: wippy.llm.bedrock:client
+      bedrock_mapper: wippy.llm.bedrock:mapper
+      google_client: wippy.llm.google:client
+      google_mapper: wippy.llm.google:mapper
+
   - name: dep.wippy.test
     kind: ns.dependency
     meta:

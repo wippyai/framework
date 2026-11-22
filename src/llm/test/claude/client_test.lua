@@ -1,5 +1,6 @@
 local claude_client = require("claude_client")
 local json = require("json")
+local json_null = (json :: any).null
 
 local function define_tests()
     describe("Claude Client", function()
@@ -832,6 +833,80 @@ local function define_tests()
                 test.eq(tc.id, "call_123")
                 test.eq(tc.name, "test_tool")
                 test.eq(tc.arguments.param, "value")
+            end)
+
+            it("should keep malformed streamed tool arguments with the decoder error", function()
+                local raw = '{"param": "value"'
+                local stream_chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"output_tokens":0}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_bad","name":"test_tool"}}\n\n',
+                    'event: content_block_delta\ndata: ' .. json.encode({
+                        type = "content_block_delta",
+                        index = 0,
+                        delta = { type = "input_json_delta", partial_json = raw }
+                    }) .. '\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+                local _, expected_error = json.decode(raw)
+
+                local mock_stream = { chunks = stream_chunks, current = 0 }
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            return self.chunks[self.current]
+                        end
+                    }
+                })
+
+                local tool_calls = {}
+                local _, err, result = claude_client.process_stream({ stream = mock_stream, metadata = {} }, {
+                    on_tool_call = function(tool_call)
+                        table.insert(tool_calls, tool_call)
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(#tool_calls, 1)
+                local tc = assert(tool_calls[1])
+                test.eq(tc.arguments, raw)
+                test.eq(tc.raw_arguments, raw)
+                test.eq(tc.arguments_error, tostring(expected_error))
+                test.eq(result.tool_calls[1].raw_arguments, raw)
+            end)
+
+            it("should decode an empty streamed tool input as an empty object", function()
+                local stream_chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"output_tokens":0}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_empty","name":"test_tool"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+
+                local mock_stream = { chunks = stream_chunks, current = 0 }
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            return self.chunks[self.current]
+                        end
+                    }
+                })
+
+                local tool_calls = {}
+                local _, err = claude_client.process_stream({ stream = mock_stream, metadata = {} }, {
+                    on_tool_call = function(tool_call)
+                        table.insert(tool_calls, tool_call)
+                    end
+                })
+
+                test.is_nil(err)
+                local tc = assert(tool_calls[1])
+                test.eq(type(tc.arguments), "table")
+                test.is_nil(next(tc.arguments))
+                test.is_nil(tc.raw_arguments)
+                test.is_nil(tc.arguments_error)
             end)
 
             it("should process streaming thinking content", function()
@@ -1829,7 +1904,7 @@ local function define_tests()
                 end }
             end
 
-            it("keeps null members of a streamed tool input as json.null", function()
+            it("keeps null members of a streamed tool input when supported by the runtime", function()
                 local chunks = {
                     'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"lookup"}}\n\n',
                     'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"q\\":null,"}}\n\n',
@@ -1844,11 +1919,11 @@ local function define_tests()
                 test.is_nil(err)
                 test.eq(#tool_calls, 1)
                 local tc = assert(tool_calls[1])
-                test.eq(tc.arguments.q, json.null)
+                test.eq(tc.arguments.q, json_null)
                 test.eq(tc.arguments.r, 1)
             end)
 
-            it("keeps null members of a tool input as json.null and leaves envelope nulls absent", function()
+            it("keeps null members of a tool input when supported by the runtime and leaves envelope nulls absent", function()
                 claude_client._ctx = { all = function() return { api_key = "test-key" } end }
                 claude_client._env = { get = function() return nil end }
                 claude_client._http_client = {
@@ -1867,9 +1942,9 @@ local function define_tests()
 
                 test.is_nil(err)
                 local input = response.content[2].input
-                test.eq(input.q, json.null)
+                test.eq(input.q, json_null)
                 test.eq(input.r, 1)
-                test.eq(input.n.x, json.null)
+                test.eq(input.n.x, json_null)
                 test.is_nil(response.stop_sequence)
                 test.is_nil(response.content[1].citations)
             end)

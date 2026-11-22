@@ -126,6 +126,7 @@ entries:
       output: wippy.llm:output
       prompt: wippy.llm:prompt
       route: wippy.llm.util:route
+      tool_arguments: wippy.llm.util:tool_arguments
 
   # wippy.llm.openai_compat:organization
   - name: organization

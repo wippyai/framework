@@ -4,6 +4,9 @@ local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
 local thinking = require("thinking")
+local tool_arguments = require("tool_arguments")
+
+local stream_redactors = setmetatable({}, { __mode = "k" })
 
 type ClaudeConfig = {
     api_key: string?,
@@ -29,12 +32,13 @@ local claude_client = {}
 -- argument the model set. The response decode drops null members; tool inputs
 -- are taken from a decode of the same body that keeps them as json.null.
 local function keep_tool_input_nulls(parsed: table, body: string): string?
+    if not tool_arguments.preserves_nulls then return nil end
     if type(parsed.content) ~= "table" then return nil end
     local with_nulls: any = nil
     for i, block in ipairs(parsed.content) do
         if type(block) == "table" and block.type == "tool_use" then
             if not with_nulls then
-                local decoded, decode_err = json.decode_with_nulls(body)
+                local decoded, decode_err = tool_arguments.decode_json(body)
                 if decode_err then return tostring(decode_err) end
                 with_nulls = decoded
             end
@@ -176,7 +180,6 @@ local function prepare_headers(api_key, api_version, beta_features, method, addi
     return headers
 end
 
-
 function claude_client.request(endpoint_path, payload, options): (any, transport.RequestError?)
     options = options or {}
     local method = options.method or "POST"
@@ -226,34 +229,31 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     local retry = transport.request_retry(options.retry, config.retry)
     local response, request_error = transport.send(send_once, parse_error_response, retry, config.deadline_at)
     if not response then
-        return nil, request_error
+        return nil, transport.redact_error(request_error, transport.request_secrets(headers, config.headers))
     end
 
     if options.stream and response.stream then
-        return {
+        local stream_response = {
             stream = response.stream,
             status_code = response.status_code,
             headers = response.headers,
             metadata = extract_response_metadata(response)
         }
+        stream_redactors[stream_response] = function(value)
+            return transport.redact_error(value, transport.request_secrets(headers, config.headers))
+        end
+        return stream_response
     end
 
-    local parsed, parse_err = json.decode(response.body or "")
-    if parse_err then
-        return nil, {
+    local body = response.body or ""
+    local parsed, parse_err = json.decode(body)
+    local inputs_err = not parse_err and type(parsed) == "table" and keep_tool_input_nulls(parsed, body)
+    if parse_err or inputs_err then
+        return nil, transport.redact_error({
             status_code = response.status_code,
-            message = "Failed to parse Claude response: " .. parse_err,
+            message = "Failed to parse Claude response: " .. tostring(parse_err or inputs_err),
             metadata = extract_response_metadata(response)
-        }
-    end
-
-    local inputs_err = keep_tool_input_nulls(parsed, response.body or "")
-    if inputs_err then
-        return nil, {
-            status_code = response.status_code,
-            message = "Failed to parse Claude response: " .. inputs_err,
-            metadata = extract_response_metadata(response)
-        }
+        }, transport.request_secrets(headers, config.headers))
     end
 
     parsed.metadata = extract_response_metadata(response)
@@ -281,6 +281,7 @@ local function stream_result(full_content, tool_calls, thinking_blocks, layout, 
 end
 
 function claude_client.process_stream(stream_response, callbacks)
+    local redact_error = stream_redactors[stream_response]
     if not stream_response or not stream_response.stream then
         return nil, "Invalid stream response"
     end
@@ -306,6 +307,7 @@ function claude_client.process_stream(stream_response, callbacks)
         local chunk, err = stream_response.stream:read()
 
         if err then
+            if redact_error then err = redact_error(err) end
             on_error({ message = err })
             return nil, err
         end
@@ -415,18 +417,18 @@ function claude_client.process_stream(stream_response, callbacks)
                         json_str = tool_calls[index].partial_json
                     end
 
-                    local arguments = {}
+                    -- A tool_use block without input deltas carries an empty input object.
+                    local arguments, raw_arguments, arguments_error = {}, nil, nil
                     if json_str ~= "" then
-                        local parsed_args, parse_err = json.decode_with_nulls(json_str)
-                        if not parse_err then
-                            arguments = parsed_args or {}
-                        end
+                        arguments, raw_arguments, arguments_error = tool_arguments.decode(json_str)
                     end
 
                     local tool_call = {
                         id = content_blocks[index].id or "",
                         name = content_blocks[index].name or "",
-                        arguments = arguments
+                        arguments = arguments,
+                        raw_arguments = raw_arguments,
+                        arguments_error = arguments_error
                     }
 
                     tool_calls[index] = tool_call
@@ -447,6 +449,7 @@ function claude_client.process_stream(stream_response, callbacks)
                 return full_content, nil, result
             elseif event_type == "error" then
                 if data and data.error then
+                    if redact_error then data.error = redact_error(data.error) end
                     on_error(data.error)
                     return nil, data.error.message
                 end

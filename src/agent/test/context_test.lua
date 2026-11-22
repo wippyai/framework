@@ -909,6 +909,22 @@ local function define_tests()
                 test.eq(context.active_tools[1], "wippy.x:solo_tool")
             end)
 
+            it("should give the keys of a trait list without compiling it", function()
+                test.eq(#context:trait_keys({ "trait_a", { id = "slot", context = { source = "one" } } }), 0)
+
+                agent_context._compiler = nil
+                local keys = context:trait_keys({ "trait_a", { id = "trait_b" }, { id = "slot", context = { source = "one" } }, {} })
+                test.eq(#keys, 3)
+                test.eq(keys[1], "trait_a")
+                test.eq(keys[2], "trait_b")
+                test.eq(string.sub(keys[3], 1, 5), "slot#")
+                local other = context:trait_keys({ { id = "slot", context = { source = "two" } } })
+                test.is_true(keys[3] ~= other[1])
+                test.eq(context:trait_keys("solo_trait")[1], "solo_trait")
+                test.eq(#context:trait_keys(nil), 0)
+                test.is_nil(context.active_traits)
+            end)
+
             it("should report overlay state via get_config", function()
                 test.is_false(context:get_config().has_active_traits)
                 test.is_false(context:get_config().has_active_tools)

@@ -2,6 +2,7 @@ local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local tool_arguments = require("tool_arguments")
 local route = require("route")
 local transport = require("transport")
 local tool_ids = require("tool_id")
@@ -18,7 +19,8 @@ mapper.CAPABILITY = {
     },
     supported = {
         thinking = { adaptive = true, budget = true, none = true, always = true },
-        structured_output = { tool = true }
+        structured_output = { tool = true },
+        deferred_tools = { [false] = true }
     }
 }
 
@@ -179,7 +181,7 @@ end
 local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
     if type(arguments) == "string" then
-        local parsed, parse_err = json.decode_with_nulls(arguments)
+        local parsed, parse_err = tool_arguments.decode_json(arguments)
         if not parse_err and type(parsed) == "table" then
             arguments = parsed
         else
@@ -296,6 +298,7 @@ function mapper.map_messages(contract_messages)
         return translate_id(id)
     end
     local stale_thinking = {}
+    local outdated = thinking.before_tool_additions(contract_messages)
 
     local function add_reasoning_blocks(content_blocks, msg)
         if not (msg.metadata and msg.metadata.thinking_blocks) then
@@ -305,7 +308,7 @@ function mapper.map_messages(contract_messages)
             local reasoning = order.keeps_thinking(thinking_block) and reasoning_content(thinking_block)
             if reasoning then
                 order.place_thinking(reasoning, thinking_block)
-                if msg.metadata.stale_thinking then
+                if msg.metadata.stale_thinking or outdated[msg] then
                     stale_thinking[reasoning] = true
                 end
                 table.insert(content_blocks, reasoning)
@@ -796,6 +799,8 @@ function mapper.map_tool_calls(raw_tool_calls, name_to_id_map)
             id = tool_call.id,
             name = tool_call.name,
             arguments = tool_call.arguments,
+            raw_arguments = tool_call.raw_arguments,
+            arguments_error = tool_call.arguments_error,
             registry_id = name_to_id_map[tool_call.name]
         })
     end

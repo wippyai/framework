@@ -1,5 +1,6 @@
 local client = require("google_client")
 local json = require("json")
+local json_null = (json :: any).null
 local tests = require("test")
 
 local function define_tests()
@@ -820,7 +821,7 @@ local function define_tests()
                 end }
             end
 
-            it("keeps null members of streamed functionCall args as json.null", function()
+            it("keeps null members of streamed functionCall args when supported by the runtime", function()
                 local data = 'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"q":null,"r":1}}}]},"finishReason":"STOP"}]}\n\n'
                 local calls = {}
                 local _, err, result = client.process_stream({ stream = fake_stream({ data }) }, {
@@ -828,12 +829,12 @@ local function define_tests()
                 })
                 tests.is_nil(err)
                 tests.eq(#calls, 1)
-                tests.eq(calls[1].functionCall.args.q, json.null)
+                tests.eq(calls[1].functionCall.args.q, json_null)
                 tests.eq(calls[1].functionCall.args.r, 1)
-                tests.eq(result.tool_calls[1].functionCall.args.q, json.null)
+                tests.eq(result.tool_calls[1].functionCall.args.q, json_null)
             end)
 
-            it("keeps null members of functionCall args as json.null", function()
+            it("keeps null members of functionCall args when supported by the runtime", function()
                 client._http_client = {
                     post = function()
                         return {
@@ -848,7 +849,7 @@ local function define_tests()
 
                 tests.is_nil(err)
                 local args = response.candidates[1].content.parts[2].functionCall.args
-                tests.eq(args.q, json.null)
+                tests.eq(args.q, json_null)
                 tests.eq(args.r, 1)
             end)
         end)
