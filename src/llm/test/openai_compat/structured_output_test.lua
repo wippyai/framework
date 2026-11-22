@@ -1086,7 +1086,8 @@ local function define_tests()
             it("sends string content when the context declares text_content string", function()
                 local sent: any = nil
                 structured_output_handler._ctx = {
-                    all = function() return { api_key = "test-api-key", text_content = "string" } end
+                    all = function() return { api_key = "test-api-key" } end,
+                    get = function() return "string" end
                 }
                 structured_output_handler._client._ctx = structured_output_handler._ctx
                 structured_output_handler._client._env = { get = function() return nil end }
@@ -1124,7 +1125,8 @@ local function define_tests()
             it("refuses a request whose context declares an unknown text_content", function()
                 local posted = false
                 structured_output_handler._ctx = {
-                    all = function() return { api_key = "test-api-key", text_content = "plain" } end
+                    all = function() return { api_key = "test-api-key" } end,
+                    get = function() return "plain" end
                 }
                 structured_output_handler._client._ctx = structured_output_handler._ctx
                 structured_output_handler._client._env = { get = function() return nil end }

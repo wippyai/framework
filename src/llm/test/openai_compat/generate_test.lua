@@ -844,7 +844,10 @@ local function define_tests()
 
             local function capture(context)
                 local sent: any = nil
-                generate_handler._ctx = { all = function() return context end }
+                generate_handler._ctx = {
+                    all = function() return context end,
+                    get = function(key) return context[key] end
+                }
                 generate_handler._client._ctx = generate_handler._ctx
                 generate_handler._client._env = { get = function() return nil end }
                 generate_handler._client._http_client = {

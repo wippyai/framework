@@ -123,7 +123,8 @@ function generate_handler.handler(contract_args)
         err = err
     }
 
-    local text_content, text_content_err = generate_handler._mapper.text_content(generate_handler._ctx.all() or {})
+    local declared_form = generate_handler._ctx.get("text_content")
+    local text_content, text_content_err = generate_handler._mapper.text_content(declared_form)
     if text_content_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(text_content_err):build()
     end

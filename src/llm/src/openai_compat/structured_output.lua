@@ -105,7 +105,8 @@ function structured_output_handler.handler(contract_args)
         schema_name = name
     end
 
-    local text_content, text_content_err = structured_output_handler._mapper.text_content(structured_output_handler._ctx.all() or {})
+    local declared_form = structured_output_handler._ctx.get("text_content")
+    local text_content, text_content_err = structured_output_handler._mapper.text_content(declared_form)
     if text_content_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(text_content_err):build()
     end
