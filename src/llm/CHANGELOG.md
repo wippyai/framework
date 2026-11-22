@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.24](https://github.com/wippyai/framework/compare/llm-v0.5.23...llm-v0.5.24) (2026-11-22)
+
+
+### Bug Fixes
+
+* **llm:** keep null tool call arguments and send json.raw tool schemas as written ([#272](https://github.com/wippyai/framework/issues/272)) ([ab403d1](https://github.com/wippyai/framework/commit/ab403d144c4a1b1977fce087d835327ec70440fd))
+
 ## [0.5.23](https://github.com/wippyai/framework/compare/llm-v0.5.22...llm-v0.5.23) (2026-11-21)
 
 
