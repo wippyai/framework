@@ -395,6 +395,11 @@ end
 A tool needs a `name` and a `schema`; `description` is optional, and every driver sends a
 tool without one with the description field omitted.
 
+Wippy v0.3.63a and later preserve explicit null tool arguments as `json.null`
+when reading and replaying calls. To send a schema with a particular property
+order, pass `schema = json.raw(schema_text)`. Earlier runtimes use their
+existing JSON decoder and support table schemas.
+
 Tool calls with malformed JSON arguments retain the original string in `arguments` and
 `raw_arguments`, with the decoder diagnostic in `arguments_error`. These optional fields
 are absent on valid calls. Hosts must reject calls with `arguments_error` through their

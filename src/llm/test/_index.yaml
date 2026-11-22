@@ -936,6 +936,8 @@ entries:
         - unit-test
         - mapper
     source: file://google/mapper_test.lua
+    modules:
+      - json
     imports:
       google_mapper: wippy.llm.google:mapper
       output: wippy.llm:output
