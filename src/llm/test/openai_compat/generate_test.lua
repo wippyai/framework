@@ -877,6 +877,56 @@ local function define_tests()
                 }
             end
 
+            it("streams reasoning as thinking and returns its text in metadata.thinking", function()
+                local thinking_sent: {string} = {}
+                local streamer = recording_streamer(false)
+                streamer.send_thinking = function(_, chunk) table.insert(thinking_sent, chunk) end
+                stream_with(streamer, function(_, callbacks)
+                    callbacks.on_reasoning("The user")
+                    callbacks.on_reasoning(" asks.")
+                    callbacks.on_content("51")
+                    local result = { content = "51", finish_reason = "stop", reasoning = "The user asks.",
+                        usage = { prompt_tokens = 27, completion_tokens = 101, total_tokens = 128,
+                            completion_tokens_details = { reasoning_tokens = 96 } } }
+                    callbacks.on_done(result)
+                    return "51", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.result.content, "51")
+                test.eq(table.concat(thinking_sent, "|"), "The user| asks.")
+                test.eq(response.metadata.thinking, "The user asks.")
+                test.is_nil(response.metadata.reasoning_details)
+                test.eq(response.tokens.thinking_tokens, 96)
+            end)
+
+            it("uses the complete streamed thinking when it also receives raw details", function()
+                local details = { { type = "reasoning.text", text = "Detail." } }
+                stream_with(recording_streamer(false), function(_, callbacks)
+                    local result = { content = "ok", finish_reason = "stop", reasoning_details = details,
+                        reasoning = "Before.Detail.After." }
+                    callbacks.on_done(result)
+                    return "ok", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.metadata.thinking, "Before.Detail.After.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("takes streamed thinking from reasoning_details when the stream returns them", function()
+                local details = { { type = "reasoning.text", text = "Detail." } }
+                stream_with(recording_streamer(false), function(_, callbacks)
+                    local result = { content = "ok", finish_reason = "stop", reasoning_details = details }
+                    callbacks.on_done(result)
+                    return "ok", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.metadata.thinking, "Detail.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
             it("marks a request error on a streaming call as not started", function()
                 generate_handler._client = {
                     request = function() return nil, { status_code = 429, message = "Too many requests" } end

@@ -29,6 +29,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
     local finish_reason = nil
     local final_usage = nil
     local reasoning_details = nil
+    local reasoning_text = nil
     local deferred: any = nil
 
     local _, stream_err, _ = generate_handler._client.process_stream(stream_response, {
@@ -74,6 +75,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
             finish_reason = result.finish_reason
             final_usage = result.usage
             reasoning_details = result.reasoning_details
+            reasoning_text = result.reasoning
         end
     })
 
@@ -95,10 +97,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
         metadata = stream_response.metadata or {}
     }
 
-    if reasoning_details then
-        response.metadata.thinking = generate_handler._mapper.extract_reasoning_text(reasoning_details)
-        response.metadata.reasoning_details = reasoning_details
-    end
+    generate_handler._mapper.map_thinking(response.metadata, reasoning_details, reasoning_text)
 
     return response
 end

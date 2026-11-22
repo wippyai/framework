@@ -3,6 +3,7 @@ local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
+local openai_mapper = require("openai_mapper")
 
 local stream_redactors = setmetatable({}, { __mode = "k" })
 
@@ -271,8 +272,9 @@ function openai_client.process_stream(stream_response, callbacks)
     local tool_calls_accumulator = {}
     local sent_tool_calls = {}
 
-    -- Track reasoning details for OpenRouter
+    -- Keep the original details and the text emitted to callers in wire order.
     local reasoning_accumulator = {}
+    local reasoning_chunks = {}
 
     -- Default callbacks
     callbacks = callbacks or {}
@@ -281,6 +283,11 @@ function openai_client.process_stream(stream_response, callbacks)
     local on_reasoning = callbacks.on_reasoning or function(...) end
     local on_error = callbacks.on_error or function(...) end
     local on_done = callbacks.on_done or function(...) end
+
+    local function emit_reasoning(text: string)
+        reasoning_chunks[#reasoning_chunks + 1] = text
+        on_reasoning(text)
+    end
 
     local leftover = ""
 
@@ -373,6 +380,9 @@ function openai_client.process_stream(stream_response, callbacks)
                 if next(reasoning_accumulator) then
                     result.reasoning_details = reasoning_accumulator
                 end
+                if #reasoning_chunks > 0 then
+                    result.reasoning = table.concat(reasoning_chunks)
+                end
 
                 on_done(result)
                 return full_content, nil, result
@@ -398,14 +408,22 @@ function openai_client.process_stream(stream_response, callbacks)
                     on_content(content_chunk)
                 end
 
-                -- Handle reasoning details delta (OpenRouter)
-                if choice.delta and choice.delta.reasoning_details then
-                    for _, reasoning_detail in ipairs(choice.delta.reasoning_details) do
-                        table.insert(reasoning_accumulator, reasoning_detail)
-                        if reasoning_detail.text then
-                            on_reasoning(reasoning_detail.text)
+                -- Prefer detail text within a delta, where `reasoning` can mirror it.
+                local details = choice.delta and choice.delta.reasoning_details
+                local has_detail_text = false
+                if type(details) == "table" then
+                    for _, detail in ipairs(details) do
+                        reasoning_accumulator[#reasoning_accumulator + 1] = detail
+                        local text = type(detail) == "table" and detail.text
+                        if type(text) == "string" and text ~= "" then
+                            has_detail_text = true
+                            emit_reasoning(text)
                         end
                     end
+                end
+                if not has_detail_text then
+                    local text = openai_mapper.reasoning_text(choice.delta)
+                    if text then emit_reasoning(text) end
                 end
 
                 -- Handle tool call deltas
@@ -526,6 +544,9 @@ function openai_client.process_stream(stream_response, callbacks)
     -- Add reasoning details if accumulated
     if next(reasoning_accumulator) then
         result.reasoning_details = reasoning_accumulator
+    end
+    if #reasoning_chunks > 0 then
+        result.reasoning = table.concat(reasoning_chunks)
     end
 
     on_done(result)
