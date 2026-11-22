@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.25](https://github.com/wippyai/framework/compare/llm-v0.5.24...llm-v0.5.25) (2026-11-22)
+
+
+### Bug Fixes
+
+* **llm:** map OpenAI-compatible reasoning and reasoning_content to thinking ([#295](https://github.com/wippyai/framework/issues/295)) ([19660cb](https://github.com/wippyai/framework/commit/19660cbccb29ab2f230ec52595df45833f4897b7))
+
 ## [0.5.24](https://github.com/wippyai/framework/compare/llm-v0.5.23...llm-v0.5.24) (2026-11-22)
 
 
