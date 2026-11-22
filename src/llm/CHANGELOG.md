@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.27](https://github.com/wippyai/framework/compare/llm-v0.5.26...llm-v0.5.27) (2026-11-22)
+
+
+### Bug Fixes
+
+* **llm:** preserve the default wire format when context clears text_content ([#299](https://github.com/wippyai/framework/issues/299)) ([b487252](https://github.com/wippyai/framework/commit/b487252c3f680b6e1a5703ccc24f50fdd9af8fe0))
+
 ## [0.5.26](https://github.com/wippyai/framework/compare/llm-v0.5.25...llm-v0.5.26) (2026-11-22)
 
 
