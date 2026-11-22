@@ -5,6 +5,7 @@ local time = require("time")
 local registry = require("registry")
 
 local NS = "wippy.usage:"
+local SQLITE_TIMESTAMP = "CAST(strftime('%%s', %s) AS INTEGER)"
 
 local token_usage_repo = {}
 
@@ -70,12 +71,12 @@ local function insert_with_cache_writes(db, usage_query, usage_id, cache_writes)
     return commit_err
 end
 
-local function cache_writes_by(db, group_column, where_sql, params)
+local function cache_writes_by(db, group_column, timestamp, params)
     local grouped = group_column ~= nil
     local query = "SELECT " .. (grouped and (group_column .. " AS grp, ") or "")
         .. "w.ttl AS ttl, SUM(w.tokens) AS tokens"
         .. " FROM token_usage_cache_writes w JOIN token_usage u ON u.usage_id = w.usage_id"
-        .. " WHERE " .. where_sql
+        .. " WHERE " .. timestamp .. " >= $1 AND " .. timestamp .. " <= $2"
         .. " GROUP BY " .. (grouped and (group_column .. ", ") or "") .. "w.ttl"
     local rows, err = db:query(query, params)
     if err then
@@ -90,9 +91,19 @@ local function cache_writes_by(db, group_column, where_sql, params)
     return by_group
 end
 
-local function report_bounds(start_time, end_time)
-    return { time.unix(start_time, 0):utc():format(time.RFC3339),
-        time.unix(end_time, 0):utc():format(time.RFC3339) }
+local function time_bound(sqlite, seconds)
+    if sqlite then
+        local whole_seconds = math.modf(seconds)
+        return whole_seconds
+    end
+    return time.unix(seconds, 0):utc():format(time.RFC3339)
+end
+
+local function report_range(db, start_time, end_time)
+    local sqlite = tostring(db:type()) == "sqlite"
+    local timestamp = sqlite and SQLITE_TIMESTAMP:format("timestamp") or "timestamp"
+    local joined_timestamp = sqlite and SQLITE_TIMESTAMP:format("u.timestamp") or "u.timestamp"
+    return timestamp, joined_timestamp, { time_bound(sqlite, start_time), time_bound(sqlite, end_time) }
 end
 
 -- Create a new token usage record
@@ -216,8 +227,7 @@ function token_usage_repo.get_summary(start_time, end_time)
         return nil, err
     end
 
-    local from_timestamp = time.unix(start_time, 0):utc():format(time.RFC3339)
-    local to_timestamp = time.unix(end_time, 0):utc():format(time.RFC3339)
+    local timestamp, joined_timestamp, bounds = report_range(db, start_time, end_time)
 
     -- Build the query to get overall summary with timestamp filtering
     local query = sql.builder.select(
@@ -229,15 +239,14 @@ function token_usage_repo.get_summary(start_time, end_time)
             "COUNT(*) as request_count"
         )
         :from("token_usage")
-        :where(sql.builder.expr("timestamp >= ? AND timestamp <= ?", from_timestamp, to_timestamp))
+        :where(sql.builder.expr(timestamp .. " >= ? AND " .. timestamp .. " <= ?", bounds[1], bounds[2]))
 
     -- Execute the query
     local executor = query:run_with(db)
     local results, err = executor:query()
     local by_ttl, breakdown_err = nil, nil
     if not err then
-        by_ttl, breakdown_err = cache_writes_by(db, nil, "u.timestamp >= $1 AND u.timestamp <= $2",
-            { from_timestamp, to_timestamp })
+        by_ttl, breakdown_err = cache_writes_by(db, nil, joined_timestamp, bounds)
     end
 
     db:release()
@@ -406,8 +415,8 @@ WITH RECURSIVE
 time_buckets(bucket_start, bucket_end) AS (
     -- Base case: first time bucket
     SELECT
-        CAST(strftime('%s', ?1) AS INTEGER) as bucket_start,
-        CAST(strftime('%s', ?1) AS INTEGER) + ?2 as bucket_end
+        ?1 as bucket_start,
+        ?1 + ?2 as bucket_end
     UNION ALL
     -- Recursive case: generate subsequent time buckets
     SELECT
@@ -415,7 +424,7 @@ time_buckets(bucket_start, bucket_end) AS (
         bucket_end + ?2
     FROM time_buckets
     -- This should terminate when we reach the end date
-    WHERE bucket_end <= CAST(strftime('%s', ?3) AS INTEGER)
+    WHERE bucket_end <= ?3
 )]]
         query_sql = series_sql .. [[
 SELECT
@@ -453,7 +462,7 @@ JOIN
 GROUP BY
     b.bucket_start, w.ttl
 ]]
-        params = { time.unix(start_time, 0):utc():format(time.RFC3339), interval_seconds, time.unix(end_time, 0):utc():format(time.RFC3339) }
+        params = { time_bound(true, start_time), interval_seconds, time_bound(true, end_time) }
 
     end
 
@@ -510,6 +519,7 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
     end
 
 
+    local timestamp, joined_timestamp, bounds = report_range(db, start_time, end_time)
     local query
     if tostring(db:type()) == "postgres" then
         query = sql.builder.select(
@@ -522,10 +532,7 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
                 "COUNT(*) as request_count"
             )
             :from("token_usage")
-            :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                time.unix(start_time, 0):utc():format(time.RFC3339),
-                time.unix(end_time, 0):utc():format(time.RFC3339)
-            ))
+            :where(sql.builder.expr(timestamp .. " >= ? AND " .. timestamp .. " <= ?", bounds[1], bounds[2]))
             :group_by("model_id")
             :order_by("(SUM(prompt_tokens), SUM(completion_tokens), SUM(thinking_tokens)) DESC")
     else
@@ -539,10 +546,7 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
                 "COUNT(*) as request_count"
             )
             :from("token_usage")
-            :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                time.unix(start_time, 0):utc():format(time.RFC3339),
-                time.unix(end_time, 0):utc():format(time.RFC3339)
-            ))
+            :where(sql.builder.expr(timestamp .. " >= ? AND " .. timestamp .. " <= ?", bounds[1], bounds[2]))
             :group_by("model_id")
             :order_by("(prompt_tokens + completion_tokens + thinking_tokens) DESC")
     end
@@ -552,8 +556,7 @@ function token_usage_repo.get_usage_by_model(start_time, end_time)
     local results, err = executor:query()
     local by_model, breakdown_err = nil, nil
     if not err then
-        by_model, breakdown_err = cache_writes_by(db, "u.model_id", "u.timestamp >= $1 AND u.timestamp <= $2",
-            report_bounds(start_time, end_time))
+        by_model, breakdown_err = cache_writes_by(db, "u.model_id", joined_timestamp, bounds)
     end
 
     db:release()
@@ -593,6 +596,7 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
         return nil, err
     end
 
+    local timestamp, joined_timestamp, bounds = report_range(db, start_time, end_time)
     local query
     if tostring(db:type()) == "postgres" then
         query = sql.builder.select(
@@ -605,10 +609,7 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
                 "COUNT(*) as request_count"
             )
             :from("token_usage")
-            :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                time.unix(start_time, 0):utc():format(time.RFC3339),
-                time.unix(end_time, 0):utc():format(time.RFC3339)
-            ))
+            :where(sql.builder.expr(timestamp .. " >= ? AND " .. timestamp .. " <= ?", bounds[1], bounds[2]))
             :group_by("user_id")
             :order_by("(SUM(prompt_tokens) + SUM(completion_tokens) + SUM(thinking_tokens)) DESC")
     else
@@ -622,10 +623,7 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
                 "COUNT(*) as request_count"
             )
             :from("token_usage")
-            :where(sql.builder.expr("timestamp >= $1 AND timestamp <= $2",
-                time.unix(start_time, 0):utc():format(time.RFC3339),
-                time.unix(end_time, 0):utc():format(time.RFC3339)
-            ))
+            :where(sql.builder.expr(timestamp .. " >= ? AND " .. timestamp .. " <= ?", bounds[1], bounds[2]))
             :group_by("user_id")
             :order_by("(prompt_tokens + completion_tokens + thinking_tokens) DESC")
     end
@@ -634,8 +632,7 @@ function token_usage_repo.get_usage_by_user(start_time, end_time)
     local results, err = executor:query()
     local by_user, breakdown_err = nil, nil
     if not err then
-        by_user, breakdown_err = cache_writes_by(db, "u.user_id", "u.timestamp >= $1 AND u.timestamp <= $2",
-            report_bounds(start_time, end_time))
+        by_user, breakdown_err = cache_writes_by(db, "u.user_id", joined_timestamp, bounds)
     end
 
     db:release()
@@ -668,10 +665,15 @@ local function placeholders(count)
     return table.concat(list, ", ")
 end
 
-local function delete_batch(tx, cutoff, limit)
-    local rows, err = tx:query(
-        "SELECT usage_id FROM token_usage WHERE timestamp <= $1 ORDER BY timestamp, usage_id LIMIT $2",
-        { cutoff, limit + 1 })
+local function delete_batch(tx, sqlite, cutoff, limit)
+    local selection = "SELECT usage_id FROM token_usage WHERE timestamp <= $1 ORDER BY timestamp LIMIT $2"
+    if sqlite then
+        -- Require the new index so a direct call during upgrade cannot scan the history.
+        local timestamp = SQLITE_TIMESTAMP:format("timestamp")
+        selection = "SELECT usage_id FROM token_usage INDEXED BY idx_token_usage_timestamp_epoch"
+            .. " WHERE " .. timestamp .. " <= $1 ORDER BY " .. timestamp .. " LIMIT $2"
+    end
+    local rows, err = tx:query(selection, { time_bound(sqlite, cutoff), limit + 1 })
     if err then
         return nil, nil, err
     end
@@ -704,7 +706,9 @@ local function oldest_timestamp(db)
     if tostring(db:type()) == "postgres" then
         query = "SELECT EXTRACT(EPOCH FROM timestamp)::bigint AS stamp FROM token_usage ORDER BY timestamp LIMIT 1"
     else
-        query = "SELECT CAST(strftime('%s', timestamp) AS INTEGER) AS stamp FROM token_usage ORDER BY timestamp LIMIT 1"
+        local timestamp = SQLITE_TIMESTAMP:format("timestamp")
+        query = "SELECT " .. timestamp .. " AS stamp FROM token_usage INDEXED BY idx_token_usage_timestamp_epoch"
+            .. " WHERE " .. timestamp .. " IS NOT NULL ORDER BY stamp LIMIT 1"
     end
     local rows, err = db:query(query)
     if err then
@@ -742,7 +746,7 @@ function token_usage_repo.prune(cutoff, limit)
         db:release()
         return nil, "Failed to prune token usage: " .. tostring(begin_err)
     end
-    local deleted, needs_continue, delete_err = delete_batch(tx, time.unix(cutoff, 0):utc():format(time.RFC3339), limit)
+    local deleted, needs_continue, delete_err = delete_batch(tx, tostring(db:type()) == "sqlite", cutoff, limit)
     if delete_err then
         tx:rollback()
         db:release()

@@ -119,6 +119,47 @@ local function define_tests()
             test.eq(count("token_usage", newer), 1)
         end)
 
+        it("orders historical SQLite timestamps by instant across the cutoff", function()
+            local db = open_db()
+            local sqlite = tostring(db:type()) == "sqlite"
+            db:release()
+            if not sqlite then return end
+
+            local older = record_at(base - 60, { ["5m"] = 10 })
+            local newer = record_at(base + 60, { ["5m"] = 20 })
+            local boundary = record_at(base)
+            db = open_db()
+            local _, older_err = db:execute("UPDATE token_usage SET timestamp = $1 WHERE usage_id = $2",
+                { "2001-01-01T08:59:00+09:00", older })
+            local _, newer_err = db:execute("UPDATE token_usage SET timestamp = $1 WHERE usage_id = $2",
+                { "2000-12-31T19:01:00-05:00", newer })
+            db:release()
+            test.is_nil(older_err)
+            test.is_nil(newer_err)
+
+            local summary, summary_err = token_usage_repo.get_summary(base - 60, base)
+            test.is_nil(summary_err)
+            test.eq(summary.request_count, 2)
+            test.eq(summary.cache_write_by_ttl["5m"], 10)
+
+            local progress, err = token_usage_repo.prune(base, 1)
+            test.is_nil(err)
+            test.eq(progress.deleted, 1)
+            test.eq(progress.needs_continue, true)
+            test.eq(progress.oldest, base)
+            test.eq(count("token_usage", older), 0)
+            test.eq(count("token_usage_cache_writes", older), 0)
+            test.eq(count("token_usage", boundary), 1)
+
+            progress, err = token_usage_repo.prune(base, 1)
+            test.is_nil(err)
+            test.eq(progress.deleted, 1)
+            test.eq(progress.needs_continue, false)
+            test.eq(progress.oldest, base + 60)
+            test.eq(count("token_usage", newer), 1)
+            test.eq(count("token_usage_cache_writes", newer), 1)
+        end)
+
         it("deletes the cache writes of pruned records", function()
             local pruned = record_at(base - DAY, { ["5m"] = 10, ["1h"] = 20 })
             local kept = record_at(base + DAY, { ["5m"] = 10, ["1h"] = 20 })

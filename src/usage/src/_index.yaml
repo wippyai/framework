@@ -20,6 +20,8 @@ entries:
         path: ".meta.target_db"
       - entry: wippy.usage.migrations:02_create_token_usage_cache_writes
         path: ".meta.target_db"
+      - entry: wippy.usage.migrations:03_index_token_usage_time
+        path: ".meta.target_db"
       - entry: wippy.usage:retention_db_access
         path: ".policy.resources"
 
