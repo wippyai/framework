@@ -2,13 +2,15 @@ local openai_client = require("openai_client")
 local openai_mapper = require("openai_mapper")
 local output = require("output")
 local wire_request = require("wire_request")
+local ctx = require("ctx")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
 local generate_handler = {
     _client = openai_client,
     _mapper = openai_mapper,
-    _output = output
+    _output = output,
+    _ctx = ctx
 }
 
 local function handle_streaming(stream_response, context, stream_config, err)
@@ -121,8 +123,15 @@ function generate_handler.handler(contract_args)
         err = err
     }
 
+    local declared_form = generate_handler._ctx.get("text_content")
+    local text_content, text_content_err = generate_handler._mapper.text_content(declared_form)
+    if text_content_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(text_content_err):build()
+    end
+
     local messages = generate_handler._mapper.map_messages(contract_args.messages, {
-        model = contract_args.model
+        model = contract_args.model,
+        text_content = text_content
     })
 
     local openai_payload = {

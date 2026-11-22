@@ -669,6 +669,81 @@ local function define_tests()
             end)
         end)
 
+        describe("String text content", function()
+            it("sends text-only system, developer and user content as one string", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "system", content = "Be brief" },
+                    { role = "developer", content = {{ type = "text", text = "Use Lua" }} },
+                    { role = "user", content = {
+                        { type = "text", text = "Hello" },
+                        { type = "text", text = { text = " world" } }
+                    } }
+                }, { text_content = "string" })
+
+                test.eq(#messages, 3)
+                test.eq(messages[1].role, "system")
+                test.eq(messages[1].content, "Be brief")
+                test.eq(messages[2].role, "system")
+                test.eq(messages[2].content, "Use Lua")
+                test.eq(messages[3].content, "Hello world")
+            end)
+
+            it("keeps content parts for a message that carries an image", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = {
+                        { type = "text", text = "Describe" },
+                        { type = "image", source = { type = "base64", mime_type = "image/png", data = "AAA" } }
+                    } }
+                }, { text_content = "string" })
+
+                local parts = messages[1].content :: any
+                test.eq(type(parts), "table")
+                test.eq(parts[1].text, "Describe")
+                test.eq(parts[2].type, "image_url")
+                test.eq(parts[2].image_url.url, "data:image/png;base64,AAA")
+            end)
+
+            it("joins every text part, an empty one included", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "system", content = "Rules" },
+                    { role = "user", content = {{ type = "text", text = "" }, { type = "text", text = "Hi" }} }
+                }, { text_content = "string" })
+
+                test.eq(messages[2].content, "Hi")
+            end)
+
+            it("sends content parts when text_content is parts", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = "Hello" }
+                }, { text_content = "parts" })
+
+                local parts = messages[1].content :: any
+                test.eq(parts[1].type, "text")
+                test.eq(parts[1].text, "Hello")
+            end)
+
+            it("resolves the text_content a driver context declares", function()
+                test.eq(openai_mapper.text_content(nil), "parts")
+                test.eq(openai_mapper.text_content("parts"), "parts")
+                test.eq(openai_mapper.text_content("string"), "string")
+
+                for _, invalid in ipairs({ "plain", false }) do
+                    local form, err = openai_mapper.text_content(invalid)
+                    test.is_nil(form)
+                    test.contains(tostring(err), "text_content must be parts or string")
+                end
+            end)
+
+            it("places no cache breakpoint on string content", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = "Cached prefix" },
+                    { role = "cache_marker" }
+                }, { model = "anthropic/claude-sonnet", text_content = "string" })
+
+                test.eq(messages[1].content, "Cached prefix")
+            end)
+        end)
+
         describe("Tool Mapping", function()
             it("should map contract tools to OpenAI format", function()
                 local contract_tools = {
