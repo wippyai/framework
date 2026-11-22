@@ -1,5 +1,6 @@
 local bedrock_client = require("bedrock_client")
 local json = require("json")
+local json_null = (json :: any).null
 local base64 = require("base64")
 
 local function define_tests()
@@ -246,6 +247,27 @@ local function define_tests()
                 return content, err, result, seen, source
             end
 
+            it("keeps null members of a streamed toolUse input when supported by the runtime", function()
+                local events = {
+                    event("messageStart", { role = "assistant" }),
+                    event("contentBlockStart", {
+                        contentBlockIndex = 0,
+                        start = { toolUse = { toolUseId = "call_1", name = "lookup" } }
+                    }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = '{"q":null,' } } }),
+                    event("contentBlockDelta", { contentBlockIndex = 0, delta = { toolUse = { input = '"r":1}' } } }),
+                    event("contentBlockStop", { contentBlockIndex = 0 }),
+                    event("messageStop", { stopReason = "tool_use" }),
+                }
+
+                local _, err, result = run(events)
+
+                test.is_nil(err)
+                test.eq(#result.tool_calls, 1)
+                test.eq(result.tool_calls[1].arguments.q, json_null)
+                test.eq(result.tool_calls[1].arguments.r, 1)
+            end)
+
             it("keeps streamed reasoning, redacted reasoning and tool calls in response order", function()
                 local function reasoning(index, rc)
                     return event("contentBlockDelta", { contentBlockIndex = index, delta = { reasoningContent = rc } })
@@ -486,6 +508,30 @@ local function define_tests()
                 test.eq(#seen.errors, 1)
                 test.eq(#seen.content_reads, 1)
                 test.eq(seen.content_reads[1].chunk, "prefix")
+            end)
+        end)
+
+        describe("Tool JSON fidelity", function()
+            it("keeps null members of a toolUse input when supported by the runtime", function()
+                use_context({})
+                bedrock_client._http_client = {
+                    post = function()
+                        return {
+                            status_code = 200,
+                            headers = {},
+                            body = '{"output":{"message":{"role":"assistant","content":[{"text":"Calling"},'
+                                .. '{"toolUse":{"toolUseId":"call_1","name":"lookup","input":{"q":null,"r":1}}}]}},'
+                                .. '"stopReason":"tool_use"}'
+                        }
+                    end
+                }
+
+                local response, err = bedrock_client.converse("test-model", { messages = {} })
+
+                test.is_nil(err)
+                local input = response.output.message.content[2].toolUse.input
+                test.eq(input.q, json_null)
+                test.eq(input.r, 1)
             end)
         end)
     end)

@@ -117,6 +117,7 @@ entries:
       output: wippy.llm:output
       transport: wippy.llm.util:transport
       google_mapper: wippy.llm.google:mapper
+      tool_arguments: wippy.llm.util:tool_arguments
 
   # wippy.llm.google:config
   - name: config
@@ -166,6 +167,7 @@ entries:
       output: wippy.llm:output
       route: wippy.llm.util:route
       prompt: wippy.llm:prompt
+      tool_arguments: wippy.llm.util:tool_arguments
 
   # wippy.llm.google:status
   - name: status

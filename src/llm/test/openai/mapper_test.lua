@@ -1384,6 +1384,35 @@ local function define_tests()
                 test.eq(result.finish_reason, "tool_call")
             end)
         end)
+
+        describe("Tool JSON fidelity", function()
+            local json_extensions = json :: any
+            local raw = json_extensions.raw
+            local it_with_raw = raw and it or it_skip
+
+            it("keeps null tool call arguments when supported by the runtime", function()
+                local calls = openai_mapper.map_tool_calls({
+                    { type = "function_call", call_id = "c1", name = "lookup", arguments = '{"items":[1,null],"q":null,"r":1}' }
+                })
+                local args = calls[1].arguments
+                test.eq(args.q, json_extensions.null)
+                test.eq(args.items[2], json_extensions.null)
+                test.is_nil(calls[1].raw_arguments)
+                test.is_nil(calls[1].arguments_error)
+                test.eq(args.r, 1)
+                local expected = json_extensions.null and '{"items":[1,null],"q":null,"r":1}' or '{"items":[1],"r":1}'
+                test.eq(json.encode(args), expected)
+            end)
+
+            it_with_raw("sends a json.raw tool schema with its property order", function()
+                local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
+                local schema, raw_err = raw(text)
+                test.is_nil(raw_err)
+                local tools = openai_mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } })
+                test.eq(json.encode(tools[1].parameters), text)
+                test.is_true(json.encode(tools):find('"parameters":' .. text, 1, true) ~= nil)
+            end)
+        end)
     end)
 end
 

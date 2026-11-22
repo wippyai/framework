@@ -1,4 +1,5 @@
 local json = require("json")
+local tool_arguments = require("tool_arguments")
 local http_client = require("http_client")
 local output = require("output")
 local transport = require("transport")
@@ -40,6 +41,31 @@ type StreamCallbacks = {
 local client = {
     _http_client = http_client
 }
+
+-- functionCall args are JSON the model wrote, so a null member in them is an
+-- argument the model set. The response decode drops null members; args are
+-- taken from a decode of the same body that keeps them as json.null.
+local function keep_function_call_nulls(parsed: table, body: string): string?
+    if not tool_arguments.preserves_nulls or type(parsed.candidates) ~= "table" then return nil end
+    local with_nulls: any = nil
+    for c, candidate in ipairs(parsed.candidates) do
+        local parts = type(candidate) == "table" and type(candidate.content) == "table"
+            and candidate.content.parts or nil
+        if type(parts) == "table" then
+            for p, part in ipairs(parts) do
+                if type(part) == "table" and type(part.functionCall) == "table" then
+                    if not with_nulls then
+                        local decoded, decode_err = tool_arguments.decode_json(body)
+                        if decode_err then return tostring(decode_err) end
+                        with_nulls = decoded
+                    end
+                    part.functionCall.args = with_nulls.candidates[c].content.parts[p].functionCall.args
+                end
+            end
+        end
+    end
+    return nil
+end
 
 local function extract_response_metadata(response_body: any)
     if not response_body then
@@ -113,8 +139,9 @@ function client.process_stream(stream_response: StreamInput, callbacks: StreamCa
         data_lines = {}
         if data_line == "[DONE]" then done = true; return nil end
         local parsed, parse_err = json.decode(data_line)
-        if parse_err or type(parsed) ~= "table" then
-            local message = "Invalid Google stream event: " .. tostring(parse_err or "expected object")
+        local args_err = not parse_err and type(parsed) == "table" and keep_function_call_nulls(parsed, data_line)
+        if parse_err or type(parsed) ~= "table" or args_err then
+            local message = "Invalid Google stream event: " .. tostring(parse_err or args_err or "expected object")
             return redact_error and redact_error(message) or message
         end
 
@@ -341,11 +368,13 @@ function client.request(method, url, http_options, retry: transport.Retry?, dead
         return handle_stream_response(response, http_options, method)
     end
 
-    local parsed, parse_err = json.decode(response.body or "")
-    if parse_err then
+    local body = response.body or ""
+    local parsed, parse_err = json.decode(body)
+    local args_err = not parse_err and type(parsed) == "table" and keep_function_call_nulls(parsed, body)
+    if parse_err or args_err then
         local parse_error = {
             status_code = response.status_code,
-            message = "Failed to parse Google response: " .. parse_err,
+            message = "Failed to parse Google response: " .. tostring(parse_err or args_err),
             metadata = {}
         }
         return nil, redact_request_error(parse_error, http_options, method)
