@@ -874,12 +874,14 @@ local function define_tests()
                 }
             }
 
-            it("sends content parts by default", function()
-                local sent = capture({ api_key = "k" })
-                local response = generate_handler.handler(args)
-                test.is_true(response.success)
-                test.eq(sent().messages[1].content[1].text, "Be brief")
-                test.eq(sent().messages[2].content[1].text, "Hi")
+            it("sends content parts when text_content is absent or explicitly cleared", function()
+                for _, context in ipairs({ { api_key = "k" }, { api_key = "k", text_content = false } }) do
+                    local sent = capture(context)
+                    local response = generate_handler.handler(args)
+                    test.is_true(response.success)
+                    test.eq(sent().messages[1].content[1].text, "Be brief")
+                    test.eq(sent().messages[2].content[1].text, "Hi")
+                end
             end)
 
             it("sends string content when the context declares text_content string", function()
@@ -896,7 +898,7 @@ local function define_tests()
             end)
 
             it("refuses a request whose context declares an unknown text_content", function()
-                for _, invalid in ipairs({ "plain", false }) do
+                for _, invalid in ipairs({ "plain", true, 29 }) do
                     local sent = capture({ api_key = "k", text_content = invalid })
                     local response, err = generate_handler.handler(args)
                     test.is_nil(response)
