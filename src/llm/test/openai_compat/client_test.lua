@@ -713,9 +713,31 @@ local function define_tests()
 
                 test.is_nil(err)
                 test.eq(table.concat(reasoning_chunks, "|"), "Step.")
-                test.eq(#result.reasoning_details, 1)
-                test.eq(result.reasoning_details[1].text, "Step.")
-                test.is_nil(result.reasoning)
+                local details = assert(result.reasoning_details) :: any
+                test.eq(#details, 1)
+                test.eq(details[1].text, "Step.")
+                test.eq(result.reasoning, "Step.")
+            end)
+
+            it("combines reasoning and detail text in stream order at EOF", function()
+                local reasoning_chunks = {}
+                local _, err, result = openai_client.process_stream(stream_of({
+                    'data: {"choices":[{"delta":{"reasoning":"First.","reasoning_details":[]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"reasoning":"Mirror.","reasoning_details":[{"text":"Second."}]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"reasoning_content":"Third.","reasoning_details":[{"text":""},{"type":"reasoning.encrypted"}]}}]}\n\n',
+                    'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n'
+                }), {
+                    on_reasoning = function(chunk) table.insert(reasoning_chunks, chunk) end
+                })
+
+                test.is_nil(err)
+                test.eq(table.concat(reasoning_chunks, "|"), "First.|Second.|Third.")
+                test.eq(result.reasoning, "First.Second.Third.")
+                local details = assert(result.reasoning_details) :: any
+                test.eq(#details, 3)
+                test.eq(details[1].text, "Second.")
+                test.eq(details[2].text, "")
+                test.eq(details[3].type, "reasoning.encrypted")
             end)
 
             it("returns no reasoning for a stream without it", function()

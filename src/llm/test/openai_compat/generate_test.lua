@@ -893,12 +893,14 @@ local function define_tests()
             end)
 
             it("refuses a request whose context declares an unknown text_content", function()
-                local sent = capture({ api_key = "k", text_content = "plain" })
-                local response, err = generate_handler.handler(args)
-                test.is_nil(response)
-                test.eq(err:kind(), "Invalid")
-                test.contains(tostring(err:message()), "text_content")
-                test.is_nil(sent())
+                for _, invalid in ipairs({ "plain", false }) do
+                    local sent = capture({ api_key = "k", text_content = invalid })
+                    local response, err = generate_handler.handler(args)
+                    test.is_nil(response)
+                    test.eq(err:kind(), "Invalid")
+                    test.contains(tostring(err:message()), "text_content")
+                    test.is_nil(sent())
+                end
             end)
         end)
 
@@ -962,6 +964,20 @@ local function define_tests()
                 test.eq(response.metadata.thinking, "The user asks.")
                 test.is_nil(response.metadata.reasoning_details)
                 test.eq(response.tokens.thinking_tokens, 96)
+            end)
+
+            it("uses the complete streamed thinking when it also receives raw details", function()
+                local details = { { type = "reasoning.text", text = "Detail." } }
+                stream_with(recording_streamer(false), function(_, callbacks)
+                    local result = { content = "ok", finish_reason = "stop", reasoning_details = details,
+                        reasoning = "Before.Detail.After." }
+                    callbacks.on_done(result)
+                    return "ok", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.metadata.thinking, "Before.Detail.After.")
+                test.eq(response.metadata.reasoning_details, details)
             end)
 
             it("takes streamed thinking from reasoning_details when the stream returns them", function()

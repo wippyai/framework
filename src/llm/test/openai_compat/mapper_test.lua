@@ -724,14 +724,15 @@ local function define_tests()
 
             it("resolves the text_content a driver context declares", function()
                 test.eq(openai_mapper.text_content({}), "parts")
-                test.eq(openai_mapper.text_content({ text_content = false }), "parts")
                 test.eq(openai_mapper.text_content({ text_content = "parts" }), "parts")
                 test.eq(openai_mapper.text_content({ text_content = "string" }), "string")
 
-                local form, err = openai_mapper.text_content({ text_content = "plain" })
-                test.is_nil(form)
-                test.contains(tostring(err), "text_content must be parts or string")
-                test.contains(tostring(err), "plain")
+                for _, invalid in ipairs({ "plain", false }) do
+                    local form, err = openai_mapper.text_content({ text_content = invalid })
+                    test.is_nil(form)
+                    test.contains(tostring(err), "text_content must be parts or string")
+                    test.contains(tostring(err), tostring(invalid))
+                end
             end)
 
             it("places no cache breakpoint on string content", function()
@@ -1296,6 +1297,18 @@ local function define_tests()
 
                 test.eq(response.metadata.thinking, "First. Second.")
                 test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("uses plain reasoning when the details have no text", function()
+                for _, details in ipairs({ {}, { { type = "reasoning.encrypted" }, { text = "" } } }) do
+                    local response = openai_mapper.map_success_response({
+                        choices = { { message = { content = "done", reasoning = "Plain.",
+                            reasoning_details = details }, finish_reason = "stop" } }
+                    }, { tool_name_map = {} }) :: any
+
+                    test.eq(response.metadata.thinking, "Plain.")
+                    test.eq(response.metadata.reasoning_details, details)
+                end
             end)
 
             it("keeps top-level reasoning_details", function()
