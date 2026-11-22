@@ -127,6 +127,14 @@ local function define_tests()
                 test.contains(err, "budget")
             end)
 
+            it("rejects a declared deferred_tools = true, which OpenAI cannot honor", function()
+                local _, err = openai_mapper.map_options({}, { deferred_tools = true })
+                test.contains(err, "OpenAI")
+                test.contains(err, "deferred_tools = true")
+                local _, accepted = openai_mapper.map_options({}, { deferred_tools = false })
+                test.is_nil(accepted)
+            end)
+
             it("rejects a declared thinking = always, naming the supported values", function()
                 local _, err = openai_mapper.map_options({}, { thinking = "always" })
                 test.contains(err, "OpenAI does not support thinking = always")
@@ -664,6 +672,18 @@ local function define_tests()
                     }
                 }, { strict_default = true })
                 test.eq(tools[1].strict, true)
+            end)
+
+            it("should send a tool declared without a description", function()
+                local tools, tool_map = openai_mapper.map_tools({
+                    { name = "ping", schema = { type = "object", properties = {} } }
+                })
+
+                test.eq(#tools, 1)
+                test.eq(tools[1].name, "ping")
+                test.is_nil(tools[1].description)
+                test.eq(tools[1].parameters.type, "object")
+                test.not_nil(tool_map["ping"])
             end)
 
             it("should handle empty tools array", function()

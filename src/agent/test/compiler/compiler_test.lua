@@ -397,6 +397,17 @@ local function define_tests()
                 },
                 build_func_id = nil
             },
+            sharing_trait = {
+                id = "sharing_trait",
+                name = "Sharing Trait",
+                description = "A trait that brings a tool another trait also brings",
+                prompt = "",
+                tools = {
+                    { id = "static:tool" }
+                },
+                context = {},
+                build_func_id = nil
+            },
             dynamic_trait = {
                 id = "dynamic_trait",
                 name = "Dynamic Trait",
@@ -1185,6 +1196,186 @@ local function define_tests()
                     test.is_nil(compiled_spec)
                     test.contains(tostring(err), "prompt_cache")
                 end
+            end)
+
+            it("accepts the trait loading modes and rejects any other value at compile time", function()
+                local function compile_with(agent_options, traits)
+                    return compiler.compile({
+                        id = "test:trait_loading",
+                        name = "Trait Loading Agent",
+                        description = "Declares how loaded traits are rendered",
+                        prompt = "You load capabilities on demand.",
+                        tools = {},
+                        traits = traits or {},
+                        agent_options = agent_options
+                    })
+                end
+
+                for _, mode in ipairs({ "append", "rebuild" }) do
+                    local compiled_spec, err = compile_with({ trait_loading = mode })
+                    test.is_nil(err)
+                    test.eq(compiled_spec.agent_options.trait_loading, mode)
+                end
+                local unset = assert(compile_with(nil))
+                test.is_nil(unset.agent_options.trait_loading)
+
+                local from_trait = assert(compile_with(nil,
+                    { { id = "tool_wrapper_trait", agent_options = { trait_loading = "append" } } }))
+                test.eq(from_trait.agent_options.trait_loading, "append")
+
+                for _, value in ipairs({ "late", true, 1 }) do
+                    local compiled_spec, err = compile_with({ trait_loading = value })
+                    test.is_nil(compiled_spec)
+                    test.contains(tostring(err), "test:trait_loading")
+                    test.contains(tostring(err), "trait_loading")
+                end
+            end)
+
+            describe("Trait provenance", function()
+            it("derives a stable trait key from the id and the attachment context", function()
+                test.eq(compiler.trait_key("static_trait"), "static_trait")
+                test.eq(compiler.trait_key({ id = "static_trait" }), "static_trait")
+                test.eq(compiler.trait_key({ id = "static_trait", context = {} }), "static_trait")
+                test.is_nil(compiler.trait_key({ context = { a = 1 } }))
+                test.is_nil(compiler.trait_key(""))
+                test.is_nil(compiler.trait_key(nil))
+
+                local first = compiler.trait_key({ id = "slot", context = { source = "one", omit = { "a", "b" } } })
+                local same_again = compiler.trait_key({ id = "slot", context = { omit = { "a", "b" }, source = "one" } })
+                local other = compiler.trait_key({ id = "slot", context = { source = "two", omit = { "a", "b" } } })
+                test.eq(first, same_again)
+                test.is_true(first ~= other)
+                test.is_true(first ~= "slot")
+                test.eq(string.sub(first, 1, 5), "slot#")
+                test.eq(#first, #"slot#" + 16)
+            end)
+
+            it("records the trait of every prompt part without changing the prompt", function()
+                local compiled_spec = assert(compiler.compile(spec_with_traits))
+                local dynamic_key = compiler.trait_key(spec_with_traits.traits[2])
+
+                test.eq(#compiled_spec.traits, 2)
+                test.eq(compiled_spec.traits[1], "static_trait")
+                test.eq(compiled_spec.traits[2], dynamic_key)
+
+                local parts = compiled_spec.prompt_parts
+                test.eq(parts[1].text, "You are a test agent with traits.")
+                test.is_nil(parts[1].trait)
+                test.eq(parts[2].text, "You have static capabilities.")
+                test.eq(parts[2].trait, "static_trait")
+                test.eq(parts[3].text, "You have dynamic capabilities.")
+                test.eq(parts[3].trait, dynamic_key)
+                test.eq(parts[4].trait, dynamic_key)
+                test.contains(parts[4].text, "Dynamic prompt for agent test:with_traits")
+                test.eq(#parts, 4)
+
+                local texts = {}
+                for index, part in ipairs(parts) do texts[index] = part.text end
+                test.eq(compiled_spec.prompt, table.concat(texts, "\n\n"))
+            end)
+
+            it("keeps the agent's own prompt as the only part when no trait adds one", function()
+                local compiled_spec = assert(compiler.compile(minimal_spec))
+                test.eq(#compiled_spec.prompt_parts, 1)
+                test.eq(compiled_spec.prompt_parts[1].text, "You are a test agent.")
+                test.eq(#compiled_spec.traits, 0)
+            end)
+
+            it("records the traits that bring each tool", function()
+                local dynamic_trait = { id = "dynamic_trait", context = { trait_instance_setting = "instance_value" } }
+                local compiled_spec = assert(compiler.compile({
+                    id = "test:tool_provenance",
+                    name = "Tool Provenance Agent",
+                    description = "Agent whose tools come from itself and from traits",
+                    prompt = "You are a test agent.",
+                    traits = { "static_trait", dynamic_trait },
+                    tools = { "regular:calculator" }
+                }))
+                test.eq(compiled_spec.tools.tool.registry_id, "static:tool")
+                test.eq(table.concat(compiled_spec.tools.tool.traits, ","), "static_trait")
+                test.eq(table.concat(compiled_spec.tools.generated_tool.traits, ","), compiler.trait_key(dynamic_trait))
+                test.eq(compiled_spec.tools.calculator.registry_id, "regular:calculator")
+                test.is_nil(compiled_spec.tools.calculator.traits)
+            end)
+
+            it("lists every trait behind a shared tool and none once the agent declares it", function()
+                local function compiled_with(tools)
+                    return assert(compiler.compile({
+                        id = "test:shared_tool",
+                        name = "Shared Tool Agent",
+                        description = "Agent whose traits bring the same tool",
+                        prompt = "You are a test agent.",
+                        traits = { "static_trait", "sharing_trait" },
+                        tools = tools
+                    }))
+                end
+                for _ = 1, 5 do
+                    test.eq(table.concat(compiled_with(nil).tools.tool.traits, ","), "sharing_trait,static_trait")
+                    test.is_nil(compiled_with({ "static:tool" }).tools.tool.traits)
+                end
+            end)
+
+            it("records only the attachment that built each context-specific tool", function()
+                local one = { id = "dynamic_trait", context = { source = "one" } }
+                local two = { id = "dynamic_trait", context = { source = "two" } }
+                compiler._funcs = { new = function()
+                    return { with_context = function(_, context)
+                        return { call = function()
+                            return { tools = { { id = "dynamic:" .. context.source } } }
+                        end }
+                    end }
+                end }
+                local compiled = assert(compiler.compile({
+                    id = "test:instance_tools", name = "Attachment tools", prompt = "Test", traits = { one, two },
+                }))
+                for _, attachment in ipairs({ one, two }) do
+                    local name = attachment.context.source
+                    local tool = compiled.tools[name]
+                    test.not_nil(tool)
+                    test.eq(tool.context.source, name)
+                    test.eq(table.concat(tool.traits, ","), compiler.trait_key(attachment))
+                end
+            end)
+
+            it("keys a trait by its resolved id however the list spells it", function()
+                test.eq(compiler.trait_key("Static Trait"), "static_trait")
+                test.eq(compiler.trait_key("unknown_trait"), "unknown_trait")
+                local by_name = assert(compiler.compile({
+                    id = "test:named_trait",
+                    name = "Named Trait Agent",
+                    description = "Agent that lists a trait by name",
+                    prompt = "You are a test agent.",
+                    traits = { "Static Trait" }
+                }))
+                test.eq(by_name.traits[1], "static_trait")
+                test.eq(table.concat(by_name.tools.tool.traits, ","), "static_trait")
+            end)
+
+            it("lists both attachments of a trait behind its tool", function()
+                local first = { id = "static_trait", context = { source = "one" } }
+                local second = { id = "static_trait", context = { source = "two" } }
+                local compiled_spec = assert(compiler.compile({
+                    id = "test:repeated_trait",
+                    name = "Repeated Trait Agent",
+                    description = "Agent that attaches one trait twice",
+                    prompt = "You are a test agent.",
+                    traits = { first, second }
+                }))
+                local expected = { compiler.trait_key(first), compiler.trait_key(second) }
+                table.sort(expected)
+                test.eq(table.concat(compiled_spec.tools.tool.traits, ","), table.concat(expected, ","))
+            end)
+
+            it("records the trait of delegates and prompt functions a trait brings", function()
+                local compiled_spec = assert(compiler.compile(spec_with_complex_traits, {
+                    delegates = { generate_tool_schemas = true }
+                }))
+                test.eq(table.concat(compiled_spec.tools.to_data_analyst.traits, ","), "delegate_generating_trait")
+                test.is_nil(compiled_spec.tools.to_static.traits)
+
+                local with_functions = assert(compiler.compile(spec_with_runtime_traits))
+                test.eq(with_functions.prompt_funcs[1].trait, "context_aware_trait")
+            end)
             end)
 
             it("should merge trait instance, agent, and wrapper context for tool wrappers", function()

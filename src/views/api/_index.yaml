@@ -30,6 +30,31 @@ entries:
       func: list_pages
       method: GET
       path: /pages/list
+    - name: get_page
+      kind: function.lua
+      meta:
+        comment: Reads the metadata needed to mount a page
+        router: api_router
+      source: file://get_page.lua
+      imports:
+        page_registry: wippy.views:page_registry
+      method: handler
+      modules:
+        - http
+      security:
+        actor:
+          id: wippy.views.api:get_page
+        policies:
+          - wippy.views:public_registry_runtime
+      pool:
+        size: 4
+    - name: get_page.endpoint
+      kind: http.endpoint
+      meta:
+        router: api_router
+      func: get_page
+      method: GET
+      path: /pages/{id}
     - name: list_components
       kind: function.lua
       meta:

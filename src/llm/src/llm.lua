@@ -115,6 +115,7 @@ type ProviderRef = {
     sampling: boolean?,
     forced_tool_choice: boolean?,
     structured_output: "native" | "tool" | nil,
+    deferred_tools: boolean?,
     options: table?,
     priority: number?
 }
@@ -130,6 +131,7 @@ type ModelCard = {
     max_tokens: number,
     output_tokens: number,
     pricing: table,
+    metadata: table,
     providers: {ProviderRef},
     dimensions: number?,
     fallback: {string}?,

@@ -22,6 +22,7 @@ type FunctionCallOptions = {
 
 type FunctionResultOptions = {
     is_error: boolean?,
+    metadata: table?,
 }
 
 type FunctionCall = {
@@ -439,6 +440,11 @@ function prompt.new(messages: {Message}?)
                 message.function_call_id = function_call_id
             end
             if options and options.is_error == true then message.is_error = true end
+            if options and type(options.metadata) == "table" then
+                local metadata = {}
+                for key, value in pairs(options.metadata) do metadata[key] = value end
+                message.metadata = metadata
+            end
 
             table.insert(self.messages, message)
         end
@@ -620,6 +626,7 @@ function prompt.new(messages: {Message}?)
                     role = msg.role,
                     name = msg.name,
                     is_error = msg.is_error,
+                    metadata = msg.metadata,
                     content = { prompt.text(type(cleaned_content) == "table" and json.encode(cleaned_content) or cleaned_content) }
                 }
 

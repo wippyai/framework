@@ -8,6 +8,80 @@ type Sender = {
 
 local function define_tests()
     describe("Provider Transport", function()
+        describe("credential redaction", function()
+            it("preserves native stream error kind and retryability while redacting diagnostics", function()
+                local err = errors.new({ message = "denied secret-value", kind = errors.UNAVAILABLE,
+                    retryable = true, details = { nested = { message = "secret-value" } } })
+                local redacted = transport.redact_error(err, { "secret-value" })
+                test.eq(redacted:message(), "denied [REDACTED]")
+                test.eq(redacted:kind(), err:kind())
+                test.eq(redacted:retryable(), err:retryable())
+                test.eq(redacted:details().nested.message, "[REDACTED]")
+                test.eq(err:message(), "denied secret-value")
+                local wrapped = errors.wrap(err, "request failed")
+                local redacted_wrapped = transport.redact_error(wrapped, { "secret-value" })
+                test.eq(tostring(redacted_wrapped), transport.redact_error(tostring(wrapped), { "secret-value" }))
+                test.eq(redacted_wrapped:message(), transport.redact_error(wrapped:message(), { "secret-value" }))
+                test.eq(type(redacted_wrapped), type(wrapped))
+            end)
+
+            it("matches literal credentials once with the longest overlap first", function()
+                local secrets = transport.request_secrets({
+                    Authorization = "bEaReR a.%+[fixture]long",
+                    ["x-custom"] = "a.%+[fixture]",
+                }, { ["X-Custom"] = "ignored-config-value" })
+                test.eq(transport.redact_error("a.%+[fixture]long / a.%+[fixture]", secrets),
+                    "[REDACTED] / [REDACTED]")
+                test.eq(transport.redact_error("bEaReR a.%+[fixture]long", secrets), "[REDACTED]")
+                test.eq(transport.redact_error("[REDACTED] secret", { "secret", "REDACTED" }),
+                    "[[REDACTED]] [REDACTED]")
+            end)
+
+            it("redacts decoded escaped strings and nested keys without mutating details", function()
+                local secret = 'quote"slash\\value'
+                local original = { message = secret, nested = { [secret] = { secret, 7, false } } }
+                local result = transport.redact_error(original, { secret })
+                test.eq(result.message, "[REDACTED]")
+                test.eq(result.nested["[REDACTED]"][1], "[REDACTED]")
+                test.eq(result.nested["[REDACTED]"][2], 7)
+                test.eq(result.nested["[REDACTED]"][3], false)
+                test.eq(original.message, secret)
+                test.eq(original.nested[secret][1], secret)
+            end)
+
+            it("redacts serialized JSON and URL credential forms", function()
+                local secret = 'quote"slash\\ /+value'
+                local encoded = 'quote\\"slash\\\\ /+value'
+                local url_encoded = "quote%22slash%5C%20%2F%2Bvalue"
+                local form_encoded = "quote%22slash%5C+%2F%2Bvalue"
+                local diagnostic = secret .. " | " .. encoded .. " | " .. url_encoded
+                    .. " | " .. form_encoded .. " | " .. url_encoded:gsub("%%(%x%x)", string.lower)
+                test.eq(transport.redact_error(diagnostic, { secret }),
+                    "[REDACTED] | [REDACTED] | [REDACTED] | [REDACTED] | [REDACTED]")
+            end)
+
+            it("snapshots sent header values and excludes generated protocol headers", function()
+                local configured = { ["X-Secret"] = "omitted", authorization = "omitted" }
+                local headers = { ["X-Secret"] = "sent", Authorization = "Bearer token",
+                    ["Content-Type"] = "application/json", Accept = "text/event-stream" }
+                local secrets = transport.request_secrets(headers, configured)
+                headers["X-Secret"] = "changed"
+                test.eq(transport.redact_error("sent token Bearer token omitted changed application/json text/event-stream", secrets),
+                    "[REDACTED] [REDACTED] [REDACTED] omitted changed application/json text/event-stream")
+            end)
+
+            it("redacts signed authorization credentials and session tokens", function()
+                local secrets = transport.request_secrets({
+                    authorization = "AWS4-HMAC-SHA256 Credential=access/date/region/service/aws4_request, SignedHeaders=host, Signature=signature",
+                    ["X-Amz-Security-Token"] = "session-token",
+                })
+                test.eq(transport.redact_error("access signature session-token", secrets),
+                    "[REDACTED] [REDACTED] [REDACTED]")
+                test.eq(transport.redact_error("unchanged", {}), "unchanged")
+                test.eq(transport.redact_error("unchanged", nil), "unchanged")
+            end)
+        end)
+
         describe("timeout_seconds", function()
             it("parses seconds and runtime durations", function()
                 for _, case in ipairs({ { 90, 90 }, { "90", 90 }, { "20m", 1200 },

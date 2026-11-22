@@ -582,6 +582,25 @@ local function define_tests()
                 test.eq(r.usage.output_tokens, 2)
             end)
 
+
+            it("keeps a large Responses terminal event", function()
+                local terminal = 'data: {"type":"response.completed","response":{"id":"r-large","status":"completed","instructions":"'
+                    .. string.rep("x", 50000)
+                    .. '","usage":{"input_tokens":3,"output_tokens":2}}}\n\n'
+                local mock_stream = build_mock_stream({
+                    'data: {"type":"response.output_text.delta","delta":"hello"}\n\n',
+                    terminal:sub(1, 17000),
+                    terminal:sub(17001),
+                })
+
+                local content, err, result = openai_client.process_stream({ stream = mock_stream })
+
+                test.is_nil(err)
+                test.eq(content, "hello")
+                test.not_nil(result.response)
+                test.eq(result.response_id, "r-large")
+            end)
+
             it("should stop reading when response.completed arrives", function()
                 local mock_stream = build_mock_stream({
                     'data: {"type":"response.completed","response":{"id":"r-terminal","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n',

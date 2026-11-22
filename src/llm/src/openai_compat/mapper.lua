@@ -2,6 +2,7 @@ local json = require("json")
 local output = require("output")
 local route = require("route")
 local prompt = require("prompt")
+local tool_arguments = require("tool_arguments")
 
 local openai_mapper = {}
 local MAX_CACHE_BREAKPOINTS = 4
@@ -11,7 +12,8 @@ openai_mapper.CAPABILITY = {
     defaults = { thinking = "none" },
     supported = {
         thinking = { adaptive = true, none = true },
-        structured_output = { native = true }
+        structured_output = { native = true },
+        deferred_tools = { [false] = true }
     }
 }
 
@@ -446,7 +448,7 @@ function openai_mapper.map_tools(contract_tools)
     local tool_name_map = {}
 
     for _, tool in ipairs(contract_tools) do
-        if tool.name and tool.description and tool.schema then
+        if tool.name and tool.schema then
             table.insert(openai_tools, {
                 type = "function",
                 ["function"] = {
@@ -538,17 +540,10 @@ function openai_mapper.map_tool_calls(openai_tool_calls, tool_name_map)
     local contract_tool_calls = {}
     for i, tool_call in ipairs(openai_tool_calls) do
         if tool_call["function"] then
-            local arguments = {}
-            local raw_arguments, arguments_error
+            local arguments, raw_arguments, arguments_error = {}, nil, nil
             if tool_call["function"].arguments then
-                local parsed_args, parse_err = json.decode(tostring(tool_call["function"].arguments))
-                if parse_err then
-                    raw_arguments = tostring(tool_call["function"].arguments)
-                    arguments = raw_arguments
-                    arguments_error = tostring(parse_err)
-                elseif parsed_args then
-                    arguments = parsed_args
-                end
+                arguments, raw_arguments, arguments_error =
+                    tool_arguments.decode(tostring(tool_call["function"].arguments))
             end
 
             contract_tool_calls[i] = {

@@ -11,7 +11,8 @@ mapper.CAPABILITY = {
     defaults = { thinking = "none" },
     supported = {
         thinking = { none = true },
-        structured_output = { native = true }
+        structured_output = { native = true },
+        deferred_tools = { [false] = true }
     }
 }
 
@@ -261,7 +262,7 @@ function mapper.map_tools(contract_tools)
     local tools = {}
 
     for _, tool in ipairs(contract_tools) do
-        if tool.name and tool.description and tool.schema then
+        if tool.name and tool.schema then
             table.insert(tools, {
                 name = tool.name,
                 description = tool.description,

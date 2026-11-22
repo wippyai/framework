@@ -98,6 +98,15 @@ local function define_tests()
                 test.contains(err, "structured_output")
                 test.contains(err, "native")
             end)
+
+            it("rejects a declared deferred_tools = true, which Google cannot honor", function()
+                local options, err = mapper.map_options({}, { deferred_tools = true })
+                test.is_nil(options)
+                test.contains(err, "Google")
+                test.contains(err, "deferred_tools = true")
+                local _, accepted = mapper.map_options({}, { deferred_tools = false })
+                test.is_nil(accepted)
+            end)
         end)
 
         describe("Positional notes", function()
@@ -704,6 +713,17 @@ local function define_tests()
                 local google_tools = mapper.map_tools(nil)
 
                 tests.is_nil(google_tools)
+            end)
+
+            it("should send a tool declared without a description", function()
+                local google_tools = mapper.map_tools({
+                    { name = "ping", schema = { type = "object", properties = {} } }
+                }) :: any
+
+                tests.eq(#google_tools, 1)
+                tests.eq(google_tools[1].name, "ping")
+                tests.is_nil(google_tools[1].description)
+                tests.eq(google_tools[1].parameters.type, "object")
             end)
 
             it("should skip tools with missing required fields", function()

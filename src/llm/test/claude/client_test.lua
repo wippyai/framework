@@ -834,6 +834,80 @@ local function define_tests()
                 test.eq(tc.arguments.param, "value")
             end)
 
+            it("should keep malformed streamed tool arguments with the decoder error", function()
+                local raw = '{"param": "value"'
+                local stream_chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"output_tokens":0}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_bad","name":"test_tool"}}\n\n',
+                    'event: content_block_delta\ndata: ' .. json.encode({
+                        type = "content_block_delta",
+                        index = 0,
+                        delta = { type = "input_json_delta", partial_json = raw }
+                    }) .. '\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+                local _, expected_error = json.decode(raw)
+
+                local mock_stream = { chunks = stream_chunks, current = 0 }
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            return self.chunks[self.current]
+                        end
+                    }
+                })
+
+                local tool_calls = {}
+                local _, err, result = claude_client.process_stream({ stream = mock_stream, metadata = {} }, {
+                    on_tool_call = function(tool_call)
+                        table.insert(tool_calls, tool_call)
+                    end
+                })
+
+                test.is_nil(err)
+                test.eq(#tool_calls, 1)
+                local tc = assert(tool_calls[1])
+                test.eq(tc.arguments, raw)
+                test.eq(tc.raw_arguments, raw)
+                test.eq(tc.arguments_error, tostring(expected_error))
+                test.eq(result.tool_calls[1].raw_arguments, raw)
+            end)
+
+            it("should decode an empty streamed tool input as an empty object", function()
+                local stream_chunks = {
+                    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"output_tokens":0}}}\n\n',
+                    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_empty","name":"test_tool"}}\n\n',
+                    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+                    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                }
+
+                local mock_stream = { chunks = stream_chunks, current = 0 }
+                setmetatable(mock_stream, {
+                    __index = {
+                        read = function(self)
+                            self.current = self.current + 1
+                            return self.chunks[self.current]
+                        end
+                    }
+                })
+
+                local tool_calls = {}
+                local _, err = claude_client.process_stream({ stream = mock_stream, metadata = {} }, {
+                    on_tool_call = function(tool_call)
+                        table.insert(tool_calls, tool_call)
+                    end
+                })
+
+                test.is_nil(err)
+                local tc = assert(tool_calls[1])
+                test.eq(type(tc.arguments), "table")
+                test.is_nil(next(tc.arguments))
+                test.is_nil(tc.raw_arguments)
+                test.is_nil(tc.arguments_error)
+            end)
+
             it("should process streaming thinking content", function()
                 local stream_chunks = {
                     'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":25,"output_tokens":0}}}\n\n',
