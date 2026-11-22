@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.15](https://github.com/wippyai/framework/compare/views-v0.5.14...views-v0.5.15) (2026-11-22)
+
+
+### Bug Fixes
+
+* **views:** serve metadata for hosted page artifacts ([#281](https://github.com/wippyai/framework/issues/281)) ([d1f1697](https://github.com/wippyai/framework/commit/d1f16974ee9904df0ee544d9a0fc0ec592cb530f))
+
 ## [0.5.14](https://github.com/wippyai/framework/compare/views-v0.5.13...views-v0.5.14) (2026-11-09)
 
 
