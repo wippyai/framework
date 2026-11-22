@@ -33,4 +33,18 @@ entries:
     imports:
       migration: wippy.migration:migration
     method: migrate
-    
+
+  - name: 03_index_token_usage_time
+    kind: function.lua
+    meta:
+      type: migration
+      tags:
+        - usage
+        - tokens
+        - database
+      description: Index token usage timestamps by instant on SQLite
+      timestamp: "2026-11-22T06:15:00Z"
+    source: file://03_index_token_usage_time.lua
+    imports:
+      migration: wippy.migration:migration
+    method: migrate
