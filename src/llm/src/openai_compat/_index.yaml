@@ -31,6 +31,7 @@ entries:
       - ctx
       - security
     imports:
+      openai_mapper: wippy.llm.openai_compat:mapper
       transport: wippy.llm.util:transport
 
   # wippy.llm.openai_compat:driver

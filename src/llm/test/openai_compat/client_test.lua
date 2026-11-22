@@ -644,6 +644,89 @@ local function define_tests()
                 test.eq(tc.name, "test_tool")
                 test.eq(tc.arguments, '{"param": "value"}')
             end)
+
+            local function stream_of(chunks: {string}): any
+                local index = 0
+                return { stream = { read = function()
+                    index = index + 1
+                    return chunks[index]
+                end }, metadata = {} }
+            end
+
+            -- vLLM 0.30 stream events with a reasoning parser: reasoning deltas
+            -- precede the answer, and the usage event has no choices.
+            local vllm_reasoning_stream = {
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"usage":null}\n\n',
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[{"index":0,"delta":{"reasoning":"The"},"logprobs":null,"finish_reason":null,"token_ids":null}],"usage":null}\n\n',
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[{"index":0,"delta":{"reasoning":" user asks"},"logprobs":null,"finish_reason":null,"token_ids":null}],"usage":null}\n\n',
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[{"index":0,"delta":{"content":"5"},"logprobs":null,"finish_reason":null,"token_ids":null}],"usage":null}\n\n',
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[{"index":0,"delta":{"content":"1"},"logprobs":null,"finish_reason":null,"token_ids":null}],"usage":null}\n\n',
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop","stop_reason":106,"token_ids":null}],"usage":null}\n\n',
+                'data: {"id":"chatcmpl-b0b1","object":"chat.completion.chunk","model":"gemma-4-26b","choices":[],"usage":{"prompt_tokens":27,"total_tokens":128,"completion_tokens":101,"completion_tokens_details":{"reasoning_tokens":96}}}\n\n',
+                'data: [DONE]\n\n'
+            }
+
+            it("streams reasoning deltas apart from the answer and returns their text", function()
+                local reasoning_chunks, content_chunks = {}, {}
+                local content, err, result = openai_client.process_stream(stream_of(vllm_reasoning_stream), {
+                    on_content = function(chunk) table.insert(content_chunks, chunk) end,
+                    on_reasoning = function(chunk) table.insert(reasoning_chunks, chunk) end
+                })
+
+                test.is_nil(err)
+                test.eq(content, "51")
+                test.eq(#reasoning_chunks, 2)
+                test.eq(table.concat(reasoning_chunks, "|"), "The| user asks")
+                test.eq(table.concat(content_chunks), "51")
+                test.eq(result.reasoning, "The user asks")
+                test.is_nil(result.reasoning_details)
+                test.eq(result.finish_reason, "stop")
+                test.eq(result.usage.completion_tokens_details.reasoning_tokens, 96)
+            end)
+
+            it("streams reasoning_content deltas", function()
+                local reasoning_chunks = {}
+                local content, err, result = openai_client.process_stream(stream_of({
+                    'data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"17 * 3"}}]}\n\n',
+                    'data: {"choices":[{"index":0,"delta":{"reasoning_content":" = 51."}}]}\n\n',
+                    'data: {"choices":[{"index":0,"delta":{"content":"51"},"finish_reason":"stop"}]}\n\n',
+                    'data: [DONE]\n\n'
+                }), {
+                    on_reasoning = function(chunk) table.insert(reasoning_chunks, chunk) end
+                })
+
+                test.is_nil(err)
+                test.eq(content, "51")
+                test.eq(table.concat(reasoning_chunks, "|"), "17 * 3| = 51.")
+                test.eq(result.reasoning, "17 * 3 = 51.")
+            end)
+
+            it("streams a delta carrying reasoning_details and reasoning once, from the details", function()
+                local reasoning_chunks = {}
+                local _, err, result = openai_client.process_stream(stream_of({
+                    'data: {"choices":[{"index":0,"delta":{"reasoning":"Step.","reasoning_details":[{"type":"reasoning.text","text":"Step."}]}}]}\n\n',
+                    'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n',
+                    'data: [DONE]\n\n'
+                }), {
+                    on_reasoning = function(chunk) table.insert(reasoning_chunks, chunk) end
+                })
+
+                test.is_nil(err)
+                test.eq(table.concat(reasoning_chunks, "|"), "Step.")
+                test.eq(#result.reasoning_details, 1)
+                test.eq(result.reasoning_details[1].text, "Step.")
+                test.is_nil(result.reasoning)
+            end)
+
+            it("returns no reasoning for a stream without it", function()
+                local _, err, result = openai_client.process_stream(stream_of({
+                    'data: {"choices":[{"index":0,"delta":{"content":"51"},"finish_reason":"stop"}]}\n\n'
+                }), {})
+
+                test.is_nil(err)
+                test.is_nil(result.reasoning)
+                test.is_nil(result.reasoning_details)
+            end)
         end)
 
         describe("Response Metadata Extraction", function()

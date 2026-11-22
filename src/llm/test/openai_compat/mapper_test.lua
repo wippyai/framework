@@ -1179,6 +1179,73 @@ local function define_tests()
             end)
         end)
 
+        describe("Reasoning Response Mapping", function()
+            -- A vLLM 0.30 chat completion with a reasoning parser: the reasoning
+            -- sits beside the answer on the message as `reasoning`.
+            local vllm_response = [[{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"51",
+                "reasoning":"The user wants 17 multiplied by 3.\n17 * 3 = 51.","role":"assistant"},"stop_reason":106}],
+                "created":1795334197,"id":"chatcmpl-9e6490d47c5a8c39","model":"gemma-4-26b","object":"chat.completion",
+                "usage":{"completion_tokens":145,"completion_tokens_details":{"reasoning_tokens":140},
+                "prompt_tokens":27,"total_tokens":172}}]]
+
+            it("maps message reasoning to metadata.thinking with its thinking tokens", function()
+                local decoded = json.decode(vllm_response)
+                local response = openai_mapper.map_success_response(decoded, { tool_name_map = {} }) :: any
+
+                test.eq(response.result.content, "51")
+                test.eq(response.metadata.thinking, "The user wants 17 multiplied by 3.\n17 * 3 = 51.")
+                test.is_nil(response.metadata.reasoning_details)
+                test.eq(response.tokens.thinking_tokens, 140)
+                test.eq(response.tokens.completion_tokens, 145)
+            end)
+
+            it("maps message reasoning_content to metadata.thinking", function()
+                local response = openai_mapper.map_success_response({
+                    choices = { { message = { role = "assistant", content = "51",
+                        reasoning_content = "17 * 3 = 51." }, finish_reason = "stop" } },
+                    usage = { prompt_tokens = 25, completion_tokens = 46, total_tokens = 71,
+                        completion_tokens_details = { reasoning_tokens = 38 } }
+                }, { tool_name_map = {} }) :: any
+
+                test.eq(response.result.content, "51")
+                test.eq(response.metadata.thinking, "17 * 3 = 51.")
+                test.eq(response.tokens.thinking_tokens, 38)
+            end)
+
+            it("takes the thinking of a message with reasoning_details from the details alone", function()
+                local details = { { type = "reasoning.text", text = "First. " }, { type = "reasoning.text", text = "Second." } }
+                local response = openai_mapper.map_success_response({
+                    choices = { { message = { role = "assistant", content = "done",
+                        reasoning = "First. Second.", reasoning_details = details }, finish_reason = "stop" } }
+                }, { tool_name_map = {} }) :: any
+
+                test.eq(response.metadata.thinking, "First. Second.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("keeps top-level reasoning_details", function()
+                local details = { { type = "reasoning.text", text = "Top level." } }
+                local response = openai_mapper.map_success_response({
+                    reasoning_details = details,
+                    choices = { { message = { role = "assistant", content = "done" }, finish_reason = "stop" } }
+                }, { tool_name_map = {} }) :: any
+
+                test.eq(response.metadata.thinking, "Top level.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("sets no thinking for a message without reasoning", function()
+                local response = openai_mapper.map_success_response(json.decode(
+                    [[{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"51","role":"assistant"}}],
+                    "usage":{"completion_tokens":3,"completion_tokens_details":{"reasoning_tokens":0},
+                    "prompt_tokens":24,"total_tokens":27}}]]), { tool_name_map = {} }) :: any
+
+                test.eq(response.result.content, "51")
+                test.is_nil(response.metadata.thinking)
+                test.eq(response.tokens.thinking_tokens, 0)
+            end)
+        end)
+
         describe("Error Classification", function()
             -- classify_error is a pure function returning (kind, message, details).
 

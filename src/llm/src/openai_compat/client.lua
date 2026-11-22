@@ -3,6 +3,7 @@ local http_client = require("http_client")
 local env = require("env")
 local ctx = require("ctx")
 local transport = require("transport")
+local openai_mapper = require("openai_mapper")
 
 local stream_redactors = setmetatable({}, { __mode = "k" })
 
@@ -273,6 +274,8 @@ function openai_client.process_stream(stream_response, callbacks)
 
     -- Track reasoning details for OpenRouter
     local reasoning_accumulator = {}
+    -- Reasoning text streamed outside reasoning_details
+    local reasoning_text = ""
 
     -- Default callbacks
     callbacks = callbacks or {}
@@ -373,6 +376,9 @@ function openai_client.process_stream(stream_response, callbacks)
                 if next(reasoning_accumulator) then
                     result.reasoning_details = reasoning_accumulator
                 end
+                if reasoning_text ~= "" then
+                    result.reasoning = reasoning_text
+                end
 
                 on_done(result)
                 return full_content, nil, result
@@ -398,13 +404,20 @@ function openai_client.process_stream(stream_response, callbacks)
                     on_content(content_chunk)
                 end
 
-                -- Handle reasoning details delta (OpenRouter)
+                -- Handle reasoning details delta (OpenRouter); a delta carrying them
+                -- repeats their text as `reasoning`
                 if choice.delta and choice.delta.reasoning_details then
                     for _, reasoning_detail in ipairs(choice.delta.reasoning_details) do
                         table.insert(reasoning_accumulator, reasoning_detail)
                         if reasoning_detail.text then
                             on_reasoning(reasoning_detail.text)
                         end
+                    end
+                else
+                    local reasoning_chunk = openai_mapper.reasoning_text(choice.delta)
+                    if reasoning_chunk then
+                        reasoning_text = reasoning_text .. reasoning_chunk
+                        on_reasoning(reasoning_chunk)
                     end
                 end
 
@@ -526,6 +539,9 @@ function openai_client.process_stream(stream_response, callbacks)
     -- Add reasoning details if accumulated
     if next(reasoning_accumulator) then
         result.reasoning_details = reasoning_accumulator
+    end
+    if reasoning_text ~= "" then
+        result.reasoning = reasoning_text
     end
 
     on_done(result)
