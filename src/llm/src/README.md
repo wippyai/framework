@@ -135,7 +135,7 @@ local response, err = llm.generate("Hello", {
 
 ### OpenAI-compatible reasoning
 
-The OpenAI-compatible driver returns a response's reasoning text in `metadata.thinking`, streamed or not, and streams it as thinking chunks. It reads `reasoning_details` (OpenRouter), whose array it also keeps in `metadata.reasoning_details`; a message or stream delta without them gives its `reasoning` (vLLM, OpenRouter) or `reasoning_content` (earlier vLLM, SGLang, DeepSeek) text. `usage.completion_tokens_details.reasoning_tokens` maps to `tokens.thinking_tokens`.
+The OpenAI-compatible driver returns a response's reasoning text in `metadata.thinking`, streamed or not, and streams it as thinking chunks. It keeps the OpenRouter `reasoning_details` array in `metadata.reasoning_details`. For each message or stream delta, it uses text from those details when present, then falls back to `reasoning` (vLLM, OpenRouter) or `reasoning_content` (earlier vLLM, SGLang, DeepSeek). Final streamed thinking includes the same text the driver emitted, in order. `usage.completion_tokens_details.reasoning_tokens` maps to `tokens.thinking_tokens`.
 
 ### Thinking block binding
 

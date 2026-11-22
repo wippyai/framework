@@ -84,31 +84,31 @@ end
 -- Extract reasoning text from reasoning_details (OpenRouter)
 function openai_mapper.extract_reasoning_text(reasoning_details)
     if not reasoning_details then return "" end
-    local reasoning_text = ""
+    local chunks = {}
     for _, detail in ipairs(reasoning_details) do
-        if detail.text then
-            reasoning_text = reasoning_text .. detail.text
+        local text = type(detail) == "table" and detail.text
+        if type(text) == "string" then
+            chunks[#chunks + 1] = text
         end
     end
-    return reasoning_text
+    return table.concat(chunks)
 end
 
 -- The reasoning text a message or stream delta carries outside reasoning_details:
 -- `reasoning` (vLLM, OpenRouter) or `reasoning_content` (earlier vLLM, SGLang, DeepSeek).
 function openai_mapper.reasoning_text(source: any): string?
     if type(source) ~= "table" then return nil end
-    for _, field in ipairs({ "reasoning", "reasoning_content" }) do
-        local text = source[field]
-        if type(text) == "string" and text ~= "" then return text end
-    end
+    local text = source.reasoning
+    if type(text) == "string" and text ~= "" then return text end
+    text = source.reasoning_content
+    if type(text) == "string" and text ~= "" then return text end
     return nil
 end
 
--- Sets the canonical thinking of a response: reasoning_details win when present,
--- since providers that send them also send their text as `reasoning`.
+-- Keep the selected text and retain the provider detail entries for callers.
 function openai_mapper.map_thinking(metadata: table, reasoning_details: any, reasoning_text: string?)
     if reasoning_details then
-        metadata.thinking = openai_mapper.extract_reasoning_text(reasoning_details)
+        metadata.thinking = reasoning_text or openai_mapper.extract_reasoning_text(reasoning_details)
         metadata.reasoning_details = reasoning_details
     elseif reasoning_text then
         metadata.thinking = reasoning_text
@@ -647,9 +647,15 @@ function openai_mapper.map_success_response(openai_response, context)
         metadata = openai_response.metadata or {}
     }
 
-    openai_mapper.map_thinking(response.metadata,
-        choice.message.reasoning_details or openai_response.reasoning_details,
-        openai_mapper.reasoning_text(choice.message))
+    local reasoning_details = choice.message.reasoning_details or openai_response.reasoning_details
+    local reasoning_text = openai_mapper.reasoning_text(choice.message)
+    if reasoning_details then
+        local detail_text = openai_mapper.extract_reasoning_text(reasoning_details)
+        if detail_text ~= "" or reasoning_text == nil then
+            reasoning_text = detail_text
+        end
+    end
+    openai_mapper.map_thinking(response.metadata, reasoning_details, reasoning_text)
 
     local mapped_tool_calls = {}
     if choice.message.tool_calls and #choice.message.tool_calls > 0 then

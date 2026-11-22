@@ -1223,6 +1223,18 @@ local function define_tests()
                 test.eq(response.metadata.reasoning_details, details)
             end)
 
+            it("uses plain reasoning when the details have no text", function()
+                for _, details in ipairs({ {}, { { type = "reasoning.encrypted" }, { text = "" } } }) do
+                    local response = openai_mapper.map_success_response({
+                        choices = { { message = { content = "done", reasoning = "Plain.",
+                            reasoning_details = details }, finish_reason = "stop" } }
+                    }, { tool_name_map = {} }) :: any
+
+                    test.eq(response.metadata.thinking, "Plain.")
+                    test.eq(response.metadata.reasoning_details, details)
+                end
+            end)
+
             it("keeps top-level reasoning_details", function()
                 local details = { { type = "reasoning.text", text = "Top level." } }
                 local response = openai_mapper.map_success_response({
