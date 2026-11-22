@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.26](https://github.com/wippyai/framework/compare/llm-v0.5.25...llm-v0.5.26) (2026-11-22)
+
+
+### Features
+
+* **llm:** text_content driver option for string message content on OpenAI-compatible endpoints ([#296](https://github.com/wippyai/framework/issues/296)) ([ea94279](https://github.com/wippyai/framework/commit/ea942799117922929f72c8dc2db115c442daf288))
+
 ## [0.5.25](https://github.com/wippyai/framework/compare/llm-v0.5.24...llm-v0.5.25) (2026-11-22)
 
 
