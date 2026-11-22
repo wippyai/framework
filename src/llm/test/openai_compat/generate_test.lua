@@ -838,6 +838,70 @@ local function define_tests()
             end)
         end)
 
+        describe("Text content form", function()
+            local handler_ctx = generate_handler._ctx
+            after_each(function() generate_handler._ctx = handler_ctx end)
+
+            local function capture(context)
+                local sent: any = nil
+                generate_handler._ctx = { all = function() return context end }
+                generate_handler._client._ctx = generate_handler._ctx
+                generate_handler._client._env = { get = function() return nil end }
+                generate_handler._client._http_client = {
+                    post = function(_, options)
+                        sent = json.decode(tostring(options.body))
+                        return {
+                            status_code = 200,
+                            body = json.encode({
+                                choices = {{ message = { content = "ok" }, finish_reason = "stop" }},
+                                usage = { prompt_tokens = 5, completion_tokens = 1, total_tokens = 6 }
+                            }),
+                            headers = {}
+                        }
+                    end
+                }
+                return function(): any return sent end
+            end
+
+            local args = {
+                model = "llama-3",
+                messages = {
+                    { role = "system", content = "Be brief" },
+                    { role = "user", content = {{ type = "text", text = "Hi" }} }
+                }
+            }
+
+            it("sends content parts by default", function()
+                local sent = capture({ api_key = "k" })
+                local response = generate_handler.handler(args)
+                test.is_true(response.success)
+                test.eq(sent().messages[1].content[1].text, "Be brief")
+                test.eq(sent().messages[2].content[1].text, "Hi")
+            end)
+
+            it("sends string content when the context declares text_content string", function()
+                local sent = capture({ api_key = "k", text_content = "string" })
+                local response = generate_handler.handler({
+                    model = args.model,
+                    messages = args.messages,
+                    options = { request = { chat_template_kwargs = { enable_thinking = true } } }
+                })
+                test.is_true(response.success)
+                test.eq(sent().messages[1].content, "Be brief")
+                test.eq(sent().messages[2].content, "Hi")
+                test.eq(sent().chat_template_kwargs.enable_thinking, true)
+            end)
+
+            it("refuses a request whose context declares an unknown text_content", function()
+                local sent = capture({ api_key = "k", text_content = "plain" })
+                local response, err = generate_handler.handler(args)
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "text_content")
+                test.is_nil(sent())
+            end)
+        end)
+
         describe("Stream fallback signals", function()
             local real_client
             local streamed_args = {

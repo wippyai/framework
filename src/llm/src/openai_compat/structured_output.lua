@@ -4,12 +4,14 @@ local output = require("output")
 local wire_request = require("wire_request")
 local json = require("json")
 local hash = require("hash")
+local ctx = require("ctx")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
 local structured_output_handler = {
     _client = openai_client,
-    _mapper = openai_mapper
+    _mapper = openai_mapper,
+    _ctx = ctx
 }
 
 local function _generate_schema_name(schema)
@@ -103,10 +105,16 @@ function structured_output_handler.handler(contract_args)
         schema_name = name
     end
 
+    local text_content, text_content_err = structured_output_handler._mapper.text_content(structured_output_handler._ctx.all() or {})
+    if text_content_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(text_content_err):build()
+    end
+
     local openai_payload = {
         model = contract_args.model,
         messages = structured_output_handler._mapper.map_messages(contract_args.messages, {
-            model = contract_args.model
+            model = contract_args.model,
+            text_content = text_content
         }),
         response_format = {
             type = "json_schema",

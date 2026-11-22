@@ -83,6 +83,14 @@ entries:
       retry:
         type: object
         description: Provider-level retry policy for transient transport/provider failures
+      text_content:
+        type: string
+        enum: [parts, string]
+        description: >-
+          Wire form of text-only system and user message content: parts (a content part
+          array) or string (its joined text), for endpoints that accept only string content.
+          A message carrying an image keeps its part array.
+        default_value: parts
 
   # wippy.llm.openai_compat:embed
   - name: embed
@@ -106,6 +114,7 @@ entries:
     source: file://generate.lua
     modules:
       - json
+      - ctx
     imports:
       openai_client: wippy.llm.openai_compat:client
       openai_mapper: wippy.llm.openai_compat:mapper
@@ -188,6 +197,7 @@ entries:
     modules:
       - json
       - hash
+      - ctx
     imports:
       openai_client: wippy.llm.openai_compat:client
       openai_mapper: wippy.llm.openai_compat:mapper
