@@ -183,10 +183,10 @@ end
 
 local TEXT_CONTENT_FORMS = { parts = true, string = true }
 
--- The wire form of text-only system and user content a driver context declares
--- (text_content): "parts" when unset, or "string".
+-- A false context value explicitly clears an inherited driver option.
+-- Use the default wire form in both cleared and absent contexts.
 function openai_mapper.text_content(form: any): (string?, string?)
-    if form == nil then return "parts", nil end
+    if form == nil or form == false then return "parts", nil end
     if type(form) ~= "string" or not TEXT_CONTENT_FORMS[form] then
         return nil, "text_content must be parts or string"
     end

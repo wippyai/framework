@@ -724,10 +724,11 @@ local function define_tests()
 
             it("resolves the text_content a driver context declares", function()
                 test.eq(openai_mapper.text_content(nil), "parts")
+                test.eq(openai_mapper.text_content(false), "parts")
                 test.eq(openai_mapper.text_content("parts"), "parts")
                 test.eq(openai_mapper.text_content("string"), "string")
 
-                for _, invalid in ipairs({ "plain", false }) do
+                for _, invalid in ipairs({ "plain", true, 29 }) do
                     local form, err = openai_mapper.text_content(invalid)
                     test.is_nil(form)
                     test.contains(tostring(err), "text_content must be parts or string")

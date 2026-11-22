@@ -139,7 +139,7 @@ The OpenAI-compatible driver returns a response's reasoning text in `metadata.th
 
 ### OpenAI-compatible text content
 
-The OpenAI-compatible driver sends system and user content as a content part array. An endpoint that accepts only string content takes the driver option `text_content: string`, set on the provider entry's `driver.options` or the route's options: a message whose every part is text is sent as its joined text, and a message carrying an image keeps its part array. Assistant and tool content is a string either way. A value other than `parts` (the default) or `string` fails the request with `invalid_request` before any HTTP request. String content carries no `cache_control`, so a cache marker after such a message sets no breakpoint.
+The OpenAI-compatible driver sends system and user content as a content part array. An endpoint that accepts only string content takes the driver option `text_content: string`, set on the provider entry's `driver.options` or the route's options: a message whose every part is text is sent as its joined text, and a message carrying an image keeps its part array. Assistant and tool content is a string either way. An omitted option or an explicit `false` in the driver context uses the default `parts` format. Other values outside `parts` and `string` fail with `invalid_request` before HTTP. String content carries no `cache_control`, so a cache marker after such a message sets no breakpoint.
 
 ### Thinking block binding
 
