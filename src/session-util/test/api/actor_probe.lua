@@ -20,7 +20,10 @@ local function caller()
     if not instance then
         return nil, "the probe contract has no implementation"
     end
-    local binding_actor = catalog_client.call(instance, "whoami", {})
+    local binding_actor, call_err = instance:whoami()
+    if call_err then
+        return nil, call_err
+    end
     local probe = contract.get("app.api:actor_probe")
     local implementations = probe and probe:implementations() or nil
     local actor = security.actor()

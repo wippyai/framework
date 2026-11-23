@@ -47,7 +47,6 @@ entries:
     source: file://catalog_client.lua
     modules:
       - contract
-      - logger
 
   # wippy.session_util:catalog
   - name: catalog
@@ -61,6 +60,8 @@ entries:
         or when it hides them by its own rules. When no binding exists, the
         handlers use the built-in registry rules, detected structurally via
         :implementations() (an empty list). Runs under the request's actor.
+        The runtime does not enforce the schemas below; the handlers check the
+        answers and answer 500 for any other shape.
     methods:
       - name: agent_details
         description: |

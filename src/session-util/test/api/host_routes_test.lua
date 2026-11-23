@@ -188,7 +188,7 @@ local function define_tests()
             agent_details._session_reader = original.reader
         end)
 
-        it("returns a public agent by name with only its string start prompts", function()
+        it("returns a public agent by name with its start prompts", function()
             local result = install(agent_details, { agent = "host-routes-public" })
             agent_details.handler()
             test.eq(result.status, 200)
@@ -234,12 +234,18 @@ local function define_tests()
             test.eq(result.body.agent.title, "Colon Name Helper")
         end)
 
-        it("returns no start prompts when start_prompts is not a list", function()
-            local result = install(agent_details, { agent = "host-routes-scalar-prompts" })
+        it("answers 500 for an agent whose start_prompts is not a list of strings", function()
+            local scalar = install(agent_details, { agent = "host-routes-scalar-prompts" })
             agent_details.handler()
-            test.eq(result.status, 200)
-            test.eq(result.body.agent.title, "Scalar Prompts Helper")
-            test.eq(#result.body.agent.start_prompts, 0)
+            test.eq(scalar.status, 500)
+            test.eq(scalar.headers["Cache-Control"], "no-store")
+            test.is_false(scalar.body.success)
+            test.not_nil((string.find(scalar.body.error, "start_prompts is not a list", 1, true)))
+
+            local object = install(agent_details, { agent = "host-routes-object-prompts" })
+            agent_details.handler()
+            test.eq(object.status, 500)
+            test.not_nil((string.find(object.body.error, "not a string", 1, true)))
         end)
 
         it("answers an unknown agent with 200 and a null agent", function()
@@ -323,7 +329,7 @@ local function define_tests()
             test.eq(result.status, 500)
             test.eq(result.headers["Cache-Control"], "no-store")
             test.is_false(result.body.success)
-            test.eq(result.body.error, "tool lookup failed")
+            test.eq(result.body.error, "tool lookup failed: lookup failed")
             test.is_nil(result.body.tools)
         end)
 
@@ -478,55 +484,19 @@ local function define_tests()
         local original = {
             agent_http = agent_details._http,
             agent_security = agent_details._security,
-            agent_contract = catalog_client._contract,
+            contract = catalog_client._contract,
             tools_http = tools_by_name._http,
             tools_security = tools_by_name._security,
-            tools_contract = catalog_client._contract,
             tools_registry = tools_by_name._registry,
-            logger = catalog_client._logger,
         }
 
         after_each(function()
             agent_details._http = original.agent_http
             agent_details._security = original.agent_security
-            catalog_client._contract = original.agent_contract
+            catalog_client._contract = original.contract
             tools_by_name._http = original.tools_http
             tools_by_name._security = original.tools_security
-            catalog_client._contract = original.tools_contract
             tools_by_name._registry = original.tools_registry
-            catalog_client._logger = original.logger
-        end)
-
-        it("logs a catalog that fails to open or a call that fails, and answers with nothing", function()
-            local warnings: any = {}
-            catalog_client._logger = {
-                warn = function(_, message, fields)
-                    warnings[#warnings + 1] = { message = message, fields = fields }
-                end,
-            }
-            catalog_client._contract = fake_contract({}, "binding failed")
-            local opened = install(agent_details, { agent = "host-routes-public" })
-            agent_details.handler()
-            test.eq(opened.raw, '{"success":true,"agent":null}')
-            test.eq(#warnings, 1)
-            test.eq(warnings[1].fields.error, "binding failed")
-
-            catalog_client._contract = fake_contract({
-                agent_details = function() return nil, "agent lookup failed" end,
-                tool_titles = function() return nil, "tool lookup failed" end,
-            })
-            local agent = install(agent_details, { agent = "host-routes-public" })
-            agent_details.handler()
-            test.eq(agent.status, 200)
-            test.eq(agent.raw, '{"success":true,"agent":null}')
-            local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
-            tools_by_name.handler()
-            test.eq(tools.status, 200)
-            test.not_nil((string.find(tools.raw, '"tools":{}', 1, true)))
-            test.eq(#warnings, 3)
-            test.eq(warnings[2].fields.method, "agent_details")
-            test.eq(warnings[2].fields.error, "agent lookup failed")
-            test.eq(warnings[3].fields.method, "tool_titles")
         end)
 
         it("answers agent details from the one bound implementation", function()
@@ -538,7 +508,7 @@ local function define_tests()
                         id = "kickside:agent-7",
                         name = "agent-7",
                         title = "",
-                        start_prompts = { "From the catalog", 42 },
+                        start_prompts = { "From the catalog" },
                     }
                 end,
             })
@@ -553,26 +523,6 @@ local function define_tests()
             test.eq(result.body.agent.title, "agent-7")
             test.eq(#result.body.agent.start_prompts, 1)
             test.eq(result.body.agent.start_prompts[1], "From the catalog")
-        end)
-
-        it("answers a catalog result without a string id as no agent, and falls back for names and titles that are not strings", function()
-            catalog_client._contract = fake_contract({
-                agent_details = function(_, input)
-                    if input.agent == "empty" then return {} end
-                    return { id = "kickside:agent-8", name = 8, title = false }
-                end,
-            })
-            local empty = install(agent_details, { agent = "empty" })
-            agent_details.handler()
-            test.eq(empty.status, 200)
-            test.eq(empty.raw, '{"success":true,"agent":null}')
-
-            local odd = install(agent_details, { agent = "agent-8" })
-            agent_details.handler()
-            test.eq(odd.status, 200)
-            test.eq(odd.body.agent.id, "kickside:agent-8")
-            test.eq(odd.body.agent.name, "kickside:agent-8")
-            test.eq(odd.body.agent.title, "kickside:agent-8")
         end)
 
         it("answers a nil catalog result with 200 and a null agent, even for a public registry agent", function()
@@ -600,12 +550,62 @@ local function define_tests()
             test.eq(#result.body.agent.start_prompts, 0)
         end)
 
-        it("answers a catalog that fails to open with a null agent, not the built-in answer", function()
-            catalog_client._contract = fake_contract({}, "binding failed")
-            local result = install(agent_details, { agent = "host-routes-public" })
+        it("answers 500 when the catalog cannot be loaded, listed or opened, never the built-in answer", function()
+            for _, failure in ipairs({
+                { get_err = "contract not found" },
+                { implementations_err = "permission denied" },
+                { open_err = "binding failed" },
+            }) do
+                catalog_client._contract = fake_contract({}, failure.open_err, failure.implementations_err, failure.get_err)
+                local cause = failure.get_err or failure.implementations_err or failure.open_err
+                local agent = install(agent_details, { agent = "host-routes-public" })
+                agent_details.handler()
+                test.eq(agent.status, 500, cause)
+                test.eq(agent.headers["Cache-Control"], "no-store", cause)
+                test.is_false(agent.body.success)
+                test.eq(agent.body.error, "agent lookup failed: " .. cause)
+
+                local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
+                tools_by_name.handler()
+                test.eq(tools.status, 500, cause)
+                test.eq(tools.body.error, "tool lookup failed: " .. cause)
+            end
+        end)
+
+        it("answers 500 when a catalog call returns an error", function()
+            catalog_client._contract = fake_contract({
+                agent_details = function() return nil, "agent store down" end,
+                tool_titles = function() return nil, "tool store down" end,
+            })
+            local agent = install(agent_details, { agent = "host-routes-public" })
             agent_details.handler()
-            test.eq(result.status, 200)
-            test.eq(result.raw, '{"success":true,"agent":null}')
+            test.eq(agent.status, 500)
+            test.eq(agent.body.error, "agent lookup failed: agent store down")
+
+            local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
+            tools_by_name.handler()
+            test.eq(tools.status, 500)
+            test.eq(tools.body.error, "tool lookup failed: tool store down")
+        end)
+
+        it("answers 500 for a catalog agent that is not in the contract's shape", function()
+            local answers: any = {
+                empty = {},
+                number_name = { id = "kickside:agent-8", name = 8 },
+                bool_title = { id = "kickside:agent-8", title = false },
+                map_prompts = { id = "kickside:agent-8", start_prompts = { first = "Hi" } },
+                number_prompt = { id = "kickside:agent-8", start_prompts = { "Hi", 42 } },
+                string_answer = "kickside:agent-8",
+            }
+            catalog_client._contract = fake_contract({
+                agent_details = function(_, input) return answers[input.agent] end,
+            })
+            for label in pairs(answers) do
+                local result = install(agent_details, { agent = label })
+                agent_details.handler()
+                test.eq(result.status, 500, label)
+                test.not_nil((string.find(result.body.error, "invalid agent for '" .. label .. "'", 1, true)), label)
+            end
         end)
 
         it("answers tool titles from the bound implementation, only for the requested names", function()
@@ -619,7 +619,6 @@ local function define_tests()
                     return {
                         ["kickside_search"] = { name = "kickside_search", title = "Search" },
                         ["not_requested"] = { name = "not_requested", title = "Extra" },
-                        ["unknown"] = true,
                     }
                 end,
             })
@@ -633,70 +632,40 @@ local function define_tests()
             test.eq(result.body.tools["kickside_search"].title, "Search")
         end)
 
-        it("rebuilds each catalog entry as name and title, with the name as the title fallback", function()
+        it("keeps only the name and title of a catalog tool, with the name as the title fallback", function()
             catalog_client._contract = fake_contract({
                 tool_titles = function()
                     return {
-                        ["kickside_search"] = { name = "kickside_search", id = "kickside:search", config = { token = "x" } },
-                        ["kickside_blank"] = { title = "" },
+                        ["kickside_search"] = { name = "kickside_search", title = "", id = "kickside:search", config = { token = "x" } },
                     }
                 end,
             })
-            local result = install(tools_by_name, { tools = "kickside_search,kickside_blank" })
+            local result = install(tools_by_name, { tools = "kickside_search" })
             tools_by_name.handler()
             test.eq(result.status, 200)
-            test.eq(count_keys(result.body.tools), 2)
             local search = result.body.tools["kickside_search"]
             test.eq(count_keys(search), 2)
             test.eq(search.name, "kickside_search")
             test.eq(search.title, "kickside_search")
-            local blank = result.body.tools["kickside_blank"]
-            test.eq(blank.name, "kickside_blank")
-            test.eq(blank.title, "kickside_blank")
             test.is_nil((string.find(result.raw, "token", 1, true)))
         end)
 
-        it("answers a catalog that cannot be loaded or listed with no agent and no tools, and logs it", function()
-            local warnings: any = {}
-            catalog_client._logger = {
-                warn = function(_, message, fields)
-                    warnings[#warnings + 1] = { message = message, fields = fields }
-                end,
-            }
-            for _, failure in ipairs({
-                { implementations_err = "permission denied" },
-                { get_err = "contract not found" },
+        it("answers 500 for a catalog tool answer that is not a map of {name, title}", function()
+            for _, case in ipairs({
+                { label = "nil", expected = "not a map of tools" },
+                { label = "string", value = "not a map", expected = "not a map of tools" },
+                { label = "boolean entry", value = { kickside_search = true }, expected = "is not {name, title}" },
+                { label = "no title", value = { kickside_search = { name = "kickside_search" } }, expected = "is not {name, title}" },
+                { label = "no name", value = { kickside_search = { title = "Search" } }, expected = "is not {name, title}" },
             }) do
-                catalog_client._contract = fake_contract({}, nil, failure.implementations_err, failure.get_err)
-                local agent = install(agent_details, { agent = "host-routes-public" })
-                agent_details.handler()
-                test.eq(agent.status, 200)
-                test.eq(agent.raw, '{"success":true,"agent":null}')
-
-                local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
+                catalog_client._contract = fake_contract({
+                    tool_titles = function() return case.value end,
+                })
+                local result = install(tools_by_name, { tools = "kickside_search" })
                 tools_by_name.handler()
-                test.eq(tools.status, 200)
-                test.not_nil((string.find(tools.raw, '"tools":{}', 1, true)))
+                test.eq(result.status, 500, case.label)
+                test.not_nil((string.find(result.body.error, case.expected, 1, true)), case.label)
             end
-            test.eq(#warnings, 4)
-            test.eq(warnings[1].fields.error, "permission denied")
-            test.eq(warnings[3].fields.error, "contract not found")
-        end)
-
-        it("answers a non-table catalog result or a failing catalog with an empty object", function()
-            catalog_client._contract = fake_contract({
-                tool_titles = function() return "not a map" end,
-            })
-            local non_table = install(tools_by_name, { tools = "host_routes_titled_tool" })
-            tools_by_name.handler()
-            test.eq(non_table.status, 200)
-            test.not_nil((string.find(non_table.raw, '"tools":{}', 1, true)))
-
-            catalog_client._contract = fake_contract({}, "binding failed")
-            local failed = install(tools_by_name, { tools = "host_routes_titled_tool" })
-            tools_by_name.handler()
-            test.eq(failed.status, 200)
-            test.not_nil((string.find(failed.raw, '"tools":{}', 1, true)))
         end)
     end)
 
@@ -915,21 +884,23 @@ local function define_tests()
             test.eq(#reader_calls.open, 0)
         end)
 
-        it("still answers from a readable session when the catalog fails to open or a call fails", function()
-            agent_details._session_reader = fake_reader({ ["session-10"] = "host-routes-private" })
+        it("answers 500 when the catalog fails, without falling back to session access", function()
+            local reader, reader_calls = fake_reader({ ["session-10"] = "host-routes-private" })
+            agent_details._session_reader = reader
             catalog_client._contract = fake_contract({}, "binding failed")
             local opened = install(agent_details, { agent = "host-routes-private", session_id = "session-10" })
             agent_details.handler()
-            test.eq(opened.status, 200)
-            test.eq(opened.body.agent.id, "app.api:host_routes_private_agent")
+            test.eq(opened.status, 500)
+            test.eq(opened.body.error, "agent lookup failed: binding failed")
 
             catalog_client._contract = fake_contract({
-                agent_details = function() return nil, "agent lookup failed" end,
+                agent_details = function() return nil, "agent store down" end,
             })
             local called = install(agent_details, { agent = "host-routes-private", session_id = "session-10" })
             agent_details.handler()
-            test.eq(called.status, 200)
-            test.eq(called.body.agent.id, "app.api:host_routes_private_agent")
+            test.eq(called.status, 500)
+            test.eq(called.body.error, "agent lookup failed: agent store down")
+            test.eq(#reader_calls.open, 0)
         end)
 
         it("never opens a session without session_id", function()

@@ -63,6 +63,11 @@ local function registry_tools(): ({[string]: any}?, string?)
     return by_name
 end
 
+local function fail(res, message: string)
+    res:set_status(api._http.STATUS.INTERNAL_ERROR)
+    res:write_json({ success = false, error = message })
+end
+
 local function handler()
     local res = api._http.response()
     local req = api._http.request()
@@ -100,35 +105,39 @@ local function handler()
         end
     end
 
-    -- A failing catalog gives no tools rather than the built-in answer.
-    local by_name = nil
+    -- A catalog that fails to open or to answer is an error, never a fallback
+    -- to the built-in rule.
+    local by_name, lookup_err
     local catalog, catalog_err = api._catalog_client.open()
-    if catalog then
-        by_name = api._catalog_client.call(catalog, "tool_titles", { names = names })
-    elseif not catalog_err then
-        local lookup_err
+    if catalog_err then
+        lookup_err = catalog_err
+    elseif catalog then
+        by_name, lookup_err = catalog:tool_titles({ names = names })
+    else
         by_name, lookup_err = registry_tools()
-        if lookup_err then
-            res:set_status(api._http.STATUS.INTERNAL_ERROR)
-            res:write_json({ success = false, error = "tool lookup failed" })
-            return
-        end
     end
+    if lookup_err then
+        fail(res, "tool lookup failed: " .. tostring(lookup_err))
+        return
+    end
+    -- The runtime does not check a contract answer against its output schema.
     if type(by_name) ~= "table" then
-        by_name = {}
+        fail(res, "tool lookup failed: the answer is not a map of tools")
+        return
     end
 
-    -- Only requested names are copied, and each one is rebuilt as
-    -- {name, title}, so a catalog's extra entries and extra fields never reach
-    -- the answer, and the title is never empty. An empty result must still
-    -- encode as {}.
+    -- Only requested names are copied, as {name, title}, so a catalog's extra
+    -- entries and fields never reach the answer. An empty title falls back to
+    -- the name. An empty result must still encode as {}.
     local result = table.create(0, 1)
     for _, name in ipairs(names) do
         local found = by_name[name]
-        if type(found) == "table" then
-            local tool_name = (type(found.name) == "string" and found.name ~= "") and found.name or name
-            local title = (type(found.title) == "string" and found.title ~= "") and found.title or tool_name
-            result[name] = { name = tool_name, title = title }
+        if found ~= nil then
+            if type(found) ~= "table" or type(found.name) ~= "string" or found.name == "" or type(found.title) ~= "string" then
+                fail(res, "tool lookup failed: the answer for '" .. name .. "' is not {name, title}")
+                return
+            end
+            result[name] = { name = found.name, title = found.title ~= "" and found.title or found.name }
         end
     end
 

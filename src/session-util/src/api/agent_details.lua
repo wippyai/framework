@@ -57,15 +57,20 @@ local function session_agent(session_id: string?, identifier: string)
     return requested
 end
 
--- Catalog first; the built-in rule hides meta.private agents. A failing
--- catalog gives no agent.
+-- Catalog first; the built-in rule hides meta.private agents. A catalog that
+-- fails to open or to answer is an error, never a fallback to the built-in
+-- rule.
 local function lookup_agent(identifier: string)
     local catalog, catalog_err = api._catalog_client.open()
     if catalog_err then
-        return nil
+        return nil, tostring(catalog_err)
     end
     if catalog then
-        return api._catalog_client.call(catalog, "agent_details", { agent = identifier })
+        local spec, call_err = catalog:agent_details({ agent = identifier })
+        if call_err then
+            return nil, tostring(call_err)
+        end
+        return spec
     end
     local spec = find_agent(identifier)
     if spec and spec.meta.private then
@@ -74,32 +79,41 @@ local function lookup_agent(identifier: string)
     return spec
 end
 
--- A catalog may answer anything that its output schema allows, for example {}
--- for "not found", so only a table with a non-empty string id is an agent.
-local function is_agent(spec): boolean
-    return type(spec) == "table" and type(spec.id) == "string" and spec.id ~= ""
-end
-
-local function text_or(value, fallback: string): string
-    if type(value) == "string" and value ~= "" then
-        return value
+-- The runtime does not check a contract answer against its output schema, so
+-- the handler checks the agent it is about to send. Returns what is wrong, or
+-- nil. An empty name or title is allowed: the answer falls back to the id or
+-- the name.
+local function invalid_agent(spec): string?
+    if type(spec) ~= "table" or type(spec.id) ~= "string" or spec.id == "" then
+        return "the agent has no string id"
     end
-    return fallback
-end
-
--- The Web Host renders start prompts as text, so only strings are returned.
--- A start_prompts value that is not a list gives no prompts.
-local function start_prompts_of(spec): {string}
-    local prompts: {string} = {}
-    if type(spec.start_prompts) ~= "table" then
-        return prompts
+    if spec.name ~= nil and type(spec.name) ~= "string" then
+        return "the agent name is not a string"
     end
-    for _, item in ipairs(spec.start_prompts) do
-        if type(item) == "string" then
-            prompts[#prompts + 1] = item
+    if spec.title ~= nil and type(spec.title) ~= "string" then
+        return "the agent title is not a string"
+    end
+    if spec.start_prompts ~= nil then
+        if type(spec.start_prompts) ~= "table" then
+            return "start_prompts is not a list"
+        end
+        local count = 0
+        for _, item in pairs(spec.start_prompts) do
+            count = count + 1
+            if type(item) ~= "string" then
+                return "start_prompts holds a value that is not a string"
+            end
+        end
+        if count ~= #spec.start_prompts then
+            return "start_prompts is not a list"
         end
     end
-    return prompts
+    return nil
+end
+
+local function fail(res, message: string)
+    res:set_status(api._http.STATUS.INTERNAL_ERROR)
+    res:write_json({ success = false, error = message })
 end
 
 local function handler()
@@ -134,27 +148,36 @@ local function handler()
     -- The normal lookup runs first, so a bound catalog's answer wins for an
     -- agent that the caller may see. Session access only adds an agent that
     -- the lookup hides.
-    local spec = lookup_agent(agent_param)
-    if not is_agent(spec) then
+    local spec, lookup_err = lookup_agent(agent_param)
+    if lookup_err then
+        fail(res, "agent lookup failed: " .. lookup_err)
+        return
+    end
+    if spec == nil then
         spec = session_agent(req:query("session_id"), agent_param)
     end
-    if not is_agent(spec) then
+    if spec == nil then
         res:set_status(api._http.STATUS.OK)
         res:write(api.NO_AGENT_BODY)
+        return
+    end
+    local invalid = invalid_agent(spec)
+    if invalid then
+        fail(res, "invalid agent for '" .. agent_param .. "': " .. invalid)
         return
     end
 
     -- An agent without meta.name (for example one found by registry id) is
     -- named by its id, so the name and the title fallback are never empty.
-    local name = text_or(spec.name, spec.id)
+    local name = (spec.name ~= nil and spec.name ~= "") and spec.name or spec.id
     res:set_status(api._http.STATUS.OK)
     res:write_json({
         success = true,
         agent = {
             id = spec.id,
             name = name,
-            title = text_or(spec.title, name),
-            start_prompts = start_prompts_of(spec)
+            title = (spec.title ~= nil and spec.title ~= "") and spec.title or name,
+            start_prompts = spec.start_prompts or {}
         }
     })
 end

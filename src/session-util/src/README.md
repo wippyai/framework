@@ -25,15 +25,19 @@ a token before the module runs. A request that reaches the module without a call
 `{"success":false,"error":"Authentication required"}`, and a missing or empty query parameter gets
 `400`. Every answer that the module writes has `Cache-Control: no-store`.
 
-The caller's scope needs these permissions. Without them, the routes answer as if nothing matched:
+Errors are not hidden. A lookup that fails, or an answer that is not in the documented shape, gives
+`500` with `{"success":false,"error":"<what failed>"}`. The module never falls back to another rule.
+
+The caller's scope needs these permissions:
 
 - `contract.get` and `contract.implementations` on `wippy.session_util:catalog`, also when no app binds
-  it;
-- with a binding, `contract.open` on the binding and `contract.call` on `agent_details` and
-  `tool_titles`;
-- without a binding, `registry.get` on the agent and tool entries;
-- for session access, with or without a binding, read access to `session:<id>` and `registry.get` on
-  the agent entries.
+  it. Without them, both routes answer `500`.
+- With a binding, `contract.open` on the binding and `contract.call` on `agent_details` and
+  `tool_titles`. Without them, both routes answer `500`.
+- Without a binding, `registry.get` on the agent and tool entries. The registry leaves out entries
+  that the caller can't read, so those are not found.
+- For session access, with or without a binding, read access to `session:<id>` and `registry.get` on
+  the agent entries. Without them, session access finds no agent.
 
 ## GET /agents/details
 
@@ -44,9 +48,10 @@ gives this answer:
 {"success":true,"agent":{"id":"app:helper","name":"helper","title":"Helper","start_prompts":["Summarize this page"]}}
 ```
 
-The `title` falls back to `name` when the title is empty, and `start_prompts` holds only the string
-items of the agent's list. When the agent is unknown or hidden, the answer is still `200`, with
-`{"success":true,"agent":null}`, so the caller can't tell whether a hidden agent exists.
+The `name` falls back to the id and the `title` to the name when they are empty. `start_prompts` must
+be a list of strings; an agent with any other value gives `500`. When the agent is unknown or hidden,
+the answer is still `200`, with `{"success":true,"agent":null}`, so the caller can't tell whether a
+hidden agent exists.
 
 Session access adds an agent that the normal lookup hides. When the lookup finds no agent, and
 `session_id` names a session that the caller can read, and that session runs the requested agent,
@@ -76,7 +81,7 @@ LLM name (`meta.llm_alias`, or the sanitized id name) or its full registry id. T
 `meta.title`, or the LLM name when the title is empty. Private tools are left out. When two tools
 share an LLM name, the module leaves that name out, because a tool call can't say which tool ran,
 but both registry ids still match. A registry failure gives `500` with
-`{"success":false,"error":"tool lookup failed"}`.
+`{"success":false,"error":"tool lookup failed: <cause>"}`.
 
 ## Optional catalog contract
 
@@ -84,8 +89,7 @@ An app whose agents or tools are not plain registry entries, or that hides them 
 binds the `wippy.session_util:catalog` contract. When a binding exists, both routes ask it instead
 of using the built-in rules. In `GET /agents/details`, session access still adds an agent that the
 catalog hides (see above). The binding runs as the caller. It must set `default: true`, because the
-module opens the default binding. A binding without it fails to open, and both routes then answer
-with no agent and no tools.
+module opens the default binding. A binding without it fails to open, and both routes answer `500`.
 
 ```yaml
 - name: session_catalog
@@ -99,14 +103,16 @@ with no agent and no tools.
 ```
 
 The `agent_details` method gets `{agent = "<id or name>"}` and returns
-`{id, name, title, start_prompts}`, or nil to answer with a null agent. An answer without a non-empty
-string `id` also counts as no agent, and a `name` or `title` that is not a non-empty string falls
-back to the id or the name. The `tool_titles` method gets
-`{names = {...}}` and returns a map from each name to `{name, title}`. The module returns only the
-names that the request asked for, and only their `name` and `title`. An empty title falls back to the
-name. When a bound catalog fails to open or a call fails, the routes answer with no agent and no
-tools, they don't fall back to the built-in rules, and the module logs a warning. Session access in
-`GET /agents/details` still applies.
+`{id, name, title, start_prompts}` (id a non-empty string, name and title strings, start_prompts a list
+of strings), or nil when the caller must not see the agent or it does not exist. The `tool_titles`
+method gets `{names = {...}}` and returns a map from each known name to `{name, title}` (both strings,
+name not empty). The module returns only the names that the request asked for, and only their `name`
+and `title`. An empty title falls back to the name.
+
+The runtime does not check a contract answer against the schemas in the contract definition, so the
+module checks it. A catalog that fails to open, a call that returns an error, and an answer in any
+other shape give `500`. The routes never fall back to the built-in rules, and session access does not
+run after a catalog error.
 
 ## Warnings
 

@@ -35,8 +35,19 @@ entries:
     prompt: Test only.
     start_prompts:
       - Summarize this page
-      - text: not a string prompt
       - Draft a reply
+
+  # A start prompt that is not a string: the answer is 500, not a filtered list.
+  - name: host_routes_object_prompts_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      name: host-routes-object-prompts
+    model: gpt-4o
+    prompt: Test only.
+    start_prompts:
+      - Summarize this page
+      - text: not a string prompt
 
   - name: host_routes_untitled_agent
     kind: registry.entry
