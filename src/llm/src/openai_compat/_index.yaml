@@ -31,6 +31,7 @@ entries:
       - ctx
       - security
     imports:
+      openai_mapper: wippy.llm.openai_compat:mapper
       transport: wippy.llm.util:transport
 
   # wippy.llm.openai_compat:driver
@@ -82,6 +83,15 @@ entries:
       retry:
         type: object
         description: Provider-level retry policy for transient transport/provider failures
+      text_content:
+        type: string
+        enum: [parts, string]
+        description: >-
+          Wire form of text-only system and user message content: parts (a content part
+          array) or string (its joined text), for endpoints that accept only string content.
+          A message carrying an image keeps its part array. An explicit unset value
+          (false in the driver context) uses the default.
+        default_value: parts
 
   # wippy.llm.openai_compat:embed
   - name: embed
@@ -105,6 +115,7 @@ entries:
     source: file://generate.lua
     modules:
       - json
+      - ctx
     imports:
       openai_client: wippy.llm.openai_compat:client
       openai_mapper: wippy.llm.openai_compat:mapper
@@ -187,6 +198,7 @@ entries:
     modules:
       - json
       - hash
+      - ctx
     imports:
       openai_client: wippy.llm.openai_compat:client
       openai_mapper: wippy.llm.openai_compat:mapper

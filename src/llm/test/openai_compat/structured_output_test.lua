@@ -1079,6 +1079,79 @@ local function define_tests()
             end)
         end)
 
+        describe("Text content form", function()
+            local handler_ctx = structured_output_handler._ctx
+            after_each(function() structured_output_handler._ctx = handler_ctx end)
+
+            it("sends string content when the context declares text_content string", function()
+                local sent: any = nil
+                structured_output_handler._ctx = {
+                    all = function() return { api_key = "test-api-key" } end,
+                    get = function() return "string" end
+                }
+                structured_output_handler._client._ctx = structured_output_handler._ctx
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function(_, options)
+                        sent = json.decode(tostring(options.body))
+                        return {
+                            status_code = 200,
+                            body = json.encode({ choices = {{ message = { content = '{"value":"x"}' }, finish_reason = "stop" }} }),
+                            headers = {}
+                        }
+                    end
+                }
+
+                local response = structured_output_handler.handler({
+                    model = "llama-3",
+                    messages = {
+                        { role = "developer", content = {{ type = "text", text = "Answer briefly" }} },
+                        { role = "user", content = {{ type = "text", text = "Generate data" }} }
+                    },
+                    schema = {
+                        type = "object",
+                        properties = { value = { type = "string" } },
+                        required = { "value" },
+                        additionalProperties = false
+                    }
+                })
+
+                test.is_true(response.success)
+                test.eq(sent.messages[1].role, "system")
+                test.eq(sent.messages[1].content, "Answer briefly")
+                test.eq(sent.messages[2].content, "Generate data")
+            end)
+
+            it("refuses a request whose context declares an unknown text_content", function()
+                local posted = false
+                structured_output_handler._ctx = {
+                    all = function() return { api_key = "test-api-key" } end,
+                    get = function() return "plain" end
+                }
+                structured_output_handler._client._ctx = structured_output_handler._ctx
+                structured_output_handler._client._env = { get = function() return nil end }
+                structured_output_handler._client._http_client = {
+                    post = function() posted = true end
+                }
+
+                local response, err = structured_output_handler.handler({
+                    model = "llama-3",
+                    messages = {{ role = "user", content = "Generate data" }},
+                    schema = {
+                        type = "object",
+                        properties = { value = { type = "string" } },
+                        required = { "value" },
+                        additionalProperties = false
+                    }
+                })
+
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(tostring(err:message()), "text_content")
+                test.is_false(posted)
+            end)
+        end)
+
         describe("Response-level failures", function()
             local schema = {
                 type = "object",

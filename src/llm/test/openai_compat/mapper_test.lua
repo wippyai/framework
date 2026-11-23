@@ -669,6 +669,82 @@ local function define_tests()
             end)
         end)
 
+        describe("String text content", function()
+            it("sends text-only system, developer and user content as one string", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "system", content = "Be brief" },
+                    { role = "developer", content = {{ type = "text", text = "Use Lua" }} },
+                    { role = "user", content = {
+                        { type = "text", text = "Hello" },
+                        { type = "text", text = { text = " world" } }
+                    } }
+                }, { text_content = "string" })
+
+                test.eq(#messages, 3)
+                test.eq(messages[1].role, "system")
+                test.eq(messages[1].content, "Be brief")
+                test.eq(messages[2].role, "system")
+                test.eq(messages[2].content, "Use Lua")
+                test.eq(messages[3].content, "Hello world")
+            end)
+
+            it("keeps content parts for a message that carries an image", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = {
+                        { type = "text", text = "Describe" },
+                        { type = "image", source = { type = "base64", mime_type = "image/png", data = "AAA" } }
+                    } }
+                }, { text_content = "string" })
+
+                local parts = messages[1].content :: any
+                test.eq(type(parts), "table")
+                test.eq(parts[1].text, "Describe")
+                test.eq(parts[2].type, "image_url")
+                test.eq(parts[2].image_url.url, "data:image/png;base64,AAA")
+            end)
+
+            it("joins every text part, an empty one included", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "system", content = "Rules" },
+                    { role = "user", content = {{ type = "text", text = "" }, { type = "text", text = "Hi" }} }
+                }, { text_content = "string" })
+
+                test.eq(messages[2].content, "Hi")
+            end)
+
+            it("sends content parts when text_content is parts", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = "Hello" }
+                }, { text_content = "parts" })
+
+                local parts = messages[1].content :: any
+                test.eq(parts[1].type, "text")
+                test.eq(parts[1].text, "Hello")
+            end)
+
+            it("resolves the text_content a driver context declares", function()
+                test.eq(openai_mapper.text_content(nil), "parts")
+                test.eq(openai_mapper.text_content(false), "parts")
+                test.eq(openai_mapper.text_content("parts"), "parts")
+                test.eq(openai_mapper.text_content("string"), "string")
+
+                for _, invalid in ipairs({ "plain", true, 29 }) do
+                    local form, err = openai_mapper.text_content(invalid)
+                    test.is_nil(form)
+                    test.contains(tostring(err), "text_content must be parts or string")
+                end
+            end)
+
+            it("places no cache breakpoint on string content", function()
+                local messages = openai_mapper.map_messages({
+                    { role = "user", content = "Cached prefix" },
+                    { role = "cache_marker" }
+                }, { model = "anthropic/claude-sonnet", text_content = "string" })
+
+                test.eq(messages[1].content, "Cached prefix")
+            end)
+        end)
+
         describe("Tool Mapping", function()
             it("should map contract tools to OpenAI format", function()
                 local contract_tools = {
@@ -1179,6 +1255,85 @@ local function define_tests()
             end)
         end)
 
+        describe("Reasoning Response Mapping", function()
+            -- A vLLM 0.30 chat completion with a reasoning parser: the reasoning
+            -- sits beside the answer on the message as `reasoning`.
+            local vllm_response = [[{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"51",
+                "reasoning":"The user wants 17 multiplied by 3.\n17 * 3 = 51.","role":"assistant"},"stop_reason":106}],
+                "created":1795334197,"id":"chatcmpl-9e6490d47c5a8c39","model":"gemma-4-26b","object":"chat.completion",
+                "usage":{"completion_tokens":145,"completion_tokens_details":{"reasoning_tokens":140},
+                "prompt_tokens":27,"total_tokens":172}}]]
+
+            it("maps message reasoning to metadata.thinking with its thinking tokens", function()
+                local decoded = json.decode(vllm_response)
+                local response = openai_mapper.map_success_response(decoded, { tool_name_map = {} }) :: any
+
+                test.eq(response.result.content, "51")
+                test.eq(response.metadata.thinking, "The user wants 17 multiplied by 3.\n17 * 3 = 51.")
+                test.is_nil(response.metadata.reasoning_details)
+                test.eq(response.tokens.thinking_tokens, 140)
+                test.eq(response.tokens.completion_tokens, 145)
+            end)
+
+            it("maps message reasoning_content to metadata.thinking", function()
+                local response = openai_mapper.map_success_response({
+                    choices = { { message = { role = "assistant", content = "51",
+                        reasoning_content = "17 * 3 = 51." }, finish_reason = "stop" } },
+                    usage = { prompt_tokens = 25, completion_tokens = 46, total_tokens = 71,
+                        completion_tokens_details = { reasoning_tokens = 38 } }
+                }, { tool_name_map = {} }) :: any
+
+                test.eq(response.result.content, "51")
+                test.eq(response.metadata.thinking, "17 * 3 = 51.")
+                test.eq(response.tokens.thinking_tokens, 38)
+            end)
+
+            it("takes the thinking of a message with reasoning_details from the details alone", function()
+                local details = { { type = "reasoning.text", text = "First. " }, { type = "reasoning.text", text = "Second." } }
+                local response = openai_mapper.map_success_response({
+                    choices = { { message = { role = "assistant", content = "done",
+                        reasoning = "First. Second.", reasoning_details = details }, finish_reason = "stop" } }
+                }, { tool_name_map = {} }) :: any
+
+                test.eq(response.metadata.thinking, "First. Second.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("uses plain reasoning when the details have no text", function()
+                for _, details in ipairs({ {}, { { type = "reasoning.encrypted" }, { text = "" } } }) do
+                    local response = openai_mapper.map_success_response({
+                        choices = { { message = { content = "done", reasoning = "Plain.",
+                            reasoning_details = details }, finish_reason = "stop" } }
+                    }, { tool_name_map = {} }) :: any
+
+                    test.eq(response.metadata.thinking, "Plain.")
+                    test.eq(response.metadata.reasoning_details, details)
+                end
+            end)
+
+            it("keeps top-level reasoning_details", function()
+                local details = { { type = "reasoning.text", text = "Top level." } }
+                local response = openai_mapper.map_success_response({
+                    reasoning_details = details,
+                    choices = { { message = { role = "assistant", content = "done" }, finish_reason = "stop" } }
+                }, { tool_name_map = {} }) :: any
+
+                test.eq(response.metadata.thinking, "Top level.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("sets no thinking for a message without reasoning", function()
+                local response = openai_mapper.map_success_response(json.decode(
+                    [[{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"51","role":"assistant"}}],
+                    "usage":{"completion_tokens":3,"completion_tokens_details":{"reasoning_tokens":0},
+                    "prompt_tokens":24,"total_tokens":27}}]]), { tool_name_map = {} }) :: any
+
+                test.eq(response.result.content, "51")
+                test.is_nil(response.metadata.thinking)
+                test.eq(response.tokens.thinking_tokens, 0)
+            end)
+        end)
+
         describe("Error Classification", function()
             -- classify_error is a pure function returning (kind, message, details).
 
@@ -1267,6 +1422,34 @@ local function define_tests()
                     :build()
                 test.eq(err:kind(), "RateLimited")
                 test.eq(err:retryable(), true)
+            end)
+        end)
+
+        describe("Tool JSON fidelity", function()
+            local json_extensions = json :: any
+            local raw = json_extensions.raw
+            local it_with_raw = raw and it or it_skip
+
+            it("keeps null tool call arguments when supported by the runtime", function()
+                local calls = openai_mapper.map_tool_calls({
+                    { id = "c1", type = "function", ["function"] = { name = "lookup", arguments = '{"items":[1,null],"q":null,"r":1}' } }
+                })
+                local args = calls[1].arguments
+                test.eq(args.q, json_extensions.null)
+                test.eq(args.items[2], json_extensions.null)
+                test.is_nil(calls[1].raw_arguments)
+                test.is_nil(calls[1].arguments_error)
+                test.eq(args.r, 1)
+                local expected = json_extensions.null and '{"items":[1,null],"q":null,"r":1}' or '{"items":[1],"r":1}'
+                test.eq(json.encode(args), expected)
+            end)
+
+            it_with_raw("sends a json.raw tool schema with its property order", function()
+                local text = '{"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":["integer","null"]}},"required":["zeta","alpha"],"additionalProperties":false}'
+                local schema, raw_err = raw(text)
+                test.is_nil(raw_err)
+                local tools = openai_mapper.map_tools({ { name = "lookup", description = "Look up", schema = schema } })
+                test.is_true(json.encode(tools):find('"parameters":' .. text, 1, true) ~= nil)
             end)
         end)
     end)

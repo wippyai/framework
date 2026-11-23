@@ -133,6 +133,14 @@ local response, err = llm.generate("Hello", {
 })
 ```
 
+### OpenAI-compatible reasoning
+
+The OpenAI-compatible driver returns a response's reasoning text in `metadata.thinking`, streamed or not, and streams it as thinking chunks. It keeps the OpenRouter `reasoning_details` array in `metadata.reasoning_details`. For each message or stream delta, it uses text from those details when present, then falls back to `reasoning` (vLLM, OpenRouter) or `reasoning_content` (earlier vLLM, SGLang, DeepSeek). Final streamed thinking includes the same text the driver emitted, in order. `usage.completion_tokens_details.reasoning_tokens` maps to `tokens.thinking_tokens`.
+
+### OpenAI-compatible text content
+
+The OpenAI-compatible driver sends system and user content as a content part array. An endpoint that accepts only string content takes the driver option `text_content: string`, set on the provider entry's `driver.options` or the route's options: a message whose every part is text is sent as its joined text, and a message carrying an image keeps its part array. Assistant and tool content is a string either way. An omitted option or an explicit `false` in the driver context uses the default `parts` format. Other values outside `parts` and `string` fail with `invalid_request` before HTTP. String content carries no `cache_control`, so a cache marker after such a message sets no breakpoint.
+
 ### Thinking block binding
 
 Claude and Bedrock store each response's `thinking` blocks as `{ type, thinking, signature }` and `redacted_thinking` blocks as `{ type, data }` in `metadata.thinking_blocks`, in response order (Bedrock: replayed as `reasoningContent.reasoningText` and `reasoningContent.redactedContent`). A response that is thinking, then at most one text block, then tool calls replays in that order with no record. Any other response, such as thinking between text and tool calls, also carries `metadata.content_positions` and a `position` on each thinking block; a host that stores `content_positions` next to `thinking_blocks` on the assistant row (or the first function call row of the response when it has no text) gets the response order back, with each visible text block separate, as long as the calls of that response are consecutive function call rows, which consolidate into one assistant turn. A function result between those rows splits the turn, and the order is then not rebuilt across the split. Each emitted assistant turn drops trailing thinking, including turns assembled from rows without positions. Whitespace-only text blocks of a recorded response are not rendered: the API compares neither those nor the outer whitespace of a text block, so leaving them out changes no prefix. Rows without `content_positions`, including every row stored before it existed, replay as all the thinking blocks of the row, then its text as one block, then its calls; so do rows whose text, apart from outer whitespace, no longer equals the recorded text. A recorded call the conversation no longer holds leaves the layout, and the thinking behind the last remaining text or call is not replayed: it led to that call, and an assistant turn cannot end in it. `thinking.discard_calls` applies the same rule to a response's metadata for a caller that discards its calls. Positions never reach the wire, and other drivers ignore them. Claude replays each block unchanged except for fields an earlier stored shape carried that its type does not accept (`data` on `thinking`, `thinking` and `signature` on `redacted_thinking`). A Claude thinking block is bound to the conversation that produced it: the top-level system prompt, the tools, and every earlier message. After an agent handoff, a prompt or tool change, or a history edit, models that enforce the check reject a request that replays such a block with a 400.
@@ -394,6 +402,11 @@ end
 
 A tool needs a `name` and a `schema`; `description` is optional, and every driver sends a
 tool without one with the description field omitted.
+
+Wippy v0.3.63a and later preserve explicit null tool arguments as `json.null`
+when reading and replaying calls. To send a schema with a particular property
+order, pass `schema = json.raw(schema_text)`. Earlier runtimes use their
+existing JSON decoder and support table schemas.
 
 Tool calls with malformed JSON arguments retain the original string in `arguments` and
 `raw_arguments`, with the decoder diagnostic in `arguments_error`. These optional fields
