@@ -54,6 +54,16 @@ entries:
     model: gpt-4o
     prompt: Test only.
 
+  # Private and without meta.name, like host_routes_nameless_agent: the two
+  # names are equal (empty), so only the registry id tells them apart.
+  - name: host_routes_nameless_private_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+      private: true
+    model: gpt-4o
+    prompt: Test only.
+
   - name: host_routes_private_agent
     kind: registry.entry
     meta:
@@ -120,6 +130,15 @@ entries:
     meta:
       type: tool
       title: Titled Fixture Tool
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
+  # A dot in the entry name: the LLM name is the sanitized name part.
+  - name: host_routes.dotted_tool
+    kind: function.lua
+    meta:
+      type: tool
       input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
     source: file://host_routes_tool.lua
     method: run

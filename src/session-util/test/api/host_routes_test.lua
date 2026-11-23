@@ -52,12 +52,14 @@ end
 
 -- A fake contract module. `implementation` is what :open() returns; nil means
 -- no application binds the catalog. `implementations_err` makes
--- :implementations() fail. `calls` counts what the handler did.
-local function fake_contract(implementation: any?, open_err: string?, implementations_err: string?): (any, any)
+-- :implementations() fail, and `get_err` makes contract.get fail. `calls`
+-- counts what the handler did.
+local function fake_contract(implementation: any?, open_err: string?, implementations_err: string?, get_err: string?): (any, any)
     local calls: any = { get = {}, open = 0 }
     local module = {
         get = function(id)
             calls.get[#calls.get + 1] = id
+            if get_err then return nil, get_err end
             return {
                 implementations = function(_)
                     if implementations_err then return nil, implementations_err end
@@ -351,6 +353,15 @@ local function define_tests()
             test.is_nil(result.body.tools["host_routes_aliased_tool"])
         end)
 
+        it("finds a tool by the sanitized name part of its registry id", function()
+            local result = install(tools_by_name, { tools = "host_routes_dotted_tool,app.api:host_routes.dotted_tool" })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            test.eq(count_keys(result.body.tools), 2)
+            test.eq(result.body.tools["host_routes_dotted_tool"].name, "host_routes_dotted_tool")
+            test.eq(result.body.tools["app.api:host_routes.dotted_tool"].name, "host_routes_dotted_tool")
+        end)
+
         it("uses the LLM name as the title when the tool has none", function()
             local result = install(tools_by_name, { tools = "host_routes_plain_tool" })
             tools_by_name.handler()
@@ -544,6 +555,26 @@ local function define_tests()
             test.eq(result.body.agent.start_prompts[1], "From the catalog")
         end)
 
+        it("answers a catalog result without a string id as no agent, and falls back for names and titles that are not strings", function()
+            catalog_client._contract = fake_contract({
+                agent_details = function(_, input)
+                    if input.agent == "empty" then return {} end
+                    return { id = "kickside:agent-8", name = 8, title = false }
+                end,
+            })
+            local empty = install(agent_details, { agent = "empty" })
+            agent_details.handler()
+            test.eq(empty.status, 200)
+            test.eq(empty.raw, '{"success":true,"agent":null}')
+
+            local odd = install(agent_details, { agent = "agent-8" })
+            agent_details.handler()
+            test.eq(odd.status, 200)
+            test.eq(odd.body.agent.id, "kickside:agent-8")
+            test.eq(odd.body.agent.name, "kickside:agent-8")
+            test.eq(odd.body.agent.title, "kickside:agent-8")
+        end)
+
         it("answers a nil catalog result with 200 and a null agent, even for a public registry agent", function()
             local contract_module = fake_contract({
                 agent_details = function() return nil end,
@@ -625,18 +656,31 @@ local function define_tests()
             test.is_nil((string.find(result.raw, "token", 1, true)))
         end)
 
-        it("answers a catalog whose implementations cannot be listed with no agent and no tools", function()
-            catalog_client._contract = fake_contract({}, nil, "permission denied")
-            local agent = install(agent_details, { agent = "host-routes-public" })
-            agent_details.handler()
-            test.eq(agent.status, 200)
-            test.eq(agent.raw, '{"success":true,"agent":null}')
+        it("answers a catalog that cannot be loaded or listed with no agent and no tools, and logs it", function()
+            local warnings: any = {}
+            catalog_client._logger = {
+                warn = function(_, message, fields)
+                    warnings[#warnings + 1] = { message = message, fields = fields }
+                end,
+            }
+            for _, failure in ipairs({
+                { implementations_err = "permission denied" },
+                { get_err = "contract not found" },
+            }) do
+                catalog_client._contract = fake_contract({}, nil, failure.implementations_err, failure.get_err)
+                local agent = install(agent_details, { agent = "host-routes-public" })
+                agent_details.handler()
+                test.eq(agent.status, 200)
+                test.eq(agent.raw, '{"success":true,"agent":null}')
 
-            catalog_client._contract = fake_contract({}, nil, "permission denied")
-            local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
-            tools_by_name.handler()
-            test.eq(tools.status, 200)
-            test.not_nil((string.find(tools.raw, '"tools":{}', 1, true)))
+                local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
+                tools_by_name.handler()
+                test.eq(tools.status, 200)
+                test.not_nil((string.find(tools.raw, '"tools":{}', 1, true)))
+            end
+            test.eq(#warnings, 4)
+            test.eq(warnings[1].fields.error, "permission denied")
+            test.eq(warnings[3].fields.error, "contract not found")
         end)
 
         it("answers a non-table catalog result or a failing catalog with an empty object", function()
@@ -703,7 +747,8 @@ local function define_tests()
         it("finds no catalog implementation through the real contract module", function()
             local catalog, err = contract.get("wippy.session_util:catalog")
             test.is_nil(err)
-            local implementations = catalog:implementations()
+            local implementations, implementations_err = catalog:implementations()
+            test.is_nil(implementations_err)
             test.eq(#(implementations or {}), 0)
         end)
 
@@ -787,6 +832,14 @@ local function define_tests()
             test.eq(result.status, 200)
             test.eq(result.body.agent.id, "app.api:host_routes_private_agent")
             test.eq(result.body.agent.title, "Hidden Helper")
+        end)
+
+        it("matches the session's agent by registry id, not by name", function()
+            agent_details._session_reader = fake_reader({ ["session-11"] = "app.api:host_routes_nameless_agent" })
+            local result = install(agent_details, { agent = "app.api:host_routes_nameless_private_agent", session_id = "session-11" })
+            agent_details.handler()
+            test.eq(result.status, 200)
+            test.eq(result.raw, '{"success":true,"agent":null}')
         end)
 
         it("answers a hidden agent with null when a session stored by id or by name runs a different agent", function()

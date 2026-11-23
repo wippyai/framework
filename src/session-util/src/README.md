@@ -20,9 +20,10 @@ The `api_router` parameter is required. It names the `http.router` that serves b
 paths below are relative to that router's prefix. The module also loads `wippy/agent` and
 `wippy/session`.
 
-Both routes run as the signed-in caller. They answer `401` with
-`{"success":false,"error":"Authentication required"}` when there is no caller, and `400` when the
-query parameter is missing or empty. Every answer has `Cache-Control: no-store`.
+Both routes run as the signed-in caller. A router with token authentication rejects a request without
+a token before the module runs. A request that reaches the module without a caller gets `401` with
+`{"success":false,"error":"Authentication required"}`, and a missing or empty query parameter gets
+`400`. Every answer that the module writes has `Cache-Control: no-store`.
 
 The caller's scope needs these permissions. Without them, the routes answer as if nothing matched:
 
@@ -54,6 +55,10 @@ id or the name. The module then answers even when the agent is private, and even
 catalog hides it. This covers registry agents only. When the lookup finds the agent, its answer wins
 and the module does not read the session.
 
+Session access trusts the agent id that the session stores. An app that hides agents must also check
+the agent when a session starts. Otherwise a user who starts a session with a hidden agent can read
+that agent's title and start prompts.
+
 Without a binding, the module looks the agent up by registry id first and by `meta.name` second, and
 it hides agents with `meta.private: true`.
 
@@ -78,7 +83,9 @@ but both registry ids still match. A registry failure gives `500` with
 An app whose agents or tools are not plain registry entries, or that hides them by its own rules,
 binds the `wippy.session_util:catalog` contract. When a binding exists, both routes ask it instead
 of using the built-in rules. In `GET /agents/details`, session access still adds an agent that the
-catalog hides (see above). The binding runs as the caller.
+catalog hides (see above). The binding runs as the caller. It must set `default: true`, because the
+module opens the default binding. A binding without it fails to open, and both routes then answer
+with no agent and no tools.
 
 ```yaml
 - name: session_catalog
@@ -92,7 +99,9 @@ catalog hides (see above). The binding runs as the caller.
 ```
 
 The `agent_details` method gets `{agent = "<id or name>"}` and returns
-`{id, name, title, start_prompts}`, or nil to answer with a null agent. The `tool_titles` method gets
+`{id, name, title, start_prompts}`, or nil to answer with a null agent. An answer without a non-empty
+string `id` also counts as no agent, and a `name` or `title` that is not a non-empty string falls
+back to the id or the name. The `tool_titles` method gets
 `{names = {...}}` and returns a map from each name to `{name, title}`. The module returns only the
 names that the request asked for, and only their `name` and `title`. An empty title falls back to the
 name. When a bound catalog fails to open or a call fails, the routes answer with no agent and no

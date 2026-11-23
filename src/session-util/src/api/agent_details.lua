@@ -74,6 +74,19 @@ local function lookup_agent(identifier: string)
     return spec
 end
 
+-- A catalog may answer anything that its output schema allows, for example {}
+-- for "not found", so only a table with a non-empty string id is an agent.
+local function is_agent(spec): boolean
+    return type(spec) == "table" and type(spec.id) == "string" and spec.id ~= ""
+end
+
+local function text_or(value, fallback: string): string
+    if type(value) == "string" and value ~= "" then
+        return value
+    end
+    return fallback
+end
+
 -- The Web Host renders start prompts as text, so only strings are returned.
 -- A start_prompts value that is not a list gives no prompts.
 local function start_prompts_of(spec): {string}
@@ -122,10 +135,10 @@ local function handler()
     -- agent that the caller may see. Session access only adds an agent that
     -- the lookup hides.
     local spec = lookup_agent(agent_param)
-    if type(spec) ~= "table" then
+    if not is_agent(spec) then
         spec = session_agent(req:query("session_id"), agent_param)
     end
-    if type(spec) ~= "table" then
+    if not is_agent(spec) then
         res:set_status(api._http.STATUS.OK)
         res:write(api.NO_AGENT_BODY)
         return
@@ -133,14 +146,14 @@ local function handler()
 
     -- An agent without meta.name (for example one found by registry id) is
     -- named by its id, so the name and the title fallback are never empty.
-    local name = (spec.name ~= nil and spec.name ~= "") and spec.name or spec.id
+    local name = text_or(spec.name, spec.id)
     res:set_status(api._http.STATUS.OK)
     res:write_json({
         success = true,
         agent = {
             id = spec.id,
             name = name,
-            title = (spec.title ~= nil and spec.title ~= "") and spec.title or name,
+            title = text_or(spec.title, name),
             start_prompts = start_prompts_of(spec)
         }
     })
