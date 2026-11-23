@@ -212,6 +212,16 @@ local function define_tests()
             test.eq(#agent.start_prompts, 0)
         end)
 
+        it("names an agent without meta.name by its registry id", function()
+            local result = install(agent_details, { agent = "app.api:host_routes_nameless_agent" })
+            agent_details.handler()
+            test.eq(result.status, 200)
+            local agent = result.body.agent
+            test.eq(agent.id, "app.api:host_routes_nameless_agent")
+            test.eq(agent.name, "app.api:host_routes_nameless_agent")
+            test.eq(agent.title, "app.api:host_routes_nameless_agent")
+        end)
+
         it("finds an agent by a name that contains a colon", function()
             local result = install(agent_details, { agent = "host-routes:colon" })
             agent_details.handler()

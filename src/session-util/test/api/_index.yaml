@@ -46,6 +46,14 @@ entries:
     model: gpt-4o
     prompt: Test only.
 
+  # No meta.name and no title: found only by registry id.
+  - name: host_routes_nameless_agent
+    kind: registry.entry
+    meta:
+      type: agent.gen1
+    model: gpt-4o
+    prompt: Test only.
+
   - name: host_routes_private_agent
     kind: registry.entry
     meta:

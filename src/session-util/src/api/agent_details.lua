@@ -128,13 +128,16 @@ local function handler()
         return
     end
 
+    -- An agent without meta.name (for example one found by registry id) is
+    -- named by its id, so the name and the title fallback are never empty.
+    local name = (spec.name ~= nil and spec.name ~= "") and spec.name or spec.id
     res:set_status(api._http.STATUS.OK)
     res:write_json({
         success = true,
         agent = {
             id = spec.id,
-            name = spec.name,
-            title = (spec.title ~= nil and spec.title ~= "") and spec.title or spec.name,
+            name = name,
+            title = (spec.title ~= nil and spec.title ~= "") and spec.title or name,
             start_prompts = start_prompts_of(spec)
         }
     })
