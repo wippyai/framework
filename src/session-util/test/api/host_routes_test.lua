@@ -846,8 +846,9 @@ local function define_tests()
             test.eq(#reader_calls.open, 0)
         end)
 
-        it("answers from the catalog when the session's agent is not in the registry", function()
-            agent_details._session_reader = fake_reader({ ["session-3"] = "app-specific:agent-9" })
+        it("answers an agent that only the catalog knows from the catalog, without reading the session", function()
+            local reader, reader_calls = fake_reader({ ["session-3"] = "app-specific:agent-9" })
+            agent_details._session_reader = reader
             catalog_client._contract = fake_contract({
                 agent_details = function(_, input)
                     return { id = input.agent, name = "agent-9", title = "Catalog Agent" }
@@ -858,6 +859,24 @@ local function define_tests()
             test.eq(result.status, 200)
             test.eq(result.body.agent.id, "app-specific:agent-9")
             test.eq(result.body.agent.title, "Catalog Agent")
+            test.eq(#reader_calls.open, 0)
+        end)
+
+        it("still answers from a readable session when the catalog fails to open or a call fails", function()
+            agent_details._session_reader = fake_reader({ ["session-10"] = "host-routes-private" })
+            catalog_client._contract = fake_contract({}, "binding failed")
+            local opened = install(agent_details, { agent = "host-routes-private", session_id = "session-10" })
+            agent_details.handler()
+            test.eq(opened.status, 200)
+            test.eq(opened.body.agent.id, "app.api:host_routes_private_agent")
+
+            catalog_client._contract = fake_contract({
+                agent_details = function() return nil, "agent lookup failed" end,
+            })
+            local called = install(agent_details, { agent = "host-routes-private", session_id = "session-10" })
+            agent_details.handler()
+            test.eq(called.status, 200)
+            test.eq(called.body.agent.id, "app.api:host_routes_private_agent")
         end)
 
         it("never opens a session without session_id", function()

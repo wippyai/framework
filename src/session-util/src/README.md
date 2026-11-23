@@ -31,7 +31,8 @@ The caller's scope needs these permissions. Without them, the routes answer as i
 - with a binding, `contract.open` on the binding and `contract.call` on `agent_details` and
   `tool_titles`;
 - without a binding, `registry.get` on the agent and tool entries;
-- for session access, read access to `session:<id>`.
+- for session access, with or without a binding, read access to `session:<id>` and `registry.get` on
+  the agent entries.
 
 ## GET /agents/details
 
@@ -95,7 +96,8 @@ The `agent_details` method gets `{agent = "<id or name>"}` and returns
 `{names = {...}}` and returns a map from each name to `{name, title}`. The module returns only the
 names that the request asked for, and only their `name` and `title`. An empty title falls back to the
 name. When a bound catalog fails to open or a call fails, the routes answer with no agent and no
-tools, they don't fall back to the built-in rules, and the module logs a warning.
+tools, they don't fall back to the built-in rules, and the module logs a warning. Session access in
+`GET /agents/details` still applies.
 
 ## Warnings
 
