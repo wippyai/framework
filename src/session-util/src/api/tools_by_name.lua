@@ -128,24 +128,30 @@ local function handler()
 
     -- Only requested names are copied, as {name, title}, so a catalog's extra
     -- entries and fields never reach the answer. An empty title falls back to
-    -- the name. An empty result must still encode as {}.
+    -- the name. One request carries every tool name of a chat, so one entry in
+    -- the wrong shape must not hide the other titles: it is reported by name
+    -- in `errors`, and the others are answered. An empty result must still
+    -- encode as {}.
     local result = table.create(0, 1)
+    local errors = nil
     for _, name in ipairs(names) do
         local found = by_name[name]
         if found ~= nil then
             if type(found) ~= "table" or type(found.name) ~= "string" or found.name == "" or type(found.title) ~= "string" then
-                fail(res, "tool lookup failed: the answer for '" .. name .. "' is not {name, title}")
-                return
+                errors = errors or {}
+                errors[name] = "the answer for '" .. name .. "' is not {name, title}"
+            else
+                result[name] = { name = found.name, title = found.title ~= "" and found.title or found.name }
             end
-            result[name] = { name = found.name, title = found.title ~= "" and found.title or found.name }
         end
     end
 
+    local body: any = { success = true, tools = result }
+    if errors then
+        body.errors = errors
+    end
     res:set_status(api._http.STATUS.OK)
-    res:write_json({
-        success = true,
-        tools = result
-    })
+    res:write_json(body)
 end
 
 api.handler = handler

@@ -145,6 +145,16 @@ entries:
     source: file://host_routes_tool.lua
     method: run
 
+  # A title that is not a string: reported in `errors`, other tools still answered.
+  - name: host_routes_numeric_title_tool
+    kind: function.lua
+    meta:
+      type: tool
+      title: 42
+      input_schema: '{"type":"object","properties":{},"additionalProperties":false}'
+    source: file://host_routes_tool.lua
+    method: run
+
   # A dot in the entry name: the LLM name is the sanitized name part.
   - name: host_routes.dotted_tool
     kind: function.lua

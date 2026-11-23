@@ -368,6 +368,22 @@ local function define_tests()
             test.eq(result.body.tools["app.api:host_routes.dotted_tool"].name, "host_routes_dotted_tool")
         end)
 
+        it("reports a registry tool whose title is not a string, and still answers the other tools", function()
+            local result = install(tools_by_name, { tools = "host_routes_titled_tool,host_routes_numeric_title_tool" })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            test.eq(count_keys(result.body.tools), 1)
+            test.eq(result.body.tools["host_routes_titled_tool"].title, "Titled Fixture Tool")
+            test.eq(result.body.errors["host_routes_numeric_title_tool"], "the answer for 'host_routes_numeric_title_tool' is not {name, title}")
+        end)
+
+        it("sends no errors field when every requested tool is in shape", function()
+            local result = install(tools_by_name, { tools = "host_routes_titled_tool,host_routes_no_such_tool" })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            test.is_nil(result.body.errors)
+        end)
+
         it("uses the LLM name as the title when the tool has none", function()
             local result = install(tools_by_name, { tools = "host_routes_plain_tool" })
             tools_by_name.handler()
@@ -650,13 +666,10 @@ local function define_tests()
             test.is_nil((string.find(result.raw, "token", 1, true)))
         end)
 
-        it("answers 500 for a catalog tool answer that is not a map of {name, title}", function()
+        it("answers 500 for a catalog tool answer that is not a map", function()
             for _, case in ipairs({
-                { label = "nil", expected = "not a map of tools" },
-                { label = "string", value = "not a map", expected = "not a map of tools" },
-                { label = "boolean entry", value = { kickside_search = true }, expected = "is not {name, title}" },
-                { label = "no title", value = { kickside_search = { name = "kickside_search" } }, expected = "is not {name, title}" },
-                { label = "no name", value = { kickside_search = { title = "Search" } }, expected = "is not {name, title}" },
+                { label = "nil" },
+                { label = "string", value = "not a map" },
             }) do
                 catalog_client._contract = fake_contract({
                     tool_titles = function() return case.value end,
@@ -664,7 +677,30 @@ local function define_tests()
                 local result = install(tools_by_name, { tools = "kickside_search" })
                 tools_by_name.handler()
                 test.eq(result.status, 500, case.label)
-                test.not_nil((string.find(result.body.error, case.expected, 1, true)), case.label)
+                test.eq(result.body.error, "tool lookup failed: the answer is not a map of tools", case.label)
+            end
+        end)
+
+        it("reports each catalog tool entry that is not {name, title} by name, and still answers the other tools", function()
+            catalog_client._contract = fake_contract({
+                tool_titles = function()
+                    return {
+                        kickside_search = { name = "kickside_search", title = "Search" },
+                        bad_boolean = true,
+                        bad_no_title = { name = "bad_no_title" },
+                        bad_no_name = { title = "No Name" },
+                    }
+                end,
+            })
+            local result = install(tools_by_name, { tools = "kickside_search,bad_boolean,bad_no_title,bad_no_name" })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            test.is_true(result.body.success)
+            test.eq(count_keys(result.body.tools), 1)
+            test.eq(result.body.tools["kickside_search"].title, "Search")
+            test.eq(count_keys(result.body.errors), 3)
+            for _, name in ipairs({ "bad_boolean", "bad_no_title", "bad_no_name" }) do
+                test.eq(result.body.errors[name], "the answer for '" .. name .. "' is not {name, title}")
             end
         end)
     end)

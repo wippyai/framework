@@ -83,6 +83,14 @@ share an LLM name, the module leaves that name out, because a tool call can't sa
 but both registry ids still match. A registry failure gives `500` with
 `{"success":false,"error":"tool lookup failed: <cause>"}`.
 
+One request carries every tool name of a chat, so one bad tool must not hide the other titles. A
+requested tool whose entry is not `{name, title}` (both strings, name not empty) is left out of
+`tools` and reported by name, and the other tools are still answered:
+
+```json
+{"success":true,"tools":{"search_docs":{"name":"search_docs","title":"Search docs"}},"errors":{"bad_tool":"the answer for 'bad_tool' is not {name, title}"}}
+```
+
 ## Optional catalog contract
 
 An app whose agents or tools are not plain registry entries, or that hides them by its own rules,
@@ -110,8 +118,9 @@ name not empty). The module returns only the names that the request asked for, a
 and `title`. An empty title falls back to the name.
 
 The runtime does not check a contract answer against the schemas in the contract definition, so the
-module checks it. A catalog that fails to open, a call that returns an error, and an answer in any
-other shape give `500`. The routes never fall back to the built-in rules, and session access does not
+module checks it. A catalog that fails to open, a call that returns an error, an agent answer in any
+other shape, and a tool answer that is not a map give `500`. A single tool entry in the wrong shape is
+reported in `errors`, as described above. The routes never fall back to the built-in rules, and session access does not
 run after a catalog error.
 
 ## Warnings
