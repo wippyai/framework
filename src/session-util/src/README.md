@@ -24,6 +24,15 @@ Both routes run as the signed-in caller. They answer `401` with
 `{"success":false,"error":"Authentication required"}` when there is no caller, and `400` when the
 query parameter is missing or empty. Every answer has `Cache-Control: no-store`.
 
+The caller's scope needs these permissions. Without them, the routes answer as if nothing matched:
+
+- `contract.get` and `contract.implementations` on `wippy.session_util:catalog`, also when no app binds
+  it;
+- with a binding, `contract.open` on the binding and `contract.call` on `agent_details` and
+  `tool_titles`;
+- without a binding, `registry.get` on the agent and tool entries;
+- for session access, read access to `session:<id>`.
+
 ## GET /agents/details
 
 The query is `?agent=<registry id or name>`, with an optional `&session_id=<id>`. A found agent
@@ -37,12 +46,12 @@ The `title` falls back to `name` when the title is empty, and `start_prompts` ho
 items of the agent's list. When the agent is unknown or hidden, the answer is still `200`, with
 `{"success":true,"agent":null}`, so the caller can't tell whether a hidden agent exists.
 
-Session access runs first. When `session_id` names a session that the caller can read, and that
-session runs the requested agent, the module answers from the registry. The agents match by registry
-id, whether the request uses the id or the name. The module answers even when the agent is private,
-and even when a bound catalog would hide it. This covers registry agents only. An agent that only a
-catalog knows always comes from the catalog. In every other case the module ignores `session_id` and
-uses the normal lookup.
+Session access adds an agent that the normal lookup hides. When the lookup finds no agent, and
+`session_id` names a session that the caller can read, and that session runs the requested agent,
+the module answers from the registry. The agents match by registry id, whether the request uses the
+id or the name. The module then answers even when the agent is private, and even when a bound
+catalog hides it. This covers registry agents only. When the lookup finds the agent, its answer wins
+and the module does not read the session.
 
 Without a binding, the module looks the agent up by registry id first and by `meta.name` second, and
 it hides agents with `meta.private: true`.
@@ -67,8 +76,8 @@ but both registry ids still match. A registry failure gives `500` with
 
 An app whose agents or tools are not plain registry entries, or that hides them by its own rules,
 binds the `wippy.session_util:catalog` contract. When a binding exists, both routes ask it instead
-of using the built-in rules. The one exception is session access in `GET /agents/details`: it runs
-before the catalog and can answer without it. The binding runs as the caller.
+of using the built-in rules. In `GET /agents/details`, session access still adds an agent that the
+catalog hides (see above). The binding runs as the caller.
 
 ```yaml
 - name: session_catalog
@@ -84,8 +93,9 @@ before the catalog and can answer without it. The binding runs as the caller.
 The `agent_details` method gets `{agent = "<id or name>"}` and returns
 `{id, name, title, start_prompts}`, or nil to answer with a null agent. The `tool_titles` method gets
 `{names = {...}}` and returns a map from each name to `{name, title}`. The module returns only the
-names that the request asked for. When a bound catalog fails to open, the routes answer with no agent
-and no tools, and they don't fall back to the built-in rules.
+names that the request asked for, and only their `name` and `title`. An empty title falls back to the
+name. When a bound catalog fails to open or a call fails, the routes answer with no agent and no
+tools, they don't fall back to the built-in rules, and the module logs a warning.
 
 ## Warnings
 

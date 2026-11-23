@@ -51,14 +51,16 @@ local function install(api, query: {[string]: string}, authenticated: boolean?):
 end
 
 -- A fake contract module. `implementation` is what :open() returns; nil means
--- no application binds the catalog. `calls` counts what the handler did.
-local function fake_contract(implementation: any?, open_err: string?): (any, any)
+-- no application binds the catalog. `implementations_err` makes
+-- :implementations() fail. `calls` counts what the handler did.
+local function fake_contract(implementation: any?, open_err: string?, implementations_err: string?): (any, any)
     local calls: any = { get = {}, open = 0 }
     local module = {
         get = function(id)
             calls.get[#calls.get + 1] = id
             return {
                 implementations = function(_)
+                    if implementations_err then return nil, implementations_err end
                     if implementation == nil then return {} end
                     return { "app.api:fake_catalog_binding" }
                 end,
@@ -242,6 +244,7 @@ local function define_tests()
             local by_name = install(agent_details, { agent = "host-routes-missing" })
             agent_details.handler()
             test.eq(by_name.status, 200)
+            test.eq(by_name.headers["Cache-Control"], "no-store")
             test.eq(by_name.raw, '{"success":true,"agent":null}')
 
             local by_id = install(agent_details, { agent = "app.api:host_routes_missing_agent" })
@@ -273,6 +276,7 @@ local function define_tests()
             local missing = install(agent_details, {})
             agent_details.handler()
             test.eq(missing.status, 400)
+            test.eq(missing.headers["Cache-Control"], "no-store")
             test.is_false(missing.body.success)
             test.not_nil(missing.body.error)
 
@@ -286,6 +290,7 @@ local function define_tests()
             local result = install(agent_details, { agent = "host-routes-public" }, false)
             agent_details.handler()
             test.eq(result.status, 401)
+            test.eq(result.headers["Cache-Control"], "no-store")
             test.is_false(result.body.success)
             test.eq(result.body.error, "Authentication required")
             test.is_nil(result.body.agent)
@@ -314,6 +319,7 @@ local function define_tests()
             local result = install(tools_by_name, { tools = "host_routes_titled_tool" })
             tools_by_name.handler()
             test.eq(result.status, 500)
+            test.eq(result.headers["Cache-Control"], "no-store")
             test.is_false(result.body.success)
             test.eq(result.body.error, "tool lookup failed")
             test.is_nil(result.body.tools)
@@ -389,6 +395,7 @@ local function define_tests()
             local missing = install(tools_by_name, {})
             tools_by_name.handler()
             test.eq(missing.status, 400)
+            test.eq(missing.headers["Cache-Control"], "no-store")
             test.is_false(missing.body.success)
             test.not_nil(missing.body.error)
 
@@ -402,6 +409,7 @@ local function define_tests()
             local result = install(tools_by_name, { tools = "host_routes_titled_tool" }, false)
             tools_by_name.handler()
             test.eq(result.status, 401)
+            test.eq(result.headers["Cache-Control"], "no-store")
             test.is_false(result.body.success)
             test.eq(result.body.error, "Authentication required")
             test.is_nil(result.body.tools)
@@ -464,6 +472,7 @@ local function define_tests()
             tools_security = tools_by_name._security,
             tools_contract = catalog_client._contract,
             tools_registry = tools_by_name._registry,
+            logger = catalog_client._logger,
         }
 
         after_each(function()
@@ -474,6 +483,39 @@ local function define_tests()
             tools_by_name._security = original.tools_security
             catalog_client._contract = original.tools_contract
             tools_by_name._registry = original.tools_registry
+            catalog_client._logger = original.logger
+        end)
+
+        it("logs a catalog that fails to open or a call that fails, and answers with nothing", function()
+            local warnings: any = {}
+            catalog_client._logger = {
+                warn = function(_, message, fields)
+                    warnings[#warnings + 1] = { message = message, fields = fields }
+                end,
+            }
+            catalog_client._contract = fake_contract({}, "binding failed")
+            local opened = install(agent_details, { agent = "host-routes-public" })
+            agent_details.handler()
+            test.eq(opened.raw, '{"success":true,"agent":null}')
+            test.eq(#warnings, 1)
+            test.eq(warnings[1].fields.error, "binding failed")
+
+            catalog_client._contract = fake_contract({
+                agent_details = function() return nil, "agent lookup failed" end,
+                tool_titles = function() return nil, "tool lookup failed" end,
+            })
+            local agent = install(agent_details, { agent = "host-routes-public" })
+            agent_details.handler()
+            test.eq(agent.status, 200)
+            test.eq(agent.raw, '{"success":true,"agent":null}')
+            local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
+            tools_by_name.handler()
+            test.eq(tools.status, 200)
+            test.not_nil((string.find(tools.raw, '"tools":{}', 1, true)))
+            test.eq(#warnings, 3)
+            test.eq(warnings[2].fields.method, "agent_details")
+            test.eq(warnings[2].fields.error, "agent lookup failed")
+            test.eq(warnings[3].fields.method, "tool_titles")
         end)
 
         it("answers agent details from the one bound implementation", function()
@@ -546,10 +588,11 @@ local function define_tests()
                     return {
                         ["kickside_search"] = { name = "kickside_search", title = "Search" },
                         ["not_requested"] = { name = "not_requested", title = "Extra" },
+                        ["unknown"] = true,
                     }
                 end,
             })
-            local result = install(tools_by_name, { tools = " kickside_search , unknown" })
+            local result = install(tools_by_name, { tools = " kickside_search , , unknown" })
             tools_by_name.handler()
             test.eq(#asked, 2)
             test.eq(asked[1], "kickside_search")
@@ -557,6 +600,43 @@ local function define_tests()
             test.eq(result.status, 200)
             test.eq(count_keys(result.body.tools), 1)
             test.eq(result.body.tools["kickside_search"].title, "Search")
+        end)
+
+        it("rebuilds each catalog entry as name and title, with the name as the title fallback", function()
+            catalog_client._contract = fake_contract({
+                tool_titles = function()
+                    return {
+                        ["kickside_search"] = { name = "kickside_search", id = "kickside:search", config = { token = "x" } },
+                        ["kickside_blank"] = { title = "" },
+                    }
+                end,
+            })
+            local result = install(tools_by_name, { tools = "kickside_search,kickside_blank" })
+            tools_by_name.handler()
+            test.eq(result.status, 200)
+            test.eq(count_keys(result.body.tools), 2)
+            local search = result.body.tools["kickside_search"]
+            test.eq(count_keys(search), 2)
+            test.eq(search.name, "kickside_search")
+            test.eq(search.title, "kickside_search")
+            local blank = result.body.tools["kickside_blank"]
+            test.eq(blank.name, "kickside_blank")
+            test.eq(blank.title, "kickside_blank")
+            test.is_nil((string.find(result.raw, "token", 1, true)))
+        end)
+
+        it("answers a catalog whose implementations cannot be listed with no agent and no tools", function()
+            catalog_client._contract = fake_contract({}, nil, "permission denied")
+            local agent = install(agent_details, { agent = "host-routes-public" })
+            agent_details.handler()
+            test.eq(agent.status, 200)
+            test.eq(agent.raw, '{"success":true,"agent":null}')
+
+            catalog_client._contract = fake_contract({}, nil, "permission denied")
+            local tools = install(tools_by_name, { tools = "host_routes_titled_tool" })
+            tools_by_name.handler()
+            test.eq(tools.status, 200)
+            test.not_nil((string.find(tools.raw, '"tools":{}', 1, true)))
         end)
 
         it("answers a non-table catalog result or a failing catalog with an empty object", function()
@@ -626,6 +706,18 @@ local function define_tests()
             local implementations = catalog:implementations()
             test.eq(#(implementations or {}), 0)
         end)
+
+        it("defines the two catalog methods that the handlers call", function()
+            local catalog, err = contract.get("wippy.session_util:catalog")
+            test.is_nil(err)
+            for _, name in ipairs({ "agent_details", "tool_titles" }) do
+                local method, method_err = catalog:method(name)
+                test.is_nil(method_err)
+                test.not_nil(method)
+            end
+            local _, unknown_err = catalog:method("no_such_method")
+            test.not_nil(unknown_err)
+        end)
     end)
 
     describe("GET /agents/details with session_id", function()
@@ -655,7 +747,7 @@ local function define_tests()
             test.eq(result.body.agent.start_prompts[1], "Hidden prompt")
         end)
 
-        it("falls back to the catalog when the session does not open", function()
+        it("answers a hidden agent with null when the session does not open", function()
             local reader, calls = fake_reader({})
             agent_details._session_reader = reader
             local result = install(agent_details, { agent = "host-routes-private", session_id = "session-denied" })
@@ -665,15 +757,18 @@ local function define_tests()
             test.eq(result.raw, '{"success":true,"agent":null}')
         end)
 
-        it("falls back to the catalog when the session runs a different agent", function()
-            agent_details._session_reader = fake_reader({ ["session-2"] = "host-routes-public" })
+        it("answers a hidden agent with null when the session runs a different agent, and never reads the session for a visible one", function()
+            local reader, calls = fake_reader({ ["session-2"] = "host-routes-public" })
+            agent_details._session_reader = reader
             local private = install(agent_details, { agent = "host-routes-private", session_id = "session-2" })
             agent_details.handler()
             test.eq(private.raw, '{"success":true,"agent":null}')
+            test.eq(#calls.open, 1)
 
             local public = install(agent_details, { agent = "host-routes-untitled", session_id = "session-2" })
             agent_details.handler()
             test.eq(public.body.agent.id, "app.api:host_routes_untitled_agent")
+            test.eq(#calls.open, 1)
         end)
 
         it("answers a request by name for a session stored by registry id", function()
@@ -694,7 +789,7 @@ local function define_tests()
             test.eq(result.body.agent.title, "Hidden Helper")
         end)
 
-        it("falls back to the catalog when a session stored by id or by name runs a different agent", function()
+        it("answers a hidden agent with null when a session stored by id or by name runs a different agent", function()
             agent_details._session_reader = fake_reader({
                 ["session-6"] = "app.api:host_routes_public_agent",
                 ["session-7"] = "host-routes-public",
@@ -708,7 +803,7 @@ local function define_tests()
             test.eq(by_id.raw, '{"success":true,"agent":null}')
         end)
 
-        it("answers from the session before a bound catalog that hides the agent, and never opens the catalog", function()
+        it("answers from the session when a bound catalog hides the agent", function()
             local catalog_asked = false
             local contract_module, contract_calls = fake_contract({
                 agent_details = function()
@@ -721,16 +816,37 @@ local function define_tests()
             agent_details._session_reader = reader
             local result = install(agent_details, { agent = "host-routes-private", session_id = "session-8" })
             agent_details.handler()
+            test.is_true(catalog_asked)
+            test.eq(contract_calls.open, 1)
             test.eq(reader_calls.open[1], "session-8")
             test.eq(result.status, 200)
             test.eq(result.body.agent.id, "app.api:host_routes_private_agent")
             test.eq(result.body.agent.title, "Hidden Helper")
-            test.eq(#contract_calls.get, 0)
-            test.eq(contract_calls.open, 0)
-            test.is_false(catalog_asked)
         end)
 
-        it("falls back to the catalog when the session's agent is not in the registry", function()
+        it("keeps a bound catalog's answer for an agent the caller may see, and never reads the session", function()
+            catalog_client._contract = fake_contract({
+                agent_details = function()
+                    return {
+                        id = "app.api:host_routes_public_agent",
+                        name = "host-routes-public",
+                        title = "Tenant Helper",
+                        start_prompts = { "Tenant prompt" },
+                    }
+                end,
+            })
+            local reader, reader_calls = fake_reader({ ["session-9"] = "host-routes-public" })
+            agent_details._session_reader = reader
+            local result = install(agent_details, { agent = "host-routes-public", session_id = "session-9" })
+            agent_details.handler()
+            test.eq(result.status, 200)
+            test.eq(result.body.agent.title, "Tenant Helper")
+            test.eq(#result.body.agent.start_prompts, 1)
+            test.eq(result.body.agent.start_prompts[1], "Tenant prompt")
+            test.eq(#reader_calls.open, 0)
+        end)
+
+        it("answers from the catalog when the session's agent is not in the registry", function()
             agent_details._session_reader = fake_reader({ ["session-3"] = "app-specific:agent-9" })
             catalog_client._contract = fake_contract({
                 agent_details = function(_, input)

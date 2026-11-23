@@ -163,7 +163,7 @@ entries:
     source: file://host_routes_tool.lua
     method: run
 
-  # A real contract binding, opened the way the handlers open the catalog, to
+  # A real contract binding, opened through the module's catalog_client, to
   # show that a binding function runs under the caller's actor.
   - name: actor_probe
     kind: contract.definition
@@ -179,6 +179,8 @@ entries:
     modules:
       - security
       - contract
+    imports:
+      catalog_client: wippy.session_util:catalog_client
     method: whoami
 
   - name: actor_probe_binding
@@ -195,6 +197,8 @@ entries:
     modules:
       - security
       - contract
+    imports:
+      catalog_client: wippy.session_util:catalog_client
     method: caller
 
   - name: actor_probe_policy

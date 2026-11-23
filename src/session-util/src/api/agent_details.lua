@@ -65,7 +65,7 @@ local function lookup_agent(identifier: string)
         return nil
     end
     if catalog then
-        return catalog:agent_details({ agent = identifier })
+        return api._catalog_client.call(catalog, "agent_details", { agent = identifier })
     end
     local spec = find_agent(identifier)
     if spec and spec.meta.private then
@@ -118,9 +118,12 @@ local function handler()
         return
     end
 
-    local spec = session_agent(req:query("session_id"), agent_param)
-    if not spec then
-        spec = lookup_agent(agent_param)
+    -- The normal lookup runs first, so a bound catalog's answer wins for an
+    -- agent that the caller may see. Session access only adds an agent that
+    -- the lookup hides.
+    local spec = lookup_agent(agent_param)
+    if type(spec) ~= "table" then
+        spec = session_agent(req:query("session_id"), agent_param)
     end
     if type(spec) ~= "table" then
         res:set_status(api._http.STATUS.OK)

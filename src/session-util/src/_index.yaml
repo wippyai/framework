@@ -47,6 +47,7 @@ entries:
     source: file://catalog_client.lua
     modules:
       - contract
+      - logger
 
   # wippy.session_util:catalog
   - name: catalog

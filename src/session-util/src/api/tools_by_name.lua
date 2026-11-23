@@ -104,7 +104,7 @@ local function handler()
     local by_name = nil
     local catalog, catalog_err = api._catalog_client.open()
     if catalog then
-        by_name = catalog:tool_titles({ names = names })
+        by_name = api._catalog_client.call(catalog, "tool_titles", { names = names })
     elseif not catalog_err then
         local lookup_err
         by_name, lookup_err = registry_tools()
@@ -118,12 +118,17 @@ local function handler()
         by_name = {}
     end
 
-    -- Only requested names are copied, so a catalog's empty or extra entries
-    -- never reach the answer. An empty result must still encode as {}.
+    -- Only requested names are copied, and each one is rebuilt as
+    -- {name, title}, so a catalog's extra entries and extra fields never reach
+    -- the answer, and the title is never empty. An empty result must still
+    -- encode as {}.
     local result = table.create(0, 1)
     for _, name in ipairs(names) do
-        if type(by_name[name]) == "table" then
-            result[name] = by_name[name]
+        local found = by_name[name]
+        if type(found) == "table" then
+            local tool_name = (type(found.name) == "string" and found.name ~= "") and found.name or name
+            local title = (type(found.title) == "string" and found.title ~= "") and found.title or tool_name
+            result[name] = { name = tool_name, title = title }
         end
     end
 
