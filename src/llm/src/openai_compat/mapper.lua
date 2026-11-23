@@ -84,13 +84,35 @@ end
 -- Extract reasoning text from reasoning_details (OpenRouter)
 function openai_mapper.extract_reasoning_text(reasoning_details)
     if not reasoning_details then return "" end
-    local reasoning_text = ""
+    local chunks = {}
     for _, detail in ipairs(reasoning_details) do
-        if detail.text then
-            reasoning_text = reasoning_text .. detail.text
+        local text = type(detail) == "table" and detail.text
+        if type(text) == "string" then
+            chunks[#chunks + 1] = text
         end
     end
-    return reasoning_text
+    return table.concat(chunks)
+end
+
+-- The reasoning text a message or stream delta carries outside reasoning_details:
+-- `reasoning` (vLLM, OpenRouter) or `reasoning_content` (earlier vLLM, SGLang, DeepSeek).
+function openai_mapper.reasoning_text(source: any): string?
+    if type(source) ~= "table" then return nil end
+    local text = source.reasoning
+    if type(text) == "string" and text ~= "" then return text end
+    text = source.reasoning_content
+    if type(text) == "string" and text ~= "" then return text end
+    return nil
+end
+
+-- Keep the selected text and retain the provider detail entries for callers.
+function openai_mapper.map_thinking(metadata: table, reasoning_details: any, reasoning_text: string?)
+    if reasoning_details then
+        metadata.thinking = reasoning_text or openai_mapper.extract_reasoning_text(reasoning_details)
+        metadata.reasoning_details = reasoning_details
+    elseif reasoning_text then
+        metadata.thinking = reasoning_text
+    end
 end
 
 -- Convert universal image format to OpenAI format
@@ -159,7 +181,29 @@ end
 
 -- MESSAGE MAPPING FUNCTIONS
 
-local function map_text_message(msg)
+local TEXT_CONTENT_FORMS = { parts = true, string = true }
+
+-- A false context value explicitly clears an inherited driver option.
+-- Use the default wire form in both cleared and absent contexts.
+function openai_mapper.text_content(form: any): (string?, string?)
+    if form == nil or form == false then return "parts", nil end
+    if type(form) ~= "string" or not TEXT_CONTENT_FORMS[form] then
+        return nil, "text_content must be parts or string"
+    end
+    return form, nil
+end
+
+-- The text of a content part array whose every part is text; nil when a part is not.
+local function text_only(parts)
+    local texts = {}
+    for i, part in ipairs(parts) do
+        if part.type ~= "text" then return nil end
+        texts[i] = part.text
+    end
+    return table.concat(texts)
+end
+
+local function map_text_message(msg, text_content)
     local content = msg.content
     if msg.role == "developer" then
         content = ""
@@ -171,9 +215,10 @@ local function map_text_message(msg)
             end
         end
     end
+    local parts = normalize_content(content)
     return {
         role = msg.role == "developer" and "system" or msg.role,
-        content = normalize_content(content)
+        content = text_content == "string" and text_only(parts) or parts
     }
 end
 
@@ -183,6 +228,9 @@ local function encode_arguments(arguments)
     return json.encode(arguments)
 end
 
+-- options.text_content is the wire form of text-only system and user content:
+-- "parts" (default) sends a content part array, "string" sends its joined text.
+-- A message carrying a non-text part keeps its part array either way.
 function openai_mapper.map_messages(contract_messages, options)
     options = options or {}
     contract_messages = prompt.without_blank_text(contract_messages)
@@ -206,7 +254,7 @@ function openai_mapper.map_messages(contract_messages, options)
             -- Skip cache marker message (don't add to processed_messages)
             i = i + 1
         elseif msg.role == "user" or msg.role == "system" or msg.role == "developer" then
-            table.insert(processed_messages, map_text_message(msg))
+            table.insert(processed_messages, map_text_message(msg, options.text_content))
             i = i + 1
         elseif msg.role == "assistant" then
             -- Assistant messages - ALWAYS use simple string content for OpenRouter compatibility
@@ -260,7 +308,7 @@ function openai_mapper.map_messages(contract_messages, options)
                     -- the next round, and this message stays in place between them.
                     break
                 elseif current_msg.role == "system" or current_msg.role == "developer" then
-                    table.insert(deferred_messages, map_text_message(current_msg))
+                    table.insert(deferred_messages, map_text_message(current_msg, options.text_content))
                     scan_end = j
                 end
                 if open_calls == 0 and #deferred_messages > 0 then break end
@@ -625,11 +673,15 @@ function openai_mapper.map_success_response(openai_response, context)
         metadata = openai_response.metadata or {}
     }
 
-    -- Handle reasoning details - store both thinking text and original details
-    if openai_response.reasoning_details then
-        response.metadata.thinking = openai_mapper.extract_reasoning_text(openai_response.reasoning_details)
-        response.metadata.reasoning_details = openai_response.reasoning_details
+    local reasoning_details = choice.message.reasoning_details or openai_response.reasoning_details
+    local reasoning_text = openai_mapper.reasoning_text(choice.message)
+    if reasoning_details then
+        local detail_text = openai_mapper.extract_reasoning_text(reasoning_details)
+        if detail_text ~= "" or reasoning_text == nil then
+            reasoning_text = detail_text
+        end
     end
+    openai_mapper.map_thinking(response.metadata, reasoning_details, reasoning_text)
 
     local mapped_tool_calls = {}
     if choice.message.tool_calls and #choice.message.tool_calls > 0 then

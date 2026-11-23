@@ -2,13 +2,15 @@ local openai_client = require("openai_client")
 local openai_mapper = require("openai_mapper")
 local output = require("output")
 local wire_request = require("wire_request")
+local ctx = require("ctx")
 
 type ClassifyError = (http_err: any?) -> (string, string, table?)
 
 local generate_handler = {
     _client = openai_client,
     _mapper = openai_mapper,
-    _output = output
+    _output = output,
+    _ctx = ctx
 }
 
 local function handle_streaming(stream_response, context, stream_config, err)
@@ -29,6 +31,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
     local finish_reason = nil
     local final_usage = nil
     local reasoning_details = nil
+    local reasoning_text = nil
     local deferred: any = nil
 
     local _, stream_err, _ = generate_handler._client.process_stream(stream_response, {
@@ -74,6 +77,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
             finish_reason = result.finish_reason
             final_usage = result.usage
             reasoning_details = result.reasoning_details
+            reasoning_text = result.reasoning
         end
     })
 
@@ -95,10 +99,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
         metadata = stream_response.metadata or {}
     }
 
-    if reasoning_details then
-        response.metadata.thinking = generate_handler._mapper.extract_reasoning_text(reasoning_details)
-        response.metadata.reasoning_details = reasoning_details
-    end
+    generate_handler._mapper.map_thinking(response.metadata, reasoning_details, reasoning_text)
 
     return response
 end
@@ -122,8 +123,15 @@ function generate_handler.handler(contract_args)
         err = err
     }
 
+    local declared_form = generate_handler._ctx.get("text_content")
+    local text_content, text_content_err = generate_handler._mapper.text_content(declared_form)
+    if text_content_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(text_content_err):build()
+    end
+
     local messages = generate_handler._mapper.map_messages(contract_args.messages, {
-        model = contract_args.model
+        model = contract_args.model,
+        text_content = text_content
     })
 
     local openai_payload = {

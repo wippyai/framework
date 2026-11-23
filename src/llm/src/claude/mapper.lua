@@ -2,6 +2,7 @@ local thinking = require("thinking")
 local output = require("output")
 local prompt = require("prompt")
 local json = require("json")
+local tool_arguments = require("tool_arguments")
 local tool_ids = require("tool_id")
 local route = require("route")
 
@@ -337,7 +338,7 @@ local function normalize_tool_arguments(raw_arguments)
     local arguments = raw_arguments
 
     if type(arguments) == "string" then
-        local parsed, parse_err = json.decode(arguments)
+        local parsed, parse_err = tool_arguments.decode_json(arguments)
         if not parse_err and type(parsed) == "table" then
             arguments = parsed
         else

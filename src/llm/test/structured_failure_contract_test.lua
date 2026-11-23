@@ -142,7 +142,7 @@ local function drivers()
             failure("prompt blocked without candidates", {
                 status_code = 200, promptFeedback = { blockReason = "SAFETY" },
                 usageMetadata = { promptTokenCount = 120, candidatesTokenCount = 64 },
-            }, "Unavailable", "wippy.llm.google:mapper:396: Invalid Google response structure", { status_code = 500 }),
+            }, "Unavailable", "wippy.llm.google:mapper: Invalid Google response structure", { status_code = 500 }),
         } },
     }
 end
@@ -183,7 +183,7 @@ local function malformed_cases(driver)
             reply[usage_key] = value
             if driver.name == "google" then
                 reply.candidates = nil
-                kind, message, details, reason = "Unavailable", "wippy.llm.google:mapper:396: Invalid Google response structure", { status_code = 500 }, nil
+                kind, message, details, reason = "Unavailable", "wippy.llm.google:mapper: Invalid Google response structure", { status_code = 500 }, nil
             end
             local case = failure("malformed usage " .. type(value), reply, kind, message, details, reason)
             case.no_tokens = true
@@ -256,7 +256,8 @@ local function define_tests()
                         test.is_nil(result)
                         test.eq(err:kind(), case.kind)
                         test.eq(err:retryable(), case.retryable)
-                        test.eq(err:message(), case.message)
+                        local message = err:message():gsub("^wippy%.llm%.google:mapper:%d+: ", "wippy.llm.google:mapper: ")
+                        test.eq(message, case.message)
                         local expected = { operation = "structured_output", provider = "test-provider", model = "test-model",
                             error_type = case.kind == "NotFound" and "model_error" or case.kind == "Invalid" and "content_filtered" or "server_error" }
                         for key, value in pairs(case.details) do expected[key] = value end

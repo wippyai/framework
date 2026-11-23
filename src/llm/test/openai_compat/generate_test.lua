@@ -838,6 +838,77 @@ local function define_tests()
             end)
         end)
 
+        describe("Text content form", function()
+            local handler_ctx = generate_handler._ctx
+            after_each(function() generate_handler._ctx = handler_ctx end)
+
+            local function capture(context)
+                local sent: any = nil
+                generate_handler._ctx = {
+                    all = function() return context end,
+                    get = function(key) return context[key] end
+                }
+                generate_handler._client._ctx = generate_handler._ctx
+                generate_handler._client._env = { get = function() return nil end }
+                generate_handler._client._http_client = {
+                    post = function(_, options)
+                        sent = json.decode(tostring(options.body))
+                        return {
+                            status_code = 200,
+                            body = json.encode({
+                                choices = {{ message = { content = "ok" }, finish_reason = "stop" }},
+                                usage = { prompt_tokens = 5, completion_tokens = 1, total_tokens = 6 }
+                            }),
+                            headers = {}
+                        }
+                    end
+                }
+                return function(): any return sent end
+            end
+
+            local args = {
+                model = "llama-3",
+                messages = {
+                    { role = "system", content = "Be brief" },
+                    { role = "user", content = {{ type = "text", text = "Hi" }} }
+                }
+            }
+
+            it("sends content parts when text_content is absent or explicitly cleared", function()
+                for _, context in ipairs({ { api_key = "k" }, { api_key = "k", text_content = false } }) do
+                    local sent = capture(context)
+                    local response = generate_handler.handler(args)
+                    test.is_true(response.success)
+                    test.eq(sent().messages[1].content[1].text, "Be brief")
+                    test.eq(sent().messages[2].content[1].text, "Hi")
+                end
+            end)
+
+            it("sends string content when the context declares text_content string", function()
+                local sent = capture({ api_key = "k", text_content = "string" })
+                local response = generate_handler.handler({
+                    model = args.model,
+                    messages = args.messages,
+                    options = { request = { chat_template_kwargs = { enable_thinking = true } } }
+                })
+                test.is_true(response.success)
+                test.eq(sent().messages[1].content, "Be brief")
+                test.eq(sent().messages[2].content, "Hi")
+                test.eq(sent().chat_template_kwargs.enable_thinking, true)
+            end)
+
+            it("refuses a request whose context declares an unknown text_content", function()
+                for _, invalid in ipairs({ "plain", true, 29 }) do
+                    local sent = capture({ api_key = "k", text_content = invalid })
+                    local response, err = generate_handler.handler(args)
+                    test.is_nil(response)
+                    test.eq(err:kind(), "Invalid")
+                    test.contains(tostring(err:message()), "text_content")
+                    test.is_nil(sent())
+                end
+            end)
+        end)
+
         describe("Stream fallback signals", function()
             local real_client
             local streamed_args = {
@@ -876,6 +947,56 @@ local function define_tests()
                     process_stream = process_stream
                 }
             end
+
+            it("streams reasoning as thinking and returns its text in metadata.thinking", function()
+                local thinking_sent: {string} = {}
+                local streamer = recording_streamer(false)
+                streamer.send_thinking = function(_, chunk) table.insert(thinking_sent, chunk) end
+                stream_with(streamer, function(_, callbacks)
+                    callbacks.on_reasoning("The user")
+                    callbacks.on_reasoning(" asks.")
+                    callbacks.on_content("51")
+                    local result = { content = "51", finish_reason = "stop", reasoning = "The user asks.",
+                        usage = { prompt_tokens = 27, completion_tokens = 101, total_tokens = 128,
+                            completion_tokens_details = { reasoning_tokens = 96 } } }
+                    callbacks.on_done(result)
+                    return "51", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.result.content, "51")
+                test.eq(table.concat(thinking_sent, "|"), "The user| asks.")
+                test.eq(response.metadata.thinking, "The user asks.")
+                test.is_nil(response.metadata.reasoning_details)
+                test.eq(response.tokens.thinking_tokens, 96)
+            end)
+
+            it("uses the complete streamed thinking when it also receives raw details", function()
+                local details = { { type = "reasoning.text", text = "Detail." } }
+                stream_with(recording_streamer(false), function(_, callbacks)
+                    local result = { content = "ok", finish_reason = "stop", reasoning_details = details,
+                        reasoning = "Before.Detail.After." }
+                    callbacks.on_done(result)
+                    return "ok", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.metadata.thinking, "Before.Detail.After.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
+
+            it("takes streamed thinking from reasoning_details when the stream returns them", function()
+                local details = { { type = "reasoning.text", text = "Detail." } }
+                stream_with(recording_streamer(false), function(_, callbacks)
+                    local result = { content = "ok", finish_reason = "stop", reasoning_details = details }
+                    callbacks.on_done(result)
+                    return "ok", nil, result
+                end)
+                local response = generate_handler.handler(streamed_args) :: any
+
+                test.eq(response.metadata.thinking, "Detail.")
+                test.eq(response.metadata.reasoning_details, details)
+            end)
 
             it("marks a request error on a streaming call as not started", function()
                 generate_handler._client = {

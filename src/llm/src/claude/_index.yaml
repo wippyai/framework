@@ -123,6 +123,7 @@ entries:
       output: wippy.llm:output
       route: wippy.llm.util:route
       tool_id: wippy.llm.util:tool_id
+      tool_arguments: wippy.llm.util:tool_arguments
 
   # wippy.llm.claude:provider
   - name: provider

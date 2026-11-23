@@ -13,6 +13,27 @@ local stream_redactors = setmetatable({}, { __mode = "k" })
 
 local bedrock_client = {}
 
+-- A toolUse input is JSON the model wrote, so a null member in it is an
+-- argument the model set. The response decode drops null members; tool inputs
+-- are taken from a decode of the same body that keeps them as json.null.
+local function keep_tool_input_nulls(parsed: table, body: string): string?
+    if not tool_arguments.preserves_nulls then return nil end
+    local message = type(parsed.output) == "table" and parsed.output.message or nil
+    if type(message) ~= "table" or type(message.content) ~= "table" then return nil end
+    local with_nulls: any = nil
+    for i, block in ipairs(message.content) do
+        if type(block) == "table" and type(block.toolUse) == "table" then
+            if not with_nulls then
+                local decoded, decode_err = tool_arguments.decode_json(body)
+                if decode_err then return tostring(decode_err) end
+                with_nulls = decoded
+            end
+            block.toolUse.input = with_nulls.output.message.content[i].toolUse.input
+        end
+    end
+    return nil
+end
+
 bedrock_client._http_client = http_client
 bedrock_client._env = env
 bedrock_client._ctx = ctx
@@ -200,11 +221,13 @@ local function signed_request(path, payload, options): (any, transport.RequestEr
         return stream_response
     end
 
-    local parsed, parse_err = json.decode(tostring(response.body))
-    if parse_err then
+    local body = tostring(response.body)
+    local parsed, parse_err = json.decode(body)
+    local inputs_err = not parse_err and type(parsed) == "table" and keep_tool_input_nulls(parsed, body)
+    if parse_err or inputs_err then
         return nil, transport.redact_error({
             status_code = response.status_code,
-            message = "Failed to parse Bedrock response: " .. parse_err,
+            message = "Failed to parse Bedrock response: " .. tostring(parse_err or inputs_err),
             metadata = extract_response_metadata(response)
         }, transport.request_secrets(signed_headers, config.headers))
     end

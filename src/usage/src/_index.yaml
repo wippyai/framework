@@ -20,6 +20,10 @@ entries:
         path: ".meta.target_db"
       - entry: wippy.usage.migrations:02_create_token_usage_cache_writes
         path: ".meta.target_db"
+      - entry: wippy.usage.migrations:03_index_token_usage_time
+        path: ".meta.target_db"
+      - entry: wippy.usage:retention_db_access
+        path: ".policy.resources"
 
   # Dependencies
   - name: dep.wippy.migration
@@ -87,3 +91,62 @@ entries:
         default: true
         methods:
           track_usage: wippy.usage:usage_tracker
+
+  # wippy.usage:policy
+  - name: policy
+    kind: registry.entry
+    meta:
+      comment: Token usage retention window and bounded prune batch size
+      retention:
+        token_usage: "90d"
+        batch_token_usage: 500
+
+  # wippy.usage:retention_policy
+  - name: retention_policy
+    kind: library.lua
+    meta:
+      comment: Reads and validates the token usage retention policy
+    source: file://retention_policy.lua
+    modules:
+      - registry
+
+  # wippy.usage:retention
+  - name: retention
+    kind: function.lua
+    meta:
+      type: kickside.retention.owner
+      comment: Prunes token usage records past the retention window in bounded batches
+    source: file://retention.lua
+    method: run
+    modules:
+      - time
+    imports:
+      token_usage_repo: wippy.usage:token_usage_repo
+      retention_policy: wippy.usage:retention_policy
+    security:
+      actor: { id: system:wippy.usage.retention }
+      policies:
+        - wippy.usage:retention_db_access
+        - wippy.usage:retention_registry_read
+
+  # wippy.usage:retention_db_access
+  - name: retention_db_access
+    kind: security.policy
+    meta:
+      comment: Lets the retention owner open the usage database
+    policy:
+      resources: app:db
+      actions: [db.get]
+      effect: allow
+
+  # wippy.usage:retention_registry_read
+  - name: retention_registry_read
+    kind: security.policy
+    meta:
+      comment: Lets the retention owner read the usage database requirement and the retention policy
+    policy:
+      resources:
+        - wippy.usage:target_db
+        - wippy.usage:policy
+      actions: [registry.get]
+      effect: allow

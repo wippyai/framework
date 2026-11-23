@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.5.27](https://github.com/wippyai/framework/compare/llm-v0.5.26...llm-v0.5.27) (2026-11-22)
+
+
+### Bug Fixes
+
+* **llm:** preserve the default wire format when context clears text_content ([#299](https://github.com/wippyai/framework/issues/299)) ([b487252](https://github.com/wippyai/framework/commit/b487252c3f680b6e1a5703ccc24f50fdd9af8fe0))
+
+## [0.5.26](https://github.com/wippyai/framework/compare/llm-v0.5.25...llm-v0.5.26) (2026-11-22)
+
+
+### Features
+
+* **llm:** text_content driver option for string message content on OpenAI-compatible endpoints ([#296](https://github.com/wippyai/framework/issues/296)) ([ea94279](https://github.com/wippyai/framework/commit/ea942799117922929f72c8dc2db115c442daf288))
+
+## [0.5.25](https://github.com/wippyai/framework/compare/llm-v0.5.24...llm-v0.5.25) (2026-11-22)
+
+
+### Bug Fixes
+
+* **llm:** map OpenAI-compatible reasoning and reasoning_content to thinking ([#295](https://github.com/wippyai/framework/issues/295)) ([19660cb](https://github.com/wippyai/framework/commit/19660cbccb29ab2f230ec52595df45833f4897b7))
+
+## [0.5.24](https://github.com/wippyai/framework/compare/llm-v0.5.23...llm-v0.5.24) (2026-11-22)
+
+
+### Bug Fixes
+
+* **llm:** keep null tool call arguments and send json.raw tool schemas as written ([#272](https://github.com/wippyai/framework/issues/272)) ([ab403d1](https://github.com/wippyai/framework/commit/ab403d144c4a1b1977fce087d835327ec70440fd))
+
+## [0.5.23](https://github.com/wippyai/framework/compare/llm-v0.5.22...llm-v0.5.23) (2026-11-21)
+
+
+### Bug Fixes
+
+* **llm:** handle scalar OpenAI-compatible responses before decoding metadata ([#290](https://github.com/wippyai/framework/issues/290)) ([b953d08](https://github.com/wippyai/framework/commit/b953d08168e434b67950164293d837f8842465df))
+
 ## [0.5.22](https://github.com/wippyai/framework/compare/llm-v0.5.21...llm-v0.5.22) (2026-11-19)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.28](https://github.com/wippyai/framework/compare/usage-v0.3.27...usage-v0.3.28) (2026-11-22)
+
+
+### Features
+
+* **usage:** prune token usage past a declared retention window ([#276](https://github.com/wippyai/framework/issues/276)) ([3057ca0](https://github.com/wippyai/framework/commit/3057ca0d2b682f5930cd3ef0b36855a5c2416979))
+
 ## [0.3.27](https://github.com/wippyai/framework/compare/usage-v0.3.26...usage-v0.3.27) (2026-11-09)
 
 
