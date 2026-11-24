@@ -397,7 +397,7 @@ The CSS follows the same algorithm as the Web Host's `createCssVariables()`:
 - `@light` object → `@media (prefers-color-scheme: light) { :root { ... } }`
 - Keys without `--` prefix get `--` prepended automatically
 
-Returns an empty body (200 OK) when no variables are configured. Response has `Cache-Control: public, max-age=3600`.
+Returns an empty body (200 OK) when no variables are configured. Response has `Cache-Control: no-store`, because an app-bound resolver can change the variables per request.
 
 **Usage in `login.html`:**
 ```html
