@@ -17,7 +17,6 @@ credentials._time = time
 credentials.CACHE_KEY = "aws_bedrock_credentials"
 credentials.DEFAULT_CACHE_ID = "app:cache"
 
-
 -- Fetch temporary credentials from ECS/EKS container metadata endpoint
 function credentials.fetch_container_credentials()
     local full_uri = credentials._env.get("AWS_CONTAINER_CREDENTIALS_FULL_URI")
@@ -192,12 +191,8 @@ function credentials.resolve()
     -- Static credentials from context or env vars
     local access_key = resolve_string("access_key", "AWS_ACCESS_KEY_ID")
     local secret_key = resolve_string("secret_key", "AWS_SECRET_ACCESS_KEY")
-    local session_token = resolve_string("session_token", "AWS_SESSION_TOKEN")
-    for _, key in ipairs({ "access_key", "secret_key" }) do
-        if settings.unresolved[key] then return nil, transport.required_message("AWS " .. key .. " is required", settings.unresolved[key]) end
-    end
-
     if access_key and secret_key then
+        local session_token = resolve_string("session_token", "AWS_SESSION_TOKEN")
         return {
             access_key = access_key,
             secret_key = secret_key,
@@ -227,6 +222,12 @@ function credentials.resolve()
     if instance_creds then
         instance_creds.region = region
         return instance_creds
+    end
+
+    for _, key in ipairs({ "access_key", "secret_key" }) do
+        if settings.unresolved[key] then
+            return nil, transport.required_message("AWS " .. key .. " is required", settings.unresolved[key])
+        end
     end
 
     return nil, "AWS credentials not found. Provide AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, " ..
