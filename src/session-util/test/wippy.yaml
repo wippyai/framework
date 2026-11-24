@@ -1,0 +1,7 @@
+organization: wippy
+module: session-util-test
+type: application
+description: Test stub for session-util module
+exclude_meta:
+  type:
+    - e2e

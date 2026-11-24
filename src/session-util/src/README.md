@@ -1,0 +1,133 @@
+# Session Util
+
+The Wippy Web Host chat calls two routes in every app, and this module serves both of them. The
+composer reads start prompts from `GET /agents/details`, and the tool-call rows read titles from
+`GET /tools/by-name`. An app gets the routes only when it lists this module as a dependency.
+
+## Installation
+
+```yaml
+- name: dep.wippy.session_util
+  kind: ns.dependency
+  component: wippy/session-util
+  version: ">=v0.0.1"
+  parameters:
+    - name: api_router
+      value: app:api
+```
+
+The `api_router` parameter is required. It names the `http.router` that serves both routes, so the
+paths below are relative to that router's prefix. The module also loads `wippy/agent` and
+`wippy/session`.
+
+Both routes run as the signed-in caller. A router with token authentication rejects a request without
+a token before the module runs. A request that reaches the module without a caller gets `401` with
+`{"success":false,"error":"Authentication required"}`, and a missing or empty query parameter gets
+`400`. Every answer that the module writes has `Cache-Control: no-store`.
+
+Errors are not hidden. A lookup that fails, or an answer that is not in the documented shape, gives
+`500` with `{"success":false,"error":"<what failed>"}`. The module never falls back to another rule.
+
+The caller's scope needs these permissions:
+
+- `contract.get` and `contract.implementations` on `wippy.session_util:catalog`, also when no app binds
+  it. Without them, both routes answer `500`.
+- With a binding, `contract.open` on the binding and `contract.call` on `agent_details` and
+  `tool_titles`. Without them, both routes answer `500`.
+- Without a binding, `registry.get` on the agent and tool entries. The registry leaves out entries
+  that the caller can't read, so those are not found.
+- For session access, with or without a binding, read access to `session:<id>` and `registry.get` on
+  the agent entries. Without them, session access finds no agent.
+
+## GET /agents/details
+
+The query is `?agent=<registry id or name>`, with an optional `&session_id=<id>`. A found agent
+gives this answer:
+
+```json
+{"success":true,"agent":{"id":"app:helper","name":"helper","title":"Helper","start_prompts":["Summarize this page"]}}
+```
+
+The `name` falls back to the id and the `title` to the name when they are empty. `start_prompts` must
+be a list of strings; an agent with any other value gives `500`. When the agent is unknown or hidden,
+the answer is still `200`, with `{"success":true,"agent":null}`, so the caller can't tell whether a
+hidden agent exists.
+
+Session access adds an agent that the normal lookup hides. When the lookup finds no agent, and
+`session_id` names a session that the caller can read, and that session runs the requested agent,
+the module answers from the registry. The agents match by registry id, whether the request uses the
+id or the name. The module then answers even when the agent is private, and even when a bound
+catalog hides it. This covers registry agents only. When the lookup finds the agent, its answer wins
+and the module does not read the session.
+
+Session access trusts the agent id that the session stores. An app that hides agents must also check
+the agent when a session starts. Otherwise a user who starts a session with a hidden agent can read
+that agent's title and start prompts.
+
+Without a binding, the module looks the agent up by registry id first and by `meta.name` second, and
+it hides agents with `meta.private: true`.
+
+## GET /tools/by-name
+
+The query is `?tools=a,b`, a comma-separated list of the names that tool calls carry. The module
+trims each name and drops empty items. The answer maps each known name to the tool's name and title:
+
+```json
+{"success":true,"tools":{"search_docs":{"name":"search_docs","title":"Search docs"}}}
+```
+
+Unknown names are left out, and an empty result is `{}`. Without a binding, a name matches a tool's
+LLM name (`meta.llm_alias`, or the sanitized id name) or its full registry id. The title is
+`meta.title`, or the LLM name when the title is empty. Private tools are left out. When two tools
+share an LLM name, the module leaves that name out, because a tool call can't say which tool ran,
+but both registry ids still match. A registry failure gives `500` with
+`{"success":false,"error":"tool lookup failed: <cause>"}`.
+
+One request carries every tool name of a chat, so one bad tool must not hide the other titles. A
+requested tool whose entry is not `{name, title}` (both strings, name not empty) is left out of
+`tools` and reported by name, and the other tools are still answered:
+
+```json
+{"success":true,"tools":{"search_docs":{"name":"search_docs","title":"Search docs"}},"errors":{"bad_tool":"the answer for 'bad_tool' is not {name, title}"}}
+```
+
+## Optional catalog contract
+
+An app whose agents or tools are not plain registry entries, or that hides them by its own rules,
+binds the `wippy.session_util:catalog` contract. When a binding exists, both routes ask it instead
+of using the built-in rules. In `GET /agents/details`, session access still adds an agent that the
+catalog hides (see above). The binding runs as the caller. It must set `default: true`, because the
+module opens the default binding. A binding without it fails to open, and both routes answer `500`.
+
+```yaml
+- name: session_catalog
+  kind: contract.binding
+  contracts:
+    - contract: wippy.session_util:catalog
+      default: true
+      methods:
+        agent_details: app:catalog_agent_details
+        tool_titles: app:catalog_tool_titles
+```
+
+The `agent_details` method gets `{agent = "<id or name>"}` and returns
+`{id, name, title, start_prompts}` (id a non-empty string, name and title strings, start_prompts a list
+of strings), or nil when the caller must not see the agent or it does not exist. The `tool_titles`
+method gets `{names = {...}}` and returns a map from each known name to `{name, title}` (both strings,
+name not empty). The module returns only the names that the request asked for, and only their `name`
+and `title`. An empty title falls back to the name.
+
+The runtime does not check a contract answer against the schemas in the contract definition, so the
+module checks it. A catalog that fails to open, a call that returns an error, an agent answer in any
+other shape, and a tool answer that is not a map give `500`. A single tool entry in the wrong shape is
+reported in `errors`, as described above. The routes never fall back to the built-in rules, and session access does not
+run after a catalog error.
+
+## Warnings
+
+An app that serves its own copy of either route must remove that copy in the same commit that adds
+this module. The runtime refuses to boot with `route pattern conflicts detected` when two entries
+serve the same path on one router.
+
+Adding a route to this module later is a breaking change, because every app that already serves that
+path on the same router would stop booting.

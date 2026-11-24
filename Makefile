@@ -1,6 +1,6 @@
 # Wippy Framework
 # Modules that have test directories with wippy.lock
-TEST_MODULES = actor agent bootloader embeddings facade llm migration relay usage views
+TEST_MODULES = actor agent bootloader embeddings facade llm migration relay session-util usage views
 WIPPY ?= wippy
 RUN_WIPPY = WIPPY="$(WIPPY)" bash scripts/run-wippy.sh
 

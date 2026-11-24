@@ -48,6 +48,10 @@
       "component": "security",
       "changelog-path": "CHANGELOG.md"
     },
+    "src/session-util": {
+      "component": "session-util",
+      "changelog-path": "CHANGELOG.md"
+    },
     "src/terminal": {
       "component": "terminal",
       "changelog-path": "CHANGELOG.md"

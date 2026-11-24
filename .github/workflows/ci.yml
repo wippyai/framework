@@ -122,6 +122,7 @@ jobs:
           - llm
           - migration
           - relay
+          - session-util
           - usage
           - views
     steps:
@@ -158,6 +159,7 @@ jobs:
           - llm
           - migration
           - relay
+          - session-util
           - usage
           - views
     steps:
