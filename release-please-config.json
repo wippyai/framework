@@ -50,7 +50,8 @@
     },
     "src/session-util": {
       "component": "session-util",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "initial-version": "0.0.1"
     },
     "src/terminal": {
       "component": "terminal",
