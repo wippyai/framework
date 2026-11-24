@@ -1234,6 +1234,58 @@ local function define_tests()
                 test.eq(result.metadata.adjusted.max_tokens.sent, 8192)
             end)
 
+            local function adaptive_card(fields)
+                local out = card(fields)
+                out.providers = { { id = "route", provider_model = "wire", thinking = "adaptive" } }
+                return out
+            end
+
+            it("keeps the requested answer tokens beside adaptive thinking on an OpenAI-compatible route", function()
+                local sent = capture_openai(compat_structured)
+                setup(compat_structured, "structured_output", adaptive_card({}), false)
+                local result: any = assert(llm.structured_output(SCHEMA, "hi",
+                    { model = "m", max_tokens = 1024, thinking_effort = 60, strict = true }))
+                test.eq(sent[1].payload.max_completion_tokens, 1024 + 14810)
+                test.eq(sent[1].payload.reasoning_effort, "medium")
+                test.is_nil(result.metadata.adjusted)
+            end)
+
+            it("keeps the requested answer tokens beside adaptive thinking on the OpenAI Responses route", function()
+                local sent = capture_openai(openai_generate)
+                setup(openai_generate, "generate", adaptive_card({}), false)
+                local result: any = assert(llm.generate("hi", { model = "m", max_tokens = 1024, thinking_effort = 60 }))
+                test.eq(sent[1].payload.max_output_tokens, 1024 + 14810)
+                test.is_nil(result.metadata.adjusted)
+            end)
+
+            it("shrinks the adaptive reasoning share to the card limit and reports it", function()
+                local sent = capture_openai(compat_generate)
+                setup(compat_generate, "generate", adaptive_card({ output_tokens = 8192 }), false)
+                local result: any = assert(llm.generate("hi", { model = "m", max_tokens = 1024, thinking_effort = 60 }))
+                test.eq(sent[1].payload.max_completion_tokens, 8192)
+                test.is_nil(result.metadata.adjusted.max_tokens)
+                test.eq(result.metadata.adjusted.thinking_budget.requested, 14810)
+                test.eq(result.metadata.adjusted.thinking_budget.sent, 7168)
+            end)
+
+            it("gives up adaptive thinking when the card limit leaves no reasoning room beside the answer", function()
+                local sent = capture_openai(compat_generate)
+                setup(compat_generate, "generate", adaptive_card({ output_tokens = 1500 }), false)
+                local result: any = assert(llm.generate("hi", { model = "m", max_tokens = 1024, thinking_effort = 60 }))
+                test.eq(sent[1].payload.max_completion_tokens, 1024)
+                test.is_nil(sent[1].payload.reasoning_effort)
+                test.eq(result.metadata.adjusted.thinking_effort.requested, 60)
+            end)
+
+            it("admits adaptive thinking on the answer and reasoning output", function()
+                local sent = capture_openai(compat_generate)
+                setup(compat_generate, "generate", adaptive_card({ max_tokens = 16000 }), false)
+                local result, err = llm.generate(string.rep("x", 4000), { model = "m", max_tokens = 1024, thinking_effort = 60 })
+                test.is_nil(result)
+                test.contains(tostring(err), "context window")
+                test.eq(#sent, 0)
+            end)
+
             it("leaves a driver without a policy to its request", function()
                 local sent = capture_openai(openai_generate)
                 setup(openai_generate, "generate", card({ max_tokens = 1000 }), false)

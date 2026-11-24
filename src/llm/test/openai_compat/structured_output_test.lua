@@ -640,7 +640,7 @@ local function define_tests()
                         local payload = json.decode(tostring(options.body))
                         test.eq(payload.model, "o1-mini")
                         test.eq(payload.reasoning_effort, "high")
-                        test.eq(payload.max_completion_tokens, 150)
+                        test.eq(payload.max_completion_tokens, 150 + 19405) -- answer tokens plus thinking_budget(80)
                         test.is_nil(payload.max_tokens)
                         test.eq(payload.temperature, 0.5)
 

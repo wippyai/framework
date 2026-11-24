@@ -577,11 +577,13 @@ function mapper.map_options(contract_options, accepts): (table, table, table, st
     if mode == "adaptive" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         additional_fields.thinking = { type = "adaptive" }
         additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+        inference_config.maxTokens = route.adaptive_output(contract_options)
     elseif mode == "always" then
         -- The model thinks on every request; without an effort it keeps the model default.
         additional_fields.thinking = { type = "adaptive" }
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
             additional_fields.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+            inference_config.maxTokens = route.adaptive_output(contract_options)
         end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget, max_tokens = route.budget_output(contract_options)

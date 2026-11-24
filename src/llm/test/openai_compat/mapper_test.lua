@@ -921,7 +921,7 @@ local function define_tests()
 
                 local openai_options = openai_mapper.map_options(contract_options, { thinking = "adaptive" })
 
-                test.eq(openai_options.max_completion_tokens, 100)
+                test.eq(openai_options.max_completion_tokens, 100 + 12512) -- answer tokens plus thinking_budget(50)
                 test.is_nil(openai_options.max_tokens)
                 test.eq(openai_options.reasoning_effort, "medium")
                 test.eq(openai_options.temperature, 0.5)

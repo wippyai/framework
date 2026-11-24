@@ -832,12 +832,14 @@ function mapper.map_options(contract_options, accepts): (table, table, string?)
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
             claude_options.thinking = { type = "adaptive" }
             claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+            claude_options.max_tokens = route.adaptive_output(contract_options)
         end
     elseif mode == "always" then
         -- The model thinks on every request; without an effort it keeps the model default.
         claude_options.thinking = { type = "adaptive" }
         if contract_options.thinking_effort and contract_options.thinking_effort > 0 then
             claude_options.output_config = { effort = thinking.effort_level(contract_options.thinking_effort) }
+            claude_options.max_tokens = route.adaptive_output(contract_options)
         end
     elseif mode == "budget" and contract_options.thinking_effort and contract_options.thinking_effort > 0 then
         local thinking_budget, max_tokens = route.budget_output(contract_options)

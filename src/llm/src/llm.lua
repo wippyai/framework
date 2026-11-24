@@ -611,13 +611,16 @@ local function prepare_route(contract_args, provider_info: any, options, provide
         return nil, native_error(policy_err, errors.INTERNAL, false)
     end
     local requested = tonumber(contract_args.options.max_tokens)
+    -- A declared route fact names the thinking mode even when the driver declares no output policy.
     local plan = route.plan_output(requested, contract_args.options.thinking_effort,
-        policy and (accepts.thinking or policy.thinking), policy and policy.default_max_tokens, output_limit(card))
+        accepts.thinking or (policy and policy.thinking), policy and policy.default_max_tokens, output_limit(card))
     if plan.max_tokens ~= requested then
         contract_args.options.max_tokens = plan.max_tokens
-        if requested ~= nil then
-            adjusted.max_tokens = { requested = requested, sent = plan.max_tokens }
-        end
+    end
+    -- Adaptive thinking keeps the requested answer tokens; only a changed answer is an adjustment.
+    local answer = plan.answer_tokens or plan.max_tokens
+    if requested ~= nil and answer ~= requested then
+        adjusted.max_tokens = { requested = requested, sent = plan.max_tokens }
     end
     if plan.dropped_thinking then
         remove("thinking_effort")

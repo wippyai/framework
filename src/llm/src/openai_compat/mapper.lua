@@ -547,7 +547,7 @@ function openai_mapper.map_options(contract_options, accepts): (table, string?)
 
     if contract_options.max_tokens then
         if is_reasoning_request then
-            openai_options.max_completion_tokens = contract_options.max_tokens
+            openai_options.max_completion_tokens = route.adaptive_output(contract_options)
         else
             openai_options.max_tokens = contract_options.max_tokens
         end

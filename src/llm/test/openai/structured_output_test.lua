@@ -685,7 +685,7 @@ local function define_tests()
                         -- Responses API: reasoning.effort and max_output_tokens
                         test.not_nil(payload.reasoning)
                         test.eq(payload.reasoning.effort, "high")
-                        test.eq(payload.max_output_tokens, 150)
+                        test.eq(payload.max_output_tokens, 150 + 19405) -- answer tokens plus thinking_budget(80)
                         test.is_nil(payload.reasoning_effort)
                         test.is_nil(payload.max_tokens)
                         test.is_nil(payload.max_completion_tokens)

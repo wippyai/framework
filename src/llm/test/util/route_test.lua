@@ -147,6 +147,40 @@ local function define_tests()
             equal(route.plan_output(512, 1, "budget", 2000, 1024),
                 { max_tokens = 512, dropped_thinking = true })
         end)
+
+        it("adds the thinking budget to the answer tokens of adaptive thinking", function()
+            equal(route.plan_output(1024, 60, "adaptive", nil, nil),
+                { max_tokens = 1024 + 14810, budget = 14810, wanted_budget = 14810, answer_tokens = 1024 })
+            equal(route.plan_output(1024, 60, "adaptive", 2000, 32768),
+                { max_tokens = 1024 + 14810, budget = 14810, wanted_budget = 14810, answer_tokens = 1024 })
+        end)
+
+        it("shrinks the adaptive thinking share under a cap and keeps the answer tokens", function()
+            equal(route.plan_output(1024, 60, "adaptive", nil, 8192),
+                { max_tokens = 8192, budget = 7168, wanted_budget = 14810, answer_tokens = 1024 })
+            equal(route.plan_output(1024, 60, "adaptive", nil, 2048),
+                { max_tokens = 2048, budget = 1024, wanted_budget = 14810, answer_tokens = 1024 })
+        end)
+
+        it("drops adaptive thinking when a cap leaves less than the minimum budget beside the answer", function()
+            equal(route.plan_output(1024, 60, "adaptive", nil, 2047),
+                { max_tokens = 1024, dropped_thinking = true })
+            equal(route.plan_output(4096, 60, "adaptive", nil, 2048),
+                { max_tokens = 2048, dropped_thinking = true })
+        end)
+
+        it("leaves adaptive output unplanned without answer tokens or a positive effort", function()
+            equal(route.plan_output(nil, 60, "adaptive", nil, 8192), {})
+            equal(route.plan_output(1024, 0, "adaptive", nil, nil), { max_tokens = 1024 })
+            equal(route.plan_output(1024, nil, "adaptive", nil, nil), { max_tokens = 1024 })
+        end)
+
+        it("gives a driver called with no plan the same adaptive output", function()
+            test.eq(route.adaptive_output({ max_tokens = 1024, thinking_effort = 60 }), 1024 + 14810)
+            test.eq(route.adaptive_output({ max_tokens = 8192, thinking_effort = 60, thinking_budget_tokens = 7168 }), 8192)
+            test.eq(route.adaptive_output({ max_tokens = 1024, thinking_effort = 0 }), 1024)
+            test.is_nil(route.adaptive_output({ thinking_effort = 60 }))
+        end)
     end)
 
     describe("Route capability helpers", function()

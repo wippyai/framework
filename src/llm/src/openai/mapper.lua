@@ -343,7 +343,8 @@ function openai_mapper.map_options(contract_options, accepts): (table, string?)
     local is_reasoning_request = route.fact(accepts, "thinking", openai_mapper.CAPABILITY) == "adaptive"
 
     if contract_options.max_tokens then
-        opts.max_output_tokens = contract_options.max_tokens
+        opts.max_output_tokens = is_reasoning_request and route.adaptive_output(contract_options)
+            or contract_options.max_tokens
     end
 
     if is_reasoning_request then

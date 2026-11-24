@@ -107,8 +107,8 @@ function route.clean_options(options: table): table
     return clean
 end
 
--- Budget thinking takes a share of the response: the budget grows with the effort
--- and the response keeps room for an answer behind it.
+-- Thinking takes a share of the response: the budget grows with the effort and the
+-- response keeps room for an answer behind it.
 local MIN_THINKING_BUDGET = 1024
 local MAX_THINKING_BUDGET = 24000
 local ANSWER_ROOM = 1024
@@ -117,12 +117,33 @@ function route.thinking_budget(effort: number): number
     return math.floor(MIN_THINKING_BUDGET + (MAX_THINKING_BUDGET - MIN_THINKING_BUDGET) * (effort / 100) + 0.5)
 end
 
+-- Adaptive thinking (and always thinking at a positive effort) spends its reasoning
+-- from the same output allowance as the answer, so the caller's max_tokens stays the answer and the output adds the budget.
+-- Under the card limit the reasoning share shrinks first; a share below the minimum
+-- budget drops thinking and keeps the answer.
+local function plan_adaptive(answer: number, effort: number, limit: number?): table
+    local wanted_budget = route.thinking_budget(effort)
+    local output = answer + wanted_budget
+    if limit and output > limit then
+        output = limit
+    end
+    local budget = output - answer
+    if budget < MIN_THINKING_BUDGET then
+        return { max_tokens = math.min(answer, limit or answer), dropped_thinking = true }
+    end
+    return { max_tokens = output, budget = budget, wanted_budget = wanted_budget, answer_tokens = answer }
+end
+
 -- The output a request sends, computed once per route before the card limit and
 -- admission: `mode` is the effective thinking mode, `default_max_tokens` what the
 -- driver sends for an unset max_tokens and `limit` the card's output limit.
--- budget is nil when the request has no budget thinking; dropped_thinking says the
--- limit leaves no room for the smallest budget.
+-- budget is nil when the request has no planned thinking; dropped_thinking says the
+-- limit leaves no room for the smallest budget. Adaptive plans carry answer_tokens,
+-- the caller's max_tokens the output keeps for the answer.
 function route.plan_output(max_tokens: number?, effort: number?, mode: string?, default_max_tokens: number?, limit: number?): table
+    if (mode == "adaptive" or mode == "always") and max_tokens ~= nil and effort ~= nil and effort > 0 then
+        return plan_adaptive(max_tokens :: number, effort :: number, limit)
+    end
     local thinks = mode == "budget" and effort ~= nil and effort > 0
     local wanted_budget = thinks and route.thinking_budget(effort :: number) or nil
     local output = max_tokens or default_max_tokens
@@ -155,6 +176,16 @@ function route.budget_output(options: table): (number, number)
     end
     local plan = route.plan_output(options.max_tokens, options.thinking_effort, "budget", nil, nil)
     return plan.budget, plan.max_tokens
+end
+
+-- The output an adaptive-thinking request sends. A planned request carries its
+-- thinking_budget_tokens and its planned max_tokens; a driver called directly with
+-- no plan gets the same arithmetic.
+function route.adaptive_output(options: table): number?
+    if options.thinking_budget_tokens then
+        return options.max_tokens
+    end
+    return route.plan_output(options.max_tokens, options.thinking_effort, "adaptive", nil, nil).max_tokens
 end
 
 -- A driver capability table: { name, defaults = {fact = value}, supported = {fact = {value = true}} }.

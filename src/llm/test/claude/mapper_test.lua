@@ -1380,7 +1380,7 @@ local function define_tests()
                 test.eq(result.thinking.type, "adaptive")
                 test.is_nil((result.thinking :: table).budget_tokens)
                 test.is_nil(result.temperature)
-                test.eq(result.max_tokens, 1000)
+                test.eq(result.max_tokens, 1000 + 12512) -- answer tokens plus thinking_budget(50)
                 test.eq(result.output_config.effort, "medium")
             end)
 
