@@ -425,6 +425,28 @@ local function define_tests()
                 test.contains(err.message, "API key is required")
             end)
 
+            it("names the variable an api_key_env reference names when it does not resolve", function()
+                claude_client._ctx = {
+                    all = function()
+                        return { api_key_env = "UNBOUND_KEY" }
+                    end
+                }
+                claude_client._env = {
+                    get = function(key)
+                        if key == "UNBOUND_KEY" then return nil, "environment variable not found" end
+                        return nil
+                    end
+                }
+                claude_client._http_client = nil
+
+                local response, err = claude_client.request("/messages", {})
+
+                test.is_nil(response)
+                assert(err)
+                test.eq(err.status_code, 401)
+                test.contains(err.message, "API key is required: api_key_env names environment variable UNBOUND_KEY, which does not resolve")
+            end)
+
             it("should parse Claude error responses with structured format", function()
                 claude_client._ctx = {
                     all = function()

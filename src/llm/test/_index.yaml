@@ -493,6 +493,7 @@ entries:
       - base64
     imports:
       bedrock_client: wippy.llm.bedrock:client
+      bedrock_credentials: wippy.llm.bedrock:credentials
       test: wippy.test:test
     method: run_tests
 

@@ -13,6 +13,7 @@ type OpenAIConfig = {
     organization: string?,
     timeout: number?,
     timeout_error: transport.RequestError?,
+    unresolved: {[string]: string},
     retry: transport.Retry?,
     deadline_at: number?,
     headers: {[string]: string}?
@@ -35,9 +36,8 @@ openai_client._ctx = ctx
 local function resolve_config()
     local ctx_all = (openai_client._ctx.all() or {}) :: {[string]: any}
 
-    local function resolve_string(key: string, default_env: string?): string?
-        return transport.config_value(ctx_all, openai_client._env, key, default_env)
-    end
+    local settings = transport.config_reader(ctx_all, openai_client._env)
+    local resolve_string = settings.get
 
     local timeout, timeout_err = transport.config_timeout(ctx_all, openai_client._env, "OPENAI_COMPAT_TIMEOUT", 600)
 
@@ -47,6 +47,7 @@ local function resolve_config()
         organization = resolve_string("organization", "OPENAI_COMPAT_ORGANIZATION"),
         timeout = timeout,
         timeout_error = timeout_err,
+        unresolved = settings.unresolved,
         retry = transport.normalize_retry(ctx_all.retry),
         deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
@@ -169,7 +170,7 @@ function openai_client.request(endpoint_path, payload, options)
     if not config.api_key then
         local error_response = {
             status_code = 401,
-            message = "OpenAI API key is required"
+            message = transport.required_message("OpenAI API key is required", config.unresolved.api_key)
         }
         return nil, error_response
     end

@@ -15,6 +15,7 @@ type ClaudeConfig = {
     beta_features: {string},
     timeout: number?,
     timeout_error: transport.RequestError?,
+    unresolved: {[string]: string},
     retry: transport.Retry?,
     deadline_at: number?,
     headers: {[string]: string}?
@@ -59,9 +60,8 @@ claude_client.ENDPOINTS = {
 local function resolve_config()
     local ctx_all = (claude_client._ctx.all() or {}) :: {[string]: any}
 
-    local function resolve_string(key: string, default_env: string?): string?
-        return transport.config_value(ctx_all, claude_client._env, key, default_env)
-    end
+    local settings = transport.config_reader(ctx_all, claude_client._env)
+    local resolve_string = settings.get
 
     local timeout, timeout_err = transport.config_timeout(ctx_all, claude_client._env, "ANTHROPIC_TIMEOUT", 600)
 
@@ -72,6 +72,7 @@ local function resolve_config()
         beta_features = ctx_all.beta_features or {},
         timeout = timeout,
         timeout_error = timeout_err,
+        unresolved = settings.unresolved,
         retry = transport.normalize_retry(ctx_all.retry),
         deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
@@ -194,7 +195,7 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
     if not config.api_key then
         return nil, {
             status_code = 401,
-            message = "Claude API key is required"
+            message = transport.required_message("Claude API key is required", config.unresolved.api_key)
         }
     end
 

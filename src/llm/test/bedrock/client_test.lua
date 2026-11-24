@@ -1,9 +1,79 @@
 local bedrock_client = require("bedrock_client")
+local bedrock_credentials = require("bedrock_credentials")
 local json = require("json")
 local json_null = (json :: any).null
 local base64 = require("base64")
 
 local function define_tests()
+    describe("Bedrock Credentials", function()
+        local original_ctx = bedrock_credentials._ctx
+        local original_env = bedrock_credentials._env
+        local original_store = bedrock_credentials._store
+        local original_has_container = bedrock_credentials.has_container_endpoint
+        local original_fetch_container = bedrock_credentials.fetch_container_credentials
+        local original_fetch_instance = bedrock_credentials.fetch_instance_credentials
+
+        before_each(function()
+            bedrock_credentials._ctx = {
+                all = function() return { access_key_env = "UNBOUND_ACCESS", secret_key = "secret" } end,
+            }
+            bedrock_credentials._env = { get = function(key)
+                if key == "UNBOUND_ACCESS" then return nil, "environment variable not found" end
+                return nil
+            end }
+            bedrock_credentials._store = { get = function() return nil end }
+            bedrock_credentials.has_container_endpoint = function() return false end
+            bedrock_credentials.fetch_instance_credentials = function() return nil, "instance metadata unavailable" end
+        end)
+
+        after_each(function()
+            bedrock_credentials._ctx = original_ctx
+            bedrock_credentials._env = original_env
+            bedrock_credentials._store = original_store
+            bedrock_credentials.has_container_endpoint = original_has_container
+            bedrock_credentials.fetch_container_credentials = original_fetch_container
+            bedrock_credentials.fetch_instance_credentials = original_fetch_instance
+        end)
+
+        it("names the unresolved variable when every credential source fails", function()
+            local creds, err = bedrock_credentials.resolve()
+            test.is_nil(creds)
+            test.contains(tostring(err), "UNBOUND_ACCESS")
+            test.contains(tostring(err), "access_key_env")
+        end)
+
+        it("still tries cached credentials when access_key_env does not resolve", function()
+            bedrock_credentials._store = { get = function()
+                return {
+                    get = function() return { access_key = "cached", secret_key = "cached-secret" } end,
+                    release = function() end,
+                }
+            end }
+            local creds, err = bedrock_credentials.resolve()
+            test.is_nil(err)
+            test.eq(creds.access_key, "cached")
+        end)
+
+        it("still tries container credentials when access_key_env does not resolve", function()
+            bedrock_credentials.has_container_endpoint = function() return true end
+            bedrock_credentials.fetch_container_credentials = function()
+                return { access_key = "task-role", secret_key = "task-secret" }
+            end
+            local creds, err = bedrock_credentials.resolve()
+            test.is_nil(err)
+            test.eq(creds.access_key, "task-role")
+        end)
+
+        it("still tries instance credentials when access_key_env does not resolve", function()
+            bedrock_credentials.fetch_instance_credentials = function()
+                return { access_key = "instance-role", secret_key = "instance-secret" }
+            end
+            local creds, err = bedrock_credentials.resolve()
+            test.is_nil(err)
+            test.eq(creds.access_key, "instance-role")
+        end)
+    end)
+
     describe("Bedrock Client", function()
         local original_http_client = bedrock_client._http_client
         local original_env = bedrock_client._env
