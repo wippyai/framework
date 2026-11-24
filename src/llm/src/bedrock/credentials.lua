@@ -17,10 +17,6 @@ credentials._time = time
 credentials.CACHE_KEY = "aws_bedrock_credentials"
 credentials.DEFAULT_CACHE_ID = "app:cache"
 
-local function resolve_string(key: string, default_env: string?): string?
-    local ctx_all = (credentials._ctx.all() or {}) :: {[string]: any}
-    return transport.config_value(ctx_all, credentials._env, key, default_env)
-end
 
 -- Fetch temporary credentials from ECS/EKS container metadata endpoint
 function credentials.fetch_container_credentials()
@@ -186,6 +182,9 @@ end
 
 -- Resolve AWS credentials: env vars -> cache -> direct metadata fetch
 function credentials.resolve()
+    local ctx_all = (credentials._ctx.all() or {}) :: {[string]: any}
+    local settings = transport.config_reader(ctx_all, credentials._env)
+    local resolve_string = settings.get
     local region = resolve_string("region", "AWS_REGION")
         or resolve_string("aws_region", "AWS_DEFAULT_REGION")
         or "us-east-1"
@@ -193,9 +192,10 @@ function credentials.resolve()
     -- Static credentials from context or env vars
     local access_key = resolve_string("access_key", "AWS_ACCESS_KEY_ID")
     local secret_key = resolve_string("secret_key", "AWS_SECRET_ACCESS_KEY")
+    local session_token = resolve_string("session_token", "AWS_SESSION_TOKEN")
+    if settings.error then return nil, settings.error.message end
 
     if access_key and secret_key then
-        local session_token = resolve_string("session_token", "AWS_SESSION_TOKEN")
         return {
             access_key = access_key,
             secret_key = secret_key,

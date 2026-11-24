@@ -247,6 +247,29 @@ local function define_tests()
                 test.eq(err.status_code, 401)
                 test.contains(tostring(err.message), "TypeSafe API key is required")
             end)
+
+            it("names the variable an api_key_env reference names when it does not resolve", function()
+                typesafe_client._ctx = {
+                    all = function()
+                        return { api_key_env = "UNBOUND_KEY" }
+                    end
+                }
+                typesafe_client._env = {
+                    get = function(key)
+                        if key == "UNBOUND_KEY" then return nil, "environment variable not found" end
+                        return nil
+                    end
+                }
+                typesafe_client._http_client = nil
+
+                local response, err = typesafe_client.request("/models", {})
+
+                test.is_nil(response)
+                assert(err)
+                test.eq(err.status_code, 400)
+                test.eq(err.param, "api_key_env")
+                test.contains(err.message, "UNBOUND_KEY")
+            end)
         end)
 
         describe("Error Handling", function()

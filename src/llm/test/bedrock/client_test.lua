@@ -1,9 +1,29 @@
 local bedrock_client = require("bedrock_client")
+local bedrock_credentials = require("bedrock_credentials")
 local json = require("json")
 local json_null = (json :: any).null
 local base64 = require("base64")
 
 local function define_tests()
+    describe("Bedrock Credentials", function()
+        after_each(function()
+            bedrock_credentials._ctx = nil
+            bedrock_credentials._env = nil
+        end)
+
+        it("names the variable an access_key_env reference names when it does not resolve", function()
+            bedrock_credentials._ctx = { all = function() return { access_key_env = "UNBOUND_ACCESS", secret_key = "secret" } end }
+            bedrock_credentials._env = { get = function(key)
+                if key == "UNBOUND_ACCESS" then return nil, "environment variable not found" end
+                return nil
+            end }
+            local creds, err = bedrock_credentials.resolve()
+            test.is_nil(creds)
+            test.contains(tostring(err), "UNBOUND_ACCESS")
+            test.contains(tostring(err), "access_key_env")
+        end)
+    end)
+
     describe("Bedrock Client", function()
         local original_http_client = bedrock_client._http_client
         local original_env = bedrock_client._env

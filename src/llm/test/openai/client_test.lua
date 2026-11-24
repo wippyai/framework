@@ -383,6 +383,29 @@ local function define_tests()
                 test.contains(err.message, "API key is required")
             end)
 
+            it("names the variable an api_key_env reference names when it does not resolve", function()
+                openai_client._ctx = {
+                    all = function()
+                        return { api_key_env = "UNBOUND_KEY" }
+                    end
+                }
+                openai_client._env = {
+                    get = function(key)
+                        if key == "UNBOUND_KEY" then return nil, "environment variable not found" end
+                        return nil
+                    end
+                }
+                openai_client._http_client = nil
+
+                local response, err = openai_client.request("/test", {})
+
+                test.is_nil(response)
+                assert(err)
+                test.eq(err.status_code, 400)
+                test.eq(err.param, "api_key_env")
+                test.contains(err.message, "UNBOUND_KEY")
+            end)
+
             it("should parse HTTP error responses", function()
                 openai_client._ctx = {
                     all = function()

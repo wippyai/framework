@@ -139,6 +139,32 @@ local function define_tests()
                 test.is_nil(transport.config_value({}, env_module, "api_key", "MISSING_KEY"))
                 test.is_nil(transport.config_value({}, env_module, "api_key"))
             end)
+
+            it("answers an error naming the variable a context reference names when it does not resolve", function()
+                local failing = {
+                    get = function(name)
+                        if name == "UNBOUND_KEY" then return nil, "environment variable not found" end
+                        return env_values[name]
+                    end
+                }
+                local value, source, err = transport.config_value({ api_key_env = "UNBOUND_KEY" }, failing, "api_key", "DEFAULT_KEY")
+                test.is_nil(value)
+                test.is_nil(source)
+                test.not_nil(err)
+                test.eq(err.status_code, 400)
+                test.eq(err.error_type, "invalid_request")
+                test.eq(err.param, "api_key_env")
+                test.contains(err.message, "UNBOUND_KEY")
+                test.contains(err.message, "environment variable not found")
+            end)
+
+            it("falls back silently past a default variable that does not resolve", function()
+                local failing = { get = function(_name) return nil, "environment variable not found" end }
+                local value, source, err = transport.config_value({}, failing, "api_key", "DEFAULT_KEY")
+                test.is_nil(value)
+                test.is_nil(source)
+                test.is_nil(err)
+            end)
         end)
 
         describe("normalize_retry", function()
