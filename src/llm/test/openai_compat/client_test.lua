@@ -357,9 +357,8 @@ local function define_tests()
 
                 test.is_nil(response)
                 assert(err)
-                test.eq(err.status_code, 400)
-                test.eq(err.param, "api_key_env")
-                test.contains(err.message, "UNBOUND_KEY")
+                test.eq(err.status_code, 401)
+                test.contains(err.message, "API key is required: api_key_env names environment variable UNBOUND_KEY, which does not resolve")
             end)
 
             it("returns a provider error for a successful response containing a JSON scalar", function()

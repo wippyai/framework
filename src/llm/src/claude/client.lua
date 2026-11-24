@@ -15,7 +15,7 @@ type ClaudeConfig = {
     beta_features: {string},
     timeout: number?,
     timeout_error: transport.RequestError?,
-    config_error: transport.RequestError?,
+    unresolved: {[string]: string},
     retry: transport.Retry?,
     deadline_at: number?,
     headers: {[string]: string}?
@@ -72,7 +72,7 @@ local function resolve_config()
         beta_features = ctx_all.beta_features or {},
         timeout = timeout,
         timeout_error = timeout_err,
-        config_error = settings.error,
+        unresolved = settings.unresolved,
         retry = transport.normalize_retry(ctx_all.retry),
         deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
@@ -191,15 +191,11 @@ function claude_client.request(endpoint_path, payload, options): (any, transport
         if options.stream then timeout_err.stream_started = false end
         return nil, timeout_err
     end
-    if config.config_error then
-        if options.stream then config.config_error.stream_started = false end
-        return nil, config.config_error
-    end
 
     if not config.api_key then
         return nil, {
             status_code = 401,
-            message = "Claude API key is required"
+            message = transport.required_message("Claude API key is required", config.unresolved.api_key)
         }
     end
 

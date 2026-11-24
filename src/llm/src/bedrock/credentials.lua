@@ -193,7 +193,9 @@ function credentials.resolve()
     local access_key = resolve_string("access_key", "AWS_ACCESS_KEY_ID")
     local secret_key = resolve_string("secret_key", "AWS_SECRET_ACCESS_KEY")
     local session_token = resolve_string("session_token", "AWS_SESSION_TOKEN")
-    if settings.error then return nil, settings.error.message end
+    for _, key in ipairs({ "access_key", "secret_key" }) do
+        if settings.unresolved[key] then return nil, transport.required_message("AWS " .. key .. " is required", settings.unresolved[key]) end
+    end
 
     if access_key and secret_key then
         return {

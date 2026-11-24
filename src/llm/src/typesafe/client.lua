@@ -9,7 +9,7 @@ type TypeSafeConfig = {
     base_url: string,
     timeout: number?,
     timeout_error: transport.RequestError?,
-    config_error: transport.RequestError?,
+    unresolved: {[string]: string},
     retry: transport.Retry?,
     deadline_at: number?,
     headers: any
@@ -39,7 +39,7 @@ local function resolve_config(): TypeSafeConfig
         base_url = resolve_string("base_url", "TYPESAFE_BASE_URL") or "https://api.typesafe.ai/v1",
         timeout = timeout,
         timeout_error = timeout_err,
-        config_error = settings.error,
+        unresolved = settings.unresolved,
         retry = transport.normalize_retry(ctx_all.retry),
         deadline_at = tonumber(ctx_all.deadline_at),
         headers = ctx_all.headers
@@ -169,15 +169,11 @@ function typesafe_client.request(endpoint_path, payload, options)
         if options.stream then timeout_err.stream_started = false end
         return nil, timeout_err
     end
-    if config.config_error then
-        if options.stream then config.config_error.stream_started = false end
-        return nil, config.config_error
-    end
 
     if not config.api_key then
         return nil, {
             status_code = 401,
-            message = "TypeSafe API key is required"
+            message = transport.required_message("TypeSafe API key is required", config.unresolved.api_key)
         }
     end
 

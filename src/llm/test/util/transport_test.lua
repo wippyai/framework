@@ -147,23 +147,38 @@ local function define_tests()
                         return env_values[name]
                     end
                 }
-                local value, source, err = transport.config_value({ api_key_env = "UNBOUND_KEY" }, failing, "api_key", "DEFAULT_KEY")
+                local value, source, unresolved = transport.config_value({ api_key_env = "UNBOUND_KEY" }, failing, "api_key", "MISSING_KEY")
                 test.is_nil(value)
                 test.is_nil(source)
-                test.not_nil(err)
-                test.eq(err.status_code, 400)
-                test.eq(err.error_type, "invalid_request")
-                test.eq(err.param, "api_key_env")
-                test.contains(err.message, "UNBOUND_KEY")
-                test.contains(err.message, "environment variable not found")
+                test.eq(unresolved, "api_key_env names environment variable UNBOUND_KEY, which does not resolve: environment variable not found")
+            end)
+
+            it("falls back to the default variable past a reference that does not resolve", function()
+                local failing = {
+                    get = function(name)
+                        if name == "UNBOUND_KEY" then return nil, "environment variable not found" end
+                        return env_values[name]
+                    end
+                }
+                local value, source, unresolved = transport.config_value({ api_key_env = "UNBOUND_KEY" }, failing, "api_key", "DEFAULT_KEY")
+                test.eq(value, "from-default-env")
+                test.eq(source, "DEFAULT_KEY")
+                test.is_nil(unresolved)
+            end)
+
+            it("leaves an optional setting at its default when its reference does not resolve", function()
+                local failing = { get = function(_name) return nil, "environment variable not found" end }
+                local timeout, err = transport.config_timeout({ timeout_env = "wippy.llm.openai_compat:timeout" }, failing, "OPENAI_COMPAT_TIMEOUT", 600)
+                test.is_nil(err)
+                test.eq(timeout, 600)
             end)
 
             it("falls back silently past a default variable that does not resolve", function()
                 local failing = { get = function(_name) return nil, "environment variable not found" end }
-                local value, source, err = transport.config_value({}, failing, "api_key", "DEFAULT_KEY")
+                local value, source, unresolved = transport.config_value({}, failing, "api_key", "DEFAULT_KEY")
                 test.is_nil(value)
                 test.is_nil(source)
-                test.is_nil(err)
+                test.is_nil(unresolved)
             end)
         end)
 

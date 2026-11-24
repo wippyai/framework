@@ -175,48 +175,52 @@ end
 
 -- Resolves a string setting from a literal context value, then from the env
 -- variable named by `<key>_env` in the context, then from the provider's
--- default env variable. Empty env values count as unset. A variable the
--- context names that the env cannot resolve answers an invalid_request error
--- naming it and the env's reason; the provider's default variable is optional,
--- so its failure to resolve leaves the setting unset.
-function transport.config_value(ctx_all: {[string]: any}, env_module: any, key: string, default_env: string?): (string?, string?, RequestError?)
+-- default env variable. Empty env values count as unset. When the setting
+-- stays unset and the variable `<key>_env` names did not resolve, the third
+-- value describes that reference and the env's reason, for the caller that
+-- requires the setting to name what is missing.
+function transport.config_value(ctx_all: {[string]: any}, env_module: any, key: string, default_env: string?): (string?, string?, string?)
     if ctx_all[key] then
         return tostring(ctx_all[key]), "context." .. key
     end
+    local unresolved: string? = nil
     local env_key = ctx_all[key .. "_env"]
     if env_key then
         local name = tostring(env_key)
         local value, err = env_module.get(name)
-        if err then
-            return nil, nil, { status_code = 400, error_type = "invalid_request", param = key .. "_env",
-                message = key .. "_env names environment variable " .. name .. ", which does not resolve: " .. tostring(err) }
-        end
         if type(value) == "string" and value ~= "" then return value, name end
+        unresolved = key .. "_env names environment variable " .. name .. ", which " .. (err and ("does not resolve: " .. tostring(err)) or "holds no value")
     end
     if default_env then
         local value = env_module.get(default_env)
         if type(value) == "string" and value ~= "" then return value, default_env end
     end
-    return nil, nil
+    return nil, nil, unresolved
 end
 
--- Reads the string settings of one context through config_value, keeping
--- the first unresolved env reference as its error.
+-- Reads the string settings of one context through config_value; unresolved
+-- maps each setting left unset to the reference that did not resolve.
 function transport.config_reader(ctx_all: {[string]: any}, env_module: any)
-    local reader: { error: RequestError? } = { error = nil }
+    local reader: { unresolved: {[string]: string} } = { unresolved = {} }
     function reader.get(key: string, default_env: string?): string?
-        local value, _, err = transport.config_value(ctx_all, env_module, key, default_env)
-        if err and not reader.error then reader.error = err end
+        local value, _, unresolved = transport.config_value(ctx_all, env_module, key, default_env)
+        if unresolved then reader.unresolved[key] = unresolved end
         return value
     end
     return reader
 end
 
+-- The message of a required setting left unset: label, with the reference
+-- that did not resolve when one did not.
+function transport.required_message(label: string, unresolved: string?): string
+    if unresolved then return label .. ": " .. unresolved end
+    return label
+end
+
 function transport.config_timeout(ctx_all: {[string]: any}, env_module: any, default_env: string, fallback: number): (number?, RequestError?)
     local context = { timeout = ctx_all.timeout, timeout_env = ctx_all.timeout_env }
     if context.timeout == "" then context.timeout = nil end
-    local value, source, err = transport.config_value(context, env_module, "timeout", default_env)
-    if err then return nil, err end
+    local value, source = transport.config_value(context, env_module, "timeout", default_env)
     return transport.resolve_timeout(value, source, fallback)
 end
 
