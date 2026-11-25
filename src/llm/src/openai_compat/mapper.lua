@@ -553,8 +553,9 @@ function openai_mapper.map_options(contract_options, accepts): (table, string?)
         end
     end
 
-    if is_reasoning_request and contract_options.thinking_effort then
-        local effort = contract_options.thinking_effort
+    -- A zero or absent effort sends no reasoning_effort, so the server's default applies.
+    local effort = contract_options.thinking_effort
+    if is_reasoning_request and type(effort) == "number" and effort > 0 then
         if effort < 25 then
             openai_options.reasoning_effort = "low"
         elseif effort < 75 then

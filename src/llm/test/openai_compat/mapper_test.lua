@@ -949,6 +949,23 @@ local function define_tests()
                 end
             end)
 
+            -- Many OpenAI-compatible servers (vLLM chat templates such as Gemma and
+            -- Qwen) turn thinking on for any reasoning_effort they receive.
+            it("should send no reasoning_effort for zero or absent thinking effort", function()
+                for _, effort in ipairs({ 0, -1 }) do
+                    local openai_options = openai_mapper.map_options({
+                        thinking_effort = effort,
+                        max_tokens = 100
+                    }, { thinking = "adaptive" })
+
+                    test.is_nil(openai_options.reasoning_effort)
+                    test.eq(openai_options.max_completion_tokens, 100)
+                end
+
+                local absent = openai_mapper.map_options({ max_tokens = 100 }, { thinking = "adaptive" })
+                test.is_nil(absent.reasoning_effort)
+            end)
+
             it("should handle nil options", function()
                 local openai_options = openai_mapper.map_options(nil)
 
