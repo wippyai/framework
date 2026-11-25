@@ -139,7 +139,8 @@ local function media_block(part)
         format = part.type == "image" and "png" or "pdf"
     else
         local key = type(mime) == "string" and (mime:lower() .. ";"):match("^%s*([^;]-)%s*;") or nil
-        format = key and media_formats[part.type][key]
+        local formats = media_formats[part.type]
+        format = formats and key and formats[key]
         if not format and key and part.type == "document" then
             local subtype = key:match("^[^/]+/([^/]+)$")
             if subtype and document_formats[subtype] then format = subtype end
