@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.28](https://github.com/wippyai/framework/compare/llm-v0.5.27...llm-v0.5.28) (2026-11-25)
+
+
+### Bug Fixes
+
+* **llm:** name the unresolved variable of an env reference ([#305](https://github.com/wippyai/framework/issues/305)) ([6e363f7](https://github.com/wippyai/framework/commit/6e363f7929cca87f231c1f6746ac51aa46b1d014))
+* **llm:** validate Bedrock Converse attachment formats ([#309](https://github.com/wippyai/framework/issues/309)) ([4fc42de](https://github.com/wippyai/framework/commit/4fc42de3decfc9f27ed62183c9ffae4c0b46e409))
+
 ## [0.5.27](https://github.com/wippyai/framework/compare/llm-v0.5.26...llm-v0.5.27) (2026-11-22)
 
 
