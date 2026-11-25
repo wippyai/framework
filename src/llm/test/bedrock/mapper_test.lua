@@ -648,7 +648,17 @@ local function define_tests()
                 test.eq(doc_block.document.source.bytes, "JVBERi0xLjQ...")
             end)
 
-            it("should extract format from mime_type subtype", function()
+            it("normalizes JPEG aliases and preserves the encoded bytes", function()
+                for _, mime in ipairs({ "image/jpg", " IMAGE/PJPEG ; quality=90", "image/jpeg" }) do
+                    local result = mapper.map_messages({ { role = "user", content = {
+                        prompt.image_base64(mime, "YWJj") } } })
+                    local image = result.messages[1].content[1].image
+                    test.eq(image.format, "jpeg")
+                    test.eq(image.source.bytes, "YWJj")
+                end
+            end)
+
+            it("should use the Converse txt format for plain text", function()
                 local result = mapper.map_messages({
                     {
                         role = "user",
@@ -667,7 +677,7 @@ local function define_tests()
 
                 local doc_block = result.messages[1].content[1] :: any
                 test.not_nil(doc_block.document)
-                test.eq(doc_block.document.format, "plain")
+                test.eq(doc_block.document.format, "txt")
             end)
 
             it("should default format to pdf when mime_type is absent", function()

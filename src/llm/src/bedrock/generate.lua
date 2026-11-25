@@ -98,7 +98,10 @@ function generate_handler.handler(contract_args)
         name_to_id_map = {}
     }
 
-    local mapped = generate_handler._mapper.map_messages(contract_args.messages)
+    local mapped, media_err = generate_handler._mapper.map_messages(contract_args.messages)
+    if media_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(media_err):build()
+    end
     if #mapped.messages == 0 then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
     end

@@ -37,6 +37,17 @@ local function define_tests()
         end)
 
         describe("Contract Validation", function()
+            it("rejects unsupported inline media before calling Bedrock", function()
+                for _, sample in ipairs({ { "image", "image/tiff" }, { "document", "application/zip" } }) do
+                    local response, err = generate_handler.handler({ model = CLAUDE_MODEL,
+                        messages = { { role = "user", content = { { type = sample[1],
+                            source = { type = "base64", mime_type = sample[2], data = "YWJj" } } } } } })
+                    test.is_nil(response)
+                    test.eq(err:kind(), "Invalid")
+                    test.contains(err:message(), sample[2])
+                end
+            end)
+
             it("should require model parameter", function()
                 local response, err = generate_handler.handler({
                     messages = { { role = "user", content = { { type = "text", text = "Test" } } } }

@@ -114,41 +114,43 @@ function mapper.map_finish_reason(stop_reason)
     return mapper.FINISH_REASON_MAP[stop_reason] or stop_reason
 end
 
-local function convert_image_to_converse(content_part)
-    if content_part.type == "image" and content_part.source then
-        if content_part.source.type == "base64" then
-            return {
-                image = {
-                    format = content_part.source.mime_type and content_part.source.mime_type:match("/(.+)") or "png",
-                    source = {
-                        bytes = content_part.source.data
-                    }
-                }
-            }
-        end
-    end
-    return nil
-end
+local media_formats = {
+    image = { ["image/gif"] = "gif", ["image/jpeg"] = "jpeg", ["image/jpg"] = "jpeg",
+        ["image/pjpeg"] = "jpeg", ["image/png"] = "png", ["image/webp"] = "webp" },
+    document = {
+        ["application/pdf"] = "pdf", ["text/csv"] = "csv", ["text/html"] = "html",
+        ["text/plain"] = "txt", ["text/markdown"] = "md", ["text/x-markdown"] = "md",
+        ["application/msword"] = "doc", ["application/vnd.ms-excel"] = "xls",
+        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = "docx",
+        ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] = "xlsx",
+    },
+}
 
-local function convert_document_to_converse(content_part)
-    if content_part.type == "document" and content_part.source then
-        if content_part.source.type == "base64" then
-            local format = "pdf"
-            if content_part.source.mime_type then
-                format = content_part.source.mime_type:match("/(.+)") or "pdf"
-            end
-            return {
-                document = {
-                    format = format,
-                    name = "document",
-                    source = {
-                        bytes = content_part.source.data
-                    }
-                }
-            }
+-- Some existing callers use the Converse format itself as the MIME subtype.
+local document_formats = { pdf = true, csv = true, doc = true, docx = true,
+    xls = true, xlsx = true, html = true, txt = true, md = true }
+
+local function media_block(part)
+    local source = part.source
+    if not source or source.type ~= "base64" then return nil end
+    local mime = source.mime_type
+    local format
+    if mime == nil then
+        format = part.type == "image" and "png" or "pdf"
+    else
+        local key = type(mime) == "string" and (mime:lower() .. ";"):match("^%s*([^;]-)%s*;") or nil
+        format = key and media_formats[part.type][key]
+        if not format and key and part.type == "document" then
+            local subtype = key:match("^[^/]+/([^/]+)$")
+            if subtype and document_formats[subtype] then format = subtype end
+        end
+        if not format then
+            return nil, "Unsupported Bedrock " .. part.type .. " MIME type: " .. tostring(mime)
         end
     end
-    return nil
+    local block = { format = format, source = { bytes = source.data } }
+    if part.type == "document" then block.name = "document" end
+    return { [part.type] = block }
 end
 
 local function user_content_blocks(content, developer: boolean)
@@ -162,16 +164,10 @@ local function user_content_blocks(content, developer: boolean)
         for _, part in ipairs(content) do
             if part.type == "text" and part.text then
                 table.insert(content_blocks, { text = text_of(part.text) })
-            elseif part.type == "image" then
-                local img = convert_image_to_converse(part)
-                if img then
-                    table.insert(content_blocks, img)
-                end
-            elseif part.type == "document" then
-                local doc = convert_document_to_converse(part)
-                if doc then
-                    table.insert(content_blocks, doc)
-                end
+            elseif part.type == "image" or part.type == "document" then
+                local block, err = media_block(part)
+                if err then return nil, err end
+                if block then table.insert(content_blocks, block) end
             end
         end
     end
@@ -421,16 +417,10 @@ function mapper.map_messages(contract_messages)
                         }
                         order.place_call(tool_use, part.id)
                         table.insert(content_blocks, tool_use)
-                    elseif part.type == "image" then
-                        local img = convert_image_to_converse(part)
-                        if img then
-                            table.insert(content_blocks, img)
-                        end
-                    elseif part.type == "document" then
-                        local doc = convert_document_to_converse(part)
-                        if doc then
-                            table.insert(content_blocks, doc)
-                        end
+                    elseif part.type == "image" or part.type == "document" then
+                        local block, err = media_block(part)
+                        if err then return nil, err end
+                        if block then table.insert(content_blocks, block) end
                     end
                 end
             end
@@ -446,7 +436,8 @@ function mapper.map_messages(contract_messages)
             -- render as user text, so they never rewrite the system blocks;
             -- consolidation appends them as blocks after the user turn they
             -- follow, or they open a user turn after an assistant turn.
-            local content_blocks = user_content_blocks(msg.content, msg.role == prompt.ROLE.DEVELOPER)
+            local content_blocks, err = user_content_blocks(msg.content, msg.role == prompt.ROLE.DEVELOPER)
+            if err then return nil, err end
             if #content_blocks > 0 then
                 table.insert(converse_messages, {
                     role = "user",
