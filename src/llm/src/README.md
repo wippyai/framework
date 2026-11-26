@@ -667,7 +667,7 @@ while true do
     elseif chunk.type == "thinking" then
         -- reasoning content
     elseif chunk.type == "tool_call" then
-        -- tool_call.name, tool_call.arguments, tool_call.id
+        -- chunk.name, chunk.arguments (JSON text), chunk.id
     elseif chunk.type == "done" then
         break
     elseif chunk.type == "error" then
@@ -675,6 +675,12 @@ while true do
     end
 end
 ```
+
+A `tool_call` chunk is sent once per completed call. Its `arguments` is the JSON text of the
+call's arguments: the text the provider streamed (OpenAI, OpenAI-compatible, Claude, Bedrock), or
+the encoded arguments object (Google). Malformed text arrives as the provider sent it. The call in
+the result carries the decoded `arguments`, with `raw_arguments` and `arguments_error` for
+malformed text (see [Tool Calling](#tool-calling)).
 
 ### Cancellation
 
@@ -701,7 +707,7 @@ local output = require("output")
 local streamer = output.streamer(pid, "topic", buffer_size)
 streamer:send_content("Hello")
 streamer:send_thinking("Reasoning...")
-streamer:send_tool_call("tool_name", {arg = "val"}, "call-id")
+streamer:send_tool_call("tool_name", '{"arg":"val"}', "call-id")
 streamer:send_error("server_error", "Something failed")
 streamer:send_done({usage = output.usage(100, 50, 0, 0, 0)})
 
