@@ -225,6 +225,20 @@ local function define_tests()
                 test.is_nil((marked:find("guard", 1, true)))
             end)
 
+            it("rejects combining the marked-message policy with a raw guardrail config", function()
+                for _, handler in ipairs({ bedrock_generate, bedrock_structured }) do
+                    local sent = capture(handler)
+                    local args = generate_args(conversation(), { guardrail = GUARDRAIL,
+                        request = { guardrailConfig = { guardrailVersion = "2" } } })
+                    args.schema = SCHEMA
+                    local response, err = handler.handler(args)
+                    test.is_nil(response)
+                    test.eq(err:kind(), errors.INVALID)
+                    test.contains(err:message(), "options.request.guardrailConfig")
+                    test.is_nil(sent.payload)
+                end
+            end)
+
             it("rejects an invalid guardrail before calling Bedrock", function()
                 for _, case in ipairs({
                     { guardrail = "gr7wblcxdk6sht", names = "options.guardrail" },
@@ -310,7 +324,10 @@ local function define_tests()
             end)
 
             it("fails a blocked structured output call as content_filtered with the guardrail's text", function()
-                local sent = capture(bedrock_structured, converse_response(BLOCKED, "guardrail_intervened"))
+                local blocked = converse_response(BLOCKED, "guardrail_intervened")
+                table.insert(blocked.output.message.content, { toolUse = {
+                    toolUseId = "structured", name = "structured_output", input = { answer = "partial" } } })
+                local sent = capture(bedrock_structured, blocked)
                 local response, err = bedrock_structured.handler({ model = MODEL, messages = conversation(), schema = SCHEMA,
                     options = { guardrail = GUARDRAIL } })
 

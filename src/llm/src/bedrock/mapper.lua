@@ -704,9 +704,13 @@ end
 -- from map_messages): each of those text blocks goes as guardContent, which Bedrock
 -- then evaluates alone, and the payload names the guardrail. The guardrail goes only
 -- with guarded text: named without it, Bedrock evaluates every message.
-function mapper.apply_guardrail(payload, mapped, guardrail: any, streaming: boolean): string?
+function mapper.apply_guardrail(payload, mapped, options: any, streaming: boolean): string?
+    local guardrail = options and options.guardrail
     if guardrail == nil then
         return nil
+    end
+    if type(options.request) == "table" and options.request.guardrailConfig ~= nil then
+        return "options.guardrail and options.request.guardrailConfig cannot be combined"
     end
     local config, config_err = guardrail_config(guardrail, streaming)
     if config_err then

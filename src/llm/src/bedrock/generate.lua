@@ -156,7 +156,7 @@ function generate_handler.handler(contract_args)
 
     local streaming = (contract_args.stream and contract_args.stream.reply_to) and true or false
     local guardrail_err = generate_handler._mapper.apply_guardrail(converse_payload, mapped,
-        (contract_args.options or {}).guardrail, streaming)
+        contract_args.options, streaming)
     if guardrail_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(guardrail_err):build()
     end

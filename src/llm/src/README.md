@@ -187,6 +187,8 @@ Structured output that a guardrail stops fails with `content_filtered` and the g
 With `trace` enabled, `metadata.guardrail_trace` holds Bedrock's guardrail assessment, which
 contains the unmasked values: treat it as sensitive.
 
+Configure either `options.guardrail` or `options.request.guardrailConfig` per request. Combining them returns `invalid_request`.
+
 To have a guardrail evaluate the whole request instead, set `guardrailConfig` through
 `options.request`.
 
