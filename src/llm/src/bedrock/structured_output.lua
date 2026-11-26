@@ -141,6 +141,12 @@ function structured_output_handler.handler(contract_args)
         converse_payload.additionalModelRequestFields = additional_fields
     end
 
+    local guardrail_err = structured_output_handler._mapper.apply_guardrail(converse_payload, mapped,
+        contract_args.options, false)
+    if guardrail_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(guardrail_err):build()
+    end
+
     local overlay_err = wire_request.apply(converse_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
     if overlay_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
@@ -168,8 +174,9 @@ function structured_output_handler.handler(contract_args)
         end
     end
     local tokens = type(usage) == "table" and structured_output_handler._mapper.map_tokens(usage) or nil
-    err:response(tokens, type(response) == "table" and type(response.stopReason) == "string"
-        and structured_output_handler._mapper.map_finish_reason(response.stopReason) or nil)
+    local stop_reason = type(response) == "table" and response.stopReason or nil
+    local finish_reason = type(stop_reason) == "string" and structured_output_handler._mapper.map_finish_reason(stop_reason) or nil
+    err:response(tokens, finish_reason)
 
     -- Extract tool_use block from response (mapper handles text-JSON fallback
     -- for models that return tool calls as text instead of native toolUse blocks)
@@ -177,6 +184,18 @@ function structured_output_handler.handler(contract_args)
         response,
         { structured_output = true }
     )
+
+    if finish_reason == output.FINISH_REASON.CONTENT_FILTER then
+        local message = "Bedrock stopped the structured output request (stopReason " .. stop_reason .. ")"
+        if extracted.content ~= "" then
+            message = message .. ": " .. extracted.content
+        end
+        return nil, err
+            :kind(output.ERROR_TYPE.CONTENT_FILTER)
+            :message(message)
+            :details({ request_id = response.metadata and response.metadata.request_id or nil })
+            :build()
+    end
 
     local tool_use_input = nil
     for _, tc in ipairs(extracted.tool_calls) do
@@ -203,6 +222,7 @@ function structured_output_handler.handler(contract_args)
         finish_reason = "stop",
         metadata = response.metadata or {}
     }
+    result.metadata.guardrail_trace = structured_output_handler._mapper.guardrail_trace(response)
     route.attach_adjusted(result, adjusted)
     return result
 end

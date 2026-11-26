@@ -154,6 +154,13 @@ function generate_handler.handler(contract_args)
         context.name_to_id_map = name_to_id_map
     end
 
+    local streaming = (contract_args.stream and contract_args.stream.reply_to) and true or false
+    local guardrail_err = generate_handler._mapper.apply_guardrail(converse_payload, mapped,
+        contract_args.options, streaming)
+    if guardrail_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(guardrail_err):build()
+    end
+
     local overlay_err = wire_request.apply(converse_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
     if overlay_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
@@ -170,7 +177,7 @@ function generate_handler.handler(contract_args)
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(bind_err):build()
     end
 
-    if contract_args.stream and contract_args.stream.reply_to then
+    if streaming then
         local stream_response, stream_err = generate_handler._client.converse_stream(
             contract_args.model,
             converse_payload,

@@ -766,6 +766,11 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
         options.cache_ttl = cache_ttl
     end
 
+    -- The guardrail evaluates the messages the host marks guard_content.
+    if runtime_options.guardrail ~= nil then
+        options.guardrail = runtime_options.guardrail
+    end
+
     if self.trait_loading == "append" then
         options.expect_tool_additions = true
     end
@@ -953,6 +958,12 @@ function agent:step(prompt_builder: any, runtime_options: any): (table?, string?
     if runtime_options.checkpoint and not (llm_instance.ERROR_TYPE and llm_instance.ERROR_TYPE.CONTEXT_WINDOW) then
         return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
             :message("Checkpoint callbacks require an LLM with context admission support"):build()
+    end
+
+    -- The llm package that applies a guardrail is the one whose prompt marks guarded messages.
+    if runtime_options.guardrail ~= nil and type(get_prompt().is_guarded) ~= "function" then
+        return nil, output.errors.generate():kind(output.ERROR_TYPE.INVALID_REQUEST)
+            :message("A guardrail requires an LLM with guardrail support"):build()
     end
 
     local result, err, details = llm_instance.generate(final_messages, options)

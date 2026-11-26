@@ -586,6 +586,18 @@ local function prepare_route(contract_args, provider_info: any, options, provide
     if ttl_err then
         return nil, ttl_err
     end
+    -- A call's guardrail needs a route whose driver applies it.
+    if contract_args.options.guardrail ~= nil then
+        local applies, applies_err = providers_module.driver_applies_guardrail(provider_info.id)
+        if applies_err then
+            return nil, native_error(applies_err, errors.INTERNAL, false)
+        end
+        if not applies then
+            return nil, errors.new({ kind = errors.INVALID, retryable = false,
+                message = "route " .. tostring(provider_info.id)
+                    .. " cannot apply options.guardrail: its driver declares no guardrail support" })
+        end
+    end
     local strict = contract_args.options.strict == true
     contract_args.options.strict = nil
     contract_args._strict = strict

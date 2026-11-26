@@ -230,9 +230,16 @@ local response, err = runner:step(builder, {
     stop_check = function() return stop_requested end,
     cancel = turn_cancel,
     cache_ttl = "1h",              -- optional: replaces agent_options.prompt_cache.ttl for this step
+    guardrail = { identifier = "gr7wblcxdk6sht", version = "1" },  -- optional: llm guardrail for this step
     route = earlier_response.route_pin  -- later steps of a turn: stay on the model that answered
 })
 ```
+
+`guardrail` is the `guardrail` option of `llm.generate` (see the LLM README, Bedrock guardrails).
+It evaluates the user message the host marks with `metadata.guard_content = true`, typically the
+end user's message of the current turn, on every step of that turn; a step without it leaves the
+guardrail to the model route. With a `wippy/llm` that predates guardrails, a step that sets
+`guardrail` fails with `invalid_request` before the model call.
 
 `context_id` is optional and passes through to LLM usage tracking. It identifies the
 conversation independently of the agent's prompt and tool execution `context`.

@@ -571,6 +571,31 @@ entries:
       test: wippy.test:test
     method: run_tests
 
+  - name: bedrock_guardrail_test
+    kind: function.lua
+    meta:
+      name: Bedrock Guardrail Test
+      type: test
+      comment: A call's guardrail on the end user's marked text, through llm, the Bedrock handlers and client
+      group: LLM / Drivers / Bedrock
+      tags:
+        - unit-test
+        - guardrail
+        - bedrock
+    source: file://bedrock/guardrail_test.lua
+    modules:
+      - json
+      - process
+      - registry
+    imports:
+      llm: wippy.llm:llm
+      prompt: wippy.llm:prompt
+      providers: wippy.llm.discovery:providers
+      bedrock_generate: wippy.llm.bedrock:generate
+      bedrock_structured: wippy.llm.bedrock:structured_output
+      test: wippy.test:test
+    method: run_tests
+
   - name: bedrock_embed_test
     kind: function.lua
     meta:

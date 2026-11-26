@@ -42,6 +42,7 @@ local result = llm.generate(builder, {
     stop_sequences = {"END"},
     seed = 12345,
     cache_ttl = "1h",       -- prompt cache lifetime: "5m" (default) or "1h"
+    guardrail = { identifier = "gr7wblcxdk6sht", version = "1" },  -- see Bedrock guardrails
     stream = {
         reply_to = process.self(),
         topic = "llm_stream",
@@ -134,6 +135,62 @@ local response, err = llm.generate("Hello", {
     request = { thinking = { type = "between_tools" } }
 })
 ```
+
+### Bedrock guardrails
+
+`guardrail` applies an Amazon Bedrock guardrail to the end user's own words. Mark the user message
+that holds them with `metadata.guard_content = true`: the guardrail then assesses the text of
+marked messages and the model's reply, not the system prompt, the other messages, tool results or
+images.
+
+```lua
+local builder = prompt.new()
+    :add_system("You are a shopping assistant.")
+    :add_user("Which plan fits two lines?")
+    :add_assistant("Here are three plans.")
+    :add_user(user_input, { guard_content = true })
+
+local result = llm.generate(builder, {
+    model = "claude-bedrock",
+    guardrail = {
+        identifier = "gr7wblcxdk6sht",    -- guardrail ID or ARN
+        version = "1",                    -- published version, or "DRAFT"
+        trace = "enabled",                -- optional: enabled, disabled, enabled_full
+        stream_processing_mode = "async"  -- optional, streamed calls: sync, async
+    }
+})
+```
+
+The Bedrock driver sends each text part of a marked message as a `guardContent` block and the
+guardrail as `guardrailConfig`, with `streamProcessingMode` on ConverseStream only. Once a request
+carries `guardContent`, Bedrock assesses only those blocks of the input; AWS notes that a word
+filter can still match other content. The guardrail goes only with guarded text: a request with
+none (no marked message, or a marked message holding only images or blank text) carries no
+guardrail, since Bedrock would then assess every message. The prompt builder keeps a marked
+message whole, apart from the messages around it. Only user messages carry the marker; a marker on
+any other message fails the call with `invalid_request`.
+
+A route can set `guardrail` in its `options`, so that every call of the route carrying a marked
+message is guarded; a call's `guardrail` replaces the route's. `identifier` and `version` are
+strings (quote a numeric version in YAML). Other keys and other values fail with
+`invalid_request` before the provider request.
+
+A driver binding that applies the option declares `meta.guardrail: true`; the Bedrock driver does.
+A call whose route has another driver fails with `invalid_request` before the provider request,
+and such a route in a fallback chain is skipped, so a guarded call is answered with its guardrail
+or fails.
+
+An intervention is a response with `finish_reason = "filtered"` and the guardrail's message as
+`result`, streamed as content. Bedrock reports masking by a sensitive information filter
+(`ANONYMIZE`) the same way, with the masked answer as `result`; the trace tells the two apart.
+Structured output that a guardrail stops fails with `content_filtered` and the guardrail's message.
+With `trace` enabled, `metadata.guardrail_trace` holds Bedrock's guardrail assessment, which
+contains the unmasked values: treat it as sensitive.
+
+Configure either `options.guardrail` or `options.request.guardrailConfig` per request. Combining them returns `invalid_request`.
+
+To have a guardrail evaluate the whole request instead, set `guardrailConfig` through
+`options.request`.
 
 ### OpenAI-compatible reasoning
 

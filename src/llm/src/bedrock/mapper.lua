@@ -295,6 +295,8 @@ function mapper.map_messages(contract_messages)
         return translate_id(id)
     end
     local stale_thinking = {}
+    local guarded = {}
+    local misplaced_guard: string? = nil
     local outdated = thinking.before_tool_additions(contract_messages)
 
     local function add_reasoning_blocks(content_blocks, msg)
@@ -322,6 +324,9 @@ function mapper.map_messages(contract_messages)
         if msg.role ~= prompt.ROLE.ASSISTANT and msg.role ~= prompt.ROLE.FUNCTION_CALL
             and not prompt.transparent_to_assistant_turn(msg) then
             order.leave_turn()
+        end
+        if prompt.is_guarded(msg) and msg.role ~= prompt.ROLE.USER then
+            misplaced_guard = misplaced_guard or tostring(msg.role)
         end
         if msg.role == prompt.ROLE.SYSTEM and not prompt.is_positional_note(msg) then
             if type(msg.content) == "string" then
@@ -439,6 +444,11 @@ function mapper.map_messages(contract_messages)
             -- follow, or they open a user turn after an assistant turn.
             local content_blocks, err = user_content_blocks(msg.content, msg.role == prompt.ROLE.DEVELOPER)
             if err then return nil, err end
+            if msg.role == prompt.ROLE.USER and prompt.is_guarded(msg) then
+                for _, block in ipairs(content_blocks) do
+                    if block.text then guarded[block] = true end
+                end
+            end
             if #content_blocks > 0 then
                 table.insert(converse_messages, {
                     role = "user",
@@ -482,7 +492,10 @@ function mapper.map_messages(contract_messages)
         -- Converse takes alternating roles, so turns around a removed blank turn merge.
         messages = consolidated_turns(without_blank_turns(consolidated)),
         system = #system_blocks > 0 and system_blocks or nil,
-        stale_thinking = next(stale_thinking) and stale_thinking or nil
+        stale_thinking = next(stale_thinking) and stale_thinking or nil,
+        -- Text blocks of guarded user messages, which a call's guardrail evaluates.
+        guarded = next(guarded) and guarded or nil,
+        misplaced_guard = misplaced_guard
     }
 end
 
@@ -648,6 +661,76 @@ function mapper.bind_thinking(payload, stale_blocks): string?
     return nil
 end
 
+local GUARDRAIL_KEYS = { identifier = true, version = true, trace = true, stream_processing_mode = true }
+local GUARDRAIL_TRACE = { enabled = true, disabled = true, enabled_full = true }
+local GUARDRAIL_STREAM_MODES = { sync = true, async = true }
+
+-- The guardrailConfig of options.guardrail: GuardrailConfiguration for Converse,
+-- GuardrailStreamConfiguration (with streamProcessingMode) for ConverseStream.
+local function guardrail_config(guardrail: any, streaming: boolean): (table?, string?)
+    if type(guardrail) ~= "table" then
+        return nil, "options.guardrail must be a table with identifier and version"
+    end
+    for key in pairs(guardrail) do
+        if not GUARDRAIL_KEYS[key] then
+            return nil, "options.guardrail." .. tostring(key)
+                .. " is unknown; allowed keys: identifier, version, trace, stream_processing_mode"
+        end
+    end
+    if type(guardrail.identifier) ~= "string" or guardrail.identifier == "" then
+        return nil, "options.guardrail.identifier must be the guardrail's ID or ARN"
+    end
+    if type(guardrail.version) ~= "string" or guardrail.version == "" then
+        return nil, "options.guardrail.version must be a version string such as \"1\" or \"DRAFT\""
+    end
+    if guardrail.trace ~= nil and not GUARDRAIL_TRACE[guardrail.trace] then
+        return nil, "options.guardrail.trace must be one of: enabled, disabled, enabled_full"
+    end
+    if guardrail.stream_processing_mode ~= nil and not GUARDRAIL_STREAM_MODES[guardrail.stream_processing_mode] then
+        return nil, "options.guardrail.stream_processing_mode must be one of: sync, async"
+    end
+    local config = {
+        guardrailIdentifier = guardrail.identifier,
+        guardrailVersion = guardrail.version,
+        trace = guardrail.trace
+    }
+    if streaming then
+        config.streamProcessingMode = guardrail.stream_processing_mode
+    end
+    return config, nil
+end
+
+-- Puts options.guardrail on the text of the guarded user messages (`mapped.guarded`,
+-- from map_messages): each of those text blocks goes as guardContent, which Bedrock
+-- then evaluates alone, and the payload names the guardrail. The guardrail goes only
+-- with guarded text: named without it, Bedrock evaluates every message.
+function mapper.apply_guardrail(payload, mapped, options: any, streaming: boolean): string?
+    local guardrail = options and options.guardrail
+    if guardrail == nil then
+        return nil
+    end
+    if type(options.request) == "table" and options.request.guardrailConfig ~= nil then
+        return "options.guardrail and options.request.guardrailConfig cannot be combined"
+    end
+    local config, config_err = guardrail_config(guardrail, streaming)
+    if config_err then
+        return config_err
+    end
+    if mapped.misplaced_guard then
+        return "metadata.guard_content marks the end user's own message; a "
+            .. mapped.misplaced_guard .. " message carries it"
+    end
+    if not mapped.guarded then
+        return nil
+    end
+    for block in pairs(mapped.guarded) do
+        block.guardContent = { text = { text = block.text } }
+        block.text = nil
+    end
+    payload.guardrailConfig = config
+    return nil
+end
+
 -- Try to parse a text block as an embedded tool call.
 -- Some models (Llama 3.3 on Bedrock, etc.) return tool calls as JSON inside a
 -- text content block instead of using native Converse toolUse blocks.
@@ -809,6 +892,13 @@ local function extract_thinking_text(thinking_blocks)
     return table.concat(parts)
 end
 
+-- The guardrail assessment of a Converse response, present when the request's guardrail
+-- enables its trace. It holds unmasked values, so it goes to successful results only.
+function mapper.guardrail_trace(converse_response): any
+    local trace = type(converse_response) == "table" and converse_response.trace or nil
+    return type(trace) == "table" and trace.guardrail or nil
+end
+
 -- Format a full success response from Converse API response
 function mapper.format_success_response(converse_response, name_to_id_map)
     local extracted = mapper.extract_response_content(converse_response, name_to_id_map)
@@ -840,6 +930,7 @@ function mapper.format_success_response(converse_response, name_to_id_map)
     result.metadata.thinking = thinking_content
     result.metadata.thinking_blocks = extracted.thinking_blocks
     result.metadata.content_positions = extracted.content_positions
+    result.metadata.guardrail_trace = mapper.guardrail_trace(converse_response)
 
     return result
 end
