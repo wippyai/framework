@@ -187,6 +187,20 @@ function structured_output_handler.handler(contract_args)
     end
 
     if not tool_use_input then
+        -- A filtered reply, a guardrail intervention among them, carries text in place of the tool call.
+        local stop_reason = type(response) == "table" and response.stopReason or nil
+        if type(stop_reason) == "string"
+            and structured_output_handler._mapper.map_finish_reason(stop_reason) == output.FINISH_REASON.CONTENT_FILTER then
+            local message = "Bedrock stopped the structured output request (stopReason " .. stop_reason .. ")"
+            if extracted.content ~= "" then
+                message = message .. ": " .. extracted.content
+            end
+            return nil, err
+                :kind(output.ERROR_TYPE.CONTENT_FILTER)
+                :message(message)
+                :details({ request_id = response.metadata and response.metadata.request_id or nil })
+                :build()
+        end
         return nil, err
             :kind(output.ERROR_TYPE.SERVER_ERROR)
             :message("Model failed to use the structured_output tool")
