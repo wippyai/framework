@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.29](https://github.com/wippyai/framework/compare/llm-v0.5.28...llm-v0.5.29) (2026-11-26)
+
+
+### Features
+
+* **llm:** Bedrock guardrails on the end user's marked message ([#312](https://github.com/wippyai/framework/issues/312)) ([be59559](https://github.com/wippyai/framework/commit/be5955996f1ffb41f244e4937487b51dc14cf3c8))
+
+
+### Bug Fixes
+
+* **llm:** send no reasoning_effort for zero thinking effort on OpenAI-compatible endpoints ([#306](https://github.com/wippyai/framework/issues/306)) ([db290ef](https://github.com/wippyai/framework/commit/db290efe2998d3be868d85d771dc825cce6653b3))
+* **llm:** stream tool call arguments as JSON text ([#311](https://github.com/wippyai/framework/issues/311)) ([e22a836](https://github.com/wippyai/framework/commit/e22a836f1bc26ab9b5f7a50d46d57f920a80b38f))
+
 ## [0.5.28](https://github.com/wippyai/framework/compare/llm-v0.5.27...llm-v0.5.28) (2026-11-25)
 
 
