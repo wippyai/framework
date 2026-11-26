@@ -18,6 +18,20 @@ local function define_tests()
                 end
             end
         end)
+        it("keeps a guard_content user message apart from the user messages around it", function()
+            local builder = prompt.new()
+            builder:add_user("Host context")
+            builder:add_user("My own words", { guard_content = true })
+            builder:add_user("Host addition")
+            for _, messages in ipairs({ builder:get_messages(), builder:clone():get_messages() }) do
+                test.eq(#messages, 3)
+                test.eq(messages[1].content[1].text, "Host context")
+                test.eq(#messages[2].content, 1)
+                test.eq(messages[2].content[1].text, "My own words")
+                test.is_true(messages[2].metadata.guard_content)
+                test.eq(messages[3].content[1].text, "Host addition")
+            end
+        end)
         it("keeps positional notes and thinking metadata through clone", function()
             local blocks = { { type = "thinking", thinking = "plan", signature = "sig" } }
             local builder = prompt.new()

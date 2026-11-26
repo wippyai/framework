@@ -143,6 +143,12 @@ function prompt.is_positional_note(msg: Message): boolean
         and type(msg.metadata) == "table" and msg.metadata.preserve_position == true
 end
 
+-- A guarded message is a user message marked with metadata.guard_content: the end
+-- user's own words, the only text a call's guardrail evaluates.
+function prompt.is_guarded(msg: Message): boolean
+    return type(msg.metadata) == "table" and msg.metadata.guard_content == true
+end
+
 -- Text of a developer message as drivers without a developer role render it
 -- inside a user turn, so the model can tell host guidance from user prose.
 function prompt.developer_instruction(text: string): string
@@ -331,12 +337,14 @@ function prompt.new(messages: {Message}?)
                 [prompt.ROLE.DEVELOPER] = true
             }
 
-            -- Check if we can merge with the last message
+            -- Check if we can merge with the last message; positional notes and
+            -- guarded messages stay whole
             local last_msg = self.messages[#self.messages]
             if last_msg and mergeable_roles[role] and last_msg.role == role and
                 (not name or name == last_msg.name) and
-                (not metadata or metadata.preserve_position ~= true) and
-                (not last_msg.metadata or last_msg.metadata.preserve_position ~= true) then
+                (not metadata or (metadata.preserve_position ~= true and metadata.guard_content ~= true)) and
+                (not last_msg.metadata or last_msg.metadata.preserve_position ~= true) and
+                not prompt.is_guarded(last_msg) then
                 -- Same mergeable role, merge content
                 for _, part in ipairs(content_parts) do
                     -- For text content, merge with previous text content if present

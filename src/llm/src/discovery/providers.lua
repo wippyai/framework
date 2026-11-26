@@ -148,6 +148,16 @@ function providers.driver_declares_legacy_reasoning_flag(provider_id): (boolean?
     return binding ~= nil and binding.meta ~= nil and binding.meta.legacy_reasoning_flag == true, nil
 end
 
+-- Whether the provider's driver binding declares that it applies options.guardrail
+-- (contract.binding meta.guardrail), resolved the way providers.open does.
+function providers.driver_applies_guardrail(provider_id): (boolean?, string | error | nil)
+    local binding, err = driver_binding(provider_id)
+    if err then
+        return nil, err
+    end
+    return binding ~= nil and binding.meta ~= nil and binding.meta.guardrail == true, nil
+end
+
 -- What a driver sends when a request leaves the output unset
 -- (contract.binding meta.output_policy): { thinking, default_max_tokens }.
 -- A driver that declares none lets the provider decide, so nothing can be reserved.

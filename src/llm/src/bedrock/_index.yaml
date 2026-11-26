@@ -247,6 +247,7 @@ entries:
       output_policy:
         thinking: budget
         default_max_tokens: 2000
+      guardrail: true
       tags:
         - bedrock
         - aws

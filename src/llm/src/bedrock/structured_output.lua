@@ -141,6 +141,12 @@ function structured_output_handler.handler(contract_args)
         converse_payload.additionalModelRequestFields = additional_fields
     end
 
+    local guardrail_err = structured_output_handler._mapper.apply_guardrail(converse_payload, mapped,
+        (contract_args.options or {}).guardrail, false)
+    if guardrail_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(guardrail_err):build()
+    end
+
     local overlay_err = wire_request.apply(converse_payload, (contract_args.options or {}).request, mapper.REQUEST_KEYS)
     if overlay_err then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(overlay_err):build()
@@ -217,6 +223,7 @@ function structured_output_handler.handler(contract_args)
         finish_reason = "stop",
         metadata = response.metadata or {}
     }
+    result.metadata.guardrail_trace = structured_output_handler._mapper.guardrail_trace(response)
     route.attach_adjusted(result, adjusted)
     return result
 end

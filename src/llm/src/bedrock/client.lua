@@ -560,6 +560,9 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
             if event.metadata.usage then
                 usage = event.metadata.usage
             end
+            if type(event.metadata.trace) == "table" then
+                metadata.guardrail_trace = event.metadata.trace.guardrail
+            end
         end
         return nil
     end
