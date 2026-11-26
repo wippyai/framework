@@ -30,6 +30,18 @@ local function define_tests()
                 test.contains(err:message(), "Messages are required")
             end)
 
+            it("returns invalid for an unsupported image before contacting Bedrock", function()
+                local response, err = structured_output_handler.handler({
+                    model = "test-model",
+                    messages = {{ role = "user", content = {{ type = "image",
+                        source = { type = "base64", mime_type = "application/octet-stream", data = "AA==" } }} }},
+                    schema = { type = "object", properties = {}, required = {}, additionalProperties = false }
+                })
+                test.is_nil(response)
+                test.eq(err:kind(), "Invalid")
+                test.contains(err:message(), "Unsupported Bedrock image MIME type")
+            end)
+
             it("should require schema parameter", function()
                 local response, err = structured_output_handler.handler({
                     model = "test-model",

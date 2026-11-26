@@ -91,7 +91,10 @@ function structured_output_handler.handler(contract_args)
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(forced_err):build()
     end
 
-    local mapped = structured_output_handler._mapper.map_messages(contract_args.messages)
+    local mapped, media_err = structured_output_handler._mapper.map_messages(contract_args.messages)
+    if media_err then
+        return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(media_err):build()
+    end
     if #mapped.messages == 0 then
         return nil, err:kind(output.ERROR_TYPE.INVALID_REQUEST):message(output.NO_TURN_MESSAGE):build()
     end
