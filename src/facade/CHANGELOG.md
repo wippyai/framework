@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.55](https://github.com/wippyai/framework/compare/facade-v0.6.53...facade-v0.6.55) (2026-11-24)
+
+- Target Web Host 1.0.72.
+- New optional `tool_approval` requirement (JSON object). The facade sends it to the Web Host as `toolApproval` (`display`, `isolateAgentContent`); Web Host 1.0.71 and older ignore it.
+- Both shells pass `tanstack` to the Web Host.
+- The README says that `variables.css` is sent with `Cache-Control: no-store`.
+- The vendored `loading.js`, `import-map-bootstrap.js` and their source maps are unchanged from Web Host 1.0.71.
+
 ## [0.6.53](https://github.com/wippyai/framework/compare/facade-v0.6.51...facade-v0.6.53) (2026-11-17)
 
 

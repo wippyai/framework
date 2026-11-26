@@ -80,7 +80,7 @@ These fields are NOT configurable via requirements — they are computed at runt
 
 | Requirement | Default | Description |
 |---|---|---|
-| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.71` | CDN base URL for the Web Host frontend bundle |
+| `fe_facade_url` | `https://web-host.wippy.ai/webcomponents-1.0.72` | CDN base URL for the Web Host frontend bundle |
 | `host_policy_mode` | `auto` | `auto` detects official CDN versions and preserves legacy policy for unknown hosts; `legacy` mirrors policy into `hostConfig`; `shared` keeps root-only policy for custom modern hosts. Invalid values fail the config endpoint. |
 | `fe_entry_path` | `/iframe.html` | Iframe HTML entry point path (appended to `fe_facade_url`) |
 | `fe_mode` | `compat` | `compat` (default — loads `module.js`) or `managed` (loads `managed-layout.js` for declarative multi-panel apps). See [Modes](#modes) above |
@@ -127,6 +127,7 @@ These accept JSON strings for complex configuration:
 |---|---|---|---|
 | `api_routes` | `{}` | `apiRoutes` | API route overrides — top-level, not under hostConfig (e.g. `{"agents":{"list":"/custom/agents"}}`) |
 | `additional_nav_items` | `[]` | `hostConfig.additionalNavItems` | Extra sidebar nav items as JSON array |
+| `tool_approval` | `{}` | `toolApproval` | Tool approval options passed to the Web Host unchanged, for example `{"display":"compact","isolateAgentContent":"all"}`. Empty or invalid JSON keeps the Host defaults. The Host validates the values. Requires a Web Host with AppConfig schema `wippy-context-2.3` (Web Host 1.0.72 or later); older Hosts ignore it. |
 | `state_cache` | `{}` | `hostConfig.stateCache` | Child state LRU config (e.g. `{"maxPages":50,"maxSizePerPage":1048576}`) |
 | `allow_additional_tags` | `{}` | `allowAdditionalTags` | HTML sanitizer tag whitelist (e.g. `{"w-chart":["data","type"]}`) |
 | `chat` | `{}` | `hostConfig.chat` | Chat config (e.g. `{"convertPasteToFile":{"enabled":true,"minFileSize":1024,"allowHtml":false}}`) |
@@ -396,7 +397,7 @@ The CSS follows the same algorithm as the Web Host's `createCssVariables()`:
 - `@light` object → `@media (prefers-color-scheme: light) { :root { ... } }`
 - Keys without `--` prefix get `--` prepended automatically
 
-Returns an empty body (200 OK) when no variables are configured. Response has `Cache-Control: public, max-age=3600`.
+Returns an empty body (200 OK) when no variables are configured. Response has `Cache-Control: no-store`, because an app-bound resolver can change the variables per request.
 
 **Usage in `login.html`:**
 ```html
@@ -409,10 +410,10 @@ Returns an empty body (200 OK) when no variables are configured. Response has `C
 
 ```json
 {
-  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.71",
-  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.71/schemas/wippy-context-2.1.json",
+  "facade_url": "https://web-host.wippy.ai/webcomponents-1.0.72",
+  "schema_url": "https://web-host.wippy.ai/webcomponents-1.0.72/schemas/wippy-context-2.1.json",
   "iframe_origin": "https://web-host.wippy.ai",
-  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.71/iframe.html?waitForCustomConfig",
+  "iframe_url": "https://web-host.wippy.ai/webcomponents-1.0.72/iframe.html?waitForCustomConfig",
   "login_path": "/login.html",
   "login_redirect_param": null,
   "env": {

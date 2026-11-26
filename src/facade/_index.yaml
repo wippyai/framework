@@ -41,7 +41,7 @@ entries:
     targets:
       - entry: wippy.facade:fe_facade_url
         path: .default
-    default: https://web-host.wippy.ai/webcomponents-1.0.71
+    default: https://web-host.wippy.ai/webcomponents-1.0.72
 
   - name: host_policy_mode
     kind: ns.requirement
@@ -396,6 +396,19 @@ entries:
         and privacy fields explicitly for the capabilities the application permits.
     targets:
       - entry: wippy.facade:attention
+        path: .default
+    default: "{}"
+
+  - name: tool_approval
+    kind: ns.requirement
+    meta:
+      description: >-
+        Tool approval options for the Web Host as JSON, for example
+        {"display":"compact","isolateAgentContent":"all"}.
+        Empty keeps the Host defaults. Requires a Web Host with AppConfig
+        schema wippy-context-2.3 (after 1.0.70); older Hosts ignore it.
+    targets:
+      - entry: wippy.facade:tool_approval
         path: .default
     default: "{}"
 

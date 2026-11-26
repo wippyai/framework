@@ -202,6 +202,7 @@ local function handler()
     end
 
     local attention = non_empty_map_or_nil(get_req_json_any("attention"))
+    local tool_approval = non_empty_map_or_nil(get_req_json_any("tool_approval"))
 
     local additional_tags = non_empty_map_or_nil(get_req_json_any("allow_additional_tags"))
     if not additional_tags then
@@ -279,6 +280,7 @@ local function handler()
         themeStorageKey = theme_storage_key,
         apiRoutes = api_routes,
         attention = attention,
+        toolApproval = tool_approval,
         allowSelectModel = allow_select_model,
         hideSessionSelector = hide_session_selector,
         allowAdditionalTags = additional_tags,

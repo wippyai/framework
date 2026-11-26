@@ -5,26 +5,9 @@ local fs = require("fs")
 
 local NS = "wippy.facade:"
 
-local REQ_NAMES: {string} = {
-    "fe_facade_url", "host_policy_mode", "fe_entry_path", "fe_mode", "render_engine", "session_type",
-    "history_mode", "show_admin", "start_nav_open", "allow_select_model",
-    "hide_nav_bar", "disable_right_panel", "hide_session_selector",
-    "custom_css", "css_variables", "icon_sets",
-    "host_custom_css", "host_css_variables", "host_icon_sets",
-    "children_custom_css", "children_css_variables",
-    "content_fs",
-    "app_title", "app_icon", "app_name", "login_path",
-    "login_redirect_param",
-    "api_routes", "additional_nav_items", "state_cache", "attention",
-    "allow_additional_tags", "chat", "axios_defaults",
-    "extra_scripts", "host_config_layout", "theme_mode",
-    "theme_persist", "theme_storage_key",
-    "tanstack", "iconify", "import_map",
-}
-
 local function setup_registry(overrides: {[string]: string}?)
     local defaults: {[string]: string} = {
-        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.71",
+        fe_facade_url = "https://web-host.wippy.ai/webcomponents-1.0.72",
         host_policy_mode = "auto",
         fe_entry_path = "/iframe.html",
         fe_mode = "compat",
@@ -55,6 +38,7 @@ local function setup_registry(overrides: {[string]: string}?)
         additional_nav_items = "[]",
         state_cache = "{}",
         attention = "{}",
+        tool_approval = "{}",
         allow_additional_tags = "{}",
         chat = "{}",
         axios_defaults = "{}",
@@ -189,7 +173,7 @@ local function define_tests()
             end)
 
             test.it("extracts iframe origin from facade URL", function()
-                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.71"
+                local facade_url = "https://web-host.wippy.ai/webcomponents-1.0.72"
                 local origin = facade_url:match("^(https?://[^/]+)")
 
                 test.eq(origin, "https://web-host.wippy.ai")
@@ -267,7 +251,7 @@ local function define_tests()
 
             test.it("returns all default requirement values", function()
                 local entry = registry.get(NS .. "fe_facade_url")
-                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.71")
+                test.eq(entry.data.default, "https://web-host.wippy.ai/webcomponents-1.0.72")
 
                 entry = registry.get(NS .. "fe_entry_path")
                 test.eq(entry.data.default, "/iframe.html")
@@ -440,6 +424,28 @@ local function define_tests()
             end)
         end)
 
+        test.describe("tool approval passthrough", function()
+            local function read_source(path: string): string
+                local source_fs, fs_err = fs.get('app.facade_test:source')
+                test.is_nil(fs_err)
+                test.not_nil(source_fs)
+                local body, read_err = source_fs:readfile(path)
+                test.is_nil(read_err)
+                test.not_nil(body)
+                return body :: string
+            end
+
+            test.it("forwards toolApproval through both facade shells", function()
+                test.not_nil((string.find(read_source('/index.jet'), "toolApproval: cfg.toolApproval", 1, true)))
+                test.not_nil((string.find(read_source('/public/index.html'), "toolApproval: cfg.toolApproval", 1, true)))
+            end)
+
+            test.it("forwards tanstack through both facade shells", function()
+                test.not_nil((string.find(read_source('/index.jet'), "tanstack: cfg.tanstack", 1, true)))
+                test.not_nil((string.find(read_source('/public/index.html'), "tanstack: cfg.tanstack", 1, true)))
+            end)
+        end)
+
         test.describe("config JSON structure (wippy-context-2.1)", function()
             test.it("forwards global attention config through both facade shells", function()
                 local source_fs, fs_err = fs.get('app.facade_test:source')
@@ -489,9 +495,9 @@ local function define_tests()
 
             test.it("builds complete config object", function()
                 local config = {
-                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.71",
+                    facade_url = "https://web-host.wippy.ai/webcomponents-1.0.72",
                     iframe_origin = "https://web-host.wippy.ai",
-                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.71/iframe.html?waitForCustomConfig",
+                    iframe_url = "https://web-host.wippy.ai/webcomponents-1.0.72/iframe.html?waitForCustomConfig",
                     login_path = "/login.html",
                     env = {
                         APP_API_URL = "http://localhost:8085",
@@ -552,7 +558,7 @@ local function define_tests()
 
                 local decoded, derr = json.decode(body)
                 test.is_nil(derr)
-                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.71")
+                test.eq(decoded.facade_url, "https://web-host.wippy.ai/webcomponents-1.0.72")
                 test.eq(decoded.env.APP_API_URL, "http://localhost:8085")
                 test.eq(decoded.env.APP_WEBSOCKET_URL, "ws://localhost:8085")
                 test.is_true(decoded.attention.enabled)

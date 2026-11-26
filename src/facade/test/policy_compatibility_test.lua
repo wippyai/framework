@@ -6,6 +6,7 @@ local registry = require("registry")
 local NS = "wippy.facade:"
 local REQUIREMENTS = {
     "fe_facade_url", "host_policy_mode", "allow_select_model", "hide_session_selector", "allow_additional_tags",
+    "tool_approval",
 }
 
 local function set_requirements(values)
@@ -92,6 +93,29 @@ local function define_tests()
             -- The root must encode an empty map as an object, never a JSON array.
             local _, count = body:gsub('"allowAdditionalTags"%s*:%s*{}', "")
             test.eq(count, 1)
+        end)
+
+        test.it("passes tool_approval to the root config only when it is a non-empty JSON object", function()
+            local modern = "https://web-host.wippy.ai/webcomponents-1.0.62"
+
+            set_requirements({ fe_facade_url = modern, tool_approval = '{"display":"compact","isolateAgentContent":"all"}' })
+            local config = fetch_config()
+            test.eq(config.toolApproval.display, "compact")
+            test.eq(config.toolApproval.isolateAgentContent, "all")
+            test.is_nil(config.hostConfig.toolApproval)
+
+            set_requirements({ fe_facade_url = modern, tool_approval = "{}" })
+            config = fetch_config()
+            test.is_nil(config.toolApproval)
+
+            set_requirements({ fe_facade_url = modern, tool_approval = "not json" })
+            config = fetch_config()
+            test.is_nil(config.toolApproval)
+            test.not_nil(config.facade_url)
+
+            set_requirements({ fe_facade_url = modern, tool_approval = '"compact"' })
+            config = fetch_config()
+            test.is_nil(config.toolApproval)
         end)
 
         test.it("recognizes newer official CDN versions without mirroring", function()
