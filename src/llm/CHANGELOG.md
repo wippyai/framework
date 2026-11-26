@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.30](https://github.com/wippyai/framework/compare/llm-v0.5.29...llm-v0.5.30) (2026-11-26)
+
+
+### Bug Fixes
+
+* **llm:** return Bedrock attachment mapping errors from structured output ([#315](https://github.com/wippyai/framework/issues/315)) ([6bdb1e2](https://github.com/wippyai/framework/commit/6bdb1e2e9713e3e12abb6452ca66b59b1a176bbd))
+
 ## [0.5.29](https://github.com/wippyai/framework/compare/llm-v0.5.28...llm-v0.5.29) (2026-11-26)
 
 
