@@ -442,7 +442,7 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
 
     callbacks = callbacks or {}
     local on_content = callbacks.on_content or function(_chunk: string) end
-    local on_tool_call = callbacks.on_tool_call or function(_info: any) end
+    local on_tool_call = callbacks.on_tool_call or function(_info: any, _arguments_text: string) end
     local on_thinking = callbacks.on_thinking or function(_chunk: string) end
     local on_error = callbacks.on_error or function(_info: any) end
     local on_done = callbacks.on_done or function(_result: any) end
@@ -548,7 +548,8 @@ function bedrock_client.process_converse_stream(stream_response, callbacks)
                     raw_arguments = raw_arguments,
                     arguments_error = arguments_error
                 }
-                on_tool_call(tool_calls[index])
+                -- The callback also takes the input's JSON text as the model streamed it.
+                on_tool_call(tool_calls[index], json_str ~= "" and json_str or "{}")
             end
         elseif event.messageStop then
             finish_reason = event.messageStop.stopReason

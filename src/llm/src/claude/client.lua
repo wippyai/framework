@@ -433,7 +433,8 @@ function claude_client.process_stream(stream_response, callbacks)
                     }
 
                     tool_calls[index] = tool_call
-                    on_tool_call(tool_call)
+                    -- The callback also takes the input's JSON text as the model streamed it.
+                    on_tool_call(tool_call, json_str ~= "" and json_str or "{}")
                 end
             elseif event_type == "message_delta" then
                 if data.delta then

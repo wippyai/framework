@@ -55,7 +55,7 @@ local function handle_streaming(stream_response, context, stream_config, err)
                 table.insert(tool_calls, mapped_calls[1])
                 streamer:send_tool_call(
                     tostring(mapped_calls[1].name),
-                    tostring(mapped_calls[1].arguments),
+                    tool_info.arguments,
                     tostring(mapped_calls[1].id)
                 )
             end

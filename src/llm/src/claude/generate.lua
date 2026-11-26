@@ -42,13 +42,13 @@ local function handle_streaming(stream_response, context, stream_config, err)
             streamer:send_thinking(chunk)
         end,
 
-        on_tool_call = function(tool_info)
+        on_tool_call = function(tool_info, arguments_text: string)
             local mapped_calls = generate_handler._mapper.map_tool_calls({ tool_info }, context.name_to_id_map)
             if mapped_calls[1] then
                 table.insert(tool_calls, mapped_calls[1])
                 streamer:send_tool_call(
                     tostring(mapped_calls[1].name),
-                    tostring(mapped_calls[1].arguments),
+                    arguments_text,
                     tostring(mapped_calls[1].id)
                 )
             end

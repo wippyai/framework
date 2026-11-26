@@ -25,6 +25,20 @@ entries:
       google_client: wippy.llm.google:client
       google_mapper: wippy.llm.google:mapper
 
+  - name: stream_tool_arguments_test
+    kind: function.lua
+    meta: {type: test, group: LLM / Drivers}
+    source: file://stream_tool_arguments_test.lua
+    method: run
+    modules: [json, process]
+    imports:
+      test: wippy.test:test
+      openai_generate: wippy.llm.openai:generate
+      compat_generate: wippy.llm.openai_compat:generate
+      claude_generate: wippy.llm.claude:generate
+      bedrock_generate: wippy.llm.bedrock:generate
+      google_client: wippy.llm.google:client
+
   - name: dep.wippy.test
     kind: ns.dependency
     meta:
