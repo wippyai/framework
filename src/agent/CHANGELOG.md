@@ -6,6 +6,18 @@
 
 * Label per-step recalled memory as background rather than a user message or new request. It supports the current user task without replacing it. After installing the release containing this fix, users can remove their local memory-label override; the companion Session fix preserves the task across mid-turn checkpoints. This change is not included in Agent 0.5.4.
 
+## [0.5.16](https://github.com/wippyai/framework/compare/agent-v0.5.15...agent-v0.5.16) (2026-11-26)
+
+
+### Features
+
+* **llm:** Bedrock guardrails on the end user's marked message ([#312](https://github.com/wippyai/framework/issues/312)) ([be59559](https://github.com/wippyai/framework/commit/be5955996f1ffb41f244e4937487b51dc14cf3c8))
+
+
+### Bug Fixes
+
+* **agent:** require the LLM release that supports step guardrails ([#314](https://github.com/wippyai/framework/issues/314)) ([b9a24e8](https://github.com/wippyai/framework/commit/b9a24e8983b0a2d618e3f7397ff46a719c6e9e07))
+
 ## [0.5.15](https://github.com/wippyai/framework/compare/agent-v0.5.14...agent-v0.5.15) (2026-11-22)
 
 
