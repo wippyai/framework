@@ -15,7 +15,7 @@ the conversation and its tool results remain in their original order.
   version: ">=v0.4.0"
 ```
 
-Requires `wippy/llm >= 0.5.22`.
+Requires `wippy/llm >= 0.5.29`.
 
 Tool execution preserves canonical executor errors. A normal result of
 `{ success = false, error = "non-empty error text" }` also sets the existing

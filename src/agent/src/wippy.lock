@@ -3,7 +3,7 @@ directories:
     src: .
 modules:
     - name: wippy/llm
-      version: 0.5.22
+      version: 0.5.29
 replacements:
     - from: wippy/llm
       to: ../../llm/src
