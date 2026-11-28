@@ -1,0 +1,57 @@
+version: "1.0"
+namespace: app.model_resolver
+entries:
+  # The default model resolver binding of the test application; it declines every
+  # identifier, so resolution through it is the built-in discovery.
+  - name: resolver
+    kind: contract.binding
+    meta:
+      comment: Default model resolver that declines every identifier
+    contracts:
+      - contract: wippy.llm:model_resolver
+        default: true
+        methods:
+          resolve: app.model_resolver:decline
+
+  - name: decline
+    kind: function.lua
+    source: file://decline.lua
+    method: decline
+
+  - name: worker
+    kind: function.lua
+    source: file://fixture.lua
+    method: resolve
+    imports:
+      llm: wippy.llm:llm
+
+  - name: test
+    kind: function.lua
+    meta:
+      type: test
+      suite: model_resolver
+      name: LLM model resolver contract tests
+      group: LLM / General
+    source: file://test.lua
+    method: run_tests
+    modules: [security, funcs]
+    imports:
+      test: wippy.test:test
+
+  - name: allow_all
+    kind: security.policy
+    policy: {resources: '*', actions: '*', effect: allow}
+
+  - name: deny_open
+    kind: security.policy
+    policy:
+      resources: app.model_resolver:resolver
+      actions: [contract.open]
+      effect: deny
+
+  - name: deny_get
+    kind: security.policy
+    policy:
+      resources: wippy.llm:model_resolver
+      actions: [contract.get]
+      effect: deny

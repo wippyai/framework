@@ -1,0 +1,57 @@
+version: "1.0"
+namespace: app.usage_tracker
+entries:
+  # The default usage tracker binding of the test application; it records nothing and
+  # answers a fixed usage id.
+  - name: tracker
+    kind: contract.binding
+    meta:
+      comment: Default usage tracker that answers a fixed usage id
+    contracts:
+      - contract: wippy.llm:usage_tracker
+        default: true
+        methods:
+          track_usage: app.usage_tracker:record
+
+  - name: record
+    kind: function.lua
+    source: file://record.lua
+    method: record
+
+  - name: worker
+    kind: function.lua
+    source: file://fixture.lua
+    method: track
+    imports:
+      llm: wippy.llm:llm
+
+  - name: test
+    kind: function.lua
+    meta:
+      type: test
+      suite: usage_tracker
+      name: LLM usage tracker contract tests
+      group: LLM / General
+    source: file://test.lua
+    method: run_tests
+    modules: [security, funcs]
+    imports:
+      test: wippy.test:test
+
+  - name: allow_all
+    kind: security.policy
+    policy: {resources: '*', actions: '*', effect: allow}
+
+  - name: deny_open
+    kind: security.policy
+    policy:
+      resources: app.usage_tracker:tracker
+      actions: [contract.open]
+      effect: deny
+
+  - name: deny_get
+    kind: security.policy
+    policy:
+      resources: wippy.llm:usage_tracker
+      actions: [contract.get]
+      effect: deny

@@ -220,23 +220,36 @@ llm._clock = nil
 ---------------------------
 
 -- Optional model/provider resolver contract. When a binding exists it is tried
--- before the built-in registry-backed discovery; with no binding this returns nil
--- and resolution is unchanged. Mirrors the usage_tracker contract handling.
-local function get_model_resolver(): any?
+-- before the built-in registry-backed discovery; with no contract or no default
+-- binding this returns nil and resolution is unchanged. Any other failure to get
+-- the contract or open its binding, such as a permission refusal, is returned.
+local function get_model_resolver(): (any?, error?)
     if llm._model_resolver then
         return llm._model_resolver
     end
 
     local resolver_contract, err = contract.get(MODEL_RESOLVER_CONTRACT)
-    if not err and resolver_contract then
-        local instance, open_err = resolver_contract:open()
-        if not open_err and instance then
-            llm._model_resolver = instance
-            return instance
+    if err then
+        if errors.is(err, errors.NOT_FOUND) then
+            return nil
         end
+        return nil, err
+    end
+    if not resolver_contract then
+        return nil
     end
 
-    return nil
+    local instance, open_err = resolver_contract:open()
+    if open_err then
+        if errors.is(open_err, errors.NOT_FOUND) then
+            return nil
+        end
+        return nil, open_err
+    end
+    if instance then
+        llm._model_resolver = instance
+    end
+    return instance
 end
 
 local function native_error(err: any, kind: string, retryable: boolean?): error?
@@ -266,7 +279,10 @@ end
 -- An optional resolver contract takes precedence when bound; if it returns no
 -- card, resolution falls back to the built-in discovery below.
 local function resolve_model_cards(model_identifier: string): ({ModelCard}?, error?, boolean?)
-    local resolver = get_model_resolver()
+    local resolver, resolver_err = get_model_resolver()
+    if resolver_err then
+        return nil, resolver_err
+    end
     if resolver then
         local card, resolve_err = resolver:resolve({ model = model_identifier })
         if card and not resolve_err then
@@ -402,23 +418,36 @@ local function normalize_response(raw_result)
     return normalized
 end
 
--- Get usage tracker contract (cache it when opened)
-local function get_usage_tracker()
+-- Optional usage tracker contract, cached once opened. With no contract or no default binding
+-- this returns nil and usage is not tracked. Any other failure to get the contract or open its
+-- binding, such as a permission refusal, is returned.
+local function get_usage_tracker(): (any?, error?)
     if llm._usage_tracker then
         return llm._usage_tracker
     end
 
-    -- Try to get usage tracker contract if available
     local tracker_contract, err = contract.get(USAGE_TRACKER_CONTRACT)
-    if not err and tracker_contract then
-        local instance, open_err = tracker_contract:open()
-        if not open_err then
-            llm._usage_tracker = instance
-            return instance
+    if err then
+        if errors.is(err, errors.NOT_FOUND) then
+            return nil
         end
+        return nil, err
+    end
+    if not tracker_contract then
+        return nil
     end
 
-    return nil -- No usage tracking available
+    local instance, open_err = tracker_contract:open()
+    if open_err then
+        if errors.is(open_err, errors.NOT_FOUND) then
+            return nil
+        end
+        return nil, open_err
+    end
+    if instance then
+        llm._usage_tracker = instance
+    end
+    return instance
 end
 
 -- Returns a shallow copy of the caller's options with the actor id set as
@@ -1637,8 +1666,11 @@ function llm.get_classes(): ({ModelClass}?, error?)
     return result :: {ModelClass}
 end
 
-function llm.track_usage(response, model_id, options): (string?, string?)
-    local tracker = get_usage_tracker()
+function llm.track_usage(response, model_id, options): (string?, error?)
+    local tracker, tracker_err = get_usage_tracker()
+    if tracker_err then
+        return nil, tracker_err
+    end
     if not tracker then
         -- No usage tracking available
         return nil, nil
