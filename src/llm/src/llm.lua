@@ -418,23 +418,36 @@ local function normalize_response(raw_result)
     return normalized
 end
 
--- Get usage tracker contract (cache it when opened)
-local function get_usage_tracker()
+-- Optional usage tracker contract, cached once opened. With no contract or no default binding
+-- this returns nil and usage is not tracked. Any other failure to get the contract or open its
+-- binding, such as a permission refusal, is returned.
+local function get_usage_tracker(): (any?, error?)
     if llm._usage_tracker then
         return llm._usage_tracker
     end
 
-    -- Try to get usage tracker contract if available
     local tracker_contract, err = contract.get(USAGE_TRACKER_CONTRACT)
-    if not err and tracker_contract then
-        local instance, open_err = tracker_contract:open()
-        if not open_err then
-            llm._usage_tracker = instance
-            return instance
+    if err then
+        if errors.is(err, errors.NOT_FOUND) then
+            return nil
         end
+        return nil, err
+    end
+    if not tracker_contract then
+        return nil
     end
 
-    return nil -- No usage tracking available
+    local instance, open_err = tracker_contract:open()
+    if open_err then
+        if errors.is(open_err, errors.NOT_FOUND) then
+            return nil
+        end
+        return nil, open_err
+    end
+    if instance then
+        llm._usage_tracker = instance
+    end
+    return instance
 end
 
 -- Returns a shallow copy of the caller's options with the actor id set as
@@ -1653,8 +1666,11 @@ function llm.get_classes(): ({ModelClass}?, error?)
     return result :: {ModelClass}
 end
 
-function llm.track_usage(response, model_id, options): (string?, string?)
-    local tracker = get_usage_tracker()
+function llm.track_usage(response, model_id, options): (string?, error?)
+    local tracker, tracker_err = get_usage_tracker()
+    if tracker_err then
+        return nil, tracker_err
+    end
     if not tracker then
         -- No usage tracking available
         return nil, nil
